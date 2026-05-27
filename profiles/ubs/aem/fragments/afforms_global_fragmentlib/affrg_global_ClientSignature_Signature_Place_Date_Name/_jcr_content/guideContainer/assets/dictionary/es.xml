@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="es"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_ClientSignature_Signature_Place_Date_Name/jcr:content/guideContainer/assets/dictionary">
+    <_x0033_6124225-e678-4f36-8a9c-f39f8fe1e517
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6381 Client Signature (Signature, Place, Date, Name)"
+        sling:message="EFORMS-6381 Client Signature (Signature, Place, Date, Name)"/>
+    <_x0034_b66af74-bba3-4967-a855-ea72803e9b20
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;br>&#xa;&amp;nbsp;&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;br>&#xa;&amp;nbsp;&lt;/p>&#xa;"/>
+    <_x0039_5d02221-ebee-4860-9031-ab8fca915548
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of client"
+        sling:message="Name of client"/>
+    <c1a656b0-c599-4492-8276-36583cc21255
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of client"
+        sling:message="Signature of client"/>
+    <fd_Date_x0020__x0028_dd.m235768755
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date (dd.mm.yyyy)"
+        sling:message="Fecha"/>
+    <fd_EFORMS-638-1974442529
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6381 Generic Signature (Place, Date, Signature, Name)"
+        sling:message="EFORMS-6381 Firma genérica (lugar, fecha, firma, nombre)"/>
+    <fd_Name
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name"
+        sling:message="Nombre"/>
+    <fd_Place
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Place"
+        sling:message="Lugar"/>
+    <fd_Please_x0020_ent1338578760
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Por favor, inserte la fecha en el formato dd.mm.aaaa (p. ej. 01.01.2020)"/>
+    <fd_Signature
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature"
+        sling:message="Firma"/>
+</jcr:root>

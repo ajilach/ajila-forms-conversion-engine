@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="en-us"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_PersonalDetails_CompanyName/jcr:content/guideContainer/assets/dictionary">
+    <_x0036_53f200d-3185-47b1-ac25-8e24812b64ea
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_[DEPRECATED] EFORMS-19364 Personal Details (Company Name)"
+        sling:message="\[DEPRECATED] EFORMS-19364 Personal Details (Company Name)"/>
+    <_x0034_f9780f5-bf4e-43d0-86e7-8f5ebac60d83
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Company/Entity name"
+        sling:message="Company/Entity name"/>
+</jcr:root>

@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-04-02T10:34:54.096+02:00"
-        cq:lastModifiedBy="t831640"
+        cq:lastModified="{Date}2026-04-23T08:15:15.305+02:00"
+        cq:lastModifiedBy="t831552"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:isCheckedOut="{Boolean}true"
         jcr:language="en"
@@ -13,8 +13,7 @@
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-32356 Internal Bank Use (Cognome, Luogo, Data, Visto)"
         jcr:uuid="4b12ec9f-fa82-4598-8c66-68f04b2abe9c"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

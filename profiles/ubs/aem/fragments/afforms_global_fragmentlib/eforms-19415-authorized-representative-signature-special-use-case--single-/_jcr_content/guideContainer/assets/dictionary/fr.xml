@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="fr"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/eforms-19415-authorized-representative-signature-special-use-case--single-/jcr:content/guideContainer/assets/dictionary">
+    <_x0031_fa399da-9846-411b-aeca-d6f8482bdbb3
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-19415 Authorized Representative Signature (Single)"
+        sling:message="EFORMS-19415 Authorized Representative Signature (Single)"/>
+    <_x0039_8d34198-12a7-49f6-8e3b-12ab3a13988c
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative"
+        sling:message="Signature du représentant autorisé"/>
+    <abf45f4a-b766-4299-87b8-356e08c9a107
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Place"
+        sling:message="Lieu"/>
+    <_x0032_98d70e5-2bd5-4343-8ef0-378549182637
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date (dd.mm.yyyy)"
+        sling:message="Date"/>
+    <_x0030_438b0a3-073e-44e0-832d-ca05dec1a347
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"/>
+    <eeba836f-28bf-46b5-b664-1a219281171a
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative"
+        sling:message="Nom du représentant autorisé"/>
+    <_x0036_2f89e06-8d85-4779-b2bb-7f45bedc8289
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative"
+        sling:message="Fonction/rôle du représentant autorisé"/>
+</jcr:root>

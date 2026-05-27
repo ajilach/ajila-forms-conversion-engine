@@ -23,7 +23,7 @@
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Account no."
-        sling:message="Numero di conto"/>
+        sling:message="N. di conto"/>
     <fd_Banking_x0020_re-1793830894
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
@@ -33,7 +33,7 @@
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Clearing no."
-        sling:message="Numero di clearing"/>
+        sling:message="N. di clearing"/>
     <fd_XXXX
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

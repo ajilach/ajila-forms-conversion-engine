@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2020-12-15T09:40:34.241+01:00"
+        cq:lastModifiedBy="t649798"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        jcr:language="en"
+        jcr:mixinTypes="[]"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="EFORMS-6380 Internal Bank Use(Signature Of Client Advisor, Signature Of Witness)"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout">
+                    <panel_copy
+                        jcr:created="Wed Jul 22 2020 07:59:36 GMT+0200"
+                        jcr:createdBy="t649798"
+                        jcr:lastModified="{Date}2020-12-01T03:37:23.030+01:00"
+                        jcr:lastModifiedBy="t654166"
+                        jcr:primaryType="nt:unstructured"
+                        jcr:title="For internal bank use only"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        completionExpReq="{Boolean}false"
+                        dorExcludeDescription="true"
+                        guideNodeClass="guidePanel"
+                        name="panelForInternalBank"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false"
+                        visible="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="1"
+                            dorLayoutType="columnar"
+                            dorNumCols="1"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                            <panel
+                                jcr:created="Wed Jul 22 2020 08:03:07 GMT+0200"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2020-09-09T12:43:52.658+02:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                completionExpReq="{Boolean}false"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                guideNodeClass="guidePanel"
+                                name="panelCallback"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="4"
+                                    dorLayoutType="columnar"
+                                    dorNumCols="4"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                    <textdraw
+                                        jcr:created="Wed Jul 22 2020 08:01:31 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:06:04 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                        _value="&lt;p>Physical meeting / Call back details&lt;/p>"
+                                        colspan="4"
+                                        guideNodeClass="guideTextDraw"
+                                        name="textdraw1595397691200"
+                                        textIsRich="true"/>
+                                    <radiobutton
+                                        jcr:created="Wed Jul 22 2020 08:06:09 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:15:57 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Line"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
+                                        alignment="guideFieldHorizontalAlignment"
+                                        colspan="4"
+                                        css="widget_ajila_forms_radiobutton"
+                                        dorColspan="4"
+                                        guideNodeClass="guideRadioButton"
+                                        name="radiobuttonLine"
+                                        options="[0=Registered,1=Physical meeting*]"
+                                        textIsRich="[true,true]"/>
+                                    <datepicker
+                                        jcr:created="Wed Jul 22 2020 08:07:05 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:07:56 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Call-back date"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                        css="widget_ajila_forms_datepicker"
+                                        guideNodeClass="guideDatePicker"
+                                        name="datepickerCallbackdate"
+                                        textIsRich="[true,true]"
+                                        validatePictureClause="date{YYYY-MM-DD}"
+                                        validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                        validationPatternType="custom"
+                                        yearRangeFrom="100"
+                                        yearRangeTo="10">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </datepicker>
+                                    <textbox
+                                        jcr:created="Wed Jul 22 2020 08:07:15 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:08:20 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Call-back time"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxCallbackTime"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </textbox>
+                                    <textbox_82416928
+                                        jcr:created="Wed Jul 22 2020 08:07:24 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:08:47 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Spoke to"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxSpokeTo"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </textbox_82416928>
+                                    <textbox_2132877995
+                                        jcr:created="Wed Jul 22 2020 08:07:30 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:09:07 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Extension/Venue"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxExtension"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </textbox_2132877995>
+                                </items>
+                            </panel>
+                            <panel_1336979143
+                                jcr:created="Wed Jul 22 2020 08:09:24 GMT+0200"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2020-09-09T12:43:14.995+02:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                completionExpReq="{Boolean}false"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                guideNodeClass="guidePanel"
+                                name="panelInternalSignoff"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="4"
+                                    dorLayoutType="columnar"
+                                    dorNumCols="4"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                    <textdraw
+                                        jcr:created="Wed Jul 22 2020 08:11:06 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 09:15:19 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                        _value="&lt;p>&lt;b>Internal signoff by&lt;/b>&lt;/p>"
+                                        colspan="4"
+                                        dorColspan="4"
+                                        guideNodeClass="guideTextDraw"
+                                        name="textdraw1595398266916"
+                                        textIsRich="true"/>
+                                    <textbox_930730702_co
+                                        jcr:created="Wed Jul 22 2020 08:14:41 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-12-15T09:39:45.296+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Signature of client advisor"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        colspan="2"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        displayIsSameAsValidate="true"
+                                        displayPatternType="custom"
+                                        displayPictureClause="^([^0-9]*)$"
+                                        dorColspan="2"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxClientAdvisorSignature"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="6"/>
+                                        </cq:responsive>
+                                    </textbox_930730702_co>
+                                    <textbox_930730702_co_1478000303
+                                        jcr:created="Wed Jul 22 2020 08:14:41 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-12-15T09:40:30.486+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="*Signature of witness (if applicable)"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        colspan="2"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        displayIsSameAsValidate="true"
+                                        displayPatternType="custom"
+                                        displayPictureClause="^([^0-9]*)$"
+                                        dorColspan="2"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxWitnessSignature"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="6"/>
+                                        </cq:responsive>
+                                    </textbox_930730702_co_1478000303>
+                                    <textbox_930730702
+                                        jcr:created="Wed Jul 22 2020 08:14:41 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-07-27T06:34:01.096+02:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Name of client advisor"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        colspan="2"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        displayIsSameAsValidate="true"
+                                        displayPatternType="custom"
+                                        displayPictureClause="^([^0-9]*)$"
+                                        dorColspan="2"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxClientAdvisorName"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="6"/>
+                                        </cq:responsive>
+                                    </textbox_930730702>
+                                    <textbox_408382196
+                                        jcr:created="Wed Jul 22 2020 08:14:48 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-07-27T06:34:12.273+02:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Name of witness"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        colspan="2"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        displayIsSameAsValidate="true"
+                                        displayPatternType="custom"
+                                        displayPictureClause="^([^0-9]*)$"
+                                        dorColspan="2"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxWitnessName"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="6"/>
+                                        </cq:responsive>
+                                    </textbox_408382196>
+                                    <textbox_1179750203
+                                        jcr:created="Wed Jul 22 2020 08:16:12 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:17:59 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="OU ref."
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxClientAdvisorOURef"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </textbox_1179750203>
+                                    <datepicker
+                                        jcr:created="Wed Jul 22 2020 08:16:19 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:17:18 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Date (dd.mm.yyyy)"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                        css="widget_ajila_forms_datepicker"
+                                        guideNodeClass="guideDatePicker"
+                                        name="datepickerClientAdvisorDate"
+                                        textIsRich="[true,true]"
+                                        validatePictureClause="date{YYYY-MM-DD}"
+                                        validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                        validationPatternType="custom"
+                                        yearRangeFrom="100"
+                                        yearRangeTo="10">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </datepicker>
+                                    <textbox_319080231
+                                        jcr:created="Wed Jul 22 2020 08:16:25 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:17:53 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="OU ref."
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                        autofillFieldKeyword="name"
+                                        css="widget_ajila-forms-ubs-textbox"
+                                        guideNodeClass="guideTextBox"
+                                        name="textboxWitnessOURef"
+                                        textIsRich="[true,true,true]">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </textbox_319080231>
+                                    <datepicker_1005742427
+                                        jcr:created="Wed Jul 22 2020 08:16:30 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="Wed Jul 22 2020 08:18:19 GMT+0200"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        jcr:title="Date (dd.mm.yyyy)"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                        css="widget_ajila_forms_datepicker"
+                                        guideNodeClass="guideDatePicker"
+                                        name="datepickerWitnessDate"
+                                        textIsRich="[true,true]"
+                                        validatePictureClause="date{YYYY-MM-DD}"
+                                        validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                        validationPatternType="custom"
+                                        yearRangeFrom="100"
+                                        yearRangeTo="10">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="3"/>
+                                        </cq:responsive>
+                                    </datepicker_1005742427>
+                                </items>
+                            </panel_1336979143>
+                        </items>
+                    </panel_copy>
+                </items>
+            </rootPanel>
+            <assets jcr:primaryType="nt:unstructured">
+                <dictionary jcr:primaryType="nt:unstructured">
+                    <en-us/>
+                    <zh-tw/>
+                    <zh-hk/>
+                    <ko-kr/>
+                    <es/>
+                    <fr-ch/>
+                    <it-ch/>
+                    <de-ch/>
+                    <pt/>
+                </dictionary>
+            </assets>
+            <signerInfo
+                jcr:primaryType="nt:unstructured"
+                firstSignerFormFiller="{Boolean}false"
+                workflowType="SEQUENTIAL">
+                <signer0
+                    jcr:primaryType="nt:unstructured"
+                    signerTitle="Signer One"/>
+            </signerInfo>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

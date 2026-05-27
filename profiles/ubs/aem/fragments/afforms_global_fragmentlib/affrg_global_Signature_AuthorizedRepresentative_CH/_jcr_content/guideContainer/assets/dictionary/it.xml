@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="it"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_Signature_AuthorizedRepresentative_CH/jcr:content/guideContainer/assets/dictionary">
+    <_x0034_428599c-0b7d-4bc4-962c-e9a5eaf5aa6b
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-34259 Signature of Authorized Representative (Repeating Panel)"
+        sling:message="EFORMS-34259 Signature of Authorized Representative (Repeating Panel)"/>
+    <_x0031_2e9ca7d-7cab-40dc-b88c-bd80d4ab8b8b
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative"
+        sling:message="Firma del rappresentante autorizzato"/>
+    <b0ba310b-46e3-4bf4-a49d-7c608f1ea93b
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 4"
+        sling:message="Funzione/Ruolo del rappresentante autorizzato 4"/>
+    <_x0033_2f3618c-8c00-48cb-a95f-8733518843b9
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Add signature"
+        sling:message="Aggiungere firma"/>
+    <_x0034_85ab8c2-d203-4689-8a58-e4467821e98a
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 3"
+        sling:message="Funzione/Ruolo del rappresentante autorizzato 3"/>
+    <_x0032_c1c8392-9bc1-489e-8b5f-8ce47ac13939
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 4"
+        sling:message="Firma del rappresentante autorizzato 4"/>
+    <_x0037_81aeb83-94fa-4bd9-9090-8e8437d8b6cc
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Place"
+        sling:message="Luogo"/>
+    <_x0033_4264c5a-6d96-4fee-82c3-6e1569815b9b
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 2"
+        sling:message="Funzione/Ruolo del rappresentante autorizzato 2"/>
+    <_x0039_b4a1f88-1bfa-4da1-8f73-baf99a1373b8
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 3"
+        sling:message="Firma del rappresentante autorizzato 3"/>
+    <f433d2da-feda-4408-bcb8-c01d4e8fa6e4
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 1"
+        sling:message="Funzione/Ruolo del rappresentante autorizzato 1"/>
+    <a14ab95e-88e5-40f3-a7f5-21ae62597c68
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 2"
+        sling:message="Firma del rappresentante autorizzato 2"/>
+    <f17739c7-5f62-4809-bd15-a4d4d58442ff
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative"
+        sling:message="Funzione/Ruolo del rappresentante autorizzato"/>
+    <_x0037_6ac46b6-79b4-498a-bc72-a7f56939f6b5
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 1"
+        sling:message="Firma del rappresentante autorizzato 1"/>
+    <_x0033_230b7e0-2100-4cfe-8ab3-639f8a30c4e6
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date (dd.mm.yyyy)"
+        sling:message="Data"/>
+    <e434e026-2dd3-490a-9a6d-7e3de8417f4e
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Si prega di inserire la data nel formato gg.mm.aaaa (ad es. 01.01.2020)"/>
+    <_x0036_1bdc070-5b0b-4e28-bf87-ef1a68023eb9
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 4"
+        sling:message="Nome del rappresentante autorizzato 4"/>
+    <_x0031_9cdfcd8-8a2e-4bc8-96bd-6b9d5cbfc1e5
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 3"
+        sling:message="Nome del rappresentante autorizzato 3"/>
+    <_x0036_7a6e386-0588-4cab-beba-2df7560c9acd
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 2"
+        sling:message="Nome del rappresentante autorizzato 2"/>
+    <_x0036_3effd55-77bb-43a3-8a2e-4baaaeb172eb
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 1"
+        sling:message="Nome del rappresentante autorizzato 1"/>
+    <_x0030_7a5e020-164e-4f15-a61d-429158420249
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative"
+        sling:message="Nome del rappresentante autorizzato"/>
+</jcr:root>

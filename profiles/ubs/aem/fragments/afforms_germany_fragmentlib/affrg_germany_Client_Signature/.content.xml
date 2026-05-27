@@ -10,8 +10,7 @@
         jcr:mixinTypes="[]"
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-48685 CLIENT SIGNATURE (SIGNATURE, PLACE, DATE, NAME)"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

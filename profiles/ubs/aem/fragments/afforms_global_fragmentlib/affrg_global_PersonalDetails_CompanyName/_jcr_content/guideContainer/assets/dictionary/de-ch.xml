@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="de-ch"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_PersonalDetails_CompanyName/jcr:content/guideContainer/assets/dictionary">
+    <fd__x0025_5BDEPRECATE1996606120
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_[DEPRECATED] EFORMS-19364 Personal Details (Company Name)"
+        sling:message="\[DEPRECATED] EFORMS-19364 Personal Details (Company Name)"/>
+    <fd_Company_x0025_2FEn38580694
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Company/Entity name"
+        sling:message="Name der Firma/Rechtseinheit"/>
+    <fd_EFORMS-193-2059762697
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-19364 Personal Details (Company Name)"
+        sling:message="EFORMS-19364 Persönliche Angaben (Name der Firma)"/>
+</jcr:root>

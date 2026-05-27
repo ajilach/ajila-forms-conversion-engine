@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="pt"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_Signature_AuthorizedRepresentative_CH/jcr:content/guideContainer/assets/dictionary">
+    <_x0039_9a4132c-e236-434f-bf01-cc2f40dc2c94
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-34259 Signature of Authorized Representative (Repeating Panel)"
+        sling:message="EFORMS-34259 Signature of Authorized Representative (Repeating Panel)"/>
+    <fd_Add_x0020_signat-2094346279
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Add signature"
+        sling:message="Add signature"/>
+    <fd_Date_x0020__x0028_dd.m235768755
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date (dd.mm.yyyy)"
+        sling:message="Data (dd.mm.aaaa)"/>
+    <fd_EFORMS-147-2123099188
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-14715 Signature of Authorized Representative"
+        sling:message="EFORMS-14715 Signature of Authorized Representative"/>
+    <fd_Function_x0025_2FR-1204015956
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative"
+        sling:message="Function/Role of authorized representative"/>
+    <fd_Function_x0025_2FR-1713130048
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 4"
+        sling:message="Function/Role of authorized representative 4"/>
+    <fd_Function_x0025_2FR-1713130049
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 3"
+        sling:message="Function/Role of authorized representative 3"/>
+    <fd_Function_x0025_2FR-1713130050
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 2"
+        sling:message="Function/Role of authorized representative 2"/>
+    <fd_Function_x0025_2FR-1713130051
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Function/Role of authorized representative 1"
+        sling:message="Function/Role of authorized representative 1"/>
+    <fd_Name_x0020_of_x0020_au-1709104222
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 4"
+        sling:message="Nome do representante autorizado 4"/>
+    <fd_Name_x0020_of_x0020_au-1709104223
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 3"
+        sling:message="Nome do representante autorizado 3"/>
+    <fd_Name_x0020_of_x0020_au-1709104224
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 2"
+        sling:message="Nome do representante autorizado 2"/>
+    <fd_Name_x0020_of_x0020_au-1709104225
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative 1"
+        sling:message="Nome do representante autorizado 1"/>
+    <fd_Name_x0020_of_x0020_au-211834098
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of authorized representative"
+        sling:message="Nome do representante autorizado"/>
+    <fd_Place
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Place"
+        sling:message="Lugar"/>
+    <fd_Please_x0020_ent1338578760
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"/>
+    <fd_Signature_x0020_1794139201
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative"
+        sling:message="Assinatura do representante autorizado"/>
+    <fd_Signature_x0020_1885887506
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 1"
+        sling:message="Assinatura do representante autorizado 1"/>
+    <fd_Signature_x0020_1885887507
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 2"
+        sling:message="Assinatura do representante autorizado 2"/>
+    <fd_Signature_x0020_1885887508
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 3"
+        sling:message="Assinatura do representante autorizado 3"/>
+    <fd_Signature_x0020_1885887509
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of authorized representative 4"
+        sling:message="Assinatura do representante autorizado 4"/>
+</jcr:root>

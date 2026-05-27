@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="fr-ch"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_PersonalDetails_Indvidual_Company_CH/jcr:content/guideContainer/assets/dictionary">
+    <fd_EFORMS-196193316965
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-19655 Personal Details (Last Name, First Name, Company)"
+        sling:message="EFORMS-19655 Personal Details (Last Name, First Name, Company)"/>
+    <fd_EFORMS-3291565165589
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-32959 Personal Details (Last Name, First Name, Company)"
+        sling:message="EFORMS-32959 Personal Details (Last Name, First Name, Company)"/>
+    <fd_First_x0020_name-61863869
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_First name(s)"
+        sling:message="Prénom(s)"/>
+    <fd_Last_x0020_name
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Last name"
+        sling:message="Nom de famille"/>
+</jcr:root>

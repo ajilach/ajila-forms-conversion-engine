@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-03-26T08:41:33.891+01:00"
-        cq:lastModifiedBy="t406261"
+        cq:lastModified="{Date}2026-05-26T15:30:38.091+02:00"
+        cq:lastModifiedBy="t831552"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:isCheckedOut="{Boolean}true"
         jcr:language="en"
@@ -13,8 +13,7 @@
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS - Germany Banking Relationship"
         jcr:uuid="e476c159-d01d-4c43-945e-128a6f652369"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

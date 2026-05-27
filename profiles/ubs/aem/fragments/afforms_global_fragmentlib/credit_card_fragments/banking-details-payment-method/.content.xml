@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2025-09-11T14:07:45.195+02:00"
+        cq:lastModifiedBy="t541512"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##2390&quot;}"
+        jcr:mixinTypes="[]"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="Banking Details Payment Method"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel
+                        jcr:created="{Date}2024-11-06T17:53:59.057+01:00"
+                        jcr:createdBy="admin"
+                        jcr:lastModified="{Date}2024-11-06T17:54:30.917+01:00"
+                        jcr:lastModifiedBy="admin"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        dorExcludeDescription="true"
+                        dorExcludeTitle="true"
+                        guideNodeClass="guidePanel"
+                        name="PN_BankingDetails_PaymentMethod"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="1"
+                            dorLayoutType="columnar"
+                            dorNumCols="1"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <panel
+                                jcr:created="{Date}2024-11-04T17:42:03.623+01:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2024-11-04T17:43:03.623+01:00"
+                                jcr:lastModifiedBy="admin"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                fragRef="/content/dam/formsanddocuments/afforms_global_fragmentlib/credit_card_fragments/banking-details"
+                                guideNodeClass="guidePanel"
+                                name="PN_BankingDetails_Fragment"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="1"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items jcr:primaryType="nt:unstructured"/>
+                            </panel>
+                            <radiobutton
+                                fd:translationIds="\{&quot;jcr:title&quot;:&quot;guideContainer##rootPanel##items##panel##items##radiobutton##jcr:title##8969&quot;,&quot;options&quot;:&quot;guideContainer##rootPanel##items##panel##items##radiobutton##options##5239&quot;}"
+                                jcr:created="{Date}2024-11-04T14:12:21.801+01:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2024-11-25T10:34:21.010+01:00"
+                                jcr:lastModifiedBy="admin"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="&lt;b>Qr-Bill / Manual entry of payment details&lt;/b>"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
+                                alignment="guideFieldVerticalAlignment"
+                                css="widget_ajila_forms_radiobutton"
+                                guideNodeClass="guideRadioButton"
+                                isTitleRichText="true"
+                                name="RB_PaymentMethod_QrBill"
+                                options="[0=&lt;p>I would like to pay my monthly invoices by QR-bill or by entering the payment details manually.&lt;/p>&lt;p>With this payment type I can use the partial payment option** and settle the invoice in partial amounts. Please find more information at ubs.com/partial-payment-option.&lt;/p>]"
+                                richTextOptions="true"
+                                textIsRich="[true,true,true,true]">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingDetails_PaymentMethod.RB_PaymentMethod_QrBill&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (this.value.split('\,').indexOf(\\&quot;0\\&quot;) > -1) {\\n    RB_PaymentMethod_DirectDebit.value = null;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </radiobutton>
+                            <radiobutton_17991182
+                                fd:translationIds="\{&quot;jcr:title&quot;:&quot;guideContainer##rootPanel##items##panel##items##radiobutton_17991182##jcr:title##3814&quot;,&quot;options&quot;:&quot;guideContainer##rootPanel##items##panel##items##radiobutton_17991182##options##2473&quot;}"
+                                jcr:created="{Date}2024-11-04T14:21:41.491+01:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2024-12-16T11:48:01.784+01:00"
+                                jcr:lastModifiedBy="admin"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="&lt;b>Direct debit of UBS bank account&lt;/b>"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
+                                alignment="guideFieldVerticalAlignment"
+                                css="widget_ajila_forms_radiobutton"
+                                guideNodeClass="guideRadioButton"
+                                isTitleRichText="true"
+                                name="RB_PaymentMethod_DirectDebit"
+                                options="[0=&lt;p>I instruct UBS to charge the bank account as shown monthly (via direct debit (LSV+) with right of revocation for cards in CHF or EUR).&lt;/p>]"
+                                richTextOptions="true"
+                                textIsRich="[true,true,true,true]">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;if (this.value.split('\,').indexOf(\\&quot;0\\&quot;) > -1) {\\n    RB_PaymentMethod_QrBill.value = null;\\n}&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingDetails_PaymentMethod.RB_PaymentMethod_DirectDebit&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </radiobutton_17991182>
+                            <textdraw
+                                fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##panel##items##textdraw##_value##461&quot;}"
+                                jcr:created="{Date}2024-11-11T17:55:53.160+01:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2025-09-11T14:05:32.149+02:00"
+                                jcr:lastModifiedBy="t541512"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                _value="&lt;p>*You must provide bank details of the Main Cardholder even if you are paying via QR-bill.&lt;/p>&#xa;&lt;p>**Using the partial payment option will incur credit interest that is charged to the cardholder's credit card account each month. Extending credit is prohibited if it causes the consumer to become overindebted (UCA Art. 3). Example: If the transaction amount is CHF 200.00 and the annual credit interest is 13%, the effective credit interest cost is CHF 4.94 if the credit is paid back in three equal monthly installments. In this example, the total cost would be CHF 204.94.&lt;/p>&#xa;"
+                                guideNodeClass="guideTextDraw"
+                                name="textdraw1731344153248"
+                                textIsRich="true"/>
+                        </items>
+                    </panel>
+                </items>
+            </rootPanel>
+            <signerInfo
+                jcr:primaryType="nt:unstructured"
+                firstSignerFormFiller="{Boolean}false"
+                workflowType="SEQUENTIAL">
+                <signer0
+                    jcr:primaryType="nt:unstructured"
+                    signerTitle="Signer One"/>
+            </signerInfo>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

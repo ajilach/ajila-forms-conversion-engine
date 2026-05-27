@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="fr"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_InternalBankUse_OURef_SignatureOfClientAdvisorSignature_SupervisorSignature_ByCorresepnpondence_InPersonalMeeting_ThirdParty/jcr:content/guideContainer/assets/dictionary">
+    <_x0030_61f253d-9a86-4074-8b2a-43ac089ec27f
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-10755 Internal Bank Use(Signature,Signature of Client Advisor,Signature of supervisor, by correspondence, in a personal meeting, done by a third party)"
+        sling:message="EFORMS-10755 Internal Bank Use(Signature,Signature of Client Advisor,Signature of supervisor, by correspondence, in a personal meeting, done by a third party)"/>
+    <f5e7ae3c-ad7b-498a-b4fa-f67d00d8e4f0
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_For internal bank use only"
+        sling:message="For internal bank use only"/>
+    <_x0038_ade757c-deb6-4aff-a506-3cdb75ae0329
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>For internal bank use only&lt;/b>&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;b>For internal bank use only&lt;/b>&lt;/p>&#xa;"/>
+    <db2af774-942c-475b-8e68-7703db41a9ce
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Opening of new business relationship: Identification of the contracting partner&lt;/p>&#xa;"
+        sling:message="&lt;p>Opening of new business relationship: Identification of the contracting partner&lt;/p>&#xa;"/>
+    <_x0037_9c7c626-8e21-4b5d-b1b7-4ee01c879fca
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_by correspondence"
+        sling:message="par correspondance"/>
+    <_x0038_7706ddd-002e-4d23-bab8-e4f39c258dec
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_in a personal meeting"
+        sling:message="lors d'un entretien personnel"/>
+    <_x0039_f216696-7bfc-4db4-b8f5-c064ffb5c9f0
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Customer's Adviser signature"
+        sling:message="Customer's Adviser signature"/>
+    <_x0031_c3a96b6-fcba-4b75-8d41-803f1316deee
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Signature of the supervisor required for Multinationals, Recovery and all GESM/GEM clients outside Switzerland.&lt;/p>&#xa;"
+        sling:message="&lt;p>Signature of the supervisor required for Multinationals, Recovery and all GESM/GEM clients outside Switzerland.&lt;/p>&#xa;"/>
+    <_x0034_55fbcc1-09c0-4d22-87b7-69fed8288547
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU ref."
+        sling:message="OU ref."/>
+    <_x0039_876fd32-e5c4-486a-b691-7defe150876c
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Supervisor's signature"
+        sling:message="Supervisor's signature"/>
+    <cd8db846-01bf-4c3b-9b18-fdfa0f9a96dc
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please print and sign"
+        sling:message="Please print and sign"/>
+    <_x0033_3662e05-ce03-48fd-9833-88edddd3081b
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_done by a third party (e.g. FIM) based on the present Delegation Agreement"
+        sling:message="done by a third party (e.g. FIM) based on the present Delegation Agreement"/>
+    <d4ba8322-5dc7-4a4b-8224-3e22f15a287c
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Opening of additional business relationship within BC CH&lt;/p>&#xa;"
+        sling:message="&lt;p>Opening of additional business relationship within BC CH&lt;/p>&#xa;"/>
+</jcr:root>

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="es"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_InternalBankUse_OURef_Signature_ClientAdvisorSignature_SupervisorSignature/jcr:content/guideContainer/assets/dictionary">
+    <fd__x003c_p_x0020_style_x003d__x0022_-1607116145
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p style=&quot;text-align: left;&quot;>Signature of supervisor required for&lt;br>&#xa;WM GEM &amp;amp; WM Europe clients.&lt;/p>&#xa;"
+        sling:message="&lt;p style=&quot;text-align: left;&quot;>Signature of supervisor required for&lt;br>&#xa;WM GEM &amp;amp; WM Europe clients.&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e__x0026_nbsp_x003b__x003c_1647188484
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&amp;nbsp;&lt;/p>&#xa;&lt;p>Signature(s) verified&lt;br>&#xa;&lt;/p>&#xa;"
+        sling:message="&lt;p>&amp;nbsp;&lt;/p>&#xa;&lt;p>Signature(s) verified&lt;br>&#xa;&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e__x0026_nbsp_x003b__x003c_964578163
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&amp;nbsp;&lt;/p>&#xa;&lt;p>Document Receipt&lt;br>&#xa;&lt;/p>&#xa;"
+        sling:message="&lt;p>&amp;nbsp;&lt;/p>&#xa;&lt;p>Document Receipt&lt;br>&#xa;&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Documen332201612
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Document Receipt&lt;/p>&#xa;"
+        sling:message="&lt;p>Entrada del documento&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Signatu-180134287
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Signature(s) verified&lt;/p>&#xa;"
+        sling:message="&lt;p>Firma(s) verificada(s)&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Signatu-191915044
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Signature of supervisor required for WM GEM &amp;amp; WM Europe clients&lt;/p>&#xa;"
+        sling:message="&lt;p>Visado del superior necesario para todos los clientes de WM GEM y WM Europe.&quot;&lt;/p>&#xa;"/>
+    <fd_Company_Entity
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Company/Entity"
+        sling:message="Razón social"/>
+    <fd_Date
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date"
+        sling:message="Fecha"/>
+    <fd_EFORMS-6342_x0020_For_x0020_internal_x0020_bank_x0020_use_x0020_only_x0028_No_x0020_Signa
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6342 For internal bank use only(No Signature Text)"
+        sling:message="EFORMS-6342 Solo para uso interno del banco (texto sin firma)"/>
+    <fd_EFORMS-636-1601563625
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6365 Internal Bank Use(Signature,Signature of Client Advisor,Signature of supervisor)"
+        sling:message="EFORMS-6365 Uso interno del banco (firma, firma del asesor personal, firma del supervisor)"/>
+    <fd_EFORMS-6377_x0020_Personal_x0020_Details_x0020__x0028_Last_x0020_Name_x002c__x0020_First_x0025_20
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6377 Personal Details (Last Name, First Name, Company)"
+        sling:message="EFORMS-6377 Datos personales (apellido(s), nombre(s), razón social)"/>
+    <fd_EFORMS-9276_x0020_Personal_x0020_Details_x0020__x0028_Last_x0020_Name_x002c__x0020_First_x0025_20
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-9276 Personal Details (Last Name, First Name)"
+        sling:message="EFORMS-9276 Datos personales (Apellido(s), nombre(s), razón social)"/>
+    <fd_First_x0020_name_x0028_s_x0029_
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:message="Nombre(s)"/>
+    <fd_For_x0020_intern-1853188803
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_For internal bank use only"
+        sling:message="Solo para uso interno del banco"/>
+    <fd_Individual
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:message="Persona"/>
+    <fd_Last_x0020_name
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:message="Apellidos(s)"/>
+    <fd_Name
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:message="Nombre"/>
+    <fd_OU_x0020_ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU ref."
+        sling:message="UO-Ref."/>
+    <fd_OU-Ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU-Ref."
+        sling:message="Ref. UO."/>
+    <fd_Please_x0020_ent1338578760
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Por favor, inserte la fecha en el formato dd.mm.aaaa (p. ej. 01.01.2020)"/>
+    <fd_Signature
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature"
+        sling:message="Firma"/>
+    <fd_Signature_x0020_-2037226551
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of supervisor"
+        sling:message="Firma del supervisor"/>
+    <fd_Signature_x0020_1375071308
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of client advisor"
+        sling:message="Firma del asesor personal"/>
+</jcr:root>

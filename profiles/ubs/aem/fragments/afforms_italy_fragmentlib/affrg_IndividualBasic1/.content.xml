@@ -4,14 +4,13 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-03-18T06:57:20.616+01:00"
-        cq:lastModifiedBy="t831640"
+        cq:lastModified="{Date}2026-05-22T20:57:43.645+02:00"
+        cq:lastModifiedBy="admin"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="IT Fragment - Individual Basic 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

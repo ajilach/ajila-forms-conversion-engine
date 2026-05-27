@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="fr-ch"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_InternalBankUse_OURef_SignatureOfClientAdvisorSignature_SupervisorSignature_ByCorresepnpondence_InPersonalMeeting_ThirdParty/jcr:content/guideContainer/assets/dictionary">
+    <fd__x003c_p_x003e__x003c_b_x003e_For_x0020_999070927
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>For internal bank use only&lt;/b>&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;b>Partie réservée à la banque&lt;/b>&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Opening-223390960
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Opening of additional business relationship within BC CH&lt;/p>&#xa;"
+        sling:message="&lt;p>Ouverture relation d'affaires supplémentaire BC CH&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Opening-515453186
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Opening of new business relationship: Identification of the contracting partner&lt;/p>&#xa;"
+        sling:message="&lt;p>Nouvelle ouverture: Identification du cocontractant&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Signatu-776826892
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Signature of the supervisor required for Multinationals, Recovery and all GESM/GEM clients outside Switzerland.&lt;/p>&#xa;"
+        sling:message="&lt;p>Visa du supérieur indispensable pour Multinationals, Recovery et tous les clients GEM hors Suisse.&lt;/p>&#xa;"/>
+    <fd_by_x0020_corresp1482871427
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_by correspondence"
+        sling:message="par correspondance"/>
+    <fd_by_x0020_correspondence
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_by correspondence"
+        sling:message="par correspondance"/>
+    <fd_Customer_x0027_s-1450572404
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Customer's Adviser signature"
+        sling:message="Signature du conseiller à la clientèle"/>
+    <fd_done_x0020_by_x0020_a_x0020_-1444652258
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_done by a third party (e.g. FIM) based on the present Delegation Agreement"
+        sling:message="done by a third party (e.g. FIM) based on the present Delegation Agreement"/>
+    <fd_done_x0020_by_x0020_a_x0020_third_x0020_party_x0020__x0028_e.g._x0020_FIM_x0029__x0020_based_x0020_on_x0020_the_x0020_present_x0020_Delegation_x0020_Agreement
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_done by a third party (e.g. FIM) based on the present Delegation Agreement"
+        sling:message="par un tiers (p. ex. FIM) en possession d'un pouvoir de représentation"/>
+    <fd_EFORMS-107-151912140
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-10755 Internal Bank Use(Signature,Signature of Client Advisor,Signature of supervisor, by correspondence, in a personal meeting, done by a third party)"
+        sling:message="EFORMS-10755 Partie réservée à la banque (Signature, signature du conseiller à la clientèle, signature du supérieur hiérarchique, par correspondance, lors d'un entretien personnel, par un tiers)"/>
+    <fd_For_x0020_intern-1853188803
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_For internal bank use only"
+        sling:message="Partie réservée à la banque"/>
+    <fd_in_x0020_a_x0020_perso1986085141
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_in a personal meeting"
+        sling:message="lors d'un entretien personnel"/>
+    <fd_in_x0020_a_x0020_personal_x0020_meeting
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_in a personal meeting"
+        sling:message="lors d'un entretien personnel"/>
+    <fd_OU_x0020_ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU ref."
+        sling:message="UO-Réf."/>
+    <fd_OU-Ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU-Ref."
+        sling:message="Réf. UO"/>
+    <fd_Please_x0020_pri-451955377
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please print and sign"
+        sling:message="Imprimer et signer"/>
+    <fd_Supervisor1902992972
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Supervisor's signature"
+        sling:message="Visa du supérieur hiérarchique"/>
+</jcr:root>

@@ -4,11 +4,11 @@
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
     sling:basename="/content/forms/af/afforms_ubs_fragmentlib/affrg_IndividualBasic1/jcr:content/guideContainer/assets/dictionary">
-    <_x0036_a0d9591-cb5e-4fcc-b202-33b0c8e297f5
+    <d817ba45-c57d-4483-aec6-30de0703b961
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
-        sling:key="fd_CH Fragment - Individual Basic 1"
-        sling:message="CH Fragment - Individual Basic 1"/>
+        sling:key="fd_UBS Fragment - Individual Basic 1"
+        sling:message="UBS Fragment - Individual Basic 1"/>
     <fd_Company_x0025_2FEntity
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

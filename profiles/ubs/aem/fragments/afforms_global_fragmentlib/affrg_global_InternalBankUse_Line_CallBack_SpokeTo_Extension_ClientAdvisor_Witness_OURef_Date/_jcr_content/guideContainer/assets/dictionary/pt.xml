@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="pt"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_InternalBankUse_Line_CallBack_SpokeTo_Extension_ClientAdvisor_Witness_OURef_Date/jcr:content/guideContainer/assets/dictionary">
+    <fd__x0025_2ASignature-2126366831
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_*Signature of witness (if applicable)"
+        sling:message="*Assinatura da testemunha (se aplicável)"/>
+    <fd__x003c_p_x003e__x003c_b_x003e_Inte-1460046134
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>Internal signoff by&lt;/b>&lt;/p>"
+        sling:message="&lt;p>&lt;b>Aprovação interna por&lt;/b>&lt;/p>"/>
+    <fd__x003c_p_x003e_Physica1031999287
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Physical meeting / Call back details&lt;/p>"
+        sling:message="&lt;p>Detalhes da reunião presencial / retorno da chamada&lt;/p>"/>
+    <fd_Call-back_x0020_-920354345
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Call-back time"
+        sling:message="Hora do retorno da chamada"/>
+    <fd_Call-back_x0020_-920838472
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Call-back date"
+        sling:message="Data do retorno da chamada"/>
+    <fd_Date_x0020__x0028_dd.m235768755
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date (dd.mm.yyyy)"
+        sling:message="Data (dd.mm.aaaa)"/>
+    <fd_EFORMS-638855181467
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6380 Internal Bank Use(Signature Of Client Advisor, Signature Of Witness)"
+        sling:message="EFORMS-6380 Internal Bank Use(Signature Of Client Advisor, Signature Of Witness)"/>
+    <fd_Extension_x0025_2F-695031713
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Extension/Venue"
+        sling:message="Ramal/local"/>
+    <fd_For_x0020_intern-1853188803
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_For internal bank use only"
+        sling:message="Apenas para uso interno do banco"/>
+    <fd_Line
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Line"
+        sling:message="Linha"/>
+    <fd_Name_x0020_of_x0020_cl-340860001
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of client advisor"
+        sling:message="Nome do consultor de clientes"/>
+    <fd_Name_x0020_of_x0020_wi1969526917
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Name of witness"
+        sling:message="Nome da testemunha"/>
+    <fd_OU_x0020_ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU ref."
+        sling:message="Ref. OU"/>
+    <fd_Physical_x0020_meeting_x0025_2A
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Physical meeting*"
+        sling:message="Reunião presencial*"/>
+    <fd_Please_x0020_ent1338578760
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Insira a data usando o formato dd.mm.aaaa (por exemplo, 01.01.2020)"/>
+    <fd_Registered
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Registered"
+        sling:message="Registrado"/>
+    <fd_Signature_x0020_1375071308
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Signature of client advisor"
+        sling:message="Assinatura do consultor de clientes"/>
+    <fd_Spoke_x0020_to
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Spoke to"
+        sling:message="Falou com"/>
+</jcr:root>

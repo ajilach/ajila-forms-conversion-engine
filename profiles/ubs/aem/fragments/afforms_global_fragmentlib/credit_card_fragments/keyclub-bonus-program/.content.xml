@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2025-09-09T13:26:22.343+02:00"
+        cq:lastModifiedBy="admin"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##9423&quot;}"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="UBS KeyClub Bonus Program"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel
+                        jcr:created="{Date}2024-11-06T18:25:41.509+01:00"
+                        jcr:createdBy="admin"
+                        jcr:lastModified="{Date}2024-12-05T11:38:19.191+01:00"
+                        jcr:lastModifiedBy="admin"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        dorExcludeDescription="true"
+                        dorExcludeTitle="true"
+                        guideNodeClass="guidePanel"
+                        name="PN_UbsKeyClubBonusProgram"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="1"
+                            dorLayoutType="columnar"
+                            dorNumCols="12"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <textdraw
+                                fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##panel##items##textdraw##_value##702&quot;}"
+                                jcr:created="{Date}2024-11-06T18:28:11.901+01:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2024-12-05T11:38:41.725+01:00"
+                                jcr:lastModifiedBy="admin"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                _value="&lt;p>&lt;b>UBS KeyClub bonus program&lt;/b>&amp;nbsp;(excl. Optimus Foundation Charity Card)&lt;/p>&#xa;"
+                                dorColspan="9"
+                                guideNodeClass="guideTextDraw"
+                                name="ST_KeyClubBonusProgram_Title"
+                                textIsRich="true">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="9"/>
+                                </cq:responsive>
+                            </textdraw>
+                            <textdraw_811388698
+                                fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##panel##items##textdraw_811388698##_value##8555&quot;}"
+                                jcr:created="{Date}2024-11-29T10:12:33.887+01:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2024-12-05T11:38:52.756+01:00"
+                                jcr:lastModifiedBy="admin"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                _value="&lt;p>free of charge&lt;/p>&#xa;"
+                                dorColspan="3"
+                                guideNodeClass="guideTextDraw"
+                                name="ST_KeyClubBonusProgram_Cost"
+                                textIsRich="true">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="3"/>
+                                </cq:responsive>
+                            </textdraw_811388698>
+                            <radiobutton_copy_cop
+                                fd:translationIds="\{&quot;jcr:title&quot;:&quot;guideContainer##rootPanel##items##step_1##items##panel1730782438416##items##panel_339271880##items##radiobutton_copy##jcr:title##2875&quot;,&quot;options&quot;:&quot;guideContainer##rootPanel##items##step_1##items##panel1730782438416##items##panel_339271880##items##radiobutton_copy##options##5413&quot;}"
+                                jcr:lastModified="{Date}2024-12-05T11:39:02.114+01:00"
+                                jcr:lastModifiedBy="admin"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
+                                alignment="guideFieldVerticalAlignment"
+                                css="widget_ajila_forms_radiobutton"
+                                dorColspan="12"
+                                dorFieldStyling="Default"
+                                guideNodeClass="guideRadioButton"
+                                hideTitle="true"
+                                name="RB_KeyClubBonusProgram"
+                                options="[0=&lt;p>I am already a UBS KeyClub member and therefore also automatically collect points with these cards.&lt;/p>,1=&lt;p>I am not yet a UBS KeyClub member and would like to take part in the UBS bonus program.&lt;/p>&lt;p>The Conditions of Participation are published on the Internet at &lt;a href=&quot;https://www.ubs.com/ch/en/private/keyclub.html&quot; target=&quot;_blank&quot; _rte_href=&quot;https://www.ubs.com/ch/en/private/keyclub.html&quot;>&lt;b>www.ubs.com/keyclub&lt;/b>&lt;/a>&amp;nbsp;and can also be ordered from UBS KeyClub Customer Service (toll-free 0800 810 600). By using my UBS Credit Card I recognize these conditions as binding. Membership is free of charge.&lt;/p>&lt;p>I agree that the particulars I have given may be used by the bank for marketing purposes.&lt;/p>]"
+                                richTextOptions="true"
+                                textIsRich="[true,true,true,true,true]">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts jcr:primaryType="nt:unstructured"/>
+                            </radiobutton_copy_cop>
+                        </items>
+                    </panel>
+                </items>
+            </rootPanel>
+            <signerInfo
+                jcr:primaryType="nt:unstructured"
+                firstSignerFormFiller="{Boolean}false"
+                workflowType="SEQUENTIAL">
+                <signer0
+                    jcr:primaryType="nt:unstructured"
+                    signerTitle="Signer One"/>
+            </signerInfo>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

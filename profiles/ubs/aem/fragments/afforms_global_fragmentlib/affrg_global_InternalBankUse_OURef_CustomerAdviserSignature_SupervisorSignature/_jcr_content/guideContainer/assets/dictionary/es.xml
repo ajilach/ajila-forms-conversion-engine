@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="es"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_InternalBankUse_OURef_CustomerAdviserSignature_SupervisorSignature/jcr:content/guideContainer/assets/dictionary">
+    <fd__x003c_p_x003e_Signatu-180134287
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Signature(s) verified&lt;/p>&#xa;"
+        sling:message="&lt;p>Firma(s) verificada(s)&lt;/p>&#xa;"/>
+    <fd__x003c_p_x003e_Signatu-351930803
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Signature of the supervisor required for Multinationals, Recovery and all WMI clients outside Switzerland.&lt;/p>&#xa;"
+        sling:message="&lt;p>Visado del superior necesario para Multinationals, Recovery y todos los clientes WMI fuera de Suiza.&lt;/p>&#xa;"/>
+    <fd_Customer_x0020_A-1360222452
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Customer Adviser's signature"
+        sling:message="Firma del asesor personal"/>
+    <fd_EFORMS-7901545051144
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-7902 Internal Bank Use (Signature of Customer Adviser, Signature of Supervisor)"
+        sling:message="EFORMS-7902 Uso interno del banco (firma del asesor personal, firma del superior)"/>
+    <fd_For_x0020_intern-1853188803
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_For internal bank use only"
+        sling:message="Solo para uso interno del banco"/>
+    <fd_OU_x0020_ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU ref."
+        sling:message="UO-Ref."/>
+    <fd_OU-Ref.
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_OU-Ref."
+        sling:message="Ref. UO"/>
+    <fd_Supervisor1902992972
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Supervisor's signature"
+        sling:message="Firma del superior"/>
+</jcr:root>

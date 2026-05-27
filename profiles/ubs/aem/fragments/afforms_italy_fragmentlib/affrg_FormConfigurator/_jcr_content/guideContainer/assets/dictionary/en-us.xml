@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="en-us"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_italy_fragmentlib/affrg_FormConfigurator/jcr:content/guideContainer/assets/dictionary">
+    <_x0038_80f7162-54b5-4931-b3ae-abf6dfc7731e
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_IT - Fragment - Form configurator"
+        sling:message="IT - Fragment - Form configurator"/>
+    <_x0038_19eef1c-d358-4b46-b313-b6360eff7e76
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Form Configurator&lt;/p>"
+        sling:message="&lt;p>Form Configurator&lt;/p>"/>
+    <dc135f74-acca-4e75-86bb-73773cc9602e
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Tipo"
+        sling:message="Tipo"/>
+    <_x0035_e948fc9-8771-4926-95c9-f590a293c53f
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Individual"
+        sling:message="Individual"/>
+    <dbfd7bc2-f651-44be-95c5-e4ce69dce157
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Legal Entity"
+        sling:message="Legal Entity"/>
+    <_x0034_ba2793f-1bc6-4c8b-8f12-acd31ad270b8
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_FIM Signature verification"
+        sling:message="FIM Signature verification"/>
+</jcr:root>

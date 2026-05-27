@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="it"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_italy_fragmentlib/affrg_italy_internalbankuse/jcr:content/guideContainer/assets/dictionary">
+    <_x0038_d425e21-40e2-4e51-a067-2a4d832e7619
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_For internal bank use only"
+        sling:message="For internal bank use only"/>
+    <bb917f61-e7ac-4181-99e9-93b64f039359
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="guideContainer##rootPanel##items##panel_copy_copy_copy##items##textdraw_copy_copy##_value##1277"
+        sling:message="&lt;p style=&quot;text-align: left;&quot;>Signature(s) verified / Signed in my presence&lt;/p>"/>
+    <_x0032_06bdfe7-c244-44d8-913f-33f51cc4c55a
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>Spazio riservato al Client Advisory incaricato della identificazione ai sensi del D.Lgs. 231/2007.&lt;/p>&#xa;&lt;p>Dichiaro di aver identificato la/e persona/e sopra indicata/e, che ha/hanno apposto la propria firma in mia presenza e i cui dati corrispondono a quelli riportati nel documento a me esibito.&lt;/p>"
+        sling:message="&lt;p>Spazio riservato al Client Advisory incaricato della identificazione ai sensi del D.Lgs. 231/2007.&lt;/p>&#xa;&lt;p>Dichiaro di aver identificato la/e persona/e sopra indicata/e, che ha/hanno apposto la propria firma in mia presenza e i cui dati corrispondono a quelli riportati nel documento a me esibito.&lt;/p>"/>
+    <b9c7202c-6f9d-4e56-bf0a-0f269bbe417a
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="guideContainer##rootPanel##items##panel##items##textbox_834822554_co##jcr:title##996"
+        sling:message="Nome e cognome"/>
+    <_x0032_c2f7bed-1c5a-4e4c-a381-67ca45569cad
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="guideContainer##rootPanel##items##panel##items##textbox_copy##jcr:title##1601"
+        sling:message="Firma"/>
+</jcr:root>

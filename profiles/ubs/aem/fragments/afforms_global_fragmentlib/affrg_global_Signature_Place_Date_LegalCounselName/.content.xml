@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2025-09-15T16:12:46.786+02:00"
+        cq:lastModifiedBy="t649798"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        jcr:language="en"
+        jcr:mixinTypes="[]"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="EFORMS-6378 Legal Counsel Signature (Signature, Place, Date, Name)"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_1950325719_cop
+                        jcr:created="Fri Jul 24 2020 09:44:34 GMT+0200"
+                        jcr:createdBy="t649798"
+                        jcr:lastModified="{Date}2020-09-11T06:18:42.577+02:00"
+                        jcr:lastModifiedBy="t649798"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        completionExpReq="{Boolean}false"
+                        dorExcludeDescription="true"
+                        dorExcludeTitle="true"
+                        guideNodeClass="guidePanel"
+                        name="panel_legalCounselSignature"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="3"
+                            dorLayoutType="columnar"
+                            dorNumCols="6"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                            <textdraw
+                                jcr:created="Fri Jul 24 2020 09:47:28 GMT+0200"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2021-11-17T09:38:31.012+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                _value="&lt;p>&lt;br>&#xa;&amp;nbsp;&lt;/p>&#xa;"
+                                colspan="1"
+                                dorColspan="3"
+                                guideNodeClass="guideTextDraw"
+                                name="whitespace"
+                                textIsRich="true"
+                                visible="{Boolean}false">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="7"/>
+                                </cq:responsive>
+                            </textdraw>
+                            <signature
+                                jcr:created="{Date}2020-09-01T11:46:18.813+02:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2020-09-11T06:20:09.834+02:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Signature of tax/legal counsel"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/signature"
+                                aspectRatio="6.8888"
+                                dorColspan="3"
+                                guideNodeClass="guideScribble"
+                                name="textbox_genericSignature"
+                                textIsRich="[true,true]"
+                                visible="{Boolean}false">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="5"/>
+                                </cq:responsive>
+                            </signature>
+                            <textbox
+                                jcr:created="Fri Jul 24 2020 09:45:27 GMT+0200"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2021-11-17T09:38:14.774+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Place"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila-forms-ubs-textbox"
+                                dorColspan="2"
+                                guideNodeClass="guideTextBox"
+                                name="textbox_genericPlace"
+                                textIsRich="[true,true,true]">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="4"/>
+                                </cq:responsive>
+                            </textbox>
+                            <datepicker
+                                jcr:created="Fri Jul 24 2020 09:45:32 GMT+0200"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2021-11-17T09:38:23.625+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Date (dd.mm.yyyy)"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                css="widget_ajila_forms_datepicker"
+                                dorColspan="1"
+                                guideNodeClass="guideDatePicker"
+                                name="datepicker_genericDate"
+                                textIsRich="[true,true]"
+                                validatePictureClause="date{YYYY-MM-DD}"
+                                validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                validationPatternType="custom"
+                                yearRangeFrom="100"
+                                yearRangeTo="10">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="3"/>
+                                </cq:responsive>
+                            </datepicker>
+                            <textbox_860513376
+                                jcr:created="Fri Jul 24 2020 09:47:35 GMT+0200"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2021-07-09T05:18:29.598+02:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Name of tax/legal counsel"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila-forms-ubs-textbox"
+                                displayIsSameAsValidate="true"
+                                displayPatternType="custom"
+                                displayPictureClause="^([^0-9]*)$"
+                                dorColspan="3"
+                                guideNodeClass="guideTextBox"
+                                mandatory="true"
+                                name="TXT_LegalCounselName_Signature"
+                                textIsRich="[true,true,true]">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="5"/>
+                                </cq:responsive>
+                            </textbox_860513376>
+                        </items>
+                    </panel_1950325719_cop>
+                </items>
+            </rootPanel>
+            <assets jcr:primaryType="nt:unstructured">
+                <dictionary jcr:primaryType="nt:unstructured">
+                    <fr-ch/>
+                    <es-es/>
+                    <de-ch/>
+                    <it-ch/>
+                    <en-us/>
+                    <zh-tw/>
+                    <zh-hk/>
+                    <ko-kr/>
+                    <es/>
+                    <pt/>
+                </dictionary>
+            </assets>
+            <signerInfo
+                jcr:primaryType="nt:unstructured"
+                firstSignerFormFiller="{Boolean}false"
+                workflowType="SEQUENTIAL">
+                <signer0
+                    jcr:primaryType="nt:unstructured"
+                    signerTitle="Signer One"/>
+            </signerInfo>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

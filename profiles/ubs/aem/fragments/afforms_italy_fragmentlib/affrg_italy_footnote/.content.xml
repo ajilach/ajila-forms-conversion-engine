@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-03-31T10:34:32.272+02:00"
-        cq:lastModifiedBy="t831640"
+        cq:lastModified="{Date}2026-05-26T14:12:58.868+02:00"
+        cq:lastModifiedBy="t406261"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:isCheckedOut="{Boolean}true"
         jcr:language="en"
@@ -13,8 +13,7 @@
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-32528 Footnote"
         jcr:uuid="21875e34-f0aa-4f8e-aeca-2ba0037c8bfe"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="fr"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:OrderedFolder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_print_blank_incomplete/jcr:content/guideContainer/assets/dictionary">
+    <c43e8a3e-f1ae-4eb1-a2e6-20c17847e7b3
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-30401 Print blank and Incomplete"
+        sling:message="EFORMS-30401 Print blank and Incomplete"/>
+    <d5869a89-3c2a-4bb7-bbab-601330a3b468
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Format"
+        sling:message="Format"/>
+    <_x0038_94ed4c8-08c9-4ade-9f10-d0fe7e807731
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_CDOK"
+        sling:message="CDOK"/>
+    <_x0034_20ed19f-beca-49b2-8508-bba81d05e7a9
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Form code"
+        sling:message="Form code"/>
+    <_x0034_5da25cd-b327-4c48-8f2b-9de6d2b67335
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you do not have all client information, please activate incomplete form mode at the top right. If you need to save an editable PDF form or PDF draft version, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>.&lt;br>&#xa;(Please note that the classic PDF will soon be fully replaced by this digital form.)&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you do not have all client information, please activate incomplete form mode at the top right. If you need to save an editable PDF form or PDF draft version, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>.&lt;br>&#xa;(Please note that the classic PDF will soon be fully replaced by this digital form.)&lt;/p>&#xa;"/>
+</jcr:root>

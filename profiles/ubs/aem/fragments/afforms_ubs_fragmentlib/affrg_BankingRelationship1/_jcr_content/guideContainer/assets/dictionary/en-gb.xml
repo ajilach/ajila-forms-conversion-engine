@@ -19,11 +19,6 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_Clearing no."
         sling:message="Clearing no."/>
-    <_x0030_fda6844-72d2-4017-8565-8b9e65da277b
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_Clearing number"
-        sling:message="Clearing number"/>
     <c331ae84-74f8-42c7-81b8-af652766543c
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
@@ -34,11 +29,6 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_Account no."
         sling:message="Account no."/>
-    <cddd1dd6-4428-4d19-818b-6831f6b9e1c1
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_Account number"
-        sling:message="Account number"/>
     <_x0036_1c86a57-5349-4abf-9d5d-c393f1e6cc93
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

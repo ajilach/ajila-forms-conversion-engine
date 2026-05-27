@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="en-us"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="nt:folder">
+    <fd_First_x0020_name_x0028_s_x0029_
+        jcr:primaryType="sling:MessageEntry"
+        sling:message="First name(s)"/>
+    <fd_Last_x0020_name
+        jcr:primaryType="sling:MessageEntry"
+        sling:message="Last name"/>
+</jcr:root>

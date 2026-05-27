@@ -4,15 +4,14 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-03-25T08:54:44.930+01:00"
+        cq:lastModified="{Date}2026-05-19T07:59:21.513+02:00"
         cq:lastModifiedBy="t831552"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##2110&quot;}"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="DE Fragment - Client Basic 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

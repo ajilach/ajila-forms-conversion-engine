@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2022-02-21T16:01:26.248+01:00"
+        cq:lastModifiedBy="t649798"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        jcr:mixinTypes="[]"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="\[DEPRECATED] EFORMS-6360 Change of Name(Title, Last Name,First Name,Additional Designation)"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_1328602887_cop_1303593075
+                        jcr:created="{Date}2020-10-01T08:36:04.228+02:00"
+                        jcr:createdBy="t649798"
+                        jcr:lastModified="{Date}2020-11-25T10:55:55.530+01:00"
+                        jcr:lastModifiedBy="t649798"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        dorExcludeDescription="true"
+                        dorExcludeTitle="true"
+                        guideNodeClass="guidePanel"
+                        name="panel_changeOfName"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="1"
+                            dorLayoutType="columnar"
+                            dorNumCols="2"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <dropdownlist
+                                jcr:created="{Date}2020-11-10T06:31:06.360+01:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2020-11-10T06:34:42.243+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Address / Title"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/dropdownlist"
+                                css="widget_ajila_forms_dropdownlist"
+                                guideNodeClass="guideDropDownList"
+                                name="dropdown_addressTitle"
+                                options="[0=Mr.,1=Ms.,2=Mrs.,3=Dr.]"
+                                textIsRich="[true,true]">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="6"/>
+                                </cq:responsive>
+                            </dropdownlist>
+                        </items>
+                    </panel_1328602887_cop_1303593075>
+                    <panel_1328602887_cop
+                        jcr:created="{Date}2020-10-01T08:36:04.228+02:00"
+                        jcr:createdBy="t649798"
+                        jcr:lastModified="{Date}2020-10-01T08:36:28.797+02:00"
+                        jcr:lastModifiedBy="t649798"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        dorExcludeDescription="true"
+                        dorExcludeTitle="true"
+                        guideNodeClass="guidePanel"
+                        name="panel_changeOfName"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="1"
+                            dorLayoutType="columnar"
+                            dorNumCols="2"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <textbox_85755995
+                                jcr:created="{Date}2020-08-04T06:18:10.999+02:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2021-02-24T04:44:11.458+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Last name"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila-forms-ubs-textbox"
+                                displayIsSameAsValidate="true"
+                                displayPatternType="custom"
+                                displayPictureClause="^([^0-9]*)$"
+                                guideNodeClass="guideTextBox"
+                                mandatory="true"
+                                name="textbox_lastName"
+                                textIsRich="[true,true,true]">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="6"/>
+                                </cq:responsive>
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.panel_changeOfName.textbox_lastName&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;TXT_TempVal.value = textbox_firstName.value + \\&quot; \\&quot; + this.value;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </textbox_85755995>
+                            <textbox_487841570
+                                jcr:created="{Date}2020-08-04T06:18:15.567+02:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2020-11-09T10:00:33.123+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="First name(s)"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila-forms-ubs-textbox"
+                                displayIsSameAsValidate="true"
+                                displayPatternType="custom"
+                                displayPictureClause="^([^0-9]*)$"
+                                guideNodeClass="guideTextBox"
+                                mandatory="true"
+                                name="textbox_firstName"
+                                textIsRich="[true,true,true]">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="6"/>
+                                </cq:responsive>
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_TempVal.value = this.value + \\&quot; \\&quot; + textbox_lastName.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.panel_changeOfName.textbox_firstName&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </textbox_487841570>
+                            <textbox_78481659
+                                jcr:created="{Date}2020-08-04T06:18:20.686+02:00"
+                                jcr:createdBy="t649798"
+                                jcr:lastModified="{Date}2020-11-10T06:33:16.535+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Additional designation"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                autofillFieldKeyword="name"
+                                css="widget_ajila-forms-ubs-textbox"
+                                guideNodeClass="guideTextBox"
+                                name="textbox_designation"
+                                textIsRich="[true,true,true]">
+                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                    <default
+                                        jcr:primaryType="nt:unstructured"
+                                        offset="0"
+                                        width="6"/>
+                                </cq:responsive>
+                            </textbox_78481659>
+                        </items>
+                    </panel_1328602887_cop>
+                </items>
+            </rootPanel>
+            <assets jcr:primaryType="nt:unstructured">
+                <dictionary jcr:primaryType="nt:unstructured">
+                    <en-us/>
+                    <zh-tw/>
+                    <zh-hk/>
+                    <ko-kr/>
+                    <es/>
+                    <fr-ch/>
+                    <it-ch/>
+                    <de-ch/>
+                    <pt/>
+                </dictionary>
+            </assets>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

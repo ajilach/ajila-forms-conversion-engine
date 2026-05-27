@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="es"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_PersonalDetails_IndividualCompanyRB/jcr:content/guideContainer/assets/dictionary">
+    <fd__x0025_5BDEPRECATE136324960
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_[DEPRECATED] EFORMS-19365 Personal Details (RB Individual or Company/Entity)"
+        sling:message="\[DEPRECATED] EFORMS-19365 Personal Details (RB Individual or Company/Entity)"/>
+    <fd_Company_x0025_2FEntity
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Company/Entity"
+        sling:message="Razón social"/>
+    <fd_EFORMS-193-1916537423
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-19365 Personal Details (RB Individual or Company/Entity)"
+        sling:message="EFORMS-19365 Personal Details (RB Individual or Company/Entity)"/>
+    <fd_Individual
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Individual"
+        sling:message="Persona"/>
+</jcr:root>

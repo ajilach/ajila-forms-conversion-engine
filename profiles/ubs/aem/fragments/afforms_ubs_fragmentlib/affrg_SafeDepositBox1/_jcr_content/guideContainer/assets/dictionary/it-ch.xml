@@ -64,11 +64,6 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_001"
         sling:message="001"/>
-    <d49d7de0-5a2c-499e-8fb7-6329db1d147c
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_Safe Depoist Box Number"
-        sling:message="Safe Depoist Box Number"/>
     <e91d49f4-7e55-4e2a-ab2f-99e8929590b5
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

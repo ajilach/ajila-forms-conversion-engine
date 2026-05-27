@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="it-ch"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_BeneficialOwner_Entity_Address_DateOfIncorporation_PlaceOfIncorporation/jcr:content/guideContainer/assets/dictionary">
+    <fd_Date_x0020_of_x0020_In-885524180
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Date of Incorporation"
+        sling:message="Data dell'incorporazione"/>
+    <fd_EFORMS-6351203921856
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-6359 Beneficial Owner(Entity,Address,Date of Incorporation,Place of Incorporation)"
+        sling:message="EFORMS-6359 Avente diritto economico (entità, indirizzo, data dell'incorporazione, luogo dell'incorporazione)"/>
+    <fd_Entity_x0020__x0028_he-1990214955
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Entity (hereinafter the beneficial owner)"
+        sling:message="Entità (di seguito avente diritto economico)"/>
+    <fd_Place_x0020_of_x0020_I613951795
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Place of Incorporation"
+        sling:message="Luogo dell'incorporazione"/>
+    <fd_Please_x0020_ent1338578760
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+        sling:message="Si prega di inserire la data nel formato gg.mm.aaaa (ad es. 01.01.2020)"/>
+</jcr:root>

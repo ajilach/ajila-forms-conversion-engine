@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2025-12-05T12:23:17.400+01:00"
+        cq:lastModifiedBy="t518977"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        jcr:mixinTypes="[]"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="EFORMS-30401 Print blank and Incomplete"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <guidetextbox_copy_co
+                        jcr:created="{Date}2021-05-03T03:13:06.386+02:00"
+                        jcr:createdBy="t649612"
+                        jcr:lastModified="{Date}2021-11-10T09:22:22.633+01:00"
+                        jcr:lastModifiedBy="t654720"
+                        jcr:primaryType="nt:unstructured"
+                        jcr:title="Format"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                        _value="XFA"
+                        autofillFieldKeyword="name"
+                        css="widget_ajila-forms-ubs-textbox"
+                        guideNodeClass="guideTextBox"
+                        name="TXT_Format"
+                        textIsRich="[true,true,true]"
+                        visible="{Boolean}false">
+                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                        <fd:scripts
+                            fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.dorExclusion = true;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.TXT_Format&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:false}]"
+                            jcr:primaryType="nt:unstructured"/>
+                    </guidetextbox_copy_co>
+                    <guidetextbox_1349595
+                        jcr:created="{Date}2021-05-03T03:19:41.153+02:00"
+                        jcr:createdBy="t649612"
+                        jcr:lastModified="{Date}2021-06-09T05:07:22.780+02:00"
+                        jcr:lastModifiedBy="t650214"
+                        jcr:primaryType="nt:unstructured"
+                        jcr:title="CDOK"
+                        sling:resourceType="fd/af/components/guidetextbox"
+                        autofillFieldKeyword="name"
+                        guideNodeClass="guideTextBox"
+                        name="TXT_CDOK"
+                        textIsRich="[true,true,true]"
+                        visible="{Boolean}false">
+                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                        <fd:scripts
+                            fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var formMetadata = window.com.ajila.forms.ubs.getFormMetadata();\\nvar currLanguage;\\ncurrLanguage = formMetadata.language || 'EN';\\ntry {\\n  if(txtLanguage.visible) {\\n    currLanguage = txtLanguage.value || 'EN';\\n  } \\n} catch (e) {}\\nvar currEntity = formMetadata.mandator || '001';\\ncurrLanguage = (currLanguage.toLowerCase() == \\&quot;es\\&quot; ? \\&quot;SP\\&quot; : currLanguage);\\nvar newText = this.parent.INFO_printBlank.myInfo2.value.replace(\\&quot;AAAA\\&quot;\, TXT_FormCode.value).replace(\\&quot;language=DE\\&quot;\, \\&quot;language=\\&quot; + currLanguage).replace(\\&quot;entity=001\\&quot;\, \\&quot;entity=\\&quot; + currEntity).replace(\\&quot;format=XFA\\&quot;\, \\&quot;format=\\&quot; +  this.parent.TXT_Format.value).replace(\\&quot;00000\\&quot;\, this.value);\\n\\n$('.INFO_printBlank').html(newText);\\n\\n//this.dorExclusion = true;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.TXT_CDOK&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                            jcr:primaryType="nt:unstructured"/>
+                    </guidetextbox_1349595>
+                    <guidetextbox_copy
+                        jcr:created="{Date}2021-05-03T03:13:06.386+02:00"
+                        jcr:createdBy="t649612"
+                        jcr:lastModified="{Date}2021-05-03T11:19:06.263+02:00"
+                        jcr:lastModifiedBy="t649612"
+                        jcr:primaryType="nt:unstructured"
+                        jcr:title="Form code"
+                        sling:resourceType="fd/af/components/guidetextbox"
+                        autofillFieldKeyword="name"
+                        guideNodeClass="guideTextBox"
+                        name="TXT_FormCode"
+                        textIsRich="[true,true,true]"
+                        visible="{Boolean}false">
+                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                        <fd:scripts jcr:primaryType="nt:unstructured"/>
+                    </guidetextbox_copy>
+                    <infobox_copy
+                        jcr:created="{Date}2021-05-03T03:38:38.998+02:00"
+                        jcr:createdBy="t649612"
+                        jcr:lastModified="{Date}2025-07-28T16:57:35.746+02:00"
+                        jcr:lastModifiedBy="t406261"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/infobox"
+                        _value="&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you do not have all client information, please activate incomplete form mode at the top right. If you need to save an editable PDF form or PDF draft version, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>.&lt;br>&#xa;(Please note that the classic PDF will soon be fully replaced by this digital form.)&lt;/p>&#xa;"
+                        guideNodeClass="guideTextDraw"
+                        name="INFO_printBlank"
+                        textIsRich="true">
+                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                        <fd:scripts
+                            fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.myInfo2 = this;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.INFO_printBlank&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                            jcr:primaryType="nt:unstructured"/>
+                    </infobox_copy>
+                </items>
+            </rootPanel>
+            <assets jcr:primaryType="nt:unstructured">
+                <dictionary jcr:primaryType="nt:unstructured">
+                    <fr-ch/>
+                    <de-ch/>
+                    <it-ch/>
+                    <es/>
+                    <pt/>
+                    <en-us/>
+                    <de/>
+                    <pt-br/>
+                    <it/>
+                    <en-gb/>
+                    <fr/>
+                </dictionary>
+            </assets>
+            <signerInfo
+                jcr:primaryType="nt:unstructured"
+                firstSignerFormFiller="{Boolean}false"
+                workflowType="SEQUENTIAL">
+                <signer0
+                    jcr:primaryType="nt:unstructured"
+                    signerTitle="Signer One"/>
+            </signerInfo>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

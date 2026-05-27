@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:mix="http://www.jcp.org/jcr/mix/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:language="it-ch"
+    jcr:mixinTypes="[mix:language]"
+    jcr:primaryType="sling:Folder"
+    sling:basename="/content/forms/af/afforms_global_fragmentlib/affrg_global_print_blank_incomplete/jcr:content/guideContainer/assets/dictionary">
+    <_x0032_11a3ab6-163c-498f-b126-9110eb5aa73d
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you do not have all client information, please activate incomplete form mode at the top right. If you need to save an editable PDF form or PDF draft version, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>.&lt;br>&#xa;(Please note that the classic PDF will soon be fully replaced by this digital form.)&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;b>Informazione importante&lt;/b>&lt;/p> &lt;p>Se non dispone di tutte le informazioni del cliente, si prega di attivare la modalità «Formulario incompleto» in alto a destra. Se ha bisogno di salvare un PDF modificabile o una bozza PDF, si prega di cliccare qui &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>.&lt;br> (Si prega di notare che il PDF tradizionale sarà presto sostituito da questo formulario digitale.)&lt;/p>"/>
+    <_x0035_fd2e9b6-e424-4940-8333-1c29eb4ba7c6
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Format"
+        sling:message="Format"/>
+    <acc26c4a-6880-426f-bda8-ad2f50b9e848
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-30401 Print blank and Incomplete"
+        sling:message="EFORMS-30401 Print blank and Incomplete"/>
+    <fd__x003c_p_x003e__x003c_b_x003e_Impo-1326346834
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you need to print a blank PDF form, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;b>Informazione importante&lt;/b>&lt;/p> &lt;p>Se non dispone di tutte le informazioni del cliente, si prega di attivare la modalità «Formulario incompleto» in alto a destra. Se ha bisogno di salvare un PDF modificabile o una bozza PDF, si prega di cliccare qui &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>.&lt;br> (Si prega di notare che il PDF tradizionale sarà presto sostituito da questo formulario digitale.)&lt;/p>"/>
+    <fd__x003c_p_x003e__x003c_b_x003e_Impo-869776992
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you need to print a blank PDF form, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>&lt;/p>&#xa;"
+        sling:message="&lt;p>&lt;b>Important information&lt;/b>&lt;/p>&#xa;&lt;p>If you need to print a blank PDF form, please click here &lt;a href=&quot;https://p2-ubsforms.ubs.net/UbsFormsApi/V1/getpdf.htm?code=AAAA&amp;amp;language=DE&amp;amp;entity=001&amp;amp;format=XFA&quot; target=&quot;_blank&quot; data-clickable-id=&quot;clickable-1&quot;>00000&lt;/a>&lt;/p>&#xa;"/>
+    <fd_CDOK
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_CDOK"
+        sling:message="CDOK"/>
+    <fd_EFORMS-196-1320547737
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_EFORMS-19650 Print blank"
+        sling:message="EFORMS-19650 Print blank"/>
+    <fd_Form_x0020_code
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Form code"
+        sling:message="Form code"/>
+</jcr:root>

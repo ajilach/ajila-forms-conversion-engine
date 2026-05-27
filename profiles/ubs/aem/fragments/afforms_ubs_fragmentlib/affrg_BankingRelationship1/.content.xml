@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-03T15:51:23.874+02:00"
-        cq:lastModifiedBy="t647287"
+        cq:lastModified="{Date}2026-05-21T17:23:50.618+02:00"
+        cq:lastModifiedBy="t831640"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
@@ -70,11 +70,12 @@
                                 name="ST_BankingRelationship"
                                 textIsRich="true"/>
                             <textbox
-                                jcr:lastModified="{Date}2026-02-18T15:15:50.343+01:00"
-                                jcr:lastModifiedBy="t647287"
+                                jcr:lastModified="{Date}2025-10-28T14:59:22.000+01:00"
+                                jcr:lastModifiedBy="t406261"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Clearing no."
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                assistPriority="custom"
                                 autofillFieldKeyword="name"
                                 bindRef="/BankingRelationshipType/BranchCode"
                                 css="widget_ajila-forms-ubs-textbox"
@@ -100,11 +101,12 @@
                                     jcr:primaryType="nt:unstructured"/>
                             </textbox>
                             <textbox_966647679
-                                jcr:lastModified="{Date}2026-02-18T15:16:05.947+01:00"
-                                jcr:lastModifiedBy="t647287"
+                                jcr:lastModified="{Date}2025-10-28T15:01:13.420+01:00"
+                                jcr:lastModifiedBy="t406261"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Account no."
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                assistPriority="custom"
                                 autofillFieldKeyword="name"
                                 bindRef="/BankingRelationshipType/MasterNumber"
                                 css="widget_ajila-forms-ubs-textbox"
@@ -137,8 +139,8 @@
                         </cq:responsive>
                     </panel_copy>
                     <textbox
-                        jcr:lastModified="{Date}2025-03-06T09:30:31.613+01:00"
-                        jcr:lastModifiedBy="t518977"
+                        jcr:lastModified="{Date}2026-01-09T12:03:43.546+01:00"
+                        jcr:lastModifiedBy="t831640"
                         jcr:primaryType="nt:unstructured"
                         jcr:title="Banking relationship for Bound Data XSD"
                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
@@ -159,7 +161,7 @@
                         </cq:responsive>
                         <fd:rules jcr:primaryType="nt:unstructured"/>
                         <fd:scripts
-                            fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.txtBankingRelationship&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var column1Size = 4;\\nvar column2Size = 8;\\nvar val1\, val2;\\n\\nif((TXT_BankingRelationship1.value!==\\&quot;\\&quot; || TXT_BankingRelationship1.value) &amp;&amp; (TXT_BankingRelationship2.value!==\\&quot;\\&quot; &amp;&amp; TXT_BankingRelationship2.value)) {\\n  if(TXT_BankingRelationship1.length &lt; column1Size &amp;&amp; TXT_BankingRelationship2.length &lt; column2Size) {\\n    val1 = \\&quot;000\\&quot; + TXT_BankingRelationship1.value;\\n    val2 = \\&quot;0000000\\&quot; + TXT_BankingRelationship2.value;\\n    \\n    this.value = val1.substr(-column1Size) + \\&quot; \\&quot; +  val2.substr(-column2Size);\\n  }\\n} else {\\n  this.value = this.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                            fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.txtBankingRelationship1&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var column1Size = 4;\\nvar column2Size = 8;\\nvar val1\, val2;\\n\\nif((TXT_BankingRelationship1.value!==\\&quot;\\&quot; || TXT_BankingRelationship1.value) &amp;&amp; (TXT_BankingRelationship2.value!==\\&quot;\\&quot; &amp;&amp; TXT_BankingRelationship2.value)) {\\n  if(TXT_BankingRelationship1.length &lt; column1Size &amp;&amp; TXT_BankingRelationship2.length &lt; column2Size) {\\n    val1 = \\&quot;000\\&quot; + TXT_BankingRelationship1.value;\\n    val2 = \\&quot;0000000\\&quot; + TXT_BankingRelationship2.value;\\n    \\n    this.value = val1.substr(-column1Size) + \\&quot; \\&quot; +  val2.substr(-column2Size);\\n  }\\n} else {\\n  this.value = this.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                             jcr:primaryType="nt:unstructured"/>
                     </textbox>
                 </items>

@@ -10,8 +10,7 @@
         jcr:mixinTypes="[]"
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-49214 IT Address Block (Street, Postal code, City, State, Country dropdown)"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

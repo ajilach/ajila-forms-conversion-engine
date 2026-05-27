@@ -4,15 +4,14 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-03-13T10:59:44.899+01:00"
-        cq:lastModifiedBy="t831552"
+        cq:lastModified="{Date}2026-04-29T08:16:59.101+02:00"
+        cq:lastModifiedBy="t831640"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##7199&quot;}"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="DE Fragment - Signature (Account Holder) 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

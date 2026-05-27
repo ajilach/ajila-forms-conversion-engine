@@ -1,0 +1,1211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0" xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
+    jcr:primaryType="cq:Page">
+    <jcr:content
+        cq:designPath="/libs/settings/wcm/designs/fd/af/default"
+        cq:deviceGroups="mobile/groups/responsive"
+        cq:lastModified="{Date}2024-01-23T10:49:12.595+01:00"
+        cq:lastModifiedBy="t653607"
+        cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
+        jcr:mixinTypes="[]"
+        jcr:primaryType="cq:PageContent"
+        jcr:title="\[DEPRECATED] EFORMS-14715 Signature of Authorized Representative (Repeating Panel)"
+        sling:resourceType="fd/af/components/page/basePageForFragment">
+        <guideContainer
+            fd:version="1.1"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideFragmentContainer"
+            guideCss="guideContainer"
+            guideNodeClass="guideContainerNode"
+            name="fragment1">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/layouts/defaultGuideLayout"
+                toolbarPosition="Bottom"/>
+            <rootPanel
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode"
+                name="guideRootPanel"
+                panelSetType="Navigable">
+                <layout
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                    nonNavigable="{Boolean}true"
+                    toolbarPosition="Bottom"/>
+                <items
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_copy_copy_copy
+                        jcr:created="{Date}2020-08-31T09:45:16.112+02:00"
+                        jcr:createdBy="admin"
+                        jcr:lastModified="{Date}2021-02-11T10:03:17.554+01:00"
+                        jcr:lastModifiedBy="t649798"
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        css="ubsRepeatPanel"
+                        dorExcludeDescription="true"
+                        dorExcludeTitle="true"
+                        guideNodeClass="guidePanel"
+                        name="RCP_SignatureDetails_AuthorizedRep"
+                        textIsRich="true"
+                        validateOnStepCompletion="{Boolean}false">
+                        <layout
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                            columns="1"
+                            dorLayoutType="columnar"
+                            dorNumCols="1"
+                            nonNavigable="{Boolean}true"
+                            toolbarPosition="Bottom"/>
+                        <items
+                            jcr:primaryType="nt:unstructured"
+                            sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <panel_403087285
+                                jcr:created="{Date}2020-08-31T09:46:42.095+02:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2021-02-11T10:03:55.383+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                guideNodeClass="guidePanel"
+                                name="PN_Signature1_AuthorizedRep"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="1"
+                                    dorLayoutType="columnar"
+                                    dorNumCols="1"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                    <panel_copy_copy_copy_142913898
+                                        jcr:created="Mon Jul 27 2020 11:32:32 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2021-02-11T10:05:04.284+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                        completionExpReq="{Boolean}false"
+                                        dorExcludeDescription="true"
+                                        dorExcludeTitle="true"
+                                        guideNodeClass="guidePanel"
+                                        name="PN_withoutInstance_AuthorizedRep"
+                                        textIsRich="true"
+                                        validateOnStepCompletion="{Boolean}false">
+                                        <layout
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                            columns="3"
+                                            dorLayoutType="columnar"
+                                            dorNumCols="6"
+                                            nonNavigable="{Boolean}true"
+                                            toolbarPosition="Bottom"/>
+                                        <items
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                            <textdraw_copy_copy
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:06:13.908+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy>
+                                            <signature
+                                                jcr:created="{Date}2020-09-01T13:37:49.146+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:09:32.446+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Signature of authorized representative"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/signature"
+                                                aspectRatio="6.8888"
+                                                dorColspan="3"
+                                                guideNodeClass="guideScribble"
+                                                name="TXT_Signature_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </signature>
+                                            <textbox
+                                                jcr:created="Mon Jul 27 2020 11:33:20 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:18:27.465+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Place"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="2"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Place_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="4"/>
+                                                </cq:responsive>
+                                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts
+                                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_Place1_AuthorizedRep.value = this.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withoutInstance_AuthorizedRep.TXT_Place_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                            </textbox>
+                                            <datepicker
+                                                jcr:created="Mon Jul 27 2020 11:33:36 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:18:54.027+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Date (dd.mm.yyyy)"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                                css="widget_ajila_forms_datepicker"
+                                                dorColspan="1"
+                                                guideNodeClass="guideDatePicker"
+                                                name="DATE_Signature_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                validatePictureClause="date{YYYY-MM-DD}"
+                                                validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                                validationPatternType="custom"
+                                                yearRangeFrom="100"
+                                                yearRangeTo="10">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="3"/>
+                                                </cq:responsive>
+                                                <fd:rules
+                                                    fd:calc="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;CALC_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;VALUE_FIELD&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withoutInstance_AuthorizedRep.DATE_Signature_AuthorizedRep&quot;\,&quot;type&quot;:&quot;DATE&quot;\,&quot;name&quot;:&quot;DATE_Signature_AuthorizedRep&quot;}}\,{&quot;nodeName&quot;:&quot;to&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withInstance_AuthorizedRep.DATE_Signature1_AuthorizedRep&quot;\,&quot;displayName&quot;:&quot;Date (dd.mm.yyyy)&quot;\,&quot;type&quot;:&quot;DATE&quot;\,&quot;isDuplicate&quot;:true\,&quot;displayPath&quot;:&quot;FORM/guideRootPanel/RCP_SignatureDetails_AuthorizedRep/PN_Signature1_AuthorizedRep/PN_withInstance_AuthorizedRep/Date (dd.mm.yyyy)/&quot;\,&quot;name&quot;:&quot;DATE_Signature1_AuthorizedRep&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withInstance_AuthorizedRep&quot;}}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:null}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n *  SET VALUE OF Date (dd.mm.yyyy) to Date (dd.mm.yyyy)\\n *\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nDATE_Signature1_AuthorizedRep.value;\\n\\n&quot;\,&quot;eventName&quot;:&quot;Calculate&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts jcr:primaryType="nt:unstructured"/>
+                                            </datepicker>
+                                            <textbox_504497449
+                                                jcr:created="{Date}2020-08-03T07:05:39.818+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-07-13T14:06:20.520+02:00"
+                                                jcr:lastModifiedBy="t653607"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Name of authorized representative"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                mandatory="true"
+                                                name="TXT_Name_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts
+                                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_Name1_AuthorizedRep.value = this.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withoutInstance_AuthorizedRep.TXT_Name_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                            </textbox_504497449>
+                                            <textdraw_copy
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2020-12-02T04:25:41.811+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}true">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy>
+                                            <textbox_1114893168
+                                                jcr:created="{Date}2020-12-02T05:37:53.581+01:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:19:06.847+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Function/Role of authorized representative"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Function_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts
+                                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_Function1_AuthorizedRep.value = this.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withoutInstance_AuthorizedRep.TXT_Function_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                            </textbox_1114893168>
+                                        </items>
+                                    </panel_copy_copy_copy_142913898>
+                                    <panel_copy_copy_copy
+                                        jcr:created="Mon Jul 27 2020 11:32:32 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2021-02-11T10:13:27.622+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                        completionExpReq="{Boolean}false"
+                                        dorExcludeDescription="true"
+                                        dorExcludeTitle="true"
+                                        dorExclusion="true"
+                                        guideNodeClass="guidePanel"
+                                        name="PN_withInstance_AuthorizedRep"
+                                        textIsRich="true"
+                                        validateOnStepCompletion="{Boolean}false"
+                                        visible="{Boolean}false">
+                                        <layout
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                            columns="3"
+                                            dorLayoutType="columnar"
+                                            dorNumCols="6"
+                                            nonNavigable="{Boolean}true"
+                                            toolbarPosition="Bottom"/>
+                                        <items
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                            <textdraw_copy_copy_c
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:06:38.075+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c>
+                                            <signature
+                                                jcr:created="{Date}2020-09-01T13:37:49.146+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:10:05.805+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Signature of authorized representative 1"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/signature"
+                                                aspectRatio="6.8888"
+                                                dorColspan="3"
+                                                guideNodeClass="guideScribble"
+                                                name="TXT_Signature1_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </signature>
+                                            <textbox
+                                                jcr:created="Mon Jul 27 2020 11:33:20 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:19:15.692+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Place"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="2"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Place1_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="4"/>
+                                                </cq:responsive>
+                                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts
+                                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_Place_AuthorizedRep.value = this.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withInstance_AuthorizedRep.TXT_Place1_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                            </textbox>
+                                            <datepicker
+                                                jcr:created="Mon Jul 27 2020 11:33:36 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:19:21.569+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Date (dd.mm.yyyy)"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                                css="widget_ajila_forms_datepicker"
+                                                dorColspan="1"
+                                                guideNodeClass="guideDatePicker"
+                                                name="DATE_Signature1_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                validatePictureClause="date{YYYY-MM-DD}"
+                                                validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                                validationPatternType="custom"
+                                                yearRangeFrom="100"
+                                                yearRangeTo="10">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="3"/>
+                                                </cq:responsive>
+                                                <fd:rules
+                                                    fd:calc="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;CALC_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;VALUE_FIELD&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withInstance_AuthorizedRep.DATE_Signature1_AuthorizedRep&quot;\,&quot;type&quot;:&quot;DATE&quot;\,&quot;name&quot;:&quot;DATE_Signature1_AuthorizedRep&quot;}}\,{&quot;nodeName&quot;:&quot;to&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withoutInstance_AuthorizedRep.DATE_Signature_AuthorizedRep&quot;\,&quot;displayName&quot;:&quot;Date (dd.mm.yyyy)&quot;\,&quot;type&quot;:&quot;DATE&quot;\,&quot;isDuplicate&quot;:true\,&quot;displayPath&quot;:&quot;FORM/guideRootPanel/RCP_SignatureDetails_AuthorizedRep/PN_Signature1_AuthorizedRep/PN_withoutInstance_AuthorizedRep/Date (dd.mm.yyyy)/&quot;\,&quot;name&quot;:&quot;DATE_Signature_AuthorizedRep&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withoutInstance_AuthorizedRep&quot;}}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:null}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n *  SET VALUE OF Date (dd.mm.yyyy) to Date (dd.mm.yyyy)\\n *\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nDATE_Signature_AuthorizedRep.value;\\n\\n&quot;\,&quot;eventName&quot;:&quot;Calculate&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts jcr:primaryType="nt:unstructured"/>
+                                            </datepicker>
+                                            <textbox_504497449
+                                                jcr:created="{Date}2020-08-03T07:05:39.818+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-07-13T14:07:01.548+02:00"
+                                                jcr:lastModifiedBy="t653607"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Name of authorized representative 1"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                mandatory="true"
+                                                name="TXT_Name1_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts
+                                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_Name_AuthorizedRep.value = this.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withInstance_AuthorizedRep.TXT_Name1_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                            </textbox_504497449>
+                                            <textdraw_copy_copy
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2020-12-02T05:39:38.425+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}true">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy>
+                                            <textbox_1114893168_c
+                                                jcr:created="{Date}2020-12-02T05:37:53.581+01:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:20:29.929+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Function/Role of authorized representative 1"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Function1_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                <fd:scripts
+                                                    fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;TXT_Function_AuthorizedRep.value = this.value;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature1_AuthorizedRep.PN_withInstance_AuthorizedRep.TXT_Function1_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                    jcr:primaryType="nt:unstructured"/>
+                                            </textbox_1114893168_c>
+                                        </items>
+                                    </panel_copy_copy_copy>
+                                </items>
+                            </panel_403087285>
+                            <panel_403087285_copy
+                                jcr:created="{Date}2020-08-31T09:46:42.095+02:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2021-02-11T10:13:39.651+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                dorExclusion="true"
+                                guideNodeClass="guidePanel"
+                                name="PN_Signature2_AuthorizedRep"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false"
+                                visible="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="1"
+                                    dorLayoutType="columnar"
+                                    dorNumCols="1"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                    <removebutton
+                                        jcr:created="{Date}2020-08-31T09:48:34.924+02:00"
+                                        jcr:createdBy="admin"
+                                        jcr:lastModified="{Date}2021-02-11T10:11:21.772+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
+                                        dorExclusion="true"
+                                        guideNodeClass="guideButton"
+                                        name="BT_RemoveSignature2_AuthorizedRep"
+                                        textIsRich="[true,true]"
+                                        type="Button">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="12"/>
+                                        </cq:responsive>
+                                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                                        <fd:scripts
+                                            fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_Signature2_AuthorizedRep.visible = false;\\nPN_Signature2_AuthorizedRep.dorExclusion = true;\\n\\nTXT_Place2_AuthorizedRep.resetData();\\nTXT_Name2_AuthorizedRep.resetData();\\nTXT_Function2_AuthorizedRep.resetData();\\n\\nPN_withoutInstance_AuthorizedRep.visible = true;\\nPN_withoutInstance_AuthorizedRep.dorExclusion = false;\\nPN_withInstance_AuthorizedRep.visible = false;\\nPN_withInstance_AuthorizedRep.dorExclusion = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature2_AuthorizedRep.BT_RemoveSignature2_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                            jcr:primaryType="nt:unstructured"/>
+                                    </removebutton>
+                                    <panel_copy_copy_copy
+                                        jcr:created="Mon Jul 27 2020 11:32:32 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-10-16T08:49:00.350+02:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                        completionExpReq="{Boolean}false"
+                                        dorExcludeDescription="true"
+                                        dorExcludeTitle="true"
+                                        guideNodeClass="guidePanel"
+                                        name="PN_Body"
+                                        textIsRich="true"
+                                        validateOnStepCompletion="{Boolean}false">
+                                        <layout
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                            columns="3"
+                                            dorLayoutType="columnar"
+                                            dorNumCols="6"
+                                            nonNavigable="{Boolean}true"
+                                            toolbarPosition="Bottom"/>
+                                        <items
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                            <textdraw_copy_copy_c_1169391537
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:06:57.348+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c_1169391537>
+                                            <signature
+                                                jcr:created="{Date}2020-09-01T13:37:49.146+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:10:44.991+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Signature of authorized representative 2"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/signature"
+                                                aspectRatio="6.8888"
+                                                dorColspan="3"
+                                                guideNodeClass="guideScribble"
+                                                name="TXT_Signature2_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </signature>
+                                            <textbox
+                                                jcr:created="Mon Jul 27 2020 11:33:20 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:20:45.036+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Place"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="2"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Place2_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="4"/>
+                                                </cq:responsive>
+                                            </textbox>
+                                            <datepicker
+                                                jcr:created="Mon Jul 27 2020 11:33:36 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:22:31.390+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Date (dd.mm.yyyy)"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                                css="widget_ajila_forms_datepicker"
+                                                dorColspan="1"
+                                                guideNodeClass="guideDatePicker"
+                                                name="DATE_Signature2_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                validatePictureClause="date{YYYY-MM-DD}"
+                                                validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                                validationPatternType="custom"
+                                                yearRangeFrom="100"
+                                                yearRangeTo="10">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="3"/>
+                                                </cq:responsive>
+                                            </datepicker>
+                                            <textbox_504497449
+                                                jcr:created="{Date}2020-08-03T07:05:39.818+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-07-13T14:08:01.470+02:00"
+                                                jcr:lastModifiedBy="t653607"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Name of authorized representative 2"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                mandatory="true"
+                                                name="TXT_Name2_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </textbox_504497449>
+                                            <textdraw_copy_copy_c
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2020-12-02T05:40:49.867+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}true">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c>
+                                            <textbox_1114893168_c
+                                                jcr:created="{Date}2020-12-02T05:37:53.581+01:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:22:39.218+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Function/Role of authorized representative 2"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Function2_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </textbox_1114893168_c>
+                                        </items>
+                                    </panel_copy_copy_copy>
+                                </items>
+                            </panel_403087285_copy>
+                            <panel_403087285_copy_229628751
+                                jcr:created="{Date}2020-08-31T09:46:42.095+02:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2021-02-11T10:13:48.738+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                dorExclusion="true"
+                                guideNodeClass="guidePanel"
+                                name="PN_Signature3_AuthorizedRep"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false"
+                                visible="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="1"
+                                    dorLayoutType="columnar"
+                                    dorNumCols="1"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                    <removebutton
+                                        jcr:created="{Date}2020-08-31T09:48:34.924+02:00"
+                                        jcr:createdBy="admin"
+                                        jcr:lastModified="{Date}2021-02-11T10:11:29.028+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
+                                        dorExclusion="true"
+                                        guideNodeClass="guideButton"
+                                        name="BT_RemoveSignature3_AuthorizedRep"
+                                        textIsRich="[true,true]"
+                                        type="Button">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="12"/>
+                                        </cq:responsive>
+                                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                                        <fd:scripts
+                                            fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_Signature3_AuthorizedRep.visible = false;\\nPN_Signature3_AuthorizedRep.dorExclusion = true;\\nBT_RemoveSignature2_AuthorizedRep.visible = true;\\n\\nTXT_Place3_AuthorizedRep.resetData();\\nTXT_Name3_AuthorizedRep.resetData();\\nTXT_Function3_AuthorizedRep.resetData();&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature3_AuthorizedRep.BT_RemoveSignature3_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                            jcr:primaryType="nt:unstructured"/>
+                                    </removebutton>
+                                    <panel_copy_copy_copy
+                                        jcr:created="Mon Jul 27 2020 11:32:32 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-10-16T08:51:44.107+02:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                        completionExpReq="{Boolean}false"
+                                        dorExcludeDescription="true"
+                                        dorExcludeTitle="true"
+                                        guideNodeClass="guidePanel"
+                                        name="PN_Body"
+                                        textIsRich="true"
+                                        validateOnStepCompletion="{Boolean}false">
+                                        <layout
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                            columns="3"
+                                            dorLayoutType="columnar"
+                                            dorNumCols="6"
+                                            nonNavigable="{Boolean}true"
+                                            toolbarPosition="Bottom"/>
+                                        <items
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                            <textdraw_copy_copy_c_2068630892
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:07:28.769+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c_2068630892>
+                                            <signature
+                                                jcr:created="{Date}2020-09-01T13:37:49.146+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:19:18.075+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Signature of authorized representative 3"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/signature"
+                                                aspectRatio="6.8888"
+                                                dorColspan="3"
+                                                guideNodeClass="guideScribble"
+                                                name="TXT_Signature3_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </signature>
+                                            <textbox
+                                                jcr:created="Mon Jul 27 2020 11:33:20 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:22:46.330+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Place"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="2"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Place3_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="4"/>
+                                                </cq:responsive>
+                                            </textbox>
+                                            <datepicker
+                                                jcr:created="Mon Jul 27 2020 11:33:36 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:23:00.388+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Date (dd.mm.yyyy)"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                                css="widget_ajila_forms_datepicker"
+                                                dorColspan="1"
+                                                guideNodeClass="guideDatePicker"
+                                                name="DATE_Signature3_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                validatePictureClause="date{YYYY-MM-DD}"
+                                                validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                                validationPatternType="custom"
+                                                yearRangeFrom="100"
+                                                yearRangeTo="10">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="3"/>
+                                                </cq:responsive>
+                                            </datepicker>
+                                            <textbox_504497449
+                                                jcr:created="{Date}2020-08-03T07:05:39.818+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-07-13T14:08:31.938+02:00"
+                                                jcr:lastModifiedBy="t653607"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Name of authorized representative 3"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                mandatory="true"
+                                                name="TXT_Name3_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </textbox_504497449>
+                                            <textdraw_copy_copy_c
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2020-12-02T05:41:31.740+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}true">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c>
+                                            <textbox_1114893168_c
+                                                jcr:created="{Date}2020-12-02T05:37:53.581+01:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:23:06.065+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Function/Role of authorized representative 3"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Function3_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </textbox_1114893168_c>
+                                        </items>
+                                    </panel_copy_copy_copy>
+                                </items>
+                            </panel_403087285_copy_229628751>
+                            <panel_403087285_copy_1145127921
+                                jcr:created="{Date}2020-08-31T09:46:42.095+02:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2021-02-11T10:13:57.756+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                dorExcludeDescription="true"
+                                dorExcludeTitle="true"
+                                dorExclusion="true"
+                                guideNodeClass="guidePanel"
+                                name="PN_Signature4_AuthorizedRep"
+                                textIsRich="true"
+                                validateOnStepCompletion="{Boolean}false"
+                                visible="{Boolean}false">
+                                <layout
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                    columns="1"
+                                    dorLayoutType="columnar"
+                                    dorNumCols="1"
+                                    nonNavigable="{Boolean}true"
+                                    toolbarPosition="Bottom"/>
+                                <items
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                    <removebutton
+                                        jcr:created="{Date}2020-08-31T09:48:34.924+02:00"
+                                        jcr:createdBy="admin"
+                                        jcr:lastModified="{Date}2021-02-11T10:11:48.687+01:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
+                                        dorExclusion="true"
+                                        guideNodeClass="guideButton"
+                                        name="BT_RemoveSignature4_AuthorizedRep"
+                                        textIsRich="[true,true]"
+                                        type="Button">
+                                        <cq:responsive jcr:primaryType="nt:unstructured">
+                                            <default
+                                                jcr:primaryType="nt:unstructured"
+                                                offset="0"
+                                                width="12"/>
+                                        </cq:responsive>
+                                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                                        <fd:scripts
+                                            fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_Signature4_AuthorizedRep.visible = false;\\nPN_Signature4_AuthorizedRep.dorExclusion = true;\\nBT_RemoveSignature3_AuthorizedRep.visible = true;\\n\\nTXT_Place4_AuthorizedRep.resetData();\\nTXT_Name4_AuthorizedRep.resetData();\\nTXT_Function4_AuthorizedRep.resetData();\\n\\nBT_AddSignature_AuthorizedRep.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.PN_Signature4_AuthorizedRep.BT_RemoveSignature4_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                            jcr:primaryType="nt:unstructured"/>
+                                    </removebutton>
+                                    <panel_copy_copy_copy
+                                        jcr:created="Mon Jul 27 2020 11:32:32 GMT+0200"
+                                        jcr:createdBy="t649798"
+                                        jcr:lastModified="{Date}2020-10-16T08:53:45.580+02:00"
+                                        jcr:lastModifiedBy="t649798"
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                        completionExpReq="{Boolean}false"
+                                        dorExcludeDescription="true"
+                                        dorExcludeTitle="true"
+                                        guideNodeClass="guidePanel"
+                                        name="PN_Body"
+                                        textIsRich="true"
+                                        validateOnStepCompletion="{Boolean}false">
+                                        <layout
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                            columns="3"
+                                            dorLayoutType="columnar"
+                                            dorNumCols="6"
+                                            nonNavigable="{Boolean}true"
+                                            toolbarPosition="Bottom"/>
+                                        <items
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="fd/af/layouts/gridFluidLayout">
+                                            <textdraw_copy_copy_c_1413727079
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:07:49.043+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c_1413727079>
+                                            <signature
+                                                jcr:created="{Date}2020-09-01T13:37:49.146+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-02-11T10:19:47.646+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Signature of authorized representative 4"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/signature"
+                                                aspectRatio="6.8888"
+                                                dorColspan="3"
+                                                guideNodeClass="guideScribble"
+                                                name="TXT_Signature4_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                visible="{Boolean}false">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </signature>
+                                            <textbox
+                                                jcr:created="Mon Jul 27 2020 11:33:20 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:23:16.796+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Place"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="2"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Place4_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="4"/>
+                                                </cq:responsive>
+                                            </textbox>
+                                            <datepicker
+                                                jcr:created="Mon Jul 27 2020 11:33:36 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-12-03T09:20:08.948+01:00"
+                                                jcr:lastModifiedBy="t653607"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Date (dd.mm.yyyy)"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/datepicker"
+                                                css="widget_ajila_forms_datepicker"
+                                                dorColspan="1"
+                                                guideNodeClass="guideDatePicker"
+                                                name="DATE_Signature4_AuthorizedRep"
+                                                textIsRich="[true,true]"
+                                                validatePictureClause="date{YYYY-MM-DD}"
+                                                validatePictureClauseMessage="Please enter the date using the format dd.mm.yyyy (e.g., 01.01.2020)"
+                                                validationPatternType="custom"
+                                                yearRangeFrom="100"
+                                                yearRangeTo="10">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="3"/>
+                                                </cq:responsive>
+                                            </datepicker>
+                                            <textbox_504497449
+                                                jcr:created="{Date}2020-08-03T07:05:39.818+02:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-07-13T14:09:00.205+02:00"
+                                                jcr:lastModifiedBy="t653607"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Name of authorized representative 4"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                mandatory="true"
+                                                name="TXT_Name4_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </textbox_504497449>
+                                            <textdraw_copy_copy_c
+                                                jcr:created="Mon Jul 27 2020 11:33:50 GMT+0200"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2020-12-02T05:43:39.706+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextDraw"
+                                                name="ST_Whitespace"
+                                                textIsRich="true"
+                                                visible="{Boolean}true">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="7"/>
+                                                </cq:responsive>
+                                            </textdraw_copy_copy_c>
+                                            <textbox_1114893168_c
+                                                jcr:created="{Date}2020-12-02T05:37:53.581+01:00"
+                                                jcr:createdBy="t649798"
+                                                jcr:lastModified="{Date}2021-11-17T04:23:27.409+01:00"
+                                                jcr:lastModifiedBy="t649798"
+                                                jcr:primaryType="nt:unstructured"
+                                                jcr:title="Function/Role of authorized representative 4"
+                                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                autofillFieldKeyword="name"
+                                                css="widget_ajila-forms-ubs-textbox"
+                                                dorColspan="3"
+                                                guideNodeClass="guideTextBox"
+                                                name="TXT_Function4_AuthorizedRep"
+                                                textIsRich="[true,true,true]">
+                                                <cq:responsive jcr:primaryType="nt:unstructured">
+                                                    <default
+                                                        jcr:primaryType="nt:unstructured"
+                                                        offset="0"
+                                                        width="5"/>
+                                                </cq:responsive>
+                                            </textbox_1114893168_c>
+                                        </items>
+                                    </panel_copy_copy_copy>
+                                </items>
+                            </panel_403087285_copy_1145127921>
+                            <tertiarybutton_copy
+                                jcr:created="{Date}2020-08-31T10:20:28.000+02:00"
+                                jcr:createdBy="admin"
+                                jcr:lastModified="{Date}2021-02-11T10:04:49.624+01:00"
+                                jcr:lastModifiedBy="t649798"
+                                jcr:primaryType="nt:unstructured"
+                                jcr:title="Add signature"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
+                                dorExclusion="true"
+                                guideNodeClass="guideButton"
+                                name="BT_AddSignature_AuthorizedRep"
+                                textIsRich="[true,true]"
+                                type="Button">
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
+                                <fd:scripts
+                                    fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;if (PN_Signature2_AuthorizedRep.visible === false) {\\n  PN_Signature2_AuthorizedRep.visible = true;\\n  PN_Signature2_AuthorizedRep.dorExclusion = false;\\n  \\n  PN_withoutInstance_AuthorizedRep.visible = false;\\n  PN_withoutInstance_AuthorizedRep.dorExclusion = true;\\n  \\n  PN_withInstance_AuthorizedRep.visible = true;\\n  PN_withInstance_AuthorizedRep.dorExclusion = false;\\n  \\n} else if (PN_Signature3_AuthorizedRep.visible === false) {\\n  PN_Signature3_AuthorizedRep.visible = true;\\n  PN_Signature3_AuthorizedRep.dorExclusion = false;\\n  BT_RemoveSignature2_AuthorizedRep.visible = false;\\n  \\n} else if (PN_Signature4_AuthorizedRep.visible === false) {\\n  PN_Signature4_AuthorizedRep.visible = true;\\n  PN_Signature4_AuthorizedRep.dorExclusion = false;\\n  BT_RemoveSignature3_AuthorizedRep.visible = false;\\n  \\n}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.BT_AddSignature_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;if (PN_Signature4_AuthorizedRep.visible === true) {\\n  this.visible = false;\\n} else {\\n  this.visible = true;\\n}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.step_1.RCP_SignatureDetails_AuthorizedRep.BT_AddSignature_AuthorizedRep&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    jcr:primaryType="nt:unstructured"/>
+                            </tertiarybutton_copy>
+                        </items>
+                        <fd:rules jcr:primaryType="nt:unstructured"/>
+                        <fd:scripts jcr:primaryType="nt:unstructured"/>
+                    </panel_copy_copy_copy>
+                </items>
+            </rootPanel>
+            <assets jcr:primaryType="nt:unstructured">
+                <dictionary jcr:primaryType="nt:unstructured">
+                    <de-ch/>
+                    <fr-ch/>
+                    <it-ch/>
+                    <es/>
+                    <pt/>
+                </dictionary>
+            </assets>
+            <signerInfo
+                jcr:primaryType="nt:unstructured"
+                firstSignerFormFiller="{Boolean}false"
+                workflowType="SEQUENTIAL">
+                <signer0
+                    jcr:primaryType="nt:unstructured"
+                    signerTitle="Signer One"/>
+            </signerInfo>
+        </guideContainer>
+        <cq:responsive jcr:primaryType="nt:unstructured">
+            <breakpoints jcr:primaryType="nt:unstructured">
+                <smallScreen
+                    jcr:primaryType="nt:unstructured"
+                    title="Smaller Screen"
+                    width="{Decimal}479"/>
+                <phone
+                    jcr:primaryType="nt:unstructured"
+                    title="Phone"
+                    width="{Decimal}767"/>
+                <tablet
+                    jcr:primaryType="nt:unstructured"
+                    title="Tablet"
+                    width="{Decimal}991"/>
+            </breakpoints>
+        </cq:responsive>
+    </jcr:content>
+</jcr:root>

@@ -10,8 +10,7 @@
         jcr:mixinTypes="[]"
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-49272 IT Form of Address (Ms, Mr)"
-        sling:resourceType="fd/af/components/page/basePageForFragment"
-        ignoreTranslationInvalidation="{Boolean}true">
+        sling:resourceType="fd/af/components/page/basePageForFragment">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"
