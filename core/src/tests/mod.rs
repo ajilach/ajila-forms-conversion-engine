@@ -29440,6 +29440,109 @@ fn test_bbdo_adresszusatz_is_not_textarea() {
 }
 
 #[test]
+fn test_aacr_multilingual_merge_de_en() {
+    // Test that AACR_019_DE and AACR_019_EN can be merged and that
+    // the heading "Access authorizations within the framework of the use of UBS
+    // KeyPort (EBICS)" is merged with "Zugriffsberechtigungen im Rahmen der Nutzung von
+    // UBS KeyPort (EBICS)".
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, StructuredNode, TranslatedText};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACR_019_DE.pdf"), "de")
+        .expect("Failed to process AACR_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACR_019_EN.pdf"), "en")
+        .expect("Failed to process AACR_019_EN");
+
+    assert_eq!(de_envelope.context.language(), "de");
+    assert_eq!(en_envelope.context.language(), "en");
+
+    // Merge translations — this must succeed
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
+        .expect("Merging AACR_019 DE/EN should succeed");
+
+    let lang = merged.context.language();
+    assert!(
+        lang.contains("de"),
+        "Merged language should contain 'de', got: {}",
+        lang
+    );
+    assert!(
+        lang.contains("en"),
+        "Merged language should contain 'en', got: {}",
+        lang
+    );
+    assert!(
+        !merged.content.is_empty(),
+        "Merged content should not be empty"
+    );
+
+    // Collect all TranslatedText nodes from headings and paragraphs
+    fn collect_translated_texts(nodes: &[StructuredNode], out: &mut Vec<TranslatedText>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => out.push(h.content.clone()),
+                StructuredNode::Paragraph(p) => out.push(p.content.clone()),
+                StructuredNode::Group(g) => collect_translated_texts(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_translated_texts(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_translated_texts(&[(*r.item).clone()], out)
+                }
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_translated_texts(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut translated_texts: Vec<TranslatedText> = Vec::new();
+    collect_translated_texts(&merged.content, &mut translated_texts);
+
+    // Find the TranslatedText node where the English version contains
+    // "Access authorizations within the framework of the use of UBS"
+    // and the German version contains "Zugriffsberechtigungen im Rahmen der Nutzung von"
+    let found = translated_texts.iter().find(|tt| {
+        let en_text = tt.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
+        en_text.contains("Access authorizations")
+            && en_text.contains("KeyPort")
+            && en_text.contains("EBICS")
+    });
+
+    let tt = found.expect(
+        "Should find a TranslatedText node containing \
+         'Access authorizations within the framework of the use of UBS KeyPort (EBICS)'",
+    );
+
+    let en_text = tt.get("en").unwrap().as_plain_text();
+    let de_text = tt
+        .get("de")
+        .expect("The matched node should also have a 'de' translation")
+        .as_plain_text();
+
+    assert!(
+        en_text.contains("Access authorizations")
+            && en_text.contains("KeyPort")
+            && en_text.contains("EBICS"),
+        "English text should contain 'Access authorizations ... KeyPort (EBICS)', got: '{}'",
+        en_text
+    );
+    assert!(
+        de_text.contains("Zugriffsberechtigungen")
+            && de_text.contains("KeyPort")
+            && de_text.contains("EBICS"),
+        "German text should contain 'Zugriffsberechtigungen ... KeyPort (EBICS)', got: '{}'",
+        de_text
+    );
+
+    println!("EN: {}", en_text);
+    println!("DE: {}", de_text);
+    println!("\n✓ AACR multilingual merge correctly pairs DE/EN headings");
+}
+
+#[test]
 fn test_aatz_bold_paragraph_not_detected_as_heading() {
     // In AATZ DE, the text "Nach dem Kauf des Hedgefonds als Vertreter/Nominee
     // zu agieren bedeutet zusätzlich, dass" starts with bold text but is a
