@@ -1525,7 +1525,7 @@ fn get_all_selectable_fields_ordered(form: &XfaForm) -> Vec<SelectableField> {
                 matches!(
                     s.script.activity,
                     EventActivity::Calculate | EventActivity::Change | EventActivity::Click
-                )
+                ) && !crate::xfa::scripting::registry::is_comment_only(&s.script.source)
             })
             .map(|s| s.script.source.clone())
             .collect()

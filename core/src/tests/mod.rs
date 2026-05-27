@@ -29543,6 +29543,49 @@ fn test_aacr_multilingual_merge_de_en() {
 }
 
 #[test]
+fn test_aacr_pipeline_multilingual_merge() {
+    // Test that the full pipeline (with exhaustive state exploration) can merge
+    // AACR_019_DE and AACR_019_EN without a state signature mismatch.
+    use crate::pipeline::{PipelineConfig, run_pipeline};
+
+    let files = vec![
+        (
+            "AACR_019_DE.pdf".to_string(),
+            std::fs::read(input_path("AACR_019_DE.pdf")).expect("Failed to read AACR DE PDF"),
+        ),
+        (
+            "AACR_019_EN.pdf".to_string(),
+            std::fs::read(input_path("AACR_019_EN.pdf")).expect("Failed to read AACR EN PDF"),
+        ),
+    ];
+
+    let config = PipelineConfig {
+        scale: 1.0,
+        render_plain: false,
+        render_annotated: false,
+        render_labelled: false,
+    };
+
+    let output = run_pipeline(&files, &config, |_| {})
+        .expect("AACR DE/EN pipeline should merge without state signature mismatch");
+
+    // Verify that both languages are present in the merged output
+    let mut langs = std::collections::BTreeSet::new();
+    for node in &output.merged.content {
+        node.collect_languages(&mut langs);
+    }
+
+    assert!(
+        langs.contains("de"),
+        "Merged output should contain German text"
+    );
+    assert!(
+        langs.contains("en"),
+        "Merged output should contain English text"
+    );
+}
+
+#[test]
 fn test_aatz_bold_paragraph_not_detected_as_heading() {
     // In AATZ DE, the text "Nach dem Kauf des Hedgefonds als Vertreter/Nominee
     // zu agieren bedeutet zusätzlich, dass" starts with bold text but is a

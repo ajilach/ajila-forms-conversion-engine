@@ -156,6 +156,7 @@ impl ScriptRegistry {
 
     /// Check if the owner has any interactive scripts (change, click, or calculate).
     /// These are the scripts that can affect form layout when a field value changes.
+    /// Scripts whose source is entirely comments are ignored.
     pub fn has_interactive_scripts(&self, owner_path: &SomPath) -> bool {
         self.scripts_by_owner
             .get(owner_path)
@@ -164,8 +165,48 @@ impl ScriptRegistry {
                     matches!(
                         s.script.activity,
                         EventActivity::Change | EventActivity::Click | EventActivity::Calculate
-                    )
+                    ) && !is_comment_only(&s.script.source)
                 })
             })
     }
+}
+
+/// Returns true if the script source contains no executable code — only
+/// whitespace, line comments (`//`), and block comments (`/* ... */`).
+pub fn is_comment_only(source: &str) -> bool {
+    let mut chars = source.chars().peekable();
+    while let Some(&ch) = chars.peek() {
+        match ch {
+            ' ' | '\t' | '\r' | '\n' => {
+                chars.next();
+            }
+            '/' => {
+                chars.next();
+                match chars.peek() {
+                    Some('/') => {
+                        // Line comment — skip to end of line
+                        for c in chars.by_ref() {
+                            if c == '\n' {
+                                break;
+                            }
+                        }
+                    }
+                    Some('*') => {
+                        // Block comment — skip to */
+                        chars.next(); // consume '*'
+                        let mut prev = ' ';
+                        for c in chars.by_ref() {
+                            if prev == '*' && c == '/' {
+                                break;
+                            }
+                            prev = c;
+                        }
+                    }
+                    _ => return false, // '/' not followed by '/' or '*' → executable
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
