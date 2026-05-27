@@ -18,6 +18,10 @@ pub struct ToolbarProps {
     pub can_move_up: bool,
     /// Whether the selected node can be moved down.
     pub can_move_down: bool,
+    /// Whether the selected node can be indented (moved into adjacent container).
+    pub can_indent: bool,
+    /// Whether the selected node can be outdented (moved out of its container).
+    pub can_outdent: bool,
     /// Available conversion targets for current selection.
     pub available_conversions: Vec<ConvertTarget>,
     /// Available add options for current selection.
@@ -88,6 +92,26 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 onclick: move |_| props.on_action.call(EditorAction::MoveDown),
                 span { class: "toolbar-icon", "↓" }
                 span { class: "toolbar-label", "Down" }
+            }
+
+            // Indent button (move into container)
+            button {
+                class: "toolbar-btn",
+                disabled: !props.can_indent,
+                title: if props.can_indent { "Move into the container above" } else if !has_selection { "Select a node to indent" } else { "Cannot indent (no container above)" },
+                onclick: move |_| props.on_action.call(EditorAction::Indent),
+                span { class: "toolbar-icon", "→" }
+                span { class: "toolbar-label", "Indent" }
+            }
+
+            // Outdent button (move out of container)
+            button {
+                class: "toolbar-btn",
+                disabled: !props.can_outdent,
+                title: if props.can_outdent { "Move out of container" } else if !has_selection { "Select a node to outdent" } else { "Cannot outdent (not inside a container)" },
+                onclick: move |_| props.on_action.call(EditorAction::Outdent),
+                span { class: "toolbar-icon", "←" }
+                span { class: "toolbar-label", "Outdent" }
             }
 
             // Separator

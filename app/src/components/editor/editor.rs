@@ -18,12 +18,13 @@ use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
 use super::smart_edit;
 use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
-    SelectionState, available_conversions, can_merge_selected, collect_selectable_paths,
-    compute_add_options, delete_nodes, get_container_child_info, get_container_children_count,
-    get_list_at_path, get_list_at_path_mut, get_list_item_text_mut, get_node_at_path,
-    get_node_at_path_mut, get_shared_parent_path, get_table_column_count, is_container_child_path,
-    is_list_item_path, is_table_row_path, move_container_child_down, move_container_child_up,
-    move_list_item_down, move_list_item_up, move_table_row_down, move_table_row_up,
+    SelectionState, available_conversions, can_indent, can_merge_selected, can_outdent,
+    collect_selectable_paths, compute_add_options, delete_nodes, get_container_child_info,
+    get_container_children_count, get_list_at_path, get_list_at_path_mut, get_list_item_text_mut,
+    get_node_at_path, get_node_at_path_mut, get_shared_parent_path, get_table_column_count,
+    indent_node, is_container_child_path, is_list_item_path, is_table_row_path,
+    move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
+    move_table_row_down, move_table_row_up, outdent_node,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -307,6 +308,21 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let can_down = max_idx + 1 < env.content.len();
                 (can_up, can_down)
             }
+        } else {
+            (false, false)
+        }
+    };
+
+    // Check if selected node can be indented/outdented
+    let (can_indent_node, can_outdent_node) = {
+        let env = envelope.read();
+        let sel = selection.read();
+        if sel.selected.len() == 1 {
+            let path = sel.selected.iter().next().unwrap();
+            (
+                can_indent(&env.content, path),
+                can_outdent(&env.content, path),
+            )
         } else {
             (false, false)
         }
@@ -598,6 +614,112 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 new_selection
                                     .selected
                                     .insert(vec![PathSegment::Child(idx + 1)]);
+                            }
+                        }
+                    }
+                }
+            }
+            EditorAction::Indent => {
+                let sel = selection.read();
+                let paths: Vec<_> = sel.selected.iter().cloned().collect();
+                drop(sel);
+
+                if paths.len() == 1 {
+                    let path = &paths[0];
+
+                    if path.len() == 1 {
+                        // Root-level: handle directly since we need Vec access
+                        if let Some(PathSegment::Child(idx)) = path.first() {
+                            let idx = *idx;
+                            if idx > 0 {
+                                let mut env = envelope.write();
+                                if is_children_container_node(&env.content[idx - 1]) {
+                                    let node = env.content.remove(idx);
+                                    let new_child_idx = match &mut env.content[idx - 1] {
+                                        StructuredNode::Group(g) => {
+                                            g.children.push(node);
+                                            g.children.len() - 1
+                                        }
+                                        StructuredNode::GridLayout(g) => {
+                                            g.elements.push(GridLayoutElement { span: 1, node });
+                                            g.elements.len() - 1
+                                        }
+                                        _ => unreachable!(),
+                                    };
+                                    drop(env);
+                                    let mut new_selection = selection.write();
+                                    new_selection.selected.clear();
+                                    new_selection.selected.insert(vec![
+                                        PathSegment::Child(idx - 1),
+                                        PathSegment::Child(new_child_idx),
+                                    ]);
+                                }
+                            }
+                        }
+                    } else if is_container_child_path(path) {
+                        let mut env = envelope.write();
+                        if let Some(new_path) = indent_node(&mut env.content, path) {
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            new_selection.selected.insert(new_path);
+                        }
+                    }
+                }
+            }
+            EditorAction::Outdent => {
+                let sel = selection.read();
+                let paths: Vec<_> = sel.selected.iter().cloned().collect();
+                drop(sel);
+
+                if paths.len() == 1 {
+                    let path = &paths[0];
+
+                    if path.len() >= 2 && is_container_child_path(path) {
+                        let (parent_path, child_idx) = get_container_child_info(path).unwrap();
+
+                        if parent_path.len() == 1 {
+                            // Parent is at root level: extract from parent and insert after it in root
+                            if let Some(PathSegment::Child(parent_root_idx)) = parent_path.first() {
+                                let parent_root_idx = *parent_root_idx;
+                                let mut env = envelope.write();
+                                let parent_node = &mut env.content[parent_root_idx];
+                                let extracted = match parent_node {
+                                    StructuredNode::Group(g) => {
+                                        if child_idx < g.children.len() {
+                                            Some(g.children.remove(child_idx))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    StructuredNode::GridLayout(g) => {
+                                        if child_idx < g.elements.len() {
+                                            Some(g.elements.remove(child_idx).node)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(node) = extracted {
+                                    let insert_idx = parent_root_idx + 1;
+                                    env.content.insert(insert_idx, node);
+                                    drop(env);
+                                    let mut new_selection = selection.write();
+                                    new_selection.selected.clear();
+                                    new_selection
+                                        .selected
+                                        .insert(vec![PathSegment::Child(insert_idx)]);
+                                }
+                            }
+                        } else {
+                            // Deeper nesting: use the helper
+                            let mut env = envelope.write();
+                            if let Some(new_path) = outdent_node(&mut env.content, path) {
+                                drop(env);
+                                let mut new_selection = selection.write();
+                                new_selection.selected.clear();
+                                new_selection.selected.insert(new_path);
                             }
                         }
                     }
@@ -1054,6 +1176,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 can_merge,
                 can_move_up,
                 can_move_down,
+                can_indent: can_indent_node,
+                can_outdent: can_outdent_node,
                 available_conversions: conversions.clone(),
                 add_options: add_options.clone(),
                 has_images,
@@ -1586,4 +1710,12 @@ mod tests {
             FieldType::Radio { options } if options == existing_options
         ));
     }
+}
+
+/// Check if a node is a container that can accept children (Group or GridLayout).
+fn is_children_container_node(node: &StructuredNode) -> bool {
+    matches!(
+        node,
+        StructuredNode::Group(_) | StructuredNode::GridLayout(_)
+    )
 }

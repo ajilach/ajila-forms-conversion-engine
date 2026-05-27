@@ -3,7 +3,7 @@
 //! This module provides the state types and operations for the structured
 //! document editor.
 
-use blueprint::structured::NameValue;
+use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::{ListNode, StructuredNode, TableNode, TranslatedText};
 use std::collections::HashSet;
 
@@ -138,6 +138,10 @@ pub enum EditorAction {
     MoveUp,
     /// Move selected node down.
     MoveDown,
+    /// Move selected node into the adjacent container above (indent).
+    Indent,
+    /// Move selected node out of its container to the parent level (outdent).
+    Outdent,
     /// Start editing a node's text.
     StartEditing(NodePath),
     /// Update text content of a node (works for paragraphs, headings, field labels, list items).
@@ -1253,6 +1257,204 @@ pub fn move_container_child_down(
         _ => {}
     }
     None
+}
+
+/// Check if a node can be indented (moved into the sibling container above it).
+///
+/// Returns true if the node's previous sibling is a container (Group or GridLayout).
+pub fn can_indent(content: &[StructuredNode], path: &NodePath) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+
+    // Get the sibling list and the node's index within it
+    if path.len() == 1 {
+        // Root-level node
+        if let Some(PathSegment::Child(idx)) = path.first() {
+            if *idx == 0 {
+                return false;
+            }
+            return is_children_container(&content[idx - 1]);
+        }
+    } else if is_container_child_path(path) {
+        if let Some((parent_path, child_idx)) = get_container_child_info(path) {
+            if child_idx == 0 {
+                return false;
+            }
+            if let Some(parent) = get_node_at_path(content, &parent_path) {
+                let prev_sibling = match parent {
+                    StructuredNode::Group(g) => g.children.get(child_idx - 1),
+                    StructuredNode::GridLayout(g) => g.elements.get(child_idx - 1).map(|e| &e.node),
+                    _ => None,
+                };
+                if let Some(sibling) = prev_sibling {
+                    return is_children_container(sibling);
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a node can be outdented (moved out of its container to the parent level).
+///
+/// Returns true if the node is inside a container (Group or GridLayout) that itself
+/// has a parent (not at root level inside the container that is root-level).
+pub fn can_outdent(_content: &[StructuredNode], path: &NodePath) -> bool {
+    // Must be at least 2 segments: parent container + child index
+    if path.len() < 2 {
+        return false;
+    }
+    is_container_child_path(path)
+}
+
+/// Indent a node: remove it from its current position and append it to the
+/// previous sibling container (Group or GridLayout).
+/// Returns the new path if successful.
+pub fn indent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
+    if path.len() == 1 {
+        // Root-level node
+        let PathSegment::Child(idx) = path[0] else {
+            return None;
+        };
+        if idx == 0 || idx >= content.len() {
+            return None;
+        }
+        if !is_children_container(&content[idx - 1]) {
+            return None;
+        }
+
+        // Root-level indent is handled directly in editor.rs since we need
+        // Vec access (slices don't support remove/insert).
+        return None;
+    }
+
+    // Container child: remove from current parent and append to previous sibling container
+    let (parent_path, child_idx) = get_container_child_info(path)?;
+    if child_idx == 0 {
+        return None;
+    }
+
+    let parent = get_node_at_path_mut(content, &parent_path)?;
+    match parent {
+        StructuredNode::Group(g) => {
+            if child_idx >= g.children.len() {
+                return None;
+            }
+            if !is_children_container(&g.children[child_idx - 1]) {
+                return None;
+            }
+            let node = g.children.remove(child_idx);
+            // Append to previous sibling
+            let new_child_idx = match &mut g.children[child_idx - 1] {
+                StructuredNode::Group(target) => {
+                    target.children.push(node);
+                    target.children.len() - 1
+                }
+                StructuredNode::GridLayout(target) => {
+                    target.elements.push(GridLayoutElement { span: 1, node });
+                    target.elements.len() - 1
+                }
+                _ => return None,
+            };
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx - 1));
+            new_path.push(PathSegment::Child(new_child_idx));
+            Some(new_path)
+        }
+        StructuredNode::GridLayout(g) => {
+            if child_idx >= g.elements.len() {
+                return None;
+            }
+            if !is_children_container(&g.elements[child_idx - 1].node) {
+                return None;
+            }
+            let element = g.elements.remove(child_idx);
+            let node = element.node;
+            let new_child_idx = match &mut g.elements[child_idx - 1].node {
+                StructuredNode::Group(target) => {
+                    target.children.push(node);
+                    target.children.len() - 1
+                }
+                StructuredNode::GridLayout(target) => {
+                    target.elements.push(GridLayoutElement { span: 1, node });
+                    target.elements.len() - 1
+                }
+                _ => return None,
+            };
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx - 1));
+            new_path.push(PathSegment::Child(new_child_idx));
+            Some(new_path)
+        }
+        _ => None,
+    }
+}
+
+/// Outdent a node: remove it from its container and insert it after the container
+/// in the grandparent's children list.
+/// Returns the new path if successful.
+pub fn outdent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
+    if path.len() < 2 || !is_container_child_path(path) {
+        return None;
+    }
+
+    let (parent_path, child_idx) = get_container_child_info(path)?;
+
+    // If parent is at root level (parent_path.len() == 1), we need special handling
+    // since the grandparent is the root Vec (handled in editor.rs).
+    if parent_path.len() == 1 {
+        return None; // Handled specially in editor.rs
+    }
+
+    // Otherwise, remove from parent and insert into grandparent after the parent
+    let (grandparent_path, parent_idx_in_grandparent) = get_container_child_info(&parent_path)?;
+
+    // First, remove the node from the parent container
+    let parent = get_node_at_path_mut(content, &parent_path)?;
+    let node = match parent {
+        StructuredNode::Group(g) => {
+            if child_idx >= g.children.len() {
+                return None;
+            }
+            g.children.remove(child_idx)
+        }
+        StructuredNode::GridLayout(g) => {
+            if child_idx >= g.elements.len() {
+                return None;
+            }
+            g.elements.remove(child_idx).node
+        }
+        _ => return None,
+    };
+
+    // Insert into grandparent after the parent's position
+    let grandparent = get_node_at_path_mut(content, &grandparent_path)?;
+    let insert_idx = parent_idx_in_grandparent + 1;
+    match grandparent {
+        StructuredNode::Group(g) => {
+            g.children.insert(insert_idx, node);
+            let mut new_path = grandparent_path;
+            new_path.push(PathSegment::Child(insert_idx));
+            Some(new_path)
+        }
+        StructuredNode::GridLayout(g) => {
+            g.elements
+                .insert(insert_idx, GridLayoutElement { span: 1, node });
+            let mut new_path = grandparent_path;
+            new_path.push(PathSegment::Child(insert_idx));
+            Some(new_path)
+        }
+        _ => None,
+    }
+}
+
+/// Check if a node is a container that can have arbitrary children.
+fn is_children_container(node: &StructuredNode) -> bool {
+    matches!(
+        node,
+        StructuredNode::Group(_) | StructuredNode::GridLayout(_)
+    )
 }
 
 /// An option for the Add dropdown, carrying a label and the action payload.
