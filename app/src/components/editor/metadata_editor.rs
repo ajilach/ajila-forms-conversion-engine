@@ -3,6 +3,8 @@
 //! Provides a form for editing node metadata like heading level, repeatable
 //! min/max occurrences, grid columns, field type, etc.
 
+use std::collections::{BTreeSet, HashMap};
+
 use dioxus::prelude::*;
 
 use blueprint::structured::{InputValue, NameValue, TranslatableString};
@@ -27,6 +29,8 @@ pub struct MetadataEditorProps {
     pub node: MetadataNodeWrapper,
     /// Path to the node.
     pub path: NodePath,
+    /// All languages available in the document.
+    pub languages: Vec<String>,
     /// Callback when metadata is updated.
     pub on_action: EventHandler<EditorAction>,
 }
@@ -253,6 +257,13 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                 _ => vec![],
             };
             let mut options_signal = use_signal(|| initial_options);
+            let mut active_option_lang = use_signal(|| {
+                props
+                    .languages
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "default".to_string())
+            });
 
             rsx! {
                 div { class: "metadata-editor",
@@ -329,68 +340,153 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                         if has_options {
                             div { class: "metadata-field",
                                 label { class: "metadata-label", "Options" }
-                                div { class: "options-list",
-                                    for (idx , option) in options_signal.read().iter().enumerate() {
-                                        {
-                                            let name_str = option.name.as_str().to_string();
-                                            let value_str = match &option.value {
-                                                InputValue::Text(s) => s.clone(),
-                                                InputValue::Number(n) => n.to_string(),
-                                                InputValue::Bool(b) => b.to_string(),
-                                            };
-                                            rsx! {
-                                                div { class: "option-row",
-                                                    input {
-                                                        class: "metadata-input option-name-input",
-                                                        r#type: "text",
-                                                        placeholder: "Label",
-                                                        value: "{name_str}",
-                                                        oninput: move |evt: Event<FormData>| {
-                                                            let mut opts = options_signal.read().clone();
-                                                            if let Some(opt) = opts.get_mut(idx) {
-                                                                opt.name = TranslatableString::Plain(evt.value());
-                                                            }
-                                                            options_signal.set(opts);
-                                                        },
-                                                    }
-                                                    input {
-                                                        class: "metadata-input option-value-input",
-                                                        r#type: "text",
-                                                        placeholder: "Value",
-                                                        value: "{value_str}",
-                                                        oninput: move |evt: Event<FormData>| {
-                                                            let mut opts = options_signal.read().clone();
-                                                            if let Some(opt) = opts.get_mut(idx) {
-                                                                opt.value = InputValue::Text(evt.value());
-                                                            }
-                                                            options_signal.set(opts);
-                                                        },
-                                                    }
+                                // Language tabs for option labels
+                                {
+                                    // Collect languages from all option names
+                                    let mut option_langs = BTreeSet::new();
+                                    for opt in options_signal.read().iter() {
+                                        if let TranslatableString::Translated(map) = &opt.name {
+                                            option_langs.extend(map.keys().cloned());
+                                        }
+                                    }
+                                    let all_langs: Vec<String> = props
+                                        .languages
+                                        .iter()
+                                        .chain(option_langs.iter())
+                                        .cloned()
+                                        .collect::<BTreeSet<_>>()
+                                        .into_iter()
+                                        .collect();
+
+                                    let is_multilingual = all_langs.len() > 1;
+
+                                    rsx! {
+                                        if is_multilingual {
+                                            div { class: "text-editor-tabs",
+                                                for lang in &all_langs {
                                                     button {
-                                                        class: "option-remove-btn",
-                                                        title: "Remove option",
-                                                        onclick: move |_| {
-                                                            let mut opts = options_signal.read().clone();
-                                                            opts.remove(idx);
-                                                            options_signal.set(opts);
+                                                        class: {
+                                                            let mut cls = String::from("text-editor-tab");
+                                                            if *active_option_lang.read() == *lang {
+                                                                cls.push_str(" active");
+                                                            }
+                                                            cls
                                                         },
-                                                        "✕"
+                                                        onclick: {
+                                                            let lang = lang.clone();
+                                                            move |_| active_option_lang.set(lang.clone())
+                                                        },
+                                                        "{lang}"
                                                     }
                                                 }
                                             }
                                         }
-                                    }
-                                    button {
-                                        class: "option-add-btn",
-                                        onclick: move |_| {
-                                            let mut opts = options_signal.read().clone();
-                                            opts.push(NameValue {
-                                                name: TranslatableString::Plain(String::new()),
-                                                value: InputValue::Text(String::new()),
-                                            });
-                                            options_signal.set(opts);
-                                        },
-                                        "+ Add Option"
+                                        div { class: "options-list",
+                                            for (idx , option) in options_signal.read().iter().enumerate() {
+                                                {
+                                                    let name_str = if is_multilingual {
+                                                        match &option.name {
+                                                            TranslatableString::Translated(map) => {
+                                                                map.get(&*active_option_lang.read())
+                                                                    .and_then(|o| o.as_deref())
+                                                                    .unwrap_or("")
+                                                                    .to_string()
+                                                            }
+                                                            TranslatableString::Plain(s) => s.clone(),
+                                                        }
+                                                    } else {
+                                                        option.name.as_str().to_string()
+                                                    };
+                                                    let value_str = match &option.value {
+                                                        InputValue::Text(s) => s.clone(),
+                                                        InputValue::Number(n) => n.to_string(),
+                                                        InputValue::Bool(b) => b.to_string(),
+                                                    };
+                                                    rsx! {
+                                                        div { class: "option-row",
+                                                            input {
+                                                                class: "metadata-input option-name-input",
+                                                                r#type: "text",
+                                                                placeholder: "Label",
+                                                                value: "{name_str}",
+                                                                oninput: {
+                                                                    let lang = active_option_lang.read().clone();
+                                                                    let is_multilingual = is_multilingual;
+                                                                    move |evt: Event<FormData>| {
+                                                                        let mut opts = options_signal.read().clone();
+                                                                        if let Some(opt) = opts.get_mut(idx) {
+                                                                            if is_multilingual {
+                                                                                // Update the specific language in the translation map
+                                                                                let mut map = match &opt.name {
+                                                                                    TranslatableString::Translated(m) => m.clone(),
+                                                                                    TranslatableString::Plain(s) => {
+                                                                                        let mut m = HashMap::new();
+                                                                                        m.insert(lang.clone(), Some(s.clone()));
+                                                                                        m
+                                                                                    }
+                                                                                };
+                                                                                map.insert(lang.clone(), Some(evt.value()));
+                                                                                opt.name = TranslatableString::Translated(map);
+                                                                            } else {
+                                                                                opt.name = TranslatableString::Plain(evt.value());
+                                                                            }
+                                                                        }
+                                                                        options_signal.set(opts);
+                                                                    }
+                                                                },
+                                                            }
+                                                            input {
+                                                                class: "metadata-input option-value-input",
+                                                                r#type: "text",
+                                                                placeholder: "Value",
+                                                                value: "{value_str}",
+                                                                oninput: move |evt: Event<FormData>| {
+                                                                    let mut opts = options_signal.read().clone();
+                                                                    if let Some(opt) = opts.get_mut(idx) {
+                                                                        opt.value = InputValue::Text(evt.value());
+                                                                    }
+                                                                    options_signal.set(opts);
+                                                                },
+                                                            }
+                                                            button {
+                                                                class: "option-remove-btn",
+                                                                title: "Remove option",
+                                                                onclick: move |_| {
+                                                                    let mut opts = options_signal.read().clone();
+                                                                    opts.remove(idx);
+                                                                    options_signal.set(opts);
+                                                                },
+                                                                "✕"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            button {
+                                                class: "option-add-btn",
+                                                onclick: {
+                                                    let languages = props.languages.clone();
+                                                    move |_| {
+                                                        let mut opts = options_signal.read().clone();
+                                                        let name = if languages.len() > 1 {
+                                                            let map: HashMap<String, Option<String>> = languages
+                                                                .iter()
+                                                                .map(|l| (l.clone(), Some(String::new())))
+                                                                .collect();
+                                                            TranslatableString::Translated(map)
+                                                        } else {
+                                                            TranslatableString::Plain(String::new())
+                                                        };
+                                                        opts.push(NameValue {
+                                                            name,
+                                                            value: InputValue::Text(String::new()),
+                                                        });
+                                                        options_signal.set(opts);
+                                                    }
+                                                },
+                                                "+ Add Option"
+                                            }
+                                        }
                                     }
                                 }
                             }

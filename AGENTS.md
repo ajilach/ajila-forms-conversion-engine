@@ -14,7 +14,7 @@
 
 ## Project-specific
 
-- When running tests, use `cargo test --release` such that they are faster. Also make sure to save the entire output to a log file to avoid needing to re-run the tests if output information is required.
+- When running tests, use `cargo test --release` such that they are faster. Also make sure to save the entire output to a log file to avoid needing to re-run the tests if output information is required. Do NOT run tests if you only modified the app/cli wrappers.
 - Before implementing XFA functionality, always consult the [XFA specs](./specs/XFA-3_3.md).
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.
 - Tests should never work with the ouput files. Instead they should analyze the intermediate structures (StrucuredNode, FlattenedNode, Document, ...) directly.

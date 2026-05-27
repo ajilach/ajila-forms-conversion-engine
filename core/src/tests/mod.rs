@@ -19410,7 +19410,10 @@ fn test_aagx_en_repeatable_not_replaced_by_fragment() {
     helpers::walk_aem_nodes(&root, &mut |node| {
         if let AemNode::Fragment { frag_ref, .. } = node {
             let frag_lower = frag_ref.to_lowercase();
-            if frag_lower.contains("last") || frag_lower.contains("first") || frag_lower.contains("name") {
+            if frag_lower.contains("last")
+                || frag_lower.contains("first")
+                || frag_lower.contains("name")
+            {
                 fragment_contains_person_fields = true;
             }
         }

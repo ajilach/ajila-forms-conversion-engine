@@ -1590,8 +1590,9 @@ fn replace_with_fragments(
             // (e.g. "kunde/Name" has depth 2, "Name" has depth 1)
             let has_intermediates = relative_paths.iter().any(|p| p.contains('/'));
 
-            let contains_repeatable =
-                children.iter().any(|c| matches!(c, AemNode::Repeatable { .. }));
+            let contains_repeatable = children
+                .iter()
+                .any(|c| matches!(c, AemNode::Repeatable { .. }));
 
             if !has_intermediates
                 && !is_conditional

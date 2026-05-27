@@ -503,6 +503,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                 MetadataEditor {
                     node: MetadataNodeWrapper(props.node.0.clone()),
                     path: props.path.clone(),
+                    languages: props.languages.clone(),
                     on_action: props.on_action,
                 }
             }
