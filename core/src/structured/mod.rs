@@ -1270,12 +1270,8 @@ impl FieldType {
                 },
             ) => min1 == min2 && max1 == max2 && step1 == step2,
             (
-                FieldType::Textarea {
-                    max_length: max1,
-                },
-                FieldType::Textarea {
-                    max_length: max2,
-                },
+                FieldType::Textarea { max_length: max1 },
+                FieldType::Textarea { max_length: max2 },
             ) => max1 == max2,
             (FieldType::Date, FieldType::Date) => true,
             (FieldType::Email, FieldType::Email) => true,

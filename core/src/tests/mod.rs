@@ -29628,9 +29628,8 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
         .expect("Failed to process AAFW_019_SP");
 
     // Merge translations
-    let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
-            .expect("Merging AAFW_019 DE/EN/SP should succeed");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
+        .expect("Merging AAFW_019 DE/EN/SP should succeed");
 
     // =========================================================================
     // 1. Textarea with label "Bemerkung" / "Remark" / "Nota"
@@ -29735,7 +29734,7 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
                     options
                         .iter()
                         .map(|o| format!("{:?}", o.name))
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>(),
                 )
             } else {
                 None
@@ -29791,7 +29790,11 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
         lists.len(),
         lists
             .iter()
-            .map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>())
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
             .collect::<Vec<_>>()
     );
 
@@ -29844,7 +29847,10 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
     // Verify EN translation of heading 1
     let h1_tt = headings
         .iter()
-        .find(|(_l, tt)| tt.plain_text_in("de").contains("Direktes und indirektes Aval"))
+        .find(|(_l, tt)| {
+            tt.plain_text_in("de")
+                .contains("Direktes und indirektes Aval")
+        })
         .map(|(_, tt)| tt)
         .unwrap();
     assert!(
@@ -29902,9 +29908,11 @@ fn test_aafw_radio_button_values_in_html() {
     // Test that the radio button with guarantee type options from AAFW appears
     // in the generated HTML output with all option values visible (not hidden
     // inside a conditional block).
-    use crate::html::{generate_html, HtmlConfig};
+    use crate::html::{HtmlConfig, generate_html};
     use crate::run_exhaustive_to_envelope;
-    use crate::structured::{self, FieldCondition, FieldNode as FN2, FieldType, StructuredNode as SN2};
+    use crate::structured::{
+        self, FieldCondition, FieldNode as FN2, FieldType, StructuredNode as SN2,
+    };
 
     // Build envelopes for all three languages and merge
     let de_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_DE.pdf"), "de")
@@ -29914,9 +29922,8 @@ fn test_aafw_radio_button_values_in_html() {
     let sp_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_SP.pdf"), "sp")
         .expect("Failed to process AAFW_019_SP");
 
-    let merged =
-        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
-            .expect("Merging AAFW_019 DE/EN/SP should succeed");
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
+        .expect("Merging AAFW_019 DE/EN/SP should succeed");
 
     // Verify radio buttons exist in structured output
     let radio_fields = helpers::collect_radio_fields(&merged.content);
@@ -29939,13 +29946,21 @@ fn test_aafw_radio_button_values_in_html() {
     assert!(
         guarantee_radio.is_some(),
         "Expected a radio group with 'Bietung' option in structured output.\nFound radio fields: {:?}",
-        radio_fields.iter().filter_map(|f| {
-            if let FieldType::Radio { options } = &f.input_type {
-                Some(options.iter().map(|o| format!("{:?}", o.name)).collect::<Vec<_>>())
-            } else {
-                None
-            }
-        }).collect::<Vec<_>>()
+        radio_fields
+            .iter()
+            .filter_map(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    Some(
+                        options
+                            .iter()
+                            .map(|o| format!("{:?}", o.name))
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
     );
 
     // Generate HTML
@@ -29983,21 +29998,18 @@ fn test_aafw_radio_button_values_in_html() {
     helpers::walk_structured_nodes(&merged.content, &mut |node| {
         if let SN2::Conditional(c) = node {
             let mut found_radio = Vec::new();
-            helpers::walk_structured_nodes(
-                std::slice::from_ref(c.content.as_ref()),
-                &mut |n| {
-                    if let SN2::Field(f) = n {
-                        if let FieldType::Radio { options } = &f.input_type {
-                            if options.iter().any(|opt| {
-                                opt.name.as_str().contains("Bietung")
-                                    || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
-                            }) {
-                                found_radio.push(f.clone());
-                            }
+            helpers::walk_structured_nodes(std::slice::from_ref(c.content.as_ref()), &mut |n| {
+                if let SN2::Field(f) = n {
+                    if let FieldType::Radio { options } = &f.input_type {
+                        if options.iter().any(|opt| {
+                            opt.name.as_str().contains("Bietung")
+                                || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+                        }) {
+                            found_radio.push(f.clone());
                         }
                     }
-                },
-            );
+                }
+            });
             if !found_radio.is_empty() && radio_in_cond.is_none() {
                 radio_in_cond = Some((found_radio[0].clone(), c.condition.clone()));
             }
