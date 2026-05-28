@@ -429,7 +429,7 @@ for (var i = 0; i < len; i++) {{\\\
 {pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
 }}\\\
 if (len < {max}) {{\\\
-{pn}.instanceManager.instances[len - 1].BT_Add.visible = true;\\\
+{pn}.BT_Add.visible = true;\\\
 }}",
         pn = panel_name,
         max = max_occur
