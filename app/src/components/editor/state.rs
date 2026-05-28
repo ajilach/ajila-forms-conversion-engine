@@ -229,6 +229,8 @@ pub enum NewNodeType {
     Heading(u8),
     List,
     Group,
+    Repeatable,
+    Field,
     ListItem,
     TableRow,
     TableCell,
@@ -1346,20 +1348,10 @@ pub fn indent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<No
             }
             let node = g.children.remove(child_idx);
             // Append to previous sibling
-            let new_child_idx = match &mut g.children[child_idx - 1] {
-                StructuredNode::Group(target) => {
-                    target.children.push(node);
-                    target.children.len() - 1
-                }
-                StructuredNode::GridLayout(target) => {
-                    target.elements.push(GridLayoutElement { span: 1, node });
-                    target.elements.len() - 1
-                }
-                _ => return None,
-            };
+            let extra_segments = append_to_container(&mut g.children[child_idx - 1], node)?;
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx - 1));
-            new_path.push(PathSegment::Child(new_child_idx));
+            new_path.extend(extra_segments);
             Some(new_path)
         }
         StructuredNode::GridLayout(g) => {
@@ -1371,20 +1363,10 @@ pub fn indent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<No
             }
             let element = g.elements.remove(child_idx);
             let node = element.node;
-            let new_child_idx = match &mut g.elements[child_idx - 1].node {
-                StructuredNode::Group(target) => {
-                    target.children.push(node);
-                    target.children.len() - 1
-                }
-                StructuredNode::GridLayout(target) => {
-                    target.elements.push(GridLayoutElement { span: 1, node });
-                    target.elements.len() - 1
-                }
-                _ => return None,
-            };
+            let extra_segments = append_to_container(&mut g.elements[child_idx - 1].node, node)?;
             let mut new_path = parent_path;
             new_path.push(PathSegment::Child(child_idx - 1));
-            new_path.push(PathSegment::Child(new_child_idx));
+            new_path.extend(extra_segments);
             Some(new_path)
         }
         _ => None,
@@ -1410,40 +1392,118 @@ pub fn outdent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<N
     // Otherwise, remove from parent and insert into grandparent after the parent
     let (grandparent_path, parent_idx_in_grandparent) = get_container_child_info(&parent_path)?;
 
-    // First, remove the node from the parent container
-    let parent = get_node_at_path_mut(content, &parent_path)?;
-    let node = match parent {
-        StructuredNode::Group(g) => {
-            if child_idx >= g.children.len() {
-                return None;
-            }
-            g.children.remove(child_idx)
+    // Check if the grandparent is a Repeatable. If so, the node should be placed
+    // after the Repeatable in the Repeatable's parent (one more level up).
+    let grandparent_node = get_node_at_path(content, &grandparent_path)?;
+    if matches!(grandparent_node, StructuredNode::Repeatable(_)) {
+        // Grandparent is a Repeatable — outdent goes past it.
+        // If the Repeatable is at root level, editor.rs handles it.
+        if grandparent_path.len() == 1 {
+            return None; // Handled specially in editor.rs
         }
-        StructuredNode::GridLayout(g) => {
-            if child_idx >= g.elements.len() {
-                return None;
-            }
-            g.elements.remove(child_idx).node
-        }
-        _ => return None,
-    };
+        // Nested Repeatable: insert after the Repeatable in the great-grandparent
+        let (great_grandparent_path, rep_idx_in_ggp) = get_container_child_info(&grandparent_path)?;
 
-    // Insert into grandparent after the parent's position
-    let grandparent = get_node_at_path_mut(content, &grandparent_path)?;
-    let insert_idx = parent_idx_in_grandparent + 1;
-    match grandparent {
+        // Remove from inner container
+        let parent = get_node_at_path_mut(content, &parent_path)?;
+        let node = match parent {
+            StructuredNode::Group(g) => {
+                if child_idx >= g.children.len() {
+                    return None;
+                }
+                g.children.remove(child_idx)
+            }
+            StructuredNode::GridLayout(g) => {
+                if child_idx >= g.elements.len() {
+                    return None;
+                }
+                g.elements.remove(child_idx).node
+            }
+            _ => return None,
+        };
+
+        // Insert after the Repeatable in the great-grandparent
+        let ggp = get_node_at_path_mut(content, &great_grandparent_path)?;
+        let insert_idx = rep_idx_in_ggp + 1;
+        match ggp {
+            StructuredNode::Group(g) => {
+                g.children.insert(insert_idx, node);
+                let mut new_path = great_grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            StructuredNode::GridLayout(g) => {
+                g.elements
+                    .insert(insert_idx, GridLayoutElement { span: 1, node });
+                let mut new_path = great_grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            _ => None,
+        }
+    } else {
+        // Normal case: grandparent is Group/GridLayout
+        // First, remove the node from the parent container
+        let parent = get_node_at_path_mut(content, &parent_path)?;
+        let node = match parent {
+            StructuredNode::Group(g) => {
+                if child_idx >= g.children.len() {
+                    return None;
+                }
+                g.children.remove(child_idx)
+            }
+            StructuredNode::GridLayout(g) => {
+                if child_idx >= g.elements.len() {
+                    return None;
+                }
+                g.elements.remove(child_idx).node
+            }
+            _ => return None,
+        };
+
+        // Insert into grandparent after the parent's position
+        let grandparent = get_node_at_path_mut(content, &grandparent_path)?;
+        let insert_idx = parent_idx_in_grandparent + 1;
+        match grandparent {
+            StructuredNode::Group(g) => {
+                g.children.insert(insert_idx, node);
+                let mut new_path = grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            StructuredNode::GridLayout(g) => {
+                g.elements
+                    .insert(insert_idx, GridLayoutElement { span: 1, node });
+                let mut new_path = grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Append a node to a container (Group, GridLayout, or Repeatable wrapping one of those).
+/// Returns the path segments to reach the new node relative to the container.
+fn append_to_container(
+    container: &mut StructuredNode,
+    node: StructuredNode,
+) -> Option<Vec<PathSegment>> {
+    match container {
         StructuredNode::Group(g) => {
-            g.children.insert(insert_idx, node);
-            let mut new_path = grandparent_path;
-            new_path.push(PathSegment::Child(insert_idx));
-            Some(new_path)
+            g.children.push(node);
+            Some(vec![PathSegment::Child(g.children.len() - 1)])
         }
         StructuredNode::GridLayout(g) => {
-            g.elements
-                .insert(insert_idx, GridLayoutElement { span: 1, node });
-            let mut new_path = grandparent_path;
-            new_path.push(PathSegment::Child(insert_idx));
-            Some(new_path)
+            g.elements.push(GridLayoutElement { span: 1, node });
+            Some(vec![PathSegment::Child(g.elements.len() - 1)])
+        }
+        StructuredNode::Repeatable(r) => {
+            // Indent into the Repeatable's item (which must be a Group/GridLayout)
+            let inner_segments = append_to_container(r.item.as_mut(), node)?;
+            let mut segments = vec![PathSegment::Child(0)];
+            segments.extend(inner_segments);
+            Some(segments)
         }
         _ => None,
     }
@@ -1451,10 +1511,11 @@ pub fn outdent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<N
 
 /// Check if a node is a container that can have arbitrary children.
 fn is_children_container(node: &StructuredNode) -> bool {
-    matches!(
-        node,
-        StructuredNode::Group(_) | StructuredNode::GridLayout(_)
-    )
+    match node {
+        StructuredNode::Group(_) | StructuredNode::GridLayout(_) => true,
+        StructuredNode::Repeatable(r) => is_children_container(&r.item),
+        _ => false,
+    }
 }
 
 /// An option for the Add dropdown, carrying a label and the action payload.
@@ -1529,6 +1590,8 @@ pub fn compute_add_options(
         ("Heading", NewNodeType::Heading(2)),
         ("List", NewNodeType::List),
         ("Group", NewNodeType::Group),
+        ("Repeatable", NewNodeType::Repeatable),
+        ("Field", NewNodeType::Field),
     ] {
         options.push(AddOption {
             label,
@@ -1783,22 +1846,16 @@ pub fn node_has_missing_translations(node: &StructuredNode, document_languages: 
     match node {
         StructuredNode::Paragraph(p) => translated_text_has_missing(&p.content, document_languages),
         StructuredNode::Heading(h) => translated_text_has_missing(&h.content, document_languages),
-        StructuredNode::Field(f) => f
-            .label
-            .as_ref()
-            .map_or(false, |l| translated_text_has_missing(l, document_languages)),
-        StructuredNode::Footnote(n) => {
-            translated_text_has_missing(&n.content, document_languages)
-        }
+        StructuredNode::Field(f) => f.label.as_ref().map_or(false, |l| {
+            translated_text_has_missing(l, document_languages)
+        }),
+        StructuredNode::Footnote(n) => translated_text_has_missing(&n.content, document_languages),
         _ => false,
     }
 }
 
 /// Check whether a list item has missing translations for any of the given document languages.
-pub fn list_item_has_missing_translations(
-    item: &ListItem,
-    document_languages: &[String],
-) -> bool {
+pub fn list_item_has_missing_translations(item: &ListItem, document_languages: &[String]) -> bool {
     if document_languages.len() <= 1 {
         return false;
     }

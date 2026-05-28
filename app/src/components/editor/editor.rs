@@ -11,7 +11,7 @@ use blueprint::structured::TableRow as StructTableRow;
 use blueprint::structured::{GridLayoutElement, NameValue};
 use blueprint::{
     DocumentEnvelope, FieldId, FieldNode, FieldType, GroupNode, HeadingLevel, HeadingNode,
-    ListItem, ListNode, ParagraphNode, StructuredNode, TranslatedText,
+    ListItem, ListNode, ParagraphNode, RepeatableNode, StructuredNode, TranslatedText,
 };
 
 use super::node_renderer::{FieldLabelsWrapper, NodeRenderer, NodesWrapper};
@@ -29,6 +29,17 @@ use super::state::{
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
 use crate::platform::show_html_preview;
+
+/// Scroll the currently selected search match into view after a short delay
+/// to allow the DOM to update with the new selection classes.
+fn scroll_to_selected_match() {
+    document::eval(
+        r#"setTimeout(() => {
+            const el = document.querySelector('.node-item.selected.node-search-match, .list-item-block .selected.node-search-match');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);"#,
+    );
+}
 
 #[derive(Clone, Debug)]
 enum SmartEditState {
@@ -94,8 +105,17 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let mut search_query = use_signal(String::new);
     let mut search_index = use_signal(|| 0usize);
 
-    // Live HTML preview toggle
-    let mut live_preview = use_signal(|| false);
+    // Live HTML preview toggle (controls the external browser preview server)
+    let mut live_preview = use_signal(|| {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            crate::preview_server::is_active()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            false
+        }
+    });
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -336,6 +356,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     };
 
     // Handle editor actions
+    let languages_for_rsx = languages.clone();
     let handle_action = move |action: EditorAction| {
         match action {
             EditorAction::ToggleSelection(path) => {
@@ -642,24 +663,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 let mut env = envelope.write();
                                 if is_children_container_node(&env.content[idx - 1]) {
                                     let node = env.content.remove(idx);
-                                    let new_child_idx = match &mut env.content[idx - 1] {
-                                        StructuredNode::Group(g) => {
-                                            g.children.push(node);
-                                            g.children.len() - 1
-                                        }
-                                        StructuredNode::GridLayout(g) => {
-                                            g.elements.push(GridLayoutElement { span: 1, node });
-                                            g.elements.len() - 1
-                                        }
-                                        _ => unreachable!(),
-                                    };
-                                    drop(env);
-                                    let mut new_selection = selection.write();
-                                    new_selection.selected.clear();
-                                    new_selection.selected.insert(vec![
-                                        PathSegment::Child(idx - 1),
-                                        PathSegment::Child(new_child_idx),
-                                    ]);
+                                    let new_path_segments =
+                                        append_to_container_node(&mut env.content[idx - 1], node);
+                                    if let Some(segments) = new_path_segments {
+                                        drop(env);
+                                        let mut new_selection = selection.write();
+                                        new_selection.selected.clear();
+                                        let mut new_path = vec![PathSegment::Child(idx - 1)];
+                                        new_path.extend(segments);
+                                        new_selection.selected.insert(new_path);
+                                    }
                                 }
                             }
                         }
@@ -710,6 +723,44 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 };
                                 if let Some(node) = extracted {
                                     let insert_idx = parent_root_idx + 1;
+                                    env.content.insert(insert_idx, node);
+                                    drop(env);
+                                    let mut new_selection = selection.write();
+                                    new_selection.selected.clear();
+                                    new_selection
+                                        .selected
+                                        .insert(vec![PathSegment::Child(insert_idx)]);
+                                }
+                            }
+                        } else if is_inside_root_repeatable(path, &envelope.read().content) {
+                            // Inside a Repeatable at root level: extract from the
+                            // inner Group and insert after the Repeatable in root
+                            let rep_idx = match path[0] {
+                                PathSegment::Child(i) => i,
+                                _ => unreachable!(),
+                            };
+                            let mut env = envelope.write();
+                            let rep_node = &mut env.content[rep_idx];
+                            if let StructuredNode::Repeatable(r) = rep_node {
+                                let extracted = match r.item.as_mut() {
+                                    StructuredNode::Group(g) => {
+                                        if child_idx < g.children.len() {
+                                            Some(g.children.remove(child_idx))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    StructuredNode::GridLayout(g) => {
+                                        if child_idx < g.elements.len() {
+                                            Some(g.elements.remove(child_idx).node)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(node) = extracted {
+                                    let insert_idx = rep_idx + 1;
                                     env.content.insert(insert_idx, node);
                                     drop(env);
                                     let mut new_selection = selection.write();
@@ -827,13 +878,15 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 match node_type {
                     NewNodeType::ListItem => {
                         // Insert a new list item into the parent list
+                        let item_text = if languages.is_empty() {
+                            TranslatedText::plain("New item")
+                        } else {
+                            TranslatedText::plain_with_lang(&languages[0], "New item")
+                        };
                         new_selection =
                             if let Some(l) = get_list_at_path_mut(&mut env.content, &parent) {
                                 let insert_idx = index.min(l.items.len());
-                                l.items.insert(
-                                    insert_idx,
-                                    ListItem::simple(TranslatedText::plain("New item")),
-                                );
+                                l.items.insert(insert_idx, ListItem::simple(item_text));
                                 let mut path = parent.clone();
                                 path.push(PathSegment::ListItem(insert_idx));
                                 Some(path)
@@ -921,26 +974,55 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         };
                     }
                     _ => {
-                        // Standard node types: Paragraph, Heading, List, Group
+                        // Standard node types: Paragraph, Heading, List, Group, Repeatable, Field
+                        // Use document languages to avoid polluting with "default"
+                        let make_text = |text: &str| -> TranslatedText {
+                            if languages.is_empty() {
+                                TranslatedText::plain(text)
+                            } else {
+                                TranslatedText::plain_with_lang(&languages[0], text)
+                            }
+                        };
+
                         let new_node = match node_type {
                             NewNodeType::Paragraph => StructuredNode::Paragraph(ParagraphNode {
-                                content: TranslatedText::plain("New paragraph"),
+                                content: make_text("New paragraph"),
                                 som_path: None,
                                 source_name: None,
                             }),
                             NewNodeType::Heading(level) => StructuredNode::Heading(HeadingNode {
                                 level: HeadingLevel::from_u8(level),
-                                content: TranslatedText::plain("New heading"),
+                                content: make_text("New heading"),
                                 som_path: None,
                                 source_name: None,
                             }),
                             NewNodeType::List => StructuredNode::List(ListNode {
                                 list_style: ListStyleType::Disc,
-                                items: vec![ListItem::simple(TranslatedText::plain("New item"))],
+                                items: vec![ListItem::simple(make_text("New item"))],
                             }),
                             NewNodeType::Group => {
                                 StructuredNode::Group(GroupNode { children: vec![] })
                             }
+                            NewNodeType::Repeatable => StructuredNode::Repeatable(RepeatableNode {
+                                item: Box::new(StructuredNode::Group(GroupNode {
+                                    children: vec![],
+                                })),
+                                min_occurrences: 1,
+                                max_occurrences: None,
+                            }),
+                            NewNodeType::Field => StructuredNode::Field(FieldNode {
+                                name: FieldId::random(),
+                                som_path: None,
+                                label: Some(make_text("New field")),
+                                input_type: FieldType::Text {
+                                    regex: None,
+                                    max_length: None,
+                                    min_length: None,
+                                },
+                                value: None,
+                                placeholder: None,
+                                required: false,
+                            }),
                             _ => unreachable!(),
                         };
 
@@ -1150,6 +1232,14 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 sel.selected = all_paths;
             }
         }
+
+        // Push live preview update if active (no-op if content unchanged)
+        #[cfg(not(target_arch = "wasm32"))]
+        if *live_preview.read() {
+            let html =
+                blueprint::to_html(&envelope.read().content, &blueprint::HtmlConfig::default());
+            crate::preview_server::update_preview(html);
+        }
     };
 
     let on_apply = props.on_apply;
@@ -1167,450 +1257,430 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         search_results.iter().cloned().collect();
 
     rsx! {
-        div {
-            class: if *live_preview.read() {
-                "structured-editor structured-editor-split"
-            } else {
-                "structured-editor"
-            },
+        div { class: "structured-editor",
 
             // ── Left column: editor pane ──────────────────────────────────
             div { class: "editor-main",
-            // Header
-            div { class: "editor-header",
-                h2 { "Edit Structure" }
-                div { class: "editor-header-actions",
-                    button {
-                        class: if *live_preview.read() {
-                            "editor-btn editor-btn-active"
-                        } else {
-                            "editor-btn editor-btn-secondary"
-                        },
-                        title: "Toggle live HTML preview panel",
-                        onclick: move |_| {
-                            let v = *live_preview.read();
-                            live_preview.set(!v);
-                        },
-                        if *live_preview.read() { "⏹ Live Preview" } else { "▶ Live Preview" }
-                    }
-                    button {
-                        class: "editor-btn editor-btn-secondary",
-                        title: "Open current HTML in a new window",
-                        onclick: {
-                            let envelope = envelope;
-                            move |_| {
-                                let html = blueprint::to_html(
-                                    &envelope.read().content,
-                                    &blueprint::HtmlConfig::default(),
-                                );
-                                show_html_preview(html, "editor-preview.html");
-                            }
-                        },
-                        "Preview HTML"
-                    }
-                    button {
-                        class: "editor-btn editor-btn-secondary",
-                        onclick: move |_| on_cancel.call(()),
-                        "Cancel"
-                    }
-                    button {
-                        class: "editor-btn editor-btn-primary",
-                        onclick: {
-                            let envelope = envelope;
-                            move |_| on_apply.call(envelope.read().clone())
-                        },
-                        "Apply Changes"
-                    }
-                }
-            }
-
-            // Toolbar
-            EditorToolbar {
-                selection: selection.read().clone(),
-                can_merge,
-                can_move_up,
-                can_move_down,
-                can_indent: can_indent_node,
-                can_outdent: can_outdent_node,
-                available_conversions: conversions.clone(),
-                add_options: add_options.clone(),
-                has_images,
-                is_smart_edit_loading: matches!(*smart_edit_state.read(), SmartEditState::Loading),
-                node_count: envelope.read().content.len(),
-                on_action: handle_action.clone(),
-            }
-
-            // Smart Edit inline review panel
-            {
-                match smart_edit_state.read().clone() {
-                    SmartEditState::Idle => rsx! {},
-                    SmartEditState::Loading => rsx! {},
-                    SmartEditState::Preview { selected_indices, elapsed_ms, result } => {
-                        let session_name_for_retry = smart_edit_session_name.read().clone();
-                        let selected_indices_for_apply = selected_indices.clone();
-                        let selected_indices_for_retry = selected_indices.clone();
-                        let content_for_retry = envelope.read().content.clone();
-                        let plain_images_for_retry = smart_edit_images.clone();
-                        let nodes_for_apply = result.nodes.clone();
-                        let original_nodes_for_preview: Vec<StructuredNode> = if selected_indices
-                            .is_empty()
-                        {
-                            envelope.read().content.clone()
-                        } else {
-                            selected_indices
-                                .iter()
-                                .filter_map(|&i| envelope.read().content.get(i).cloned())
-                                .collect()
-                        };
-                        let modified_nodes_for_preview = result.nodes.clone();
-                        rsx! {
-                            div { class: "smart-edit-inline-panel",
-                                h3 { "Smart Edit Review" }
-                                p { class: "smart-edit-hint", "Completed in {elapsed_ms}ms · {result.nodes.len()} node(s)" }
-
-                                if result.changes.is_empty() {
-                                    p { class: "smart-edit-hint smart-edit-warning",
-                                        "Copilot did not provide a change list. Accept or dismiss the suggestion."
-                                    }
-                                } else {
-                                    p { class: "smart-edit-hint smart-edit-success",
-                                        "Review the proposed changes below. Uncheck any changes you want to reject."
-                                    }
-                                    div { class: "smart-edit-change-list",
-                                        for change in result.changes.clone() {
-                                            {
-                                                let id = change.id;
-                                                let is_rejected = rejected_ids.read().contains(&id);
-                                                rsx! {
-                                                    label { class: if is_rejected { "smart-edit-change-item smart-edit-change-rejected" } else { "smart-edit-change-item" },
-                                                        input {
-                                                            r#type: "checkbox",
-                                                            checked: !is_rejected,
-                                                            onchange: move |evt| {
-                                                                if evt.checked() {
-                                                                    rejected_ids.write().remove(&id);
-                                                                } else {
-                                                                    rejected_ids.write().insert(id);
-                                                                }
-                                                            },
-                                                        }
-                                                        span { "{change.description}" }
-                                                    }
-                                                }
-                                            }
-                                        }
+                // Header
+                div { class: "editor-header",
+                    h2 { "Edit Structure" }
+                    div { class: "editor-header-actions",
+                        button {
+                            class: if *live_preview.read() { "editor-btn editor-btn-active" } else { "editor-btn editor-btn-secondary" },
+                            title: "Toggle live HTML preview in browser",
+                            onclick: {
+                                let envelope = envelope;
+                                move |_| {
+                                    let active = *live_preview.read();
+                                    if active {
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        crate::preview_server::stop_preview();
+                                        live_preview.set(false);
+                                    } else {
+                                        let html = blueprint::to_html(
+                                            &envelope.read().content,
+                                            &blueprint::HtmlConfig::default(),
+                                        );
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        crate::preview_server::start_preview(html);
+                                        live_preview.set(true);
                                     }
                                 }
+                            },
+                            if *live_preview.read() {
+                                "⏹ Stop Live Preview"
+                            } else {
+                                "▶ Open Live Preview"
+                            }
+                        }
+                        button {
+                            class: "editor-btn editor-btn-secondary",
+                            onclick: move |_| on_cancel.call(()),
+                            "Cancel"
+                        }
+                        button {
+                            class: "editor-btn editor-btn-primary",
+                            onclick: {
+                                let envelope = envelope;
+                                move |_| on_apply.call(envelope.read().clone())
+                            },
+                            "Apply Changes"
+                        }
+                    }
+                }
 
-                                div { class: "smart-edit-actions",
-                                    button {
-                                        class: "editor-btn editor-btn-secondary",
-                                        onclick: {
-                                            let original_nodes = original_nodes_for_preview.clone();
-                                            move |_| {
-                                                let html = blueprint::to_html(
-                                                    &original_nodes,
-                                                    &blueprint::HtmlConfig::default(),
-                                                );
-                                                show_html_preview(html, "smart-edit-original-preview.html");
-                                            }
-                                        },
-                                        "Preview Original"
-                                    }
-                                    button {
-                                        class: "editor-btn editor-btn-secondary",
-                                        onclick: {
-                                            let modified_nodes = modified_nodes_for_preview.clone();
-                                            move |_| {
-                                                let html = blueprint::to_html(
-                                                    &modified_nodes,
-                                                    &blueprint::HtmlConfig::default(),
-                                                );
-                                                show_html_preview(html, "smart-edit-modified-preview.html");
-                                            }
-                                        },
-                                        "Preview Modified"
-                                    }
-                                    button {
-                                        class: "editor-btn editor-btn-secondary",
-                                        onclick: move |_| {
-                                            smart_edit_state.set(SmartEditState::Idle);
-                                            smart_edit_session_name.set(None);
-                                        },
-                                        "Dismiss"
-                                    }
+                // Toolbar
+                EditorToolbar {
+                    selection: selection.read().clone(),
+                    can_merge,
+                    can_move_up,
+                    can_move_down,
+                    can_indent: can_indent_node,
+                    can_outdent: can_outdent_node,
+                    available_conversions: conversions.clone(),
+                    add_options: add_options.clone(),
+                    has_images,
+                    is_smart_edit_loading: matches!(*smart_edit_state.read(), SmartEditState::Loading),
+                    node_count: envelope.read().content.len(),
+                    on_action: handle_action.clone(),
+                }
 
-                                    // Show "Retry with Feedback" when some changes are rejected.
-                                    if !rejected_ids.read().is_empty() {
-                                        {
-                                            let rejected: Vec<smart_edit::ChangeItem> = result
-                                                .changes
-                                                .iter()
-                                                .filter(|c| rejected_ids.read().contains(&c.id))
-                                                .cloned()
-                                                .collect();
-                                            let content = content_for_retry.clone();
-                                            let plain_images = plain_images_for_retry.clone();
-                                            let selected_indices = selected_indices_for_retry.clone();
-                                            let session_name = session_name_for_retry
-                                                .clone()
-                                                .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
+                // Smart Edit inline review panel
+                {
+                    match smart_edit_state.read().clone() {
+                        SmartEditState::Idle => rsx! {},
+                        SmartEditState::Loading => rsx! {},
+                        SmartEditState::Preview { selected_indices, elapsed_ms, result } => {
+                            let session_name_for_retry = smart_edit_session_name.read().clone();
+                            let selected_indices_for_apply = selected_indices.clone();
+                            let selected_indices_for_retry = selected_indices.clone();
+                            let content_for_retry = envelope.read().content.clone();
+                            let plain_images_for_retry = smart_edit_images.clone();
+                            let nodes_for_apply = result.nodes.clone();
+                            let original_nodes_for_preview: Vec<StructuredNode> = if selected_indices
+                                .is_empty()
+                            {
+                                envelope.read().content.clone()
+                            } else {
+                                selected_indices
+                                    .iter()
+                                    .filter_map(|&i| envelope.read().content.get(i).cloned())
+                                    .collect()
+                            };
+                            let modified_nodes_for_preview = result.nodes.clone();
+                            rsx! {
+                                div { class: "smart-edit-inline-panel",
+                                    h3 { "Smart Edit Review" }
+                                    p { class: "smart-edit-hint", "Completed in {elapsed_ms}ms · {result.nodes.len()} node(s)" }
 
-                                            rsx! {
-                                                button {
-                                                    class: "editor-btn editor-btn-secondary",
-                                                    onclick: move |_| {
-                                                        let content = content.clone();
-                                                        let plain_images = plain_images.clone();
-                                                        let selected_indices = selected_indices.clone();
-                                                        let rejected = rejected.clone();
-                                                        let session_name = session_name.clone();
-                                                        let started_at = std::time::Instant::now();
-                                                        smart_edit_state.set(SmartEditState::Loading);
-                                                        rejected_ids.write().clear();
-                                                        spawn(async move {
-                                                            match smart_edit::run_smart_edit_with_feedback(
-                                                                    &content,
-                                                                    &selected_indices,
-                                                                    &plain_images,
-                                                                    &rejected,
-                                                                    &session_name,
-                                                                )
-                                                                .await
-                                                            {
-                                                                Ok(result) => {
-                                                                    let elapsed_ms = started_at.elapsed().as_millis();
-                                                                    smart_edit_state
-                                                                        .set(SmartEditState::Preview {
-                                                                            selected_indices,
-                                                                            elapsed_ms,
-                                                                            result,
-                                                                        });
-                                                                }
-                                                                Err(message) => {
-                                                                    let elapsed_ms = started_at.elapsed().as_millis();
-                                                                    smart_edit_state
-                                                                        .set(SmartEditState::Error {
-                                                                            selected_indices,
-                                                                            elapsed_ms,
-                                                                            message,
-                                                                        });
-                                                                }
+                                    if result.changes.is_empty() {
+                                        p { class: "smart-edit-hint smart-edit-warning",
+                                            "Copilot did not provide a change list. Accept or dismiss the suggestion."
+                                        }
+                                    } else {
+                                        p { class: "smart-edit-hint smart-edit-success",
+                                            "Review the proposed changes below. Uncheck any changes you want to reject."
+                                        }
+                                        div { class: "smart-edit-change-list",
+                                            for change in result.changes.clone() {
+                                                {
+                                                    let id = change.id;
+                                                    let is_rejected = rejected_ids.read().contains(&id);
+                                                    rsx! {
+                                                        label { class: if is_rejected { "smart-edit-change-item smart-edit-change-rejected" } else { "smart-edit-change-item" },
+                                                            input {
+                                                                r#type: "checkbox",
+                                                                checked: !is_rejected,
+                                                                onchange: move |evt| {
+                                                                    if evt.checked() {
+                                                                        rejected_ids.write().remove(&id);
+                                                                    } else {
+                                                                        rejected_ids.write().insert(id);
+                                                                    }
+                                                                },
                                                             }
-                                                        });
-                                                    },
-                                                    "Retry with Feedback"
+                                                            span { "{change.description}" }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
                                     }
 
-                                    // "Apply Changes" is only shown when all changes are accepted
-                                    // (nothing in rejected_ids), or when there are no changes listed.
-                                    if rejected_ids.read().is_empty() {
+                                    div { class: "smart-edit-actions",
                                         button {
-                                            class: "editor-btn editor-btn-primary",
+                                            class: "editor-btn editor-btn-secondary",
+                                            onclick: {
+                                                let original_nodes = original_nodes_for_preview.clone();
+                                                move |_| {
+                                                    let html = blueprint::to_html(
+                                                        &original_nodes,
+                                                        &blueprint::HtmlConfig::default(),
+                                                    );
+                                                    show_html_preview(html, "smart-edit-original-preview.html");
+                                                }
+                                            },
+                                            "Preview Original"
+                                        }
+                                        button {
+                                            class: "editor-btn editor-btn-secondary",
+                                            onclick: {
+                                                let modified_nodes = modified_nodes_for_preview.clone();
+                                                move |_| {
+                                                    let html = blueprint::to_html(
+                                                        &modified_nodes,
+                                                        &blueprint::HtmlConfig::default(),
+                                                    );
+                                                    show_html_preview(html, "smart-edit-modified-preview.html");
+                                                }
+                                            },
+                                            "Preview Modified"
+                                        }
+                                        button {
+                                            class: "editor-btn editor-btn-secondary",
                                             onclick: move |_| {
-                                                let mut indices = selected_indices_for_apply.clone();
-                                                indices.sort();
-
-                                                let mut env = envelope.write();
-                                                for &idx in indices.iter().rev() {
-                                                    if idx < env.content.len() {
-                                                        env.content.remove(idx);
-                                                    }
-                                                }
-                                                let insert_at =
-                                                    indices.first().copied().unwrap_or(0).min(env.content.len());
-                                                for (i, node) in nodes_for_apply.clone().into_iter().enumerate() {
-                                                    env.content.insert(insert_at + i, node);
-                                                }
-                                                drop(env);
-
-                                                selection.write().clear();
                                                 smart_edit_state.set(SmartEditState::Idle);
                                                 smart_edit_session_name.set(None);
                                             },
-                                            "Apply Changes"
+                                            "Dismiss"
+                                        }
+
+                                        // Show "Retry with Feedback" when some changes are rejected.
+                                        if !rejected_ids.read().is_empty() {
+                                            {
+                                                let rejected: Vec<smart_edit::ChangeItem> = result
+                                                    .changes
+                                                    .iter()
+                                                    .filter(|c| rejected_ids.read().contains(&c.id))
+                                                    .cloned()
+                                                    .collect();
+                                                let content = content_for_retry.clone();
+                                                let plain_images = plain_images_for_retry.clone();
+                                                let selected_indices = selected_indices_for_retry.clone();
+                                                let session_name = session_name_for_retry
+                                                    .clone()
+                                                    .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
+
+                                                rsx! {
+                                                    button {
+                                                        class: "editor-btn editor-btn-secondary",
+                                                        onclick: move |_| {
+                                                            let content = content.clone();
+                                                            let plain_images = plain_images.clone();
+                                                            let selected_indices = selected_indices.clone();
+                                                            let rejected = rejected.clone();
+                                                            let session_name = session_name.clone();
+                                                            let started_at = std::time::Instant::now();
+                                                            smart_edit_state.set(SmartEditState::Loading);
+                                                            rejected_ids.write().clear();
+                                                            spawn(async move {
+                                                                match smart_edit::run_smart_edit_with_feedback(
+                                                                        &content,
+                                                                        &selected_indices,
+                                                                        &plain_images,
+                                                                        &rejected,
+                                                                        &session_name,
+                                                                    )
+                                                                    .await
+                                                                {
+                                                                    Ok(result) => {
+                                                                        let elapsed_ms = started_at.elapsed().as_millis();
+                                                                        smart_edit_state
+                                                                            .set(SmartEditState::Preview {
+                                                                                selected_indices,
+                                                                                elapsed_ms,
+                                                                                result,
+                                                                            });
+                                                                    }
+                                                                    Err(message) => {
+                                                                        let elapsed_ms = started_at.elapsed().as_millis();
+                                                                        smart_edit_state
+                                                                            .set(SmartEditState::Error {
+                                                                                selected_indices,
+                                                                                elapsed_ms,
+                                                                                message,
+                                                                            });
+                                                                    }
+                                                                }
+                                                            });
+                                                        },
+                                                        "Retry with Feedback"
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // "Apply Changes" is only shown when all changes are accepted
+                                        // (nothing in rejected_ids), or when there are no changes listed.
+                                        if rejected_ids.read().is_empty() {
+                                            button {
+                                                class: "editor-btn editor-btn-primary",
+                                                onclick: move |_| {
+                                                    let mut indices = selected_indices_for_apply.clone();
+                                                    indices.sort();
+
+                                                    let mut env = envelope.write();
+                                                    for &idx in indices.iter().rev() {
+                                                        if idx < env.content.len() {
+                                                            env.content.remove(idx);
+                                                        }
+                                                    }
+                                                    let insert_at =
+                                                        indices.first().copied().unwrap_or(0).min(env.content.len());
+                                                    for (i, node) in nodes_for_apply.clone().into_iter().enumerate() {
+                                                        env.content.insert(insert_at + i, node);
+                                                    }
+                                                    drop(env);
+
+                                                    selection.write().clear();
+                                                    smart_edit_state.set(SmartEditState::Idle);
+                                                    smart_edit_session_name.set(None);
+                                                },
+                                                "Apply Changes"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        SmartEditState::Error { selected_indices, elapsed_ms, message } => {
+                            let session_name_for_retry = smart_edit_session_name.read().clone();
+                            let selected_indices_for_retry = selected_indices.clone();
+                            let content_for_retry = envelope.read().content.clone();
+                            let plain_images_for_retry = smart_edit_images.clone();
+                            rsx! {
+                                div { class: "smart-edit-inline-panel",
+                                    p { class: "smart-edit-hint smart-edit-error", "Smart Edit failed: {message}" }
+                                    p { class: "smart-edit-hint", "Failed after {elapsed_ms}ms" }
+                                    div { class: "smart-edit-actions",
+                                        button {
+                                            class: "editor-btn editor-btn-secondary",
+                                            onclick: move |_| {
+                                                smart_edit_state.set(SmartEditState::Idle);
+                                                smart_edit_session_name.set(None);
+                                            },
+                                            "Dismiss"
+                                        }
+                                        button {
+                                            class: "editor-btn editor-btn-secondary",
+                                            onclick: move |_| {
+                                                let content = content_for_retry.clone();
+                                                let plain_images = plain_images_for_retry.clone();
+                                                let selected_indices = selected_indices_for_retry.clone();
+                                                let session_name = session_name_for_retry
+                                                    .clone()
+                                                    .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
+                                                let session_name = session_name.clone();
+                                                let started_at = std::time::Instant::now();
+                                                smart_edit_state.set(SmartEditState::Loading);
+                                                rejected_ids.write().clear();
+                                                spawn(async move {
+                                                    match smart_edit::run_smart_edit(
+                                                            &content,
+                                                            &selected_indices,
+                                                            &plain_images,
+                                                            &session_name,
+                                                            true,
+                                                        )
+                                                        .await
+                                                    {
+                                                        Ok(result) => {
+                                                            let elapsed_ms = started_at.elapsed().as_millis();
+                                                            smart_edit_state
+                                                                .set(SmartEditState::Preview {
+                                                                    selected_indices,
+                                                                    elapsed_ms,
+                                                                    result,
+                                                                });
+                                                        }
+                                                        Err(message) => {
+                                                            let elapsed_ms = started_at.elapsed().as_millis();
+                                                            smart_edit_state
+                                                                .set(SmartEditState::Error {
+                                                                    selected_indices,
+                                                                    elapsed_ms,
+                                                                    message,
+                                                                });
+                                                        }
+                                                    }
+                                                });
+                                            },
+                                            "Try Again"
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    SmartEditState::Error { selected_indices, elapsed_ms, message } => {
-                        let session_name_for_retry = smart_edit_session_name.read().clone();
-                        let selected_indices_for_retry = selected_indices.clone();
-                        let content_for_retry = envelope.read().content.clone();
-                        let plain_images_for_retry = smart_edit_images.clone();
-                        rsx! {
-                            div { class: "smart-edit-inline-panel",
-                                p { class: "smart-edit-hint smart-edit-error", "Smart Edit failed: {message}" }
-                                p { class: "smart-edit-hint", "Failed after {elapsed_ms}ms" }
-                                div { class: "smart-edit-actions",
-                                    button {
-                                        class: "editor-btn editor-btn-secondary",
-                                        onclick: move |_| {
-                                            smart_edit_state.set(SmartEditState::Idle);
-                                            smart_edit_session_name.set(None);
-                                        },
-                                        "Dismiss"
+                }
+
+                // Search bar
+                div { class: "editor-search",
+                    span { class: "editor-search-icon", "🔍" }
+                    input {
+                        class: "editor-search-input",
+                        r#type: "text",
+                        placeholder: "Search text, labels… (all languages)",
+                        value: "{search_query.read()}",
+                        oninput: move |evt| {
+                            search_query.set(evt.value());
+                            search_index.set(0);
+                        },
+                    }
+                    if search_result_count > 0 {
+                        span { class: "editor-search-count",
+                            "{search_current_idx + 1} / {search_result_count}"
+                        }
+                        button {
+                            class: "editor-search-nav",
+                            title: "Previous match",
+                            onclick: {
+                                let results = search_results.clone();
+                                move |_| {
+                                    let idx = *search_index.read() % results.len();
+                                    let new_idx = if idx == 0 { results.len() - 1 } else { idx - 1 };
+                                    search_index.set(new_idx);
+                                    if let Some(path) = results.get(new_idx) {
+                                        selection.write().select_single(path.clone());
                                     }
-                                    button {
-                                        class: "editor-btn editor-btn-secondary",
-                                        onclick: move |_| {
-                                            let content = content_for_retry.clone();
-                                            let plain_images = plain_images_for_retry.clone();
-                                            let selected_indices = selected_indices_for_retry.clone();
-                                            let session_name = session_name_for_retry
-                                                .clone()
-                                                .unwrap_or_else(|| format!("smart-edit-{}", Uuid::new_v4()));
-                                            let session_name = session_name.clone();
-                                            let started_at = std::time::Instant::now();
-                                            smart_edit_state.set(SmartEditState::Loading);
-                                            rejected_ids.write().clear();
-                                            spawn(async move {
-                                                match smart_edit::run_smart_edit(
-                                                        &content,
-                                                        &selected_indices,
-                                                        &plain_images,
-                                                        &session_name,
-                                                        true,
-                                                    )
-                                                    .await
-                                                {
-                                                    Ok(result) => {
-                                                        let elapsed_ms = started_at.elapsed().as_millis();
-                                                        smart_edit_state
-                                                            .set(SmartEditState::Preview {
-                                                                selected_indices,
-                                                                elapsed_ms,
-                                                                result,
-                                                            });
-                                                    }
-                                                    Err(message) => {
-                                                        let elapsed_ms = started_at.elapsed().as_millis();
-                                                        smart_edit_state
-                                                            .set(SmartEditState::Error {
-                                                                selected_indices,
-                                                                elapsed_ms,
-                                                                message,
-                                                            });
-                                                    }
-                                                }
-                                            });
-                                        },
-                                        "Try Again"
-                                    }
+                                    scroll_to_selected_match();
                                 }
-                            }
+                            },
+                            "▲"
+                        }
+                        button {
+                            class: "editor-search-nav",
+                            title: "Next match",
+                            onclick: {
+                                let results = search_results.clone();
+                                move |_| {
+                                    let new_idx = (*search_index.read() + 1) % results.len();
+                                    search_index.set(new_idx);
+                                    if let Some(path) = results.get(new_idx) {
+                                        selection.write().select_single(path.clone());
+                                    }
+                                    scroll_to_selected_match();
+                                }
+                            },
+                            "▼"
+                        }
+                    } else if !search_query.read().is_empty() {
+                        span { class: "editor-search-count editor-search-no-match", "No matches" }
+                    }
+                    if !search_query.read().is_empty() {
+                        button {
+                            class: "editor-search-clear",
+                            title: "Clear search",
+                            onclick: move |_| {
+                                search_query.set(String::new());
+                                search_index.set(0);
+                            },
+                            "✕"
                         }
                     }
                 }
-            }
 
-            // Search bar
-            div { class: "editor-search",
-                span { class: "editor-search-icon", "🔍" }
-                input {
-                    class: "editor-search-input",
-                    r#type: "text",
-                    placeholder: "Search text, labels… (all languages)",
-                    value: "{search_query.read()}",
-                    oninput: move |evt| {
-                        search_query.set(evt.value());
-                        search_index.set(0);
-                    },
-                }
-                if search_result_count > 0 {
-                    span { class: "editor-search-count",
-                        "{search_current_idx + 1} / {search_result_count}"
-                    }
-                    button {
-                        class: "editor-search-nav",
-                        title: "Previous match",
-                        onclick: {
-                            let results = search_results.clone();
-                            move |_| {
-                                let idx = *search_index.read() % results.len();
-                                let new_idx = if idx == 0 { results.len() - 1 } else { idx - 1 };
-                                search_index.set(new_idx);
-                                if let Some(path) = results.get(new_idx) {
-                                    selection.write().select_single(path.clone());
-                                }
-                            }
-                        },
-                        "▲"
-                    }
-                    button {
-                        class: "editor-search-nav",
-                        title: "Next match",
-                        onclick: {
-                            let results = search_results.clone();
-                            move |_| {
-                                let new_idx = (*search_index.read() + 1) % results.len();
-                                search_index.set(new_idx);
-                                if let Some(path) = results.get(new_idx) {
-                                    selection.write().select_single(path.clone());
-                                }
-                            }
-                        },
-                        "▼"
-                    }
-                } else if !search_query.read().is_empty() {
-                    span { class: "editor-search-count editor-search-no-match", "No matches" }
-                }
-                if !search_query.read().is_empty() {
-                    button {
-                        class: "editor-search-clear",
-                        title: "Clear search",
-                        onclick: move |_| {
-                            search_query.set(String::new());
-                            search_index.set(0);
-                        },
-                        "✕"
+                // Document tree
+                div { class: "editor-content",
+                    NodeRenderer {
+                        nodes: NodesWrapper(envelope.read().content.clone()),
+                        selection: selection.read().clone(),
+                        languages: languages_for_rsx.clone(),
+                        field_labels: field_labels.clone(),
+                        highlight: search_highlight,
+                        on_action: handle_action.clone(),
                     }
                 }
-            }
 
-            // Document tree
-            div { class: "editor-content",
-                NodeRenderer {
-                    nodes: NodesWrapper(envelope.read().content.clone()),
-                    selection: selection.read().clone(),
-                    languages: languages.clone(),
-                    field_labels: field_labels.clone(),
-                    highlight: search_highlight,
-                    on_action: handle_action.clone(),
+                // Status bar
+                div { class: "editor-status",
+                    span { "{envelope.read().content.len()} nodes" }
+                    if !languages_for_rsx.is_empty() {
+                        span { class: "editor-status-sep", " • " }
+                        span { "Languages: {languages_for_rsx.join(\", \")}" }
+                    }
                 }
-            }
-
-            // Status bar
-            div { class: "editor-status",
-                span { "{envelope.read().content.len()} nodes" }
-                if !languages.is_empty() {
-                    span { class: "editor-status-sep", " • " }
-                    span { "Languages: {languages.join(\", \")}" }
-                }
-            }
             } // end editor-main
-
-            // ── Right column: live preview pane ──────────────────────────
-            if *live_preview.read() {
-                div { class: "editor-preview-panel",
-                    div { class: "editor-preview-header",
-                        span { class: "editor-preview-title", "Live Preview" }
-                        span { class: "editor-preview-hint", "Updates on every change" }
-                    }
-                    iframe {
-                        class: "editor-preview-frame",
-                        srcdoc: blueprint::to_html(
-                            &envelope.read().content,
-                            &blueprint::HtmlConfig::default(),
-                        ),
-                    }
-                }
-            }
         }
 
     }
@@ -1851,8 +1921,49 @@ mod tests {
 
 /// Check if a node is a container that can accept children (Group or GridLayout).
 fn is_children_container_node(node: &StructuredNode) -> bool {
-    matches!(
-        node,
-        StructuredNode::Group(_) | StructuredNode::GridLayout(_)
-    )
+    match node {
+        StructuredNode::Group(_) | StructuredNode::GridLayout(_) => true,
+        StructuredNode::Repeatable(r) => is_children_container_node(&r.item),
+        _ => false,
+    }
+}
+
+/// Check if the path points to a direct child of a Repeatable's item at root level.
+/// Pattern: [Child(rep_idx), Child(0), Child(n)] where content[rep_idx] is a Repeatable.
+fn is_inside_root_repeatable(path: &[PathSegment], content: &[StructuredNode]) -> bool {
+    if path.len() != 3 {
+        return false;
+    }
+    let PathSegment::Child(rep_idx) = path[0] else {
+        return false;
+    };
+    if path[1] != PathSegment::Child(0) {
+        return false;
+    }
+    matches!(path[2], PathSegment::Child(_))
+        && matches!(content.get(rep_idx), Some(StructuredNode::Repeatable(_)))
+}
+
+/// Append a node to a container and return the path segments to the new node.
+fn append_to_container_node(
+    container: &mut StructuredNode,
+    node: StructuredNode,
+) -> Option<Vec<PathSegment>> {
+    match container {
+        StructuredNode::Group(g) => {
+            g.children.push(node);
+            Some(vec![PathSegment::Child(g.children.len() - 1)])
+        }
+        StructuredNode::GridLayout(g) => {
+            g.elements.push(GridLayoutElement { span: 1, node });
+            Some(vec![PathSegment::Child(g.elements.len() - 1)])
+        }
+        StructuredNode::Repeatable(r) => {
+            let inner_segments = append_to_container_node(r.item.as_mut(), node)?;
+            let mut segments = vec![PathSegment::Child(0)];
+            segments.extend(inner_segments);
+            Some(segments)
+        }
+        _ => None,
+    }
 }

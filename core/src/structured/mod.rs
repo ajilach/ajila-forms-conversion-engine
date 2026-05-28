@@ -77,6 +77,11 @@ impl FieldId {
         Self(Uuid::new_v5(&NAMESPACE_FIELD_ID, path.as_str().as_bytes()))
     }
 
+    /// Create a random `FieldId`.
+    pub fn random() -> Self {
+        Self(Uuid::new_v4())
+    }
+
     /// Get the underlying UUID.
     pub fn uuid(&self) -> &Uuid {
         &self.0
