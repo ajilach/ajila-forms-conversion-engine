@@ -16417,7 +16417,7 @@ fn test_aaki_has_list_with_expected_items() {
 }
 
 #[test]
-fn test_aaki_has_exactly_two_signature_fragments() {
+fn test_aaki_fragment_count() {
     // AAKI_019_SP has multiple XSD elements of type SignatureType across
     // `nombres_de_los_apoderados`, `anexomifid_ii_...`, and the legitimation
     // section. The layout fix (lr-tb slack tracking) correctly keeps
@@ -16477,10 +16477,22 @@ fn test_aaki_has_exactly_two_signature_fragments() {
         fragment_refs
     );
 
+    let iban_frags: Vec<_> = fragment_refs
+        .iter()
+        .filter(|(fr, _)| fr.contains("IBAN"))
+        .collect();
+    assert_eq!(
+        iban_frags.len(),
+        1,
+        "Expected exactly 1 IBAN fragment node, found {}.\nAll fragments: {:?}",
+        iban_frags.len(),
+        fragment_refs
+    );
+
     assert_eq!(
         fragment_refs.len(),
-        5,
-        "Expected exactly 5 fragment nodes (4 Signature + 1 EntityBasic), found {}.\nFragments: {:?}",
+        6,
+        "Expected exactly 6 fragment nodes (4 Signature + 1 EntityBasic + 1 IBAN), found {}.\nFragments: {:?}",
         fragment_refs.len(),
         fragment_refs
     );
@@ -19322,6 +19334,96 @@ fn test_aaha_de_has_one_repeatable_with_nachname_vorname() {
         labels.iter().any(|l| l.contains("Vorname")),
         "Repeatable should contain 'Vorname(n)', got: {:?}",
         labels
+    );
+}
+
+#[test]
+fn test_aagx_en_has_repeatable_with_lastname_firstnames() {
+    // AAGX EN should contain a repeatable section with person-name fields.
+    use crate::structured::StructuredNode;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAGX_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge on AAGX_019_EN.pdf");
+
+    let target_labels = ["Last name", "First name(s)"];
+    let mut found = false;
+
+    walk_structured_nodes(&structured_nodes, &mut |node| {
+        if found {
+            return;
+        }
+        if let StructuredNode::Repeatable(rep) = node {
+            let labels = collect_field_labels_trimmed(std::slice::from_ref(rep.item.as_ref()));
+            found = target_labels
+                .iter()
+                .all(|target| labels.iter().any(|label| label.contains(target)));
+        }
+    });
+
+    assert!(
+        found,
+        "Expected to find a repeatable section containing fields with labels 'Last name' and 'First name(s)'"
+    );
+}
+
+#[test]
+fn test_aagx_en_repeatable_not_replaced_by_fragment() {
+    // The repeatable section in AAGX EN (containing "Last name" / "First name(s)")
+    // must remain a Repeatable node in the AEM output and NOT be replaced by a Fragment.
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem};
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAGX_019_EN.pdf")).expect("Failed to load AAGX_019_EN.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+
+    // There must be at least one Repeatable in the AEM output
+    let mut has_repeatable = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Repeatable { .. } = node {
+            has_repeatable = true;
+        }
+    });
+
+    assert!(
+        has_repeatable,
+        "AAGX EN AEM output should contain a Repeatable node (not replaced by a fragment)"
+    );
+
+    // Additionally verify no Fragment replaced the repeatable's fields
+    let mut fragment_contains_person_fields = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::Fragment { frag_ref, .. } = node {
+            let frag_lower = frag_ref.to_lowercase();
+            if frag_lower.contains("last")
+                || frag_lower.contains("first")
+                || frag_lower.contains("name")
+            {
+                fragment_contains_person_fields = true;
+            }
+        }
+    });
+
+    assert!(
+        !fragment_contains_person_fields,
+        "AAGX EN: the person-name repeatable should NOT be replaced by a fragment"
     );
 }
 
@@ -29867,6 +29969,152 @@ fn test_aaha_multilang_custom_elements_signatures() {
 }
 
 #[test]
+fn test_aacr_multilingual_merge_de_en() {
+    // Test that AACR_019_DE and AACR_019_EN can be merged and that
+    // the heading "Access authorizations within the framework of the use of UBS
+    // KeyPort (EBICS)" is merged with "Zugriffsberechtigungen im Rahmen der Nutzung von
+    // UBS KeyPort (EBICS)".
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, StructuredNode, TranslatedText};
+
+    let de_envelope = run_exhaustive_to_envelope(input_path("AACR_019_DE.pdf"), "de")
+        .expect("Failed to process AACR_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AACR_019_EN.pdf"), "en")
+        .expect("Failed to process AACR_019_EN");
+
+    assert_eq!(de_envelope.context.language(), "de");
+    assert_eq!(en_envelope.context.language(), "en");
+
+    // Merge translations — this must succeed
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
+        .expect("Merging AACR_019 DE/EN should succeed");
+
+    let lang = merged.context.language();
+    assert!(
+        lang.contains("de"),
+        "Merged language should contain 'de', got: {}",
+        lang
+    );
+    assert!(
+        lang.contains("en"),
+        "Merged language should contain 'en', got: {}",
+        lang
+    );
+    assert!(
+        !merged.content.is_empty(),
+        "Merged content should not be empty"
+    );
+
+    // Collect all TranslatedText nodes from headings and paragraphs
+    fn collect_translated_texts(nodes: &[StructuredNode], out: &mut Vec<TranslatedText>) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => out.push(h.content.clone()),
+                StructuredNode::Paragraph(p) => out.push(p.content.clone()),
+                StructuredNode::Group(g) => collect_translated_texts(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_translated_texts(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_translated_texts(&[(*r.item).clone()], out)
+                }
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_translated_texts(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut translated_texts: Vec<TranslatedText> = Vec::new();
+    collect_translated_texts(&merged.content, &mut translated_texts);
+
+    // Find the TranslatedText node where the English version contains
+    // "Access authorizations within the framework of the use of UBS"
+    // and the German version contains "Zugriffsberechtigungen im Rahmen der Nutzung von"
+    let found = translated_texts.iter().find(|tt| {
+        let en_text = tt.get("en").map(|t| t.as_plain_text()).unwrap_or_default();
+        en_text.contains("Access authorizations")
+            && en_text.contains("KeyPort")
+            && en_text.contains("EBICS")
+    });
+
+    let tt = found.expect(
+        "Should find a TranslatedText node containing \
+         'Access authorizations within the framework of the use of UBS KeyPort (EBICS)'",
+    );
+
+    let en_text = tt.get("en").unwrap().as_plain_text();
+    let de_text = tt
+        .get("de")
+        .expect("The matched node should also have a 'de' translation")
+        .as_plain_text();
+
+    assert!(
+        en_text.contains("Access authorizations")
+            && en_text.contains("KeyPort")
+            && en_text.contains("EBICS"),
+        "English text should contain 'Access authorizations ... KeyPort (EBICS)', got: '{}'",
+        en_text
+    );
+    assert!(
+        de_text.contains("Zugriffsberechtigungen")
+            && de_text.contains("KeyPort")
+            && de_text.contains("EBICS"),
+        "German text should contain 'Zugriffsberechtigungen ... KeyPort (EBICS)', got: '{}'",
+        de_text
+    );
+
+    println!("EN: {}", en_text);
+    println!("DE: {}", de_text);
+    println!("\n✓ AACR multilingual merge correctly pairs DE/EN headings");
+}
+
+#[test]
+fn test_aacr_pipeline_multilingual_merge() {
+    // Test that the full pipeline (with exhaustive state exploration) can merge
+    // AACR_019_DE and AACR_019_EN without a state signature mismatch.
+    use crate::pipeline::{PipelineConfig, run_pipeline};
+
+    let files = vec![
+        (
+            "AACR_019_DE.pdf".to_string(),
+            std::fs::read(input_path("AACR_019_DE.pdf")).expect("Failed to read AACR DE PDF"),
+        ),
+        (
+            "AACR_019_EN.pdf".to_string(),
+            std::fs::read(input_path("AACR_019_EN.pdf")).expect("Failed to read AACR EN PDF"),
+        ),
+    ];
+
+    let config = PipelineConfig {
+        scale: 1.0,
+        render_plain: false,
+        render_annotated: false,
+        render_labelled: false,
+    };
+
+    let output = run_pipeline(&files, &config, |_| {})
+        .expect("AACR DE/EN pipeline should merge without state signature mismatch");
+
+    // Verify that both languages are present in the merged output
+    let mut langs = std::collections::BTreeSet::new();
+    for node in &output.merged.content {
+        node.collect_languages(&mut langs);
+    }
+
+    assert!(
+        langs.contains("de"),
+        "Merged output should contain German text"
+    );
+    assert!(
+        langs.contains("en"),
+        "Merged output should contain English text"
+    );
+}
+
+#[test]
 fn test_aatz_bold_paragraph_not_detected_as_heading() {
     // In AATZ DE, the text "Nach dem Kauf des Hedgefonds als Vertreter/Nominee
     // zu agieren bedeutet zusätzlich, dass" starts with bold text but is a
@@ -29887,4 +30135,421 @@ fn test_aatz_bold_paragraph_not_detected_as_heading() {
             text
         );
     }
+}
+
+#[test]
+fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
+    // Test that the AAFW form (DE/EN/SP) contains:
+    // 1. A textarea with label "Bemerkung" / "Remark" / "Nota"
+    // 2. A radio button group with guarantee type options
+    // 3. No lists
+    // 4. Expected multilingual headings
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, FieldType, StructuredNode, TranslatedText};
+    use helpers::collect_lists;
+
+    // Build envelopes for all three languages
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_DE.pdf"), "de")
+        .expect("Failed to process AAFW_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_EN.pdf"), "en")
+        .expect("Failed to process AAFW_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_SP.pdf"), "sp")
+        .expect("Failed to process AAFW_019_SP");
+
+    // Merge translations
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
+        .expect("Merging AAFW_019 DE/EN/SP should succeed");
+
+    // =========================================================================
+    // 1. Textarea with label "Bemerkung" / "Remark" / "Nota"
+    // =========================================================================
+    let textareas = collect_textarea_fields(&merged.content);
+    assert!(
+        !textareas.is_empty(),
+        "AAFW should contain at least one textarea field"
+    );
+
+    let bemerkung_textarea = textareas.iter().find(|f| {
+        f.label.as_ref().map_or(false, |l| {
+            let de = l.plain_text_in("de");
+            let en = l.plain_text_in("en");
+            let sp = l.plain_text_in("sp");
+            de.contains("Bemerkung") || en.contains("Remark") || sp.contains("Nota")
+        })
+    });
+    assert!(
+        bemerkung_textarea.is_some(),
+        "Expected a textarea with label 'Bemerkung'/'Remark'/'Nota', found textareas: {:?}",
+        textareas
+            .iter()
+            .map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+
+    // Verify all three translations are present
+    let label = bemerkung_textarea.unwrap().label.as_ref().unwrap();
+    assert!(
+        label.plain_text_in("de").contains("Bemerkung"),
+        "Textarea label DE should contain 'Bemerkung', got: '{}'",
+        label.plain_text_in("de")
+    );
+    assert!(
+        label.plain_text_in("en").contains("Remark"),
+        "Textarea label EN should contain 'Remark', got: '{}'",
+        label.plain_text_in("en")
+    );
+    assert!(
+        label.plain_text_in("sp").contains("Nota"),
+        "Textarea label SP should contain 'Nota', got: '{}'",
+        label.plain_text_in("sp")
+    );
+
+    // =========================================================================
+    // 2. Radio button with guarantee type options
+    // =========================================================================
+    let radio_fields = collect_radio_fields(&merged.content);
+    assert!(
+        !radio_fields.is_empty(),
+        "AAFW should contain at least one radio button group"
+    );
+
+    let de_options = [
+        "Bietung",
+        "Anzahlung",
+        "Lieferung",
+        "Leistung",
+        "Gewährleistung",
+        "Vertragserfüllung",
+    ];
+    let en_options = [
+        "Bid",
+        "Downpayment",
+        "Delivery",
+        "Performance",
+        "Warranty",
+        "Contact performance",
+    ];
+    let sp_options = [
+        "licitación",
+        "pago inicial",
+        "suministro",
+        "prestación",
+        "garantía",
+        "cumplimiento de un contrato",
+    ];
+
+    // Find the radio group that contains the guarantee type options
+    let found_radio = radio_fields.iter().any(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            // Check DE options
+            de_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    opt.name.get("de").map_or(false, |n| n.contains(expected))
+                        || opt.name.as_str().contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        found_radio,
+        "Expected a radio group with DE options {:?}.\nFound radio fields: {:?}",
+        de_options,
+        radio_fields
+            .iter()
+            .filter_map(|f| if let FieldType::Radio { options } = &f.input_type {
+                Some(
+                    options
+                        .iter()
+                        .map(|o| format!("{:?}", o.name))
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            })
+            .collect::<Vec<_>>()
+    );
+
+    // Verify EN options are also present
+    let found_radio_en = radio_fields.iter().any(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            en_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    opt.name.get("en").map_or(false, |n| n.contains(expected))
+                        || opt.name.as_str().contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        found_radio_en,
+        "Expected radio group to have EN options {:?}",
+        en_options
+    );
+
+    // Verify SP options are also present
+    let found_radio_sp = radio_fields.iter().any(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            sp_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    opt.name.get("sp").map_or(false, |n| n.contains(expected))
+                        || opt.name.as_str().contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        found_radio_sp,
+        "Expected radio group to have SP options {:?}",
+        sp_options
+    );
+
+    // =========================================================================
+    // 3. No lists
+    // =========================================================================
+    let lists = collect_lists(&merged.content);
+    assert!(
+        lists.is_empty(),
+        "AAFW should have no lists, but found {}:\n{:?}",
+        lists.len(),
+        lists
+            .iter()
+            .map(|l| l
+                .items
+                .iter()
+                .map(|i| i.as_plain_text())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+
+    // =========================================================================
+    // 4. Headings
+    // =========================================================================
+    // Collect headings with TranslatedText to check multilingual content
+    fn collect_multilingual_headings(
+        nodes: &[StructuredNode],
+        out: &mut Vec<(u8, TranslatedText)>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    out.push((h.level.as_u8(), h.content.clone()));
+                }
+                StructuredNode::Group(g) => collect_multilingual_headings(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_multilingual_headings(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_multilingual_headings(&[(*r.item).clone()], out)
+                }
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_multilingual_headings(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut headings = Vec::new();
+    collect_multilingual_headings(&merged.content, &mut headings);
+
+    // Heading 1: "1. Direktes und indirektes Aval" / "1. Direct and indirect Guarantee" / "1. Aval directo e indirecto"
+    let found_h1 = headings.iter().any(|(_level, tt)| {
+        let de = tt.plain_text_in("de");
+        de.contains("Direktes und indirektes Aval")
+    });
+    assert!(
+        found_h1,
+        "Expected heading containing 'Direktes und indirektes Aval'.\nFound headings: {:?}",
+        headings
+            .iter()
+            .map(|(l, tt)| format!("H{}: {}", l, tt.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+
+    // Verify EN translation of heading 1
+    let h1_tt = headings
+        .iter()
+        .find(|(_l, tt)| {
+            tt.plain_text_in("de")
+                .contains("Direktes und indirektes Aval")
+        })
+        .map(|(_, tt)| tt)
+        .unwrap();
+    assert!(
+        h1_tt
+            .plain_text_in("en")
+            .contains("Direct and indirect Guarantee"),
+        "Heading 1 EN should contain 'Direct and indirect Guarantee', got: '{}'",
+        h1_tt.plain_text_in("en")
+    );
+    assert!(
+        h1_tt
+            .plain_text_in("sp")
+            .contains("Aval directo e indirecto"),
+        "Heading 1 SP should contain 'Aval directo e indirecto', got: '{}'",
+        h1_tt.plain_text_in("sp")
+    );
+
+    // Heading 2: "2. Einbuchung und Entgelte" / "2. Recording; Consideration" / "2. Contabilización y retribuciones"
+    let found_h2 = headings.iter().any(|(_level, tt)| {
+        let de = tt.plain_text_in("de");
+        de.contains("Einbuchung und Entgelte")
+    });
+    assert!(
+        found_h2,
+        "Expected heading containing 'Einbuchung und Entgelte'.\nFound headings: {:?}",
+        headings
+            .iter()
+            .map(|(l, tt)| format!("H{}: {}", l, tt.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+
+    // Verify EN and SP translations of heading 2
+    let h2_tt = headings
+        .iter()
+        .find(|(_l, tt)| tt.plain_text_in("de").contains("Einbuchung und Entgelte"))
+        .map(|(_, tt)| tt)
+        .unwrap();
+    assert!(
+        h2_tt.plain_text_in("en").contains("Recording")
+            && h2_tt.plain_text_in("en").contains("Consideration"),
+        "Heading 2 EN should contain 'Recording' and 'Consideration', got: '{}'",
+        h2_tt.plain_text_in("en")
+    );
+    assert!(
+        h2_tt
+            .plain_text_in("sp")
+            .contains("Contabilización y retribuciones"),
+        "Heading 2 SP should contain 'Contabilización y retribuciones', got: '{}'",
+        h2_tt.plain_text_in("sp")
+    );
+}
+
+#[test]
+fn test_aafw_radio_button_values_in_html() {
+    // Test that the radio button with guarantee type options from AAFW appears
+    // in the generated HTML output with all option values visible (not hidden
+    // inside a conditional block).
+    use crate::html::{HtmlConfig, generate_html};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{
+        self, FieldCondition, FieldNode as FN2, FieldType, StructuredNode as SN2,
+    };
+
+    // Build envelopes for all three languages and merge
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_DE.pdf"), "de")
+        .expect("Failed to process AAFW_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_EN.pdf"), "en")
+        .expect("Failed to process AAFW_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_SP.pdf"), "sp")
+        .expect("Failed to process AAFW_019_SP");
+
+    let merged = structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
+        .expect("Merging AAFW_019 DE/EN/SP should succeed");
+
+    // Verify radio buttons exist in structured output
+    let radio_fields = helpers::collect_radio_fields(&merged.content);
+    assert!(
+        !radio_fields.is_empty(),
+        "AAFW should contain at least one radio button group in structured output"
+    );
+
+    // Find the guarantee type radio group
+    let guarantee_radio = radio_fields.iter().find(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            options.iter().any(|opt| {
+                opt.name.as_str().contains("Bietung")
+                    || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        guarantee_radio.is_some(),
+        "Expected a radio group with 'Bietung' option in structured output.\nFound radio fields: {:?}",
+        radio_fields
+            .iter()
+            .filter_map(|f| {
+                if let FieldType::Radio { options } = &f.input_type {
+                    Some(
+                        options
+                            .iter()
+                            .map(|o| format!("{:?}", o.name))
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    );
+
+    // Generate HTML
+    let html = generate_html(&merged.content, &HtmlConfig::default());
+
+    // Verify radio button options appear in the HTML
+    let de_options = [
+        "Bietung",
+        "Anzahlung",
+        "Lieferung",
+        "Leistung",
+        "Gewährleistung",
+        "Vertragserfüllung",
+    ];
+    for option in &de_options {
+        assert!(
+            html.contains(option),
+            "HTML output should contain radio option '{}', but it was not found.",
+            option,
+        );
+    }
+
+    // Also verify EN options
+    let en_options = ["Bid", "Downpayment", "Delivery", "Performance", "Warranty"];
+    for option in &en_options {
+        assert!(
+            html.contains(option),
+            "HTML output should contain EN radio option '{}', but it was not found.",
+            option
+        );
+    }
+
+    // The radio button must NOT be inside a hidden conditional block.
+    let mut radio_in_cond: Option<(FN2, FieldCondition)> = None;
+    helpers::walk_structured_nodes(&merged.content, &mut |node| {
+        if let SN2::Conditional(c) = node {
+            let mut found_radio = Vec::new();
+            helpers::walk_structured_nodes(std::slice::from_ref(c.content.as_ref()), &mut |n| {
+                if let SN2::Field(f) = n {
+                    if let FieldType::Radio { options } = &f.input_type {
+                        if options.iter().any(|opt| {
+                            opt.name.as_str().contains("Bietung")
+                                || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+                        }) {
+                            found_radio.push(f.clone());
+                        }
+                    }
+                }
+            });
+            if !found_radio.is_empty() && radio_in_cond.is_none() {
+                radio_in_cond = Some((found_radio[0].clone(), c.condition.clone()));
+            }
+        }
+    });
+
+    assert!(
+        radio_in_cond.is_none(),
+        "The guarantee type radio button should NOT be inside a conditional block.\n\
+         Found radio inside conditional with condition: {:?}\n\
+         This causes the radio to be hidden and never visible.",
+        radio_in_cond.as_ref().map(|(_, c)| c)
+    );
 }

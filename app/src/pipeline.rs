@@ -168,7 +168,8 @@ pub async fn run_blueprint_pipeline(
                         },
                         Err(e) => fail!(format!("Failed to load HTML profile: {e}")),
                     };
-                    state.html_preview = Some(blueprint::to_html(&merged.content, &html_config));
+                    let html = blueprint::to_html(&merged.content, &html_config);
+                    state.html_preview = Some(html);
                 }
 
                 state.step_progress = Some(0.8);

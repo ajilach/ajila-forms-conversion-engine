@@ -10,10 +10,10 @@ use std::collections::HashSet;
 use blueprint::document::ListStyleType;
 use blueprint::{FieldId, ListNode, StructuredNode};
 
-use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
+use super::metadata_editor::{has_editable_metadata, MetadataEditor, MetadataNodeWrapper};
 use super::state::{
-    EditorAction, NodePath, PathSegment, SelectionState, node_has_children, node_summary,
-    node_type_name,
+    list_item_has_missing_translations, node_has_children, node_has_missing_translations,
+    node_summary, node_type_name, EditorAction, NodePath, PathSegment, SelectionState,
 };
 use super::text_editor::{InlineTextWrapper, TextEditor};
 
@@ -167,10 +167,12 @@ pub fn ListItemsRenderer(props: ListItemsRendererProps) -> Element {
                     };
                     let is_selected = props.selection.is_selected(&item_path);
                     let is_editing = props.selection.is_editing(&item_path);
+                    let has_missing = list_item_has_missing_translations(item, &props.languages);
                     let item_class = format!(
-                        "list-item pseudo-node {}{}",
+                        "list-item pseudo-node {}{}{}",
                         if is_selected { "selected " } else { "" },
-                        if is_editing { "editing" } else { "" },
+                        if is_editing { "editing " } else { "" },
+                        if has_missing { "node-missing-translation" } else { "" },
                     );
 
                     rsx! {
@@ -215,6 +217,13 @@ pub fn ListItemsRenderer(props: ListItemsRendererProps) -> Element {
                                     }
                                 } else {
                                     span { class: "list-item-text", "{item.as_plain_text()}" }
+                                    if has_missing {
+                                        span {
+                                            class: "node-warning-icon",
+                                            title: "Missing translations in one or more languages",
+                                            "⚠"
+                                        }
+                                    }
                                     button {
                                         class: "node-edit-btn",
                                         onclick: {
@@ -274,7 +283,11 @@ fn alpha_index(mut n: usize, uppercase: bool) -> String {
     }
     chars.reverse();
     let s: String = chars.into_iter().collect();
-    if uppercase { s.to_uppercase() } else { s }
+    if uppercase {
+        s.to_uppercase()
+    } else {
+        s
+    }
 }
 
 fn roman_index(mut n: usize, uppercase: bool) -> String {
@@ -342,13 +355,15 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
     let is_editing = props.selection.is_editing(&props.path);
     let is_highlighted = props.highlight.contains(&props.path);
     let has_children = node_has_children(&props.node.0);
+    let has_missing = node_has_missing_translations(&props.node.0, &props.languages);
     let mut expanded = use_signal(|| true);
 
     let node_class = format!(
-        "node-item {} {} {}",
+        "node-item {} {} {} {}",
         if is_selected { "selected" } else { "" },
         if is_editing { "editing" } else { "" },
-        if is_highlighted { "node-changed" } else { "" },
+        if is_highlighted { "node-search-match" } else { "" },
+        if has_missing { "node-missing-translation" } else { "" },
     );
 
     let type_name = node_type_name(&props.node.0);
@@ -422,6 +437,15 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
 
                 // Summary text
                 span { class: "node-summary", "{summary}" }
+
+                // Missing translation warning icon
+                if has_missing {
+                    span {
+                        class: "node-warning-icon",
+                        title: "Missing translations in one or more languages",
+                        "⚠"
+                    }
+                }
 
                 // Edit button for text nodes
                 if can_edit_text && !is_editing {
@@ -503,6 +527,7 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                 MetadataEditor {
                     node: MetadataNodeWrapper(props.node.0.clone()),
                     path: props.path.clone(),
+                    languages: props.languages.clone(),
                     on_action: props.on_action,
                 }
             }

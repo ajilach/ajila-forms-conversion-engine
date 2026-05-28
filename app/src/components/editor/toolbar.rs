@@ -18,6 +18,10 @@ pub struct ToolbarProps {
     pub can_move_up: bool,
     /// Whether the selected node can be moved down.
     pub can_move_down: bool,
+    /// Whether the selected node can be indented (moved into adjacent container).
+    pub can_indent: bool,
+    /// Whether the selected node can be outdented (moved out of its container).
+    pub can_outdent: bool,
     /// Available conversion targets for current selection.
     pub available_conversions: Vec<ConvertTarget>,
     /// Available add options for current selection.
@@ -88,6 +92,26 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 onclick: move |_| props.on_action.call(EditorAction::MoveDown),
                 span { class: "toolbar-icon", "↓" }
                 span { class: "toolbar-label", "Down" }
+            }
+
+            // Indent button (move into container)
+            button {
+                class: "toolbar-btn",
+                disabled: !props.can_indent,
+                title: if props.can_indent { "Move into the container above" } else if !has_selection { "Select a node to indent" } else { "Cannot indent (no container above)" },
+                onclick: move |_| props.on_action.call(EditorAction::Indent),
+                span { class: "toolbar-icon", "→" }
+                span { class: "toolbar-label", "Indent" }
+            }
+
+            // Outdent button (move out of container)
+            button {
+                class: "toolbar-btn",
+                disabled: !props.can_outdent,
+                title: if props.can_outdent { "Move out of container" } else if !has_selection { "Select a node to outdent" } else { "Cannot outdent (not inside a container)" },
+                onclick: move |_| props.on_action.call(EditorAction::Outdent),
+                span { class: "toolbar-icon", "←" }
+                span { class: "toolbar-label", "Outdent" }
             }
 
             // Separator
@@ -167,7 +191,10 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 if props.is_smart_edit_loading {
                     Spinner { size: "sm" }
                 } else {
-                    span { class: "toolbar-icon", "✨" }
+                    span {
+                        class: "toolbar-icon",
+                        dangerous_inner_html: r#"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>"#,
+                    }
                 }
                 span { class: "toolbar-label", "Smart Edit" }
             }

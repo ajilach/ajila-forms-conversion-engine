@@ -796,6 +796,26 @@ impl AnalysisModule for ListDetector {
             .filter_map(|&idx| doc.get_bounds(idx))
             .collect();
 
+        // Collect bounds of ALL non-marker, non-empty TextBlocks regardless
+        // of continuation status.  Used in `can_extend_run` to detect
+        // intervening content between bold marker items: when both items in
+        // a run are bold (numbered headings like "1. Title", "2. Title"),
+        // any non-marker TextBlock between them is body text that separates
+        // the headings, even if it would otherwise be classified as a
+        // "continuation" of the first marker.
+        let all_non_marker_tb_bounds: Vec<Bounds> = roots
+            .iter()
+            .filter(|&&idx| {
+                if !matches!(doc.groups[idx].kind, GroupKind::TextBlock) {
+                    return false;
+                }
+                let text = doc.get_text_content(idx);
+                let trimmed = text.trim();
+                !trimmed.is_empty() && detect_marker(&text).is_none()
+            })
+            .filter_map(|&idx| doc.get_bounds(idx))
+            .collect();
+
         // Each entry: (group_idx, text, bounds, marker)
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut group_styles: Vec<ListStyleType> = Vec::new();
@@ -869,6 +889,7 @@ impl AnalysisModule for ListDetector {
             non_tb_root_ys: &[Decimal],
             ws_leaf_ys: &HashSet<Decimal>,
             non_marker_tb_bounds: &[Bounds],
+            all_non_marker_tb_bounds: &[Bounds],
             all_marker_tb_info: &[(Bounds, ListStyleType, usize)],
             x_tol: Decimal,
         ) -> bool {
@@ -893,6 +914,8 @@ impl AnalysisModule for ListDetector {
             // (they're just empty placeholders), but they DO break bold runs
             // (bold numbered items like "1. Title" are headings, not lists).
             let ignore_ws_leaves = !doc.is_bold_group(last.0) && !doc.is_bold_group(idx);
+            let both_bold = doc.is_bold_group(last.0) && doc.is_bold_group(idx);
+
             let has_intervening = non_tb_root_ys.iter().any(|&y| {
                 y > range_lo && y < range_hi && !(ignore_ws_leaves && ws_leaf_ys.contains(&y))
             }) || non_marker_tb_bounds.iter().any(|sep| {
@@ -906,6 +929,44 @@ impl AnalysisModule for ListDetector {
 
             if has_intervening {
                 return false;
+            }
+
+            // When both items are bold, check whether non-marker TextBlocks
+            // between them indicate body text (heading scenario) rather than
+            // a genuine multi-line list-item continuation.  Body text below
+            // a bold heading is either substantially taller than the marker
+            // (> 4× its height) or fills most of the inter-item gap (> 70%).
+            // Genuine continuations (e.g. wrapped text in a bold list item)
+            // are proportionally shorter.
+            if both_bold {
+                let gap = range_hi - range_lo;
+                let last_height = last.2.height;
+
+                // Find all non-marker TextBlocks in the range between items
+                let tbs_in_range: Vec<&Bounds> = all_non_marker_tb_bounds.iter().filter(|sep| {
+                    let sep_bottom = sep.y + sep.height;
+                    let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
+                    let item_x_lo = last.2.x.min(bounds.x);
+                    let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
+                    let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
+                    y_overlap && x_overlap
+                }).collect();
+
+                // Check continuation text between bold items.  Body text
+                // below a heading fills most of the vertical gap or is
+                // substantially taller than a single-line marker.  Genuine
+                // multi-line list-item continuations are shorter relative
+                // to both the marker height and the inter-item gap.
+                let max_tb_height = tbs_in_range.iter().map(|b| b.height).max();
+                if let Some(max_h) = max_tb_height {
+                    let height_threshold = last_height * Decimal::from(4);
+                    // Break if the continuation is very tall (> 4× marker)
+                    // OR covers more than 70% of the gap between items.
+                    let covers_gap = max_h * Decimal::from(10) > gap * Decimal::from(7);
+                    if max_h > height_threshold || covers_gap {
+                        return false;
+                    }
+                }
             }
 
             // In multi-column layouts, a marker TextBlock of a DIFFERENT kind
@@ -981,6 +1042,7 @@ impl AnalysisModule for ListDetector {
                         &non_tb_root_ys,
                         &ws_leaf_ys,
                         &non_marker_tb_bounds,
+                        &all_non_marker_tb_bounds,
                         &all_marker_tb_info,
                         x_tol,
                     ) {

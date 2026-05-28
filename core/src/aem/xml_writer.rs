@@ -470,8 +470,12 @@ fn insert_repeatable_scripts(ctx: &mut tera::Context, panel_name: &str, max_occu
 var len = {pn}.instanceManager.instances.length;\\\
 for (var i = 0; i < len; i++) {{\\\
 {pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
+}}\\\
+if (len < {max}) {{\\\
+{pn}.BT_Add.visible = true;\\\
 }}",
-        pn = panel_name
+        pn = panel_name,
+        max = max_occur
     );
     let remove_click_json = format!(
         "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Click\"\\,\"field\":\"BT_Remove\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
@@ -1488,5 +1492,32 @@ mod tests {
                 xml
             );
         }
+    }
+
+    /// The remove-button click script must restore BT_Add.visible on the last
+    /// instance whenever the count drops back below max_occur.
+    ///
+    /// Regression test for: deleting an instance after reaching max left the
+    /// add button permanently hidden.
+    #[test]
+    fn remove_button_script_restores_add_button_when_below_max() {
+        let mut ctx = tera::Context::new();
+        insert_repeatable_scripts(&mut ctx, "RCP_Test", 5);
+
+        let remove_click_json = ctx
+            .get("remove_click_json")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        assert!(
+            remove_click_json.contains("BT_Add.visible = true"),
+            "Remove script must restore BT_Add.visible when below max. Got:\n{}",
+            remove_click_json
+        );
+        assert!(
+            remove_click_json.contains("len < 5") || remove_click_json.contains("len &lt; 5"),
+            "Remove script must check len < max_occur. Got:\n{}",
+            remove_click_json
+        );
     }
 }

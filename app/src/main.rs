@@ -3,7 +3,10 @@ mod markdown;
 mod models;
 mod pipeline;
 mod platform;
+#[cfg(not(target_arch = "wasm32"))]
+mod preview_server;
 mod processing;
+mod settings;
 
 use dioxus::prelude::*;
 
@@ -13,14 +16,15 @@ use components::{
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
+use settings::AppSettings;
 
 fn main() {
     #[cfg(feature = "desktop")]
     {
-        // Start with always-on-top enabled (previous behaviour preserved by default).
+        let saved = AppSettings::load();
         let config = dioxus::desktop::Config::new().with_window(
             dioxus::desktop::WindowBuilder::new()
-                .with_always_on_top(false)
+                .with_always_on_top(saved.always_on_top)
                 .with_title("Ajila Forms Conversion Engine"),
         );
         dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
@@ -38,7 +42,7 @@ fn App() -> Element {
     let selected_profile = use_signal(|| None::<String>);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut settings_open = use_signal(|| false);
-    let mut always_on_top = use_signal(|| false);
+    let mut app_settings = use_signal(AppSettings::load);
     let mut aem_preview_envelope = use_signal(|| None::<DocumentEnvelope>);
 
     let profiles = blueprint::list_profiles();
@@ -79,7 +83,8 @@ fn App() -> Element {
                 custom_styles: Some(styles),
                 ..blueprint::HtmlConfig::default()
             };
-            state.html_preview = Some(blueprint::to_html(&envelope.content, &html_config));
+            let html = blueprint::to_html(&envelope.content, &html_config);
+            state.html_preview = Some(html);
         }
 
         // Regenerate AEM package if profile supports it
@@ -136,12 +141,12 @@ fn App() -> Element {
         SettingsPanel {
             open: *settings_open.read(),
             on_close: move |_| settings_open.set(false),
-            always_on_top: *always_on_top.read(),
-            on_toggle_always_on_top: move |value: bool| {
-                always_on_top.set(value);
-                // Window API only exists on native desktop targets.
+            settings: app_settings.read().clone(),
+            on_settings_changed: move |new_settings: AppSettings| {
+                new_settings.save();
                 #[cfg(feature = "desktop")]
-                dioxus::desktop::use_window().set_always_on_top(value);
+                dioxus::desktop::use_window().set_always_on_top(new_settings.always_on_top);
+                app_settings.set(new_settings);
             },
         }
 

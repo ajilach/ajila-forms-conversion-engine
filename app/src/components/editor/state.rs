@@ -3,9 +3,9 @@
 //! This module provides the state types and operations for the structured
 //! document editor.
 
-use blueprint::structured::NameValue;
-use blueprint::{ListNode, StructuredNode, TableNode, TranslatedText};
-use std::collections::HashSet;
+use blueprint::structured::{GridLayoutElement, NameValue};
+use blueprint::{ListItem, ListNode, StructuredNode, TableNode, TranslatedText};
+use std::collections::{BTreeSet, HashSet};
 
 /// A segment of a path to a node in the document tree.
 ///
@@ -138,6 +138,10 @@ pub enum EditorAction {
     MoveUp,
     /// Move selected node down.
     MoveDown,
+    /// Move selected node into the adjacent container above (indent).
+    Indent,
+    /// Move selected node out of its container to the parent level (outdent).
+    Outdent,
     /// Start editing a node's text.
     StartEditing(NodePath),
     /// Update text content of a node (works for paragraphs, headings, field labels, list items).
@@ -225,6 +229,8 @@ pub enum NewNodeType {
     Heading(u8),
     List,
     Group,
+    Repeatable,
+    Field,
     ListItem,
     TableRow,
     TableCell,
@@ -1255,6 +1261,263 @@ pub fn move_container_child_down(
     None
 }
 
+/// Check if a node can be indented (moved into the sibling container above it).
+///
+/// Returns true if the node's previous sibling is a container (Group or GridLayout).
+pub fn can_indent(content: &[StructuredNode], path: &NodePath) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+
+    // Get the sibling list and the node's index within it
+    if path.len() == 1 {
+        // Root-level node
+        if let Some(PathSegment::Child(idx)) = path.first() {
+            if *idx == 0 {
+                return false;
+            }
+            return is_children_container(&content[idx - 1]);
+        }
+    } else if is_container_child_path(path) {
+        if let Some((parent_path, child_idx)) = get_container_child_info(path) {
+            if child_idx == 0 {
+                return false;
+            }
+            if let Some(parent) = get_node_at_path(content, &parent_path) {
+                let prev_sibling = match parent {
+                    StructuredNode::Group(g) => g.children.get(child_idx - 1),
+                    StructuredNode::GridLayout(g) => g.elements.get(child_idx - 1).map(|e| &e.node),
+                    _ => None,
+                };
+                if let Some(sibling) = prev_sibling {
+                    return is_children_container(sibling);
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a node can be outdented (moved out of its container to the parent level).
+///
+/// Returns true if the node is inside a container (Group or GridLayout) that itself
+/// has a parent (not at root level inside the container that is root-level).
+pub fn can_outdent(_content: &[StructuredNode], path: &NodePath) -> bool {
+    // Must be at least 2 segments: parent container + child index
+    if path.len() < 2 {
+        return false;
+    }
+    is_container_child_path(path)
+}
+
+/// Indent a node: remove it from its current position and append it to the
+/// previous sibling container (Group or GridLayout).
+/// Returns the new path if successful.
+pub fn indent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
+    if path.len() == 1 {
+        // Root-level node
+        let PathSegment::Child(idx) = path[0] else {
+            return None;
+        };
+        if idx == 0 || idx >= content.len() {
+            return None;
+        }
+        if !is_children_container(&content[idx - 1]) {
+            return None;
+        }
+
+        // Root-level indent is handled directly in editor.rs since we need
+        // Vec access (slices don't support remove/insert).
+        return None;
+    }
+
+    // Container child: remove from current parent and append to previous sibling container
+    let (parent_path, child_idx) = get_container_child_info(path)?;
+    if child_idx == 0 {
+        return None;
+    }
+
+    let parent = get_node_at_path_mut(content, &parent_path)?;
+    match parent {
+        StructuredNode::Group(g) => {
+            if child_idx >= g.children.len() {
+                return None;
+            }
+            if !is_children_container(&g.children[child_idx - 1]) {
+                return None;
+            }
+            let node = g.children.remove(child_idx);
+            // Append to previous sibling
+            let extra_segments = append_to_container(&mut g.children[child_idx - 1], node)?;
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx - 1));
+            new_path.extend(extra_segments);
+            Some(new_path)
+        }
+        StructuredNode::GridLayout(g) => {
+            if child_idx >= g.elements.len() {
+                return None;
+            }
+            if !is_children_container(&g.elements[child_idx - 1].node) {
+                return None;
+            }
+            let element = g.elements.remove(child_idx);
+            let node = element.node;
+            let extra_segments = append_to_container(&mut g.elements[child_idx - 1].node, node)?;
+            let mut new_path = parent_path;
+            new_path.push(PathSegment::Child(child_idx - 1));
+            new_path.extend(extra_segments);
+            Some(new_path)
+        }
+        _ => None,
+    }
+}
+
+/// Outdent a node: remove it from its container and insert it after the container
+/// in the grandparent's children list.
+/// Returns the new path if successful.
+pub fn outdent_node(content: &mut [StructuredNode], path: &NodePath) -> Option<NodePath> {
+    if path.len() < 2 || !is_container_child_path(path) {
+        return None;
+    }
+
+    let (parent_path, child_idx) = get_container_child_info(path)?;
+
+    // If parent is at root level (parent_path.len() == 1), we need special handling
+    // since the grandparent is the root Vec (handled in editor.rs).
+    if parent_path.len() == 1 {
+        return None; // Handled specially in editor.rs
+    }
+
+    // Otherwise, remove from parent and insert into grandparent after the parent
+    let (grandparent_path, parent_idx_in_grandparent) = get_container_child_info(&parent_path)?;
+
+    // Check if the grandparent is a Repeatable. If so, the node should be placed
+    // after the Repeatable in the Repeatable's parent (one more level up).
+    let grandparent_node = get_node_at_path(content, &grandparent_path)?;
+    if matches!(grandparent_node, StructuredNode::Repeatable(_)) {
+        // Grandparent is a Repeatable — outdent goes past it.
+        // If the Repeatable is at root level, editor.rs handles it.
+        if grandparent_path.len() == 1 {
+            return None; // Handled specially in editor.rs
+        }
+        // Nested Repeatable: insert after the Repeatable in the great-grandparent
+        let (great_grandparent_path, rep_idx_in_ggp) = get_container_child_info(&grandparent_path)?;
+
+        // Remove from inner container
+        let parent = get_node_at_path_mut(content, &parent_path)?;
+        let node = match parent {
+            StructuredNode::Group(g) => {
+                if child_idx >= g.children.len() {
+                    return None;
+                }
+                g.children.remove(child_idx)
+            }
+            StructuredNode::GridLayout(g) => {
+                if child_idx >= g.elements.len() {
+                    return None;
+                }
+                g.elements.remove(child_idx).node
+            }
+            _ => return None,
+        };
+
+        // Insert after the Repeatable in the great-grandparent
+        let ggp = get_node_at_path_mut(content, &great_grandparent_path)?;
+        let insert_idx = rep_idx_in_ggp + 1;
+        match ggp {
+            StructuredNode::Group(g) => {
+                g.children.insert(insert_idx, node);
+                let mut new_path = great_grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            StructuredNode::GridLayout(g) => {
+                g.elements
+                    .insert(insert_idx, GridLayoutElement { span: 1, node });
+                let mut new_path = great_grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            _ => None,
+        }
+    } else {
+        // Normal case: grandparent is Group/GridLayout
+        // First, remove the node from the parent container
+        let parent = get_node_at_path_mut(content, &parent_path)?;
+        let node = match parent {
+            StructuredNode::Group(g) => {
+                if child_idx >= g.children.len() {
+                    return None;
+                }
+                g.children.remove(child_idx)
+            }
+            StructuredNode::GridLayout(g) => {
+                if child_idx >= g.elements.len() {
+                    return None;
+                }
+                g.elements.remove(child_idx).node
+            }
+            _ => return None,
+        };
+
+        // Insert into grandparent after the parent's position
+        let grandparent = get_node_at_path_mut(content, &grandparent_path)?;
+        let insert_idx = parent_idx_in_grandparent + 1;
+        match grandparent {
+            StructuredNode::Group(g) => {
+                g.children.insert(insert_idx, node);
+                let mut new_path = grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            StructuredNode::GridLayout(g) => {
+                g.elements
+                    .insert(insert_idx, GridLayoutElement { span: 1, node });
+                let mut new_path = grandparent_path;
+                new_path.push(PathSegment::Child(insert_idx));
+                Some(new_path)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Append a node to a container (Group, GridLayout, or Repeatable wrapping one of those).
+/// Returns the path segments to reach the new node relative to the container.
+fn append_to_container(
+    container: &mut StructuredNode,
+    node: StructuredNode,
+) -> Option<Vec<PathSegment>> {
+    match container {
+        StructuredNode::Group(g) => {
+            g.children.push(node);
+            Some(vec![PathSegment::Child(g.children.len() - 1)])
+        }
+        StructuredNode::GridLayout(g) => {
+            g.elements.push(GridLayoutElement { span: 1, node });
+            Some(vec![PathSegment::Child(g.elements.len() - 1)])
+        }
+        StructuredNode::Repeatable(r) => {
+            // Indent into the Repeatable's item (which must be a Group/GridLayout)
+            let inner_segments = append_to_container(r.item.as_mut(), node)?;
+            let mut segments = vec![PathSegment::Child(0)];
+            segments.extend(inner_segments);
+            Some(segments)
+        }
+        _ => None,
+    }
+}
+
+/// Check if a node is a container that can have arbitrary children.
+fn is_children_container(node: &StructuredNode) -> bool {
+    match node {
+        StructuredNode::Group(_) | StructuredNode::GridLayout(_) => true,
+        StructuredNode::Repeatable(r) => is_children_container(&r.item),
+        _ => false,
+    }
+}
+
 /// An option for the Add dropdown, carrying a label and the action payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AddOption {
@@ -1327,6 +1590,8 @@ pub fn compute_add_options(
         ("Heading", NewNodeType::Heading(2)),
         ("List", NewNodeType::List),
         ("Group", NewNodeType::Group),
+        ("Repeatable", NewNodeType::Repeatable),
+        ("Field", NewNodeType::Field),
     ] {
         options.push(AddOption {
             label,
@@ -1414,10 +1679,193 @@ pub fn get_table_column_count(table: &TableNode) -> usize {
     1 // default to 1 column
 }
 
+// ── Search ────────────────────────────────────────────────────────────────────
+
+/// Check whether a `TranslatedText` contains the given query string (case-insensitive) in any language.
+pub fn translated_text_contains(text: &TranslatedText, query: &str) -> bool {
+    text.iter()
+        .any(|(_, inline)| inline.as_plain_text().to_lowercase().contains(query))
+}
+
+/// Check whether a list item's content contains the query string (case-insensitive) in any language.
+fn list_item_contains(item: &ListItem, query: &str) -> bool {
+    translated_text_contains(&item.content, query)
+}
+
+/// Search for all selectable node paths whose text content matches the query.
+///
+/// Searches across all languages. Returns paths in document order.
+pub fn search_nodes(content: &[StructuredNode], query: &str) -> Vec<NodePath> {
+    if query.is_empty() {
+        return vec![];
+    }
+    let q = query.to_lowercase();
+    let mut results = Vec::new();
+    search_nodes_recursive(content, &mut vec![], &q, &mut results);
+    results
+}
+
+fn search_nodes_recursive(
+    nodes: &[StructuredNode],
+    path: &mut NodePath,
+    query: &str,
+    results: &mut Vec<NodePath>,
+) {
+    for (i, node) in nodes.iter().enumerate() {
+        path.push(PathSegment::Child(i));
+
+        let matched = match node {
+            StructuredNode::Paragraph(p) => translated_text_contains(&p.content, query),
+            StructuredNode::Heading(h) => translated_text_contains(&h.content, query),
+            StructuredNode::Field(f) => f
+                .label
+                .as_ref()
+                .map_or(false, |l| translated_text_contains(l, query)),
+            StructuredNode::Footnote(n) => translated_text_contains(&n.content, query),
+            _ => false,
+        };
+
+        if matched {
+            results.push(path.clone());
+        }
+
+        // Recurse into children
+        match node {
+            StructuredNode::Group(g) => {
+                search_nodes_recursive(&g.children, path, query, results);
+            }
+            StructuredNode::GridLayout(g) => {
+                let element_nodes: Vec<StructuredNode> =
+                    g.elements.iter().map(|e| e.node.clone()).collect();
+                search_nodes_recursive(&element_nodes, path, query, results);
+            }
+            StructuredNode::Repeatable(r) => {
+                search_nodes_recursive(std::slice::from_ref(&r.item), path, query, results);
+            }
+            StructuredNode::Conditional(c) => {
+                search_nodes_recursive(std::slice::from_ref(&c.content), path, query, results);
+            }
+            StructuredNode::List(l) => {
+                search_list_items_recursive(l, path, query, results);
+            }
+            StructuredNode::Table(t) => {
+                if let Some(header) = &t.header {
+                    path.push(PathSegment::TableHeader);
+                    for (ci, cell) in header.cells.iter().enumerate() {
+                        path.push(PathSegment::TableCell(ci));
+                        search_nodes_recursive(std::slice::from_ref(cell), path, query, results);
+                        path.pop();
+                    }
+                    path.pop();
+                }
+                for (ri, row) in t.rows.iter().enumerate() {
+                    path.push(PathSegment::TableRow(ri));
+                    for (ci, cell) in row.cells.iter().enumerate() {
+                        path.push(PathSegment::TableCell(ci));
+                        search_nodes_recursive(std::slice::from_ref(cell), path, query, results);
+                        path.pop();
+                    }
+                    path.pop();
+                }
+            }
+            _ => {}
+        }
+
+        path.pop();
+    }
+}
+
+fn search_list_items_recursive(
+    list: &ListNode,
+    path: &mut NodePath,
+    query: &str,
+    results: &mut Vec<NodePath>,
+) {
+    for (i, item) in list.items.iter().enumerate() {
+        path.push(PathSegment::ListItem(i));
+        if list_item_contains(item, query) {
+            results.push(path.clone());
+        }
+        if let Some(sublist) = &item.sublist {
+            search_list_items_recursive(sublist, path, query, results);
+        }
+        path.pop();
+    }
+}
+
+// ── Missing Translation Highlighting ─────────────────────────────────────────
+
+/// Check whether `text` has a missing translation for any of the given document languages.
+///
+/// A translation is considered missing when:
+/// - A document language key exists in the `TranslatedText` but its `InlineText` is empty, or
+/// - The text has non-empty content for at least one document language but no entry at all for
+///   another document language (implicit absence).
+///
+/// Texts that only use the "default" key (single-language documents) are never flagged.
+fn translated_text_has_missing(text: &TranslatedText, document_languages: &[String]) -> bool {
+    // Explicit missing: a language key exists but the InlineText is empty
+    if !text.missing_translation_languages().is_empty() {
+        return true;
+    }
+
+    // Implicit missing: some doc language has content but another has no entry
+    if document_languages.len() <= 1 {
+        return false;
+    }
+
+    let mut text_langs = BTreeSet::new();
+    text.collect_languages(&mut text_langs);
+
+    // If the only key is "default", this is a mono-language text — not a translation issue
+    if text_langs.len() == 1 && text_langs.contains("default") {
+        return false;
+    }
+
+    let any_has_content = document_languages
+        .iter()
+        .any(|l| text.get(l).map_or(false, |t| !t.is_empty()));
+
+    if !any_has_content {
+        return false;
+    }
+
+    // At least one doc language has content; flag if any other lacks it
+    document_languages
+        .iter()
+        .any(|l| text.get(l).map_or(true, |t| t.is_empty()))
+}
+
+/// Check whether a node has missing translations for any of the given document languages.
+///
+/// Only inspects the node's own text fields (not children); container nodes are never flagged.
+pub fn node_has_missing_translations(node: &StructuredNode, document_languages: &[String]) -> bool {
+    if document_languages.len() <= 1 {
+        return false;
+    }
+    match node {
+        StructuredNode::Paragraph(p) => translated_text_has_missing(&p.content, document_languages),
+        StructuredNode::Heading(h) => translated_text_has_missing(&h.content, document_languages),
+        StructuredNode::Field(f) => f.label.as_ref().map_or(false, |l| {
+            translated_text_has_missing(l, document_languages)
+        }),
+        StructuredNode::Footnote(n) => translated_text_has_missing(&n.content, document_languages),
+        _ => false,
+    }
+}
+
+/// Check whether a list item has missing translations for any of the given document languages.
+pub fn list_item_has_missing_translations(item: &ListItem, document_languages: &[String]) -> bool {
+    if document_languages.len() <= 1 {
+        return false;
+    }
+    translated_text_has_missing(&item.content, document_languages)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blueprint::{ListItem, ListNode, ParagraphNode};
+    use blueprint::{ListNode, ParagraphNode};
     use std::collections::HashSet;
 
     fn make_nested_list_content() -> Vec<StructuredNode> {

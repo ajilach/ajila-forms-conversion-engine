@@ -11,11 +11,11 @@
 - When asked to find the issue of a failing test, do not simplify the test itself without the users consent.
 - As soon as you have implemented a feature and all tests pass, commit it. Use a simple one-sentence commit message.
 - After finishing the implementation, review the code from a separate subagent that only knows the plan but not the actual implementation. The subagent should review the code (cleanliness, code duplication, potential bugs or missing implementation details, run clippy lints, removed or changed tests ...) and provide feedback to the main agent.
+- Do not use emojis.
 
 ## Project-specific
 
-- When running tests, use `cargo test --release` such that they are faster. Also make sure to save the entire output to a log file to avoid needing to re-run the tests if output information is required.
-- When implementing a new feature that affects the form output, always run the judge module for all formcodes first and save it as the baseline. Then after the implementation run it again and compare the results. If the judge scores are worse over all after the implementation start again. You do not need to run the judge for UI/UX changes.
+- When running tests, use `cargo test --release` such that they are faster. Also make sure to save the entire output to a log file to avoid needing to re-run the tests if output information is required. Do NOT run tests if you only modified the app/cli wrappers.
 - Before implementing XFA functionality, always consult the [XFA specs](./specs/XFA-3_3.md).
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.
 - Tests should never work with the ouput files. Instead they should analyze the intermediate structures (StrucuredNode, FlattenedNode, Document, ...) directly.

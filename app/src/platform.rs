@@ -103,8 +103,6 @@ pub fn show_html_preview(html: String, filename: &str) {
         return;
     }
 
-    println!("✓ Preview saved to: {}", preview_path.display());
-
     #[cfg(target_os = "macos")]
     {
         let _ = std::process::Command::new("open")
@@ -120,7 +118,7 @@ pub fn show_html_preview(html: String, filename: &str) {
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("cmd")
-            .args(&["/C", "start", "", &preview_path.to_string_lossy()])
+            .args(["/C", "start", "", &preview_path.to_string_lossy()])
             .spawn();
     }
 }

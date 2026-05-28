@@ -677,6 +677,12 @@ body > div, #main {
 
 .toolbar-icon {
     font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.toolbar-icon svg {
+    display: block;
 }
 
 .toolbar-label {
@@ -1373,6 +1379,18 @@ body > div, #main {
 .smart-edit-header h3 {
     margin: 0;
     font-size: var(--font-size-lg);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.smart-edit-header-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.smart-edit-header-icon svg {
+    display: block;
 }
 
 /* ==========================================
@@ -1854,4 +1872,184 @@ body > div, #main {
     font-weight: 400;
     font-size: 10px;
     font-style: italic;
+}
+
+/* ── Node: missing-translation highlight ─────────────────────────────── */
+
+.node-missing-translation {
+    background: var(--color-bg-warning);
+    border-left: 3px solid var(--color-border-warning);
+    border-radius: var(--radius-sm);
+}
+
+.node-missing-translation .node-header {
+    color: var(--color-text-warning);
+}
+
+/* ── Editor search bar ───────────────────────────────────────────────── */
+
+.editor-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.editor-search-icon {
+    font-size: var(--font-size-sm);
+    opacity: 0.6;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.editor-search-icon svg {
+    display: block;
+}
+
+.editor-search-input {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: var(--font-size-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input, var(--color-bg));
+    color: var(--color-text);
+    outline: none;
+}
+
+.editor-search-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 37, 99, 235), 0.15);
+}
+
+.editor-search-count {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted, var(--color-text));
+    white-space: nowrap;
+    min-width: 4.5em;
+    text-align: center;
+}
+
+.editor-search-no-match {
+    color: var(--color-text-warning);
+}
+
+.editor-search-nav {
+    padding: 2px 6px;
+    font-size: var(--font-size-sm);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--color-text);
+    line-height: 1;
+}
+
+.editor-search-nav:hover {
+    background: var(--color-bg-hover, var(--color-border));
+}
+
+.editor-search-clear {
+    padding: 2px 6px;
+    font-size: var(--font-size-sm);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted, var(--color-text));
+    opacity: 0.7;
+    line-height: 1;
+}
+
+.editor-search-clear:hover {
+    opacity: 1;
+}
+
+/* Search match highlight – applied via the existing `highlight` / `node-changed` mechanism */
+.node-search-match {
+    background: rgba(255, 210, 0, 0.18);
+    border-left: 3px solid #d4a017;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Active state for toggle buttons (e.g. Live Preview) ─────────────── */
+
+.editor-btn-active {
+    background: var(--color-primary);
+    color: var(--light);
+    border-color: var(--color-primary);
+}
+
+.editor-btn-active:hover {
+    background: var(--primary600);
+    border-color: var(--primary600);
+}
+
+/* ── Live preview split layout ───────────────────────────────────────── */
+
+/* When live preview is open, the outer editor becomes a two-column grid */
+.structured-editor-split {
+    flex-direction: row !important;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+/* Left pane: the normal editor */
+.editor-main {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--color-border);
+}
+
+/* Right pane: the live HTML preview */
+.editor-preview-panel {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--light);
+}
+
+.editor-preview-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-light);
+    flex-shrink: 0;
+}
+
+.editor-preview-title {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.editor-preview-hint {
+    font-size: var(--font-size-xs, var(--font-size-sm));
+    color: var(--color-text-muted, var(--color-text));
+    opacity: 0.7;
+}
+
+.editor-preview-frame {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: var(--light);
+}
+
+/* ── Missing translation warning icon ───────────────────────────────── */
+
+.node-warning-icon {
+    color: var(--color-text-warning);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    flex-shrink: 0;
+    cursor: default;
 }
