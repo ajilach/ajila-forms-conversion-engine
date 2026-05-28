@@ -4,8 +4,8 @@
 //! document editor.
 
 use blueprint::structured::{GridLayoutElement, NameValue};
-use blueprint::{ListNode, StructuredNode, TableNode, TranslatedText};
-use std::collections::HashSet;
+use blueprint::{ListItem, ListNode, StructuredNode, TableNode, TranslatedText};
+use std::collections::{BTreeSet, HashSet};
 
 /// A segment of a path to a node in the document tree.
 ///
@@ -1616,10 +1616,199 @@ pub fn get_table_column_count(table: &TableNode) -> usize {
     1 // default to 1 column
 }
 
+// ── Search ────────────────────────────────────────────────────────────────────
+
+/// Check whether a `TranslatedText` contains the given query string (case-insensitive) in any language.
+pub fn translated_text_contains(text: &TranslatedText, query: &str) -> bool {
+    text.iter()
+        .any(|(_, inline)| inline.as_plain_text().to_lowercase().contains(query))
+}
+
+/// Check whether a list item's content contains the query string (case-insensitive) in any language.
+fn list_item_contains(item: &ListItem, query: &str) -> bool {
+    translated_text_contains(&item.content, query)
+}
+
+/// Search for all selectable node paths whose text content matches the query.
+///
+/// Searches across all languages. Returns paths in document order.
+pub fn search_nodes(content: &[StructuredNode], query: &str) -> Vec<NodePath> {
+    if query.is_empty() {
+        return vec![];
+    }
+    let q = query.to_lowercase();
+    let mut results = Vec::new();
+    search_nodes_recursive(content, &mut vec![], &q, &mut results);
+    results
+}
+
+fn search_nodes_recursive(
+    nodes: &[StructuredNode],
+    path: &mut NodePath,
+    query: &str,
+    results: &mut Vec<NodePath>,
+) {
+    for (i, node) in nodes.iter().enumerate() {
+        path.push(PathSegment::Child(i));
+
+        let matched = match node {
+            StructuredNode::Paragraph(p) => translated_text_contains(&p.content, query),
+            StructuredNode::Heading(h) => translated_text_contains(&h.content, query),
+            StructuredNode::Field(f) => f
+                .label
+                .as_ref()
+                .map_or(false, |l| translated_text_contains(l, query)),
+            StructuredNode::Footnote(n) => translated_text_contains(&n.content, query),
+            _ => false,
+        };
+
+        if matched {
+            results.push(path.clone());
+        }
+
+        // Recurse into children
+        match node {
+            StructuredNode::Group(g) => {
+                search_nodes_recursive(&g.children, path, query, results);
+            }
+            StructuredNode::GridLayout(g) => {
+                let element_nodes: Vec<StructuredNode> =
+                    g.elements.iter().map(|e| e.node.clone()).collect();
+                search_nodes_recursive(&element_nodes, path, query, results);
+            }
+            StructuredNode::Repeatable(r) => {
+                search_nodes_recursive(std::slice::from_ref(&r.item), path, query, results);
+            }
+            StructuredNode::Conditional(c) => {
+                search_nodes_recursive(std::slice::from_ref(&c.content), path, query, results);
+            }
+            StructuredNode::List(l) => {
+                search_list_items_recursive(l, path, query, results);
+            }
+            StructuredNode::Table(t) => {
+                if let Some(header) = &t.header {
+                    path.push(PathSegment::TableHeader);
+                    for (ci, cell) in header.cells.iter().enumerate() {
+                        path.push(PathSegment::TableCell(ci));
+                        search_nodes_recursive(std::slice::from_ref(cell), path, query, results);
+                        path.pop();
+                    }
+                    path.pop();
+                }
+                for (ri, row) in t.rows.iter().enumerate() {
+                    path.push(PathSegment::TableRow(ri));
+                    for (ci, cell) in row.cells.iter().enumerate() {
+                        path.push(PathSegment::TableCell(ci));
+                        search_nodes_recursive(std::slice::from_ref(cell), path, query, results);
+                        path.pop();
+                    }
+                    path.pop();
+                }
+            }
+            _ => {}
+        }
+
+        path.pop();
+    }
+}
+
+fn search_list_items_recursive(
+    list: &ListNode,
+    path: &mut NodePath,
+    query: &str,
+    results: &mut Vec<NodePath>,
+) {
+    for (i, item) in list.items.iter().enumerate() {
+        path.push(PathSegment::ListItem(i));
+        if list_item_contains(item, query) {
+            results.push(path.clone());
+        }
+        if let Some(sublist) = &item.sublist {
+            search_list_items_recursive(sublist, path, query, results);
+        }
+        path.pop();
+    }
+}
+
+// ── Missing Translation Highlighting ─────────────────────────────────────────
+
+/// Check whether `text` has a missing translation for any of the given document languages.
+///
+/// A translation is considered missing when:
+/// - A document language key exists in the `TranslatedText` but its `InlineText` is empty, or
+/// - The text has non-empty content for at least one document language but no entry at all for
+///   another document language (implicit absence).
+///
+/// Texts that only use the "default" key (single-language documents) are never flagged.
+fn translated_text_has_missing(text: &TranslatedText, document_languages: &[String]) -> bool {
+    // Explicit missing: a language key exists but the InlineText is empty
+    if !text.missing_translation_languages().is_empty() {
+        return true;
+    }
+
+    // Implicit missing: some doc language has content but another has no entry
+    if document_languages.len() <= 1 {
+        return false;
+    }
+
+    let mut text_langs = BTreeSet::new();
+    text.collect_languages(&mut text_langs);
+
+    // If the only key is "default", this is a mono-language text — not a translation issue
+    if text_langs.len() == 1 && text_langs.contains("default") {
+        return false;
+    }
+
+    let any_has_content = document_languages
+        .iter()
+        .any(|l| text.get(l).map_or(false, |t| !t.is_empty()));
+
+    if !any_has_content {
+        return false;
+    }
+
+    // At least one doc language has content; flag if any other lacks it
+    document_languages
+        .iter()
+        .any(|l| text.get(l).map_or(true, |t| t.is_empty()))
+}
+
+/// Check whether a node has missing translations for any of the given document languages.
+///
+/// Only inspects the node's own text fields (not children); container nodes are never flagged.
+pub fn node_has_missing_translations(node: &StructuredNode, document_languages: &[String]) -> bool {
+    if document_languages.len() <= 1 {
+        return false;
+    }
+    match node {
+        StructuredNode::Paragraph(p) => translated_text_has_missing(&p.content, document_languages),
+        StructuredNode::Heading(h) => translated_text_has_missing(&h.content, document_languages),
+        StructuredNode::Field(f) => f
+            .label
+            .as_ref()
+            .map_or(false, |l| translated_text_has_missing(l, document_languages)),
+        StructuredNode::Footnote(n) => {
+            translated_text_has_missing(&n.content, document_languages)
+        }
+        _ => false,
+    }
+}
+
+/// Check whether a list item has missing translations for any of the given document languages.
+pub fn list_item_has_missing_translations(
+    item: &ListItem,
+    document_languages: &[String],
+) -> bool {
+    if document_languages.len() <= 1 {
+        return false;
+    }
+    translated_text_has_missing(&item.content, document_languages)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blueprint::{ListItem, ListNode, ParagraphNode};
+    use blueprint::{ListNode, ParagraphNode};
     use std::collections::HashSet;
 
     fn make_nested_list_content() -> Vec<StructuredNode> {

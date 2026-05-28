@@ -1855,3 +1855,97 @@ body > div, #main {
     font-size: 10px;
     font-style: italic;
 }
+
+/* ── Node: missing-translation highlight ─────────────────────────────── */
+
+.node-missing-translation {
+    background: var(--color-bg-warning);
+    border-left: 3px solid var(--color-border-warning);
+    border-radius: var(--radius-sm);
+}
+
+.node-missing-translation .node-header {
+    color: var(--color-text-warning);
+}
+
+/* ── Editor search bar ───────────────────────────────────────────────── */
+
+.editor-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.editor-search-icon {
+    font-size: var(--font-size-sm);
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.editor-search-input {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: var(--font-size-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input, var(--color-bg));
+    color: var(--color-text);
+    outline: none;
+}
+
+.editor-search-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 37, 99, 235), 0.15);
+}
+
+.editor-search-count {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted, var(--color-text));
+    white-space: nowrap;
+    min-width: 4.5em;
+    text-align: center;
+}
+
+.editor-search-no-match {
+    color: var(--color-text-warning);
+}
+
+.editor-search-nav {
+    padding: 2px 6px;
+    font-size: var(--font-size-sm);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--color-text);
+    line-height: 1;
+}
+
+.editor-search-nav:hover {
+    background: var(--color-bg-hover, var(--color-border));
+}
+
+.editor-search-clear {
+    padding: 2px 6px;
+    font-size: var(--font-size-sm);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted, var(--color-text));
+    opacity: 0.7;
+    line-height: 1;
+}
+
+.editor-search-clear:hover {
+    opacity: 1;
+}
+
+/* Search match highlight – applied via the existing `highlight` / `node-changed` mechanism */
+.node-search-match {
+    background: rgba(255, 210, 0, 0.18);
+    border-left: 3px solid #d4a017;
+    border-radius: var(--radius-sm);
+}

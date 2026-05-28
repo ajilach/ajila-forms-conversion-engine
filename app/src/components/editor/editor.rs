@@ -24,7 +24,7 @@ use super::state::{
     get_node_at_path, get_node_at_path_mut, get_shared_parent_path, get_table_column_count,
     indent_node, is_container_child_path, is_list_item_path, is_table_row_path,
     move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
-    move_table_row_down, move_table_row_up, outdent_node,
+    move_table_row_down, move_table_row_up, outdent_node, search_nodes,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -89,6 +89,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     // Which change IDs the user has rejected in the current Preview round.
     // Reset to empty whenever a new smart-edit run starts.
     let mut rejected_ids = use_signal(std::collections::HashSet::<usize>::new);
+
+    // Search state
+    let mut search_query = use_signal(String::new);
+    let mut search_index = use_signal(|| 0usize);
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -1148,12 +1152,38 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let on_apply = props.on_apply;
     let on_cancel = props.on_cancel;
 
+    // Compute search results once per render for both the search bar and the highlight set
+    let search_results = search_nodes(&envelope.read().content, &search_query.read());
+    let search_result_count = search_results.len();
+    let search_current_idx = if search_result_count == 0 {
+        0
+    } else {
+        *search_index.read() % search_result_count
+    };
+    let search_highlight: std::collections::HashSet<super::state::NodePath> =
+        search_results.iter().cloned().collect();
+
     rsx! {
         div { class: "structured-editor",
             // Header
             div { class: "editor-header",
                 h2 { "Edit Structure" }
                 div { class: "editor-header-actions",
+                    button {
+                        class: "editor-btn editor-btn-secondary",
+                        title: "Preview the current (unapplied) changes as HTML",
+                        onclick: {
+                            let envelope = envelope;
+                            move |_| {
+                                let html = blueprint::to_html(
+                                    &envelope.read().content,
+                                    &blueprint::HtmlConfig::default(),
+                                );
+                                show_html_preview(html, "editor-preview.html");
+                            }
+                        },
+                        "Preview HTML"
+                    }
                     button {
                         class: "editor-btn editor-btn-secondary",
                         onclick: move |_| on_cancel.call(()),
@@ -1455,6 +1485,70 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 }
             }
 
+            // Search bar
+            div { class: "editor-search",
+                span { class: "editor-search-icon", "🔍" }
+                input {
+                    class: "editor-search-input",
+                    r#type: "text",
+                    placeholder: "Search text, labels… (all languages)",
+                    value: "{search_query.read()}",
+                    oninput: move |evt| {
+                        search_query.set(evt.value());
+                        search_index.set(0);
+                    },
+                }
+                if search_result_count > 0 {
+                    span { class: "editor-search-count",
+                        "{search_current_idx + 1} / {search_result_count}"
+                    }
+                    button {
+                        class: "editor-search-nav",
+                        title: "Previous match",
+                        onclick: {
+                            let results = search_results.clone();
+                            move |_| {
+                                let idx = *search_index.read() % results.len();
+                                let new_idx = if idx == 0 { results.len() - 1 } else { idx - 1 };
+                                search_index.set(new_idx);
+                                if let Some(path) = results.get(new_idx) {
+                                    selection.write().select_single(path.clone());
+                                }
+                            }
+                        },
+                        "▲"
+                    }
+                    button {
+                        class: "editor-search-nav",
+                        title: "Next match",
+                        onclick: {
+                            let results = search_results.clone();
+                            move |_| {
+                                let new_idx = (*search_index.read() + 1) % results.len();
+                                search_index.set(new_idx);
+                                if let Some(path) = results.get(new_idx) {
+                                    selection.write().select_single(path.clone());
+                                }
+                            }
+                        },
+                        "▼"
+                    }
+                } else if !search_query.read().is_empty() {
+                    span { class: "editor-search-count editor-search-no-match", "No matches" }
+                }
+                if !search_query.read().is_empty() {
+                    button {
+                        class: "editor-search-clear",
+                        title: "Clear search",
+                        onclick: move |_| {
+                            search_query.set(String::new());
+                            search_index.set(0);
+                        },
+                        "✕"
+                    }
+                }
+            }
+
             // Document tree
             div { class: "editor-content",
                 NodeRenderer {
@@ -1462,6 +1556,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     selection: selection.read().clone(),
                     languages: languages.clone(),
                     field_labels: field_labels.clone(),
+                    highlight: search_highlight,
                     on_action: handle_action.clone(),
                 }
             }
