@@ -1200,11 +1200,19 @@ impl FieldNode {
 
     /// Check if two fields are structurally equal.
     /// Compares name, text-bearing metadata, and input type structure, but NOT value.
+    ///
+    /// When two fields share the same `name` (FieldId), they represent the same
+    /// logical field regardless of label/placeholder differences (which can arise
+    /// from state-dependent label attachment in the layout pipeline).
     pub fn structural_eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && self.label.structural_eq(&other.label)
-            && self.placeholder.structural_eq(&other.placeholder)
-            && self.input_type.structural_eq(&other.input_type)
+        if self.name == other.name {
+            // Same field identity – only require matching input type structure.
+            self.input_type.structural_eq(&other.input_type)
+        } else {
+            self.label.structural_eq(&other.label)
+                && self.placeholder.structural_eq(&other.placeholder)
+                && self.input_type.structural_eq(&other.input_type)
+        }
     }
 }
 
@@ -1261,6 +1269,14 @@ impl FieldType {
                     step: step2,
                 },
             ) => min1 == min2 && max1 == max2 && step1 == step2,
+            (
+                FieldType::Textarea {
+                    max_length: max1,
+                },
+                FieldType::Textarea {
+                    max_length: max2,
+                },
+            ) => max1 == max2,
             (FieldType::Date, FieldType::Date) => true,
             (FieldType::Email, FieldType::Email) => true,
             (FieldType::Tel, FieldType::Tel) => true,

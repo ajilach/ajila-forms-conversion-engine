@@ -29896,3 +29896,119 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
         h2_tt.plain_text_in("sp")
     );
 }
+
+#[test]
+fn test_aafw_radio_button_values_in_html() {
+    // Test that the radio button with guarantee type options from AAFW appears
+    // in the generated HTML output with all option values visible (not hidden
+    // inside a conditional block).
+    use crate::html::{generate_html, HtmlConfig};
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, FieldCondition, FieldNode as FN2, FieldType, StructuredNode as SN2};
+
+    // Build envelopes for all three languages and merge
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_DE.pdf"), "de")
+        .expect("Failed to process AAFW_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_EN.pdf"), "en")
+        .expect("Failed to process AAFW_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_SP.pdf"), "sp")
+        .expect("Failed to process AAFW_019_SP");
+
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
+            .expect("Merging AAFW_019 DE/EN/SP should succeed");
+
+    // Verify radio buttons exist in structured output
+    let radio_fields = helpers::collect_radio_fields(&merged.content);
+    assert!(
+        !radio_fields.is_empty(),
+        "AAFW should contain at least one radio button group in structured output"
+    );
+
+    // Find the guarantee type radio group
+    let guarantee_radio = radio_fields.iter().find(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            options.iter().any(|opt| {
+                opt.name.as_str().contains("Bietung")
+                    || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        guarantee_radio.is_some(),
+        "Expected a radio group with 'Bietung' option in structured output.\nFound radio fields: {:?}",
+        radio_fields.iter().filter_map(|f| {
+            if let FieldType::Radio { options } = &f.input_type {
+                Some(options.iter().map(|o| format!("{:?}", o.name)).collect::<Vec<_>>())
+            } else {
+                None
+            }
+        }).collect::<Vec<_>>()
+    );
+
+    // Generate HTML
+    let html = generate_html(&merged.content, &HtmlConfig::default());
+
+    // Verify radio button options appear in the HTML
+    let de_options = [
+        "Bietung",
+        "Anzahlung",
+        "Lieferung",
+        "Leistung",
+        "Gewährleistung",
+        "Vertragserfüllung",
+    ];
+    for option in &de_options {
+        assert!(
+            html.contains(option),
+            "HTML output should contain radio option '{}', but it was not found.",
+            option,
+        );
+    }
+
+    // Also verify EN options
+    let en_options = ["Bid", "Downpayment", "Delivery", "Performance", "Warranty"];
+    for option in &en_options {
+        assert!(
+            html.contains(option),
+            "HTML output should contain EN radio option '{}', but it was not found.",
+            option
+        );
+    }
+
+    // The radio button must NOT be inside a hidden conditional block.
+    let mut radio_in_cond: Option<(FN2, FieldCondition)> = None;
+    helpers::walk_structured_nodes(&merged.content, &mut |node| {
+        if let SN2::Conditional(c) = node {
+            let mut found_radio = Vec::new();
+            helpers::walk_structured_nodes(
+                std::slice::from_ref(c.content.as_ref()),
+                &mut |n| {
+                    if let SN2::Field(f) = n {
+                        if let FieldType::Radio { options } = &f.input_type {
+                            if options.iter().any(|opt| {
+                                opt.name.as_str().contains("Bietung")
+                                    || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+                            }) {
+                                found_radio.push(f.clone());
+                            }
+                        }
+                    }
+                },
+            );
+            if !found_radio.is_empty() && radio_in_cond.is_none() {
+                radio_in_cond = Some((found_radio[0].clone(), c.condition.clone()));
+            }
+        }
+    });
+
+    assert!(
+        radio_in_cond.is_none(),
+        "The guarantee type radio button should NOT be inside a conditional block.\n\
+         Found radio inside conditional with condition: {:?}\n\
+         This causes the radio to be hidden and never visible.",
+        radio_in_cond.as_ref().map(|(_, c)| c)
+    );
+}
