@@ -29607,3 +29607,292 @@ fn test_aatz_bold_paragraph_not_detected_as_heading() {
         );
     }
 }
+
+#[test]
+fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
+    // Test that the AAFW form (DE/EN/SP) contains:
+    // 1. A textarea with label "Bemerkung" / "Remark" / "Nota"
+    // 2. A radio button group with guarantee type options
+    // 3. No lists
+    // 4. Expected multilingual headings
+    use crate::run_exhaustive_to_envelope;
+    use crate::structured::{self, FieldType, StructuredNode, TranslatedText};
+    use helpers::collect_lists;
+
+    // Build envelopes for all three languages
+    let de_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_DE.pdf"), "de")
+        .expect("Failed to process AAFW_019_DE");
+    let en_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_EN.pdf"), "en")
+        .expect("Failed to process AAFW_019_EN");
+    let sp_envelope = run_exhaustive_to_envelope(input_path("AAFW_019_SP.pdf"), "sp")
+        .expect("Failed to process AAFW_019_SP");
+
+    // Merge translations
+    let merged =
+        structured::merge_translations(vec![de_envelope, en_envelope, sp_envelope], None)
+            .expect("Merging AAFW_019 DE/EN/SP should succeed");
+
+    // =========================================================================
+    // 1. Textarea with label "Bemerkung" / "Remark" / "Nota"
+    // =========================================================================
+    let textareas = collect_textarea_fields(&merged.content);
+    assert!(
+        !textareas.is_empty(),
+        "AAFW should contain at least one textarea field"
+    );
+
+    let bemerkung_textarea = textareas.iter().find(|f| {
+        f.label.as_ref().map_or(false, |l| {
+            let de = l.plain_text_in("de");
+            let en = l.plain_text_in("en");
+            let sp = l.plain_text_in("sp");
+            de.contains("Bemerkung") || en.contains("Remark") || sp.contains("Nota")
+        })
+    });
+    assert!(
+        bemerkung_textarea.is_some(),
+        "Expected a textarea with label 'Bemerkung'/'Remark'/'Nota', found textareas: {:?}",
+        textareas
+            .iter()
+            .map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+
+    // Verify all three translations are present
+    let label = bemerkung_textarea.unwrap().label.as_ref().unwrap();
+    assert!(
+        label.plain_text_in("de").contains("Bemerkung"),
+        "Textarea label DE should contain 'Bemerkung', got: '{}'",
+        label.plain_text_in("de")
+    );
+    assert!(
+        label.plain_text_in("en").contains("Remark"),
+        "Textarea label EN should contain 'Remark', got: '{}'",
+        label.plain_text_in("en")
+    );
+    assert!(
+        label.plain_text_in("sp").contains("Nota"),
+        "Textarea label SP should contain 'Nota', got: '{}'",
+        label.plain_text_in("sp")
+    );
+
+    // =========================================================================
+    // 2. Radio button with guarantee type options
+    // =========================================================================
+    let radio_fields = collect_radio_fields(&merged.content);
+    assert!(
+        !radio_fields.is_empty(),
+        "AAFW should contain at least one radio button group"
+    );
+
+    let de_options = [
+        "Bietung",
+        "Anzahlung",
+        "Lieferung",
+        "Leistung",
+        "Gewährleistung",
+        "Vertragserfüllung",
+    ];
+    let en_options = [
+        "Bid",
+        "Downpayment",
+        "Delivery",
+        "Performance",
+        "Warranty",
+        "Contact performance",
+    ];
+    let sp_options = [
+        "licitación",
+        "pago inicial",
+        "suministro",
+        "prestación",
+        "garantía",
+        "cumplimiento de un contrato",
+    ];
+
+    // Find the radio group that contains the guarantee type options
+    let found_radio = radio_fields.iter().any(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            // Check DE options
+            de_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    opt.name.get("de").map_or(false, |n| n.contains(expected))
+                        || opt.name.as_str().contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        found_radio,
+        "Expected a radio group with DE options {:?}.\nFound radio fields: {:?}",
+        de_options,
+        radio_fields
+            .iter()
+            .filter_map(|f| if let FieldType::Radio { options } = &f.input_type {
+                Some(
+                    options
+                        .iter()
+                        .map(|o| format!("{:?}", o.name))
+                        .collect::<Vec<_>>()
+                )
+            } else {
+                None
+            })
+            .collect::<Vec<_>>()
+    );
+
+    // Verify EN options are also present
+    let found_radio_en = radio_fields.iter().any(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            en_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    opt.name.get("en").map_or(false, |n| n.contains(expected))
+                        || opt.name.as_str().contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        found_radio_en,
+        "Expected radio group to have EN options {:?}",
+        en_options
+    );
+
+    // Verify SP options are also present
+    let found_radio_sp = radio_fields.iter().any(|field| {
+        if let FieldType::Radio { options } = &field.input_type {
+            sp_options.iter().all(|expected| {
+                options.iter().any(|opt| {
+                    opt.name.get("sp").map_or(false, |n| n.contains(expected))
+                        || opt.name.as_str().contains(expected)
+                })
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        found_radio_sp,
+        "Expected radio group to have SP options {:?}",
+        sp_options
+    );
+
+    // =========================================================================
+    // 3. No lists
+    // =========================================================================
+    let lists = collect_lists(&merged.content);
+    assert!(
+        lists.is_empty(),
+        "AAFW should have no lists, but found {}:\n{:?}",
+        lists.len(),
+        lists
+            .iter()
+            .map(|l| l.items.iter().map(|i| i.as_plain_text()).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+
+    // =========================================================================
+    // 4. Headings
+    // =========================================================================
+    // Collect headings with TranslatedText to check multilingual content
+    fn collect_multilingual_headings(
+        nodes: &[StructuredNode],
+        out: &mut Vec<(u8, TranslatedText)>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Heading(h) => {
+                    out.push((h.level.as_u8(), h.content.clone()));
+                }
+                StructuredNode::Group(g) => collect_multilingual_headings(&g.children, out),
+                StructuredNode::Conditional(c) => {
+                    collect_multilingual_headings(&[(*c.content).clone()], out)
+                }
+                StructuredNode::Repeatable(r) => {
+                    collect_multilingual_headings(&[(*r.item).clone()], out)
+                }
+                StructuredNode::GridLayout(g) => {
+                    let children: Vec<_> = g.elements.iter().map(|e| e.node.clone()).collect();
+                    collect_multilingual_headings(&children, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut headings = Vec::new();
+    collect_multilingual_headings(&merged.content, &mut headings);
+
+    // Heading 1: "1. Direktes und indirektes Aval" / "1. Direct and indirect Guarantee" / "1. Aval directo e indirecto"
+    let found_h1 = headings.iter().any(|(_level, tt)| {
+        let de = tt.plain_text_in("de");
+        de.contains("Direktes und indirektes Aval")
+    });
+    assert!(
+        found_h1,
+        "Expected heading containing 'Direktes und indirektes Aval'.\nFound headings: {:?}",
+        headings
+            .iter()
+            .map(|(l, tt)| format!("H{}: {}", l, tt.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+
+    // Verify EN translation of heading 1
+    let h1_tt = headings
+        .iter()
+        .find(|(_l, tt)| tt.plain_text_in("de").contains("Direktes und indirektes Aval"))
+        .map(|(_, tt)| tt)
+        .unwrap();
+    assert!(
+        h1_tt
+            .plain_text_in("en")
+            .contains("Direct and indirect Guarantee"),
+        "Heading 1 EN should contain 'Direct and indirect Guarantee', got: '{}'",
+        h1_tt.plain_text_in("en")
+    );
+    assert!(
+        h1_tt
+            .plain_text_in("sp")
+            .contains("Aval directo e indirecto"),
+        "Heading 1 SP should contain 'Aval directo e indirecto', got: '{}'",
+        h1_tt.plain_text_in("sp")
+    );
+
+    // Heading 2: "2. Einbuchung und Entgelte" / "2. Recording; Consideration" / "2. Contabilización y retribuciones"
+    let found_h2 = headings.iter().any(|(_level, tt)| {
+        let de = tt.plain_text_in("de");
+        de.contains("Einbuchung und Entgelte")
+    });
+    assert!(
+        found_h2,
+        "Expected heading containing 'Einbuchung und Entgelte'.\nFound headings: {:?}",
+        headings
+            .iter()
+            .map(|(l, tt)| format!("H{}: {}", l, tt.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+
+    // Verify EN and SP translations of heading 2
+    let h2_tt = headings
+        .iter()
+        .find(|(_l, tt)| tt.plain_text_in("de").contains("Einbuchung und Entgelte"))
+        .map(|(_, tt)| tt)
+        .unwrap();
+    assert!(
+        h2_tt.plain_text_in("en").contains("Recording")
+            && h2_tt.plain_text_in("en").contains("Consideration"),
+        "Heading 2 EN should contain 'Recording' and 'Consideration', got: '{}'",
+        h2_tt.plain_text_in("en")
+    );
+    assert!(
+        h2_tt
+            .plain_text_in("sp")
+            .contains("Contabilización y retribuciones"),
+        "Heading 2 SP should contain 'Contabilización y retribuciones', got: '{}'",
+        h2_tt.plain_text_in("sp")
+    );
+}
