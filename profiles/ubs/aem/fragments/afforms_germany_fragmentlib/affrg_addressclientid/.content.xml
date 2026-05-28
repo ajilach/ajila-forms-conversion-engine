@@ -4,12 +4,13 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-04-27T11:05:25.260+02:00"
-        cq:lastModifiedBy="t831552"
+        cq:lastModified="{Date}2026-03-13T19:01:48.051+01:00"
+        cq:lastModifiedBy="t406261"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:primaryType="cq:PageContent"
         jcr:title="DE Fragment - Address Client Id 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

@@ -4,14 +4,15 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-05T09:33:49.395+02:00"
+        cq:lastModified="{Date}2026-03-20T18:09:29.547+01:00"
         cq:lastModifiedBy="t406261"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
-        fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##727&quot;}"
+        fd:translationIds="\{}"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="IT Fragment - Legal representative"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"
@@ -67,7 +68,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </removebutton_copy>
                     <textdraw_copy_copy_c
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_copy_copy_c##_value##5896&quot;}"
+                        fd:translationIds="\{}"
                         jcr:created="{Date}2020-07-30T11:36:23.000+02:00"
                         jcr:createdBy="admin"
                         jcr:lastModified="{Date}2026-03-20T15:39:20.235+01:00"
@@ -88,7 +89,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_copy_copy_c>
                     <textdraw_copy_copy
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_copy_copy##_value##3274&quot;}"
+                        fd:translationIds="\{}"
                         jcr:created="{Date}2020-07-30T11:36:23.000+02:00"
                         jcr:createdBy="admin"
                         jcr:lastModified="{Date}2026-03-20T15:39:28.031+01:00"
@@ -110,7 +111,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_copy_copy>
                     <textdraw_1552857560_
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_1552857560_##_value##5524&quot;}"
+                        fd:translationIds="\{}"
                         jcr:created="{Date}2020-10-01T08:29:44.067+02:00"
                         jcr:createdBy="t650038"
                         jcr:lastModified="{Date}2026-03-20T15:39:35.923+01:00"
@@ -132,7 +133,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_1552857560_>
                     <textdraw_1552857560__498997986
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_1552857560__498997986##_value##3372&quot;}"
+                        fd:translationIds="\{}"
                         jcr:created="{Date}2020-10-01T08:29:44.067+02:00"
                         jcr:createdBy="t650038"
                         jcr:lastModified="{Date}2026-03-20T15:39:59.466+01:00"
@@ -154,7 +155,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_1552857560__498997986>
                     <textdraw_1552857560__2090584198
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_1552857560__2090584198##_value##356&quot;}"
+                        fd:translationIds="\{}"
                         jcr:created="{Date}2020-10-01T08:29:44.067+02:00"
                         jcr:createdBy="t650038"
                         jcr:lastModified="{Date}2026-03-20T15:40:07.007+01:00"

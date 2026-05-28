@@ -4,13 +4,14 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-22T20:57:43.995+02:00"
-        cq:lastModifiedBy="t831552"
+        cq:lastModified="{Date}2026-03-31T10:57:14.451+02:00"
+        cq:lastModifiedBy="t831640"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##7776&quot;}"
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-GENERIC INTERNAL BANK USE(SINGLE SIGNATURE)"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

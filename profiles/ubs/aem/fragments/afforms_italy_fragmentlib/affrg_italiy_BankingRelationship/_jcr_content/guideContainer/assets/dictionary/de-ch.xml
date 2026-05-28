@@ -28,7 +28,7 @@
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"
         sling:key="fd_Clearing no."
-        sling:message="Clearing-Nr."/>
+        sling:message="Clearingnummer"/>
     <fd_isPrintPartial
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

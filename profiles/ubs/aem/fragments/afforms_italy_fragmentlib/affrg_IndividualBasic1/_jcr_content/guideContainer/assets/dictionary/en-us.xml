@@ -4,11 +4,6 @@
     jcr:mixinTypes="[mix:language]"
     jcr:primaryType="sling:Folder"
     sling:basename="/content/forms/af/afforms_italy_fragmentlib/affrg_IndividualBasic1/jcr:content/guideContainer/assets/dictionary">
-    <_x0038_17f9d03-6b6f-4e34-bbc9-476ff06ffbb5
-        jcr:mixinTypes="[sling:Message]"
-        jcr:primaryType="nt:folder"
-        sling:key="fd_IT Fragment - Individual Basic 1"
-        sling:message="IT Fragment - Individual Basic 1"/>
     <c3ad5279-cc89-44a3-b4fe-818b8f85f706
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

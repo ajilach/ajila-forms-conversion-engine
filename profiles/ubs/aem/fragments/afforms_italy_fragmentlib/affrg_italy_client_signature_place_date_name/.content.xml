@@ -13,7 +13,8 @@
         jcr:primaryType="cq:PageContent"
         jcr:title="EFORMS-32526 Client Signature (Signature, Place, Date, Name)"
         jcr:uuid="17d96802-2ade-4cfd-8857-d91fc2df6c7e"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

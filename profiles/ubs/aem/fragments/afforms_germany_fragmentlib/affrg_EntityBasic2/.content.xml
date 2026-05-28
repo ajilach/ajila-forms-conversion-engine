@@ -4,14 +4,15 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-01T15:49:12.696+02:00"
-        cq:lastModifiedBy="t831552"
+        cq:lastModified="{Date}2026-01-08T14:29:16.436+01:00"
+        cq:lastModifiedBy="t406261"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         fd:translationIds="\{}"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="DE Fragment - Entity Basic 2"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

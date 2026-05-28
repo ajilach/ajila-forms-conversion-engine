@@ -34,6 +34,11 @@
         jcr:primaryType="nt:folder"
         sling:key="fd_granite/ui/components/coral/foundation/form/textarea"
         sling:message="granite/ui/components/coral/foundation/form/textarea"/>
+    <_x0036_4016967-ef3d-482d-a133-de3701953b67
+        jcr:mixinTypes="[sling:Message]"
+        jcr:primaryType="nt:folder"
+        sling:key="fd_Safe Depoist Box Number"
+        sling:message="Safe Depoist Box Number"/>
     <_x0036_c1ff557-2549-4147-84e6-413b7c828063
         jcr:mixinTypes="[sling:Message]"
         jcr:primaryType="nt:folder"

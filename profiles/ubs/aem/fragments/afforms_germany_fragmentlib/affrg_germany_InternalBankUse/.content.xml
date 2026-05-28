@@ -10,7 +10,8 @@
         fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##8743&quot;}"
         jcr:primaryType="cq:PageContent"
         jcr:title="DE Fragment-internal bank use"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

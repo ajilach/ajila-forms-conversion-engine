@@ -4,14 +4,15 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-05T09:33:49.752+02:00"
-        cq:lastModifiedBy="admin"
+        cq:lastModified="{Date}2026-03-20T15:50:16.454+01:00"
+        cq:lastModifiedBy="t406261"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
-        fd:translationIds="\{&quot;jcr:title&quot;:&quot;jcr:title##8769&quot;}"
+        fd:translationIds="\{}"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
         jcr:title="IT Fragment - Signature (legalRepresentative) "
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"
@@ -61,7 +62,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </removebutton>
                     <textdraw_copy
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_copy##_value##1988&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T09:53:20.551+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"
@@ -79,7 +80,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_copy>
                     <textdraw_copy_1542456768
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_copy_1542456768##_value##6567&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T09:53:29.573+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"
@@ -99,7 +100,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_copy_1542456768>
                     <textdraw_copy_761233121
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_copy_761233121##_value##1828&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T09:53:42.015+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"
@@ -118,7 +119,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_copy_761233121>
                     <textdraw_copy_1290789272
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw_copy_1290789272##_value##6677&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T09:54:12.082+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"
@@ -137,7 +138,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw_copy_1290789272>
                     <textdraw
-                        fd:translationIds="\{&quot;_value&quot;:&quot;guideContainer##rootPanel##items##textdraw##_value##6368&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T09:54:24.291+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"
@@ -156,7 +157,7 @@
                             jcr:primaryType="nt:unstructured"/>
                     </textdraw>
                     <signature
-                        fd:translationIds="\{&quot;jcr:title&quot;:&quot;guideContainer##rootPanel##items##signature##jcr:title##511&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T07:54:03.147+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"
@@ -223,7 +224,7 @@
                         </cq:responsive>
                     </datepicker>
                     <textbox_1263246236
-                        fd:translationIds="\{&quot;jcr:title&quot;:&quot;guideContainer##rootPanel##items##textbox_1263246236##jcr:title##8484&quot;}"
+                        fd:translationIds="\{}"
                         jcr:lastModified="{Date}2026-02-13T07:53:48.172+01:00"
                         jcr:lastModifiedBy="t406261"
                         jcr:primaryType="nt:unstructured"

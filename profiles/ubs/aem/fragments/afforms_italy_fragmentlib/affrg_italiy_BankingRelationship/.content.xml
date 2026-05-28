@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-26T14:09:38.763+02:00"
-        cq:lastModifiedBy="t406261"
+        cq:lastModified="{Date}2026-04-03T11:36:42.824+02:00"
+        cq:lastModifiedBy="t831640"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:isCheckedOut="{Boolean}true"
         jcr:language="en"
@@ -13,7 +13,8 @@
         jcr:primaryType="cq:PageContent"
         jcr:title="IT Fragment - Banking Relationship"
         jcr:uuid="dce6d3a7-834e-4199-84d4-1300baeaf871"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"

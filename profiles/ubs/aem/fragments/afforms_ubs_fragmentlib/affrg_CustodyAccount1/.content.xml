@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-02-03T07:29:30.838+01:00"
-        cq:lastModifiedBy="t831640"
+        cq:lastModified="{Date}2026-04-26T16:16:38.191+02:00"
+        cq:lastModifiedBy="t353355"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
@@ -77,13 +77,14 @@
                             <textbox_copy
                                 jcr:created="Thu Aug 27 2020 10:36:03 GMT+0200"
                                 jcr:createdBy="t649798"
-                                jcr:lastModified="{Date}2026-01-05T11:10:31.906+01:00"
+                                jcr:lastModified="{Date}2025-11-03T08:53:29.638+01:00"
                                 jcr:lastModifiedBy="t406261"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Clearing no."
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
                                 assistPriority="custom"
                                 autofillFieldKeyword="name"
+                                bindRef="/CustodyAccountType/BranchCode"
                                 css="widget_ajila-forms-ubs-textbox"
                                 custom="Clearing number"
                                 enabled="{Boolean}true"
@@ -100,20 +101,21 @@
                                 </cq:responsive>
                                 <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount1&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;CALC_EXPRESSION&quot;}\,&quot;content&quot;:&quot;if(this.mandatory){\\n  textbox_bankingrelationship1.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount1&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;CALC_EXPRESSION&quot;}\,&quot;content&quot;:&quot;if(this.mandatory){\\n  TXT_BankingRelationship1.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var numSize = 4;\\nif(this.value.length &lt;numSize ) {\\n  var val = \\&quot;000\\&quot; + this.value;\\n  this.value = val.substr(-numSize);\\n} else {\\n  this.value = this.value;\\n}&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount1&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount1&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if( [true\, false].indexOf(window.forms.ubs.printpartial.isPrintPartialActive()) != -1){\\n  if(!window.forms.ubs.printpartial.isPrintPartialActive() || (this.value &amp;&amp; this.value!== \\&quot;\\&quot;) || (TXT_CustodyAccount2.value &amp;&amp; TXT_CustodyAccount2.value!==\\&quot;\\&quot;) || (TXT_CustodyAccount3.value &amp;&amp; TXT_CustodyAccount3.value.value!==\\&quot;\\&quot;)   ){\\n    window.forms.ubs.printpartial.setControlElement(this);\\n    window.forms.ubs.printpartial.setControlElement(TXT_CustodyAccount2);\\n    window.forms.ubs.printpartial.setControlElement(TXT_CustodyAccount3.value); \\n  } else{\\n    window.forms.ubs.printpartial.removeControlElement(this);\\n    window.forms.ubs.printpartial.removeControlElement(TXT_CustodyAccount2);\\n    window.forms.ubs.printpartial.removeControlElement(TXT_CustodyAccount3.value);\\n  }\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </textbox_copy>
                             <textbox_966647679_co
                                 jcr:created="Thu Aug 27 2020 10:36:08 GMT+0200"
                                 jcr:createdBy="t649798"
-                                jcr:lastModified="{Date}2026-01-05T11:10:41.461+01:00"
-                                jcr:lastModifiedBy="t406261"
+                                jcr:lastModified="{Date}2025-09-04T01:39:35.695+02:00"
+                                jcr:lastModifiedBy="t518977"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Account no."
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
                                 assistPriority="custom"
                                 autofillFieldKeyword="name"
+                                bindRef="/CustodyAccountType/MasterNumber"
                                 css="widget_ajila-forms-ubs-textbox"
                                 custom="Account number"
                                 enabled="{Boolean}true"
@@ -129,11 +131,9 @@
                                         offset="0"
                                         width="6"/>
                                 </cq:responsive>
-                                <fd:rules
-                                    fd:valueCommit="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EVENT_CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EVENT_AND_COMPARISON&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount2&quot;\,&quot;type&quot;:&quot;TEXT FIELD|FIELD|AFCOMPONENT|STRING&quot;\,&quot;name&quot;:&quot;TXT_CustodyAccount2&quot;}}\,{&quot;nodeName&quot;:&quot;EVENT_AND_COMPARISON_OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;is changed&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;PRIMITIVE_EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:null}}]}\,&quot;nested&quot;:false}\,{&quot;nodeName&quot;:&quot;Then&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;BLOCK_STATEMENTS&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;BLOCK_STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SET_VALUE_STATEMENT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;VALUE_FIELD&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.txtCustodyAccountNo&quot;\,&quot;displayName&quot;:&quot;Custody account no.&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/guideRootPanel/Custody account no./&quot;\,&quot;name&quot;:&quot;txtCustodyAccountNo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel&quot;}}\,{&quot;nodeName&quot;:&quot;to&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;BINARY_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount1&quot;\,&quot;displayName&quot;:&quot;Clearing no.&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/guideRootPanel/PN_CustodyAccountNo/Clearing no./&quot;\,&quot;name&quot;:&quot;TXT_CustodyAccount1&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;PLUS&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount2&quot;\,&quot;displayName&quot;:&quot;Account no.&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/guideRootPanel/PN_CustodyAccountNo/Account no./&quot;\,&quot;name&quot;:&quot;TXT_CustodyAccount2&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo&quot;}}}]}}]}}]}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:false\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\ntxtCustodyAccountNo.value = guidelib.util.GuideUtil._addValues(TXT_CustodyAccount1.value\, this.value ) ;\\n\\n&quot;\,&quot;eventName&quot;:&quot;Value Commit&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                                    jcr:primaryType="nt:unstructured"/>
+                                <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount2&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;CALC_EXPRESSION&quot;}\,&quot;content&quot;:&quot;if(this.mandatory){\\n  textbox_bankingrelationship2.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount2&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;CALC_EXPRESSION&quot;}\,&quot;content&quot;:&quot;if(this.mandatory){\\n  TXT_BankingRelationship2.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount2&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var numSize = 8;\\nif(this.value.length &lt;numSize ) {\\n  var val = \\&quot;0000000\\&quot; + this.value;\\n  this.value = val.substr(-numSize);\\n} else {\\n  this.value = this.value;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;if([true\, false].indexOf(window.forms.ubs.printpartial.isPrintPartialActive()) != -1){\\n  if(!window.forms.ubs.printpartial.isPrintPartialActive() || (this.value &amp;&amp; this.value!== \\&quot;\\&quot;) || (TXT_CustodyAccount1.value &amp;&amp; TXT_CustodyAccount1.value!==\\&quot;\\&quot;) || (TXT_CustodyAccount3.value &amp;&amp; TXT_CustodyAccount3.value!==\\&quot;\\&quot;)){\\n    window.forms.ubs.printpartial.setControlElement(this);\\n    window.forms.ubs.printpartial.setControlElement(TXT_CustodyAccount1); \\n    window.forms.ubs.printpartial.setControlElement(TXT_CustodyAccount3); \\n  } else{\\n    window.forms.ubs.printpartial.removeControlElement(this);\\n    window.forms.ubs.printpartial.removeControlElement(TXT_CustodyAccount1);\\n    window.forms.ubs.printpartial.removeControlElement(TXT_CustodyAccount3);\\n  }\\n}&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_CustodyAccountNo.TXT_CustodyAccount2&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </textbox_966647679_co>
@@ -182,8 +182,8 @@
                     <textbox_94032281
                         jcr:created="Wed Aug 26 2020 07:17:59 GMT+0200"
                         jcr:createdBy="t649798"
-                        jcr:lastModified="{Date}2026-02-02T12:04:43.677+01:00"
-                        jcr:lastModifiedBy="t831640"
+                        jcr:lastModified="{Date}2025-02-10T11:23:22.825+01:00"
+                        jcr:lastModifiedBy="t653607"
                         jcr:primaryType="nt:unstructured"
                         jcr:title="Custody account no."
                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
@@ -193,7 +193,7 @@
                         dorExclusion="true"
                         guideNodeClass="guideTextBox"
                         maxChars="15"
-                        name="txtCustodyAccountNo"
+                        name="txtCustodyAccountNo1"
                         textIsRich="[true,true,true,true]"
                         visible="{Boolean}false">
                         <cq:responsive jcr:primaryType="nt:unstructured">
@@ -204,7 +204,7 @@
                         </cq:responsive>
                         <fd:rules jcr:primaryType="nt:unstructured"/>
                         <fd:scripts
-                            fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.TXT_CustodyAccountNo&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var myClearingNo = TXT_CustodyAccount1.value;\\nvar myAccountNo = TXT_CustodyAccount2.value;\\nvar myObjectNo = TXT_CustodyAccount3.value;\\n\\nthis.value = \\&quot;\\&quot;;\\nif(myClearingNo &amp;&amp; myAccountNo &amp;&amp; myObjectNo) {\\n    this.value = myClearingNo + \\&quot; \\&quot; + myAccountNo + \\&quot;.\\&quot; + myObjectNo;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                            fd:calc="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.txtCustodyAccountNo1&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var myClearingNo = TXT_CustodyAccount1.value;\\nvar myAccountNo = TXT_CustodyAccount2.value;\\nvar myObjectNo = TXT_CustodyAccount3.value;\\n\\nthis.value = \\&quot;\\&quot;;\\nif(myClearingNo &amp;&amp; myAccountNo &amp;&amp; myObjectNo) {\\n    this.value = myClearingNo + \\&quot; \\&quot; + myAccountNo + \\&quot;.\\&quot; + myObjectNo;\\n} \\n//added for BBRK case where clearing no is always empty\\nelse if(myAccountNo &amp;&amp; myObjectNo){\\n  this.value = myAccountNo + \\&quot;.\\&quot; + myObjectNo;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                             jcr:primaryType="nt:unstructured"/>
                     </textbox_94032281>
                 </items>
@@ -225,6 +225,7 @@
                     <zh-hk/>
                     <ko-kr/>
                     <pt/>
+                    <en-gb/>
                 </dictionary>
             </assets>
             <signerInfo

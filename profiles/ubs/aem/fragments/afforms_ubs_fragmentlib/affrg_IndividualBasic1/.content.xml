@@ -4,8 +4,8 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-26T14:08:15.310+02:00"
-        cq:lastModifiedBy="t406261"
+        cq:lastModified="{Date}2026-05-03T13:24:28.017+02:00"
+        cq:lastModifiedBy="t624800"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:language="en"
         jcr:primaryType="cq:PageContent"
@@ -67,8 +67,8 @@
                             <textbox_456141956
                                 jcr:created="Wed Jul 22 2020 11:38:55 GMT+0200"
                                 jcr:createdBy="t649798"
-                                jcr:lastModified="{Date}2025-06-10T15:42:27.714+02:00"
-                                jcr:lastModifiedBy="t653607"
+                                jcr:lastModified="{Date}2026-02-04T16:09:57.884+01:00"
+                                jcr:lastModifiedBy="t518977"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Last name"
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
@@ -76,7 +76,6 @@
                                 bindRef="/IndividualBasicType/LastName"
                                 css="widget_ajila-forms-ubs-textbox"
                                 guideNodeClass="guideTextBox"
-                                mandatory="true"
                                 name="TXT_LastName"
                                 textIsRich="[true,true,true,true]">
                                 <cq:responsive jcr:primaryType="nt:unstructured">
@@ -87,14 +86,14 @@
                                 </cq:responsive>
                                 <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:validate="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_Name_Individual.TXT_LastName&quot;\,&quot;event&quot;:&quot;Validate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nif(metadata.mandator == \\&quot;001\\&quot; || metadata.mandator == \\&quot;101\\&quot;){\\n  (this.value.match(/^([^0-9]*)$/i)===null) ? false : this.value;\\n} else this.value;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_Name_Individual.TXT_LastName&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </textbox_456141956>
                             <textbox
                                 jcr:created="Wed Jul 22 2020 11:38:55 GMT+0200"
                                 jcr:createdBy="t649798"
-                                jcr:lastModified="{Date}2025-06-10T15:42:51.458+02:00"
-                                jcr:lastModifiedBy="t653607"
+                                jcr:lastModified="{Date}2026-02-04T16:10:18.412+01:00"
+                                jcr:lastModifiedBy="t518977"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="First name(s)"
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
@@ -102,7 +101,6 @@
                                 bindRef="/IndividualBasicType/FirstName"
                                 css="widget_ajila-forms-ubs-textbox"
                                 guideNodeClass="guideTextBox"
-                                mandatory="true"
                                 name="TXT_FirstName"
                                 textIsRich="[true,true,true,true]">
                                 <cq:responsive jcr:primaryType="nt:unstructured">
@@ -113,14 +111,10 @@
                                 </cq:responsive>
                                 <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:validate="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_Name_Individual.TXT_FirstName&quot;\,&quot;event&quot;:&quot;Validate&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nif(metadata.mandator == \\&quot;001\\&quot; || metadata.mandator == \\&quot;101\\&quot;){\\n  (this.value.match(/^([^0-9]*)$/i)===null) ? false : this.value;\\n} else this.value;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_Name_Individual.TXT_FirstName&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </textbox>
                         </items>
-                        <fd:rules jcr:primaryType="nt:unstructured"/>
-                        <fd:scripts
-                            fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nvar errMsg = \\&quot;Field not filled in expected format.\\&quot;;\\nif(metadata.language == \\&quot;de\\&quot;){\\n  errMsg = \\&quot;Feld wurde nicht im erwarteten Format ausgefüllt.\\&quot;;\\n} else if(metadata.language == \\&quot;fr\\&quot;){\\n  errMsg = \\&quot;Champ non renseigné dans le format attendu.\\&quot;;\\n} else if(metadata.language == \\&quot;it\\&quot;){\\n  errMsg = \\&quot;Campo non compilato nel formato previsto.\\&quot;;\\n} else if(metadata.language == \\&quot;es\\&quot;){\\n  errMsg = \\&quot;El campo no se ha rellenado en el formato esperado.\\&quot;;\\n}\\nthis.TXT_LastName.validateExpMessage = errMsg;\\nthis.TXT_FirstName.validateExpMessage = errMsg;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_Name_Individual&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
-                            jcr:primaryType="nt:unstructured"/>
                     </panel_copy_copy_copy>
                 </items>
             </rootPanel>
@@ -140,6 +134,8 @@
                     <pt/>
                     <sc/>
                     <tc/>
+                    <pt-br/>
+                    <en-gb/>
                 </dictionary>
             </assets>
             <signerInfo

@@ -4,12 +4,13 @@
     <jcr:content
         cq:designPath="/libs/settings/wcm/designs/fd/af/default"
         cq:deviceGroups="mobile/groups/responsive"
-        cq:lastModified="{Date}2026-05-26T14:07:51.933+02:00"
-        cq:lastModifiedBy="t406261"
+        cq:lastModified="{Date}2026-03-30T08:35:10.481+02:00"
+        cq:lastModifiedBy="t831640"
         cq:template="/libs/fd/af/templateForFragment/defaultFragmentTemplate"
         jcr:primaryType="cq:PageContent"
         jcr:title="IT Fragment - Address 1"
-        sling:resourceType="fd/af/components/page/basePageForFragment">
+        sling:resourceType="fd/af/components/page/basePageForFragment"
+        ignoreTranslationInvalidation="{Boolean}true">
         <guideContainer
             fd:version="1.1"
             jcr:primaryType="nt:unstructured"
@@ -39,19 +40,17 @@
                     jcr:primaryType="nt:unstructured"
                     sling:resourceType="fd/af/layouts/gridFluidLayout2">
                     <panel_copy_copy_copy
-                        jcr:lastModified="{Date}2026-04-13T11:26:00.678+02:00"
-                        jcr:lastModifiedBy="t831552"
+                        jcr:lastModified="{Date}2021-06-10T11:43:51.860+02:00"
+                        jcr:lastModifiedBy="t649798"
                         jcr:primaryType="nt:unstructured"
                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                         completionExpReq="{Boolean}false"
                         dorExcludeDescription="true"
                         dorExcludeTitle="true"
-                        enabled="{Boolean}true"
                         guideNodeClass="guidePanel"
                         name="PN_AddressBlock"
                         textIsRich="[true]"
-                        validateOnStepCompletion="{Boolean}false"
-                        visible="{Boolean}true">
+                        validateOnStepCompletion="{Boolean}false">
                         <layout
                             jcr:primaryType="nt:unstructured"
                             sling:resourceType="fd/af/layouts/gridFluidLayout2"
@@ -188,8 +187,8 @@
                             <dropdownlist_copy_co
                                 jcr:created="{Date}2021-04-23T12:55:04.000+02:00"
                                 jcr:createdBy="t650038"
-                                jcr:lastModified="{Date}2026-04-13T11:16:28.291+02:00"
-                                jcr:lastModifiedBy="t831552"
+                                jcr:lastModified="{Date}2026-03-02T15:31:58.323+01:00"
+                                jcr:lastModifiedBy="t406261"
                                 jcr:primaryType="nt:unstructured"
                                 jcr:title="Country"
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/dropdownlist"
@@ -209,7 +208,7 @@
                                 </cq:responsive>
                                 <fd:rules jcr:primaryType="nt:unstructured"/>
                                 <fd:scripts
-                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nvar entity = metadata.mandator == \\&quot;033\\&quot; ? \\&quot;019\\&quot; : metadata.mandator;\\nwindow.forms.ubs.referencedata.getCountryList(entity\, metadata.language\, 'DOMICILE_INDIVIDUAL'\, this);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:false},{&quot;script&quot;:{&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nwindow.forms.ubs.referencedata.getCountryList(metadata.mandator\, metadata.language\, 'DOMICILE_INDIVIDUAL'\, this);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                    fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.components.setMandatory(this\, true);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_AddressBlock.DD_Country_AddressBlock&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var metadata = window.forms.ubs.getFormMetadata();\\nvar entity = metadata.mandator == \\&quot;033\\&quot; ? \\&quot;019\\&quot; : metadata.mandator;\\nwindow.forms.ubs.referencedata.getCountryList(entity\, metadata.language\, 'DOMICILE_INDIVIDUAL'\, this);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                     jcr:primaryType="nt:unstructured"/>
                             </dropdownlist_copy_co>
                         </items>
