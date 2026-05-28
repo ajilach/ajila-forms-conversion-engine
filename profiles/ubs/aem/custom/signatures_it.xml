@@ -10,12 +10,29 @@
     dorExcludeDescription="true"
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
-    name="PN_Signatures"
+    name="PN_FirmaE_de979668"
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false">
     <items
         jcr:primaryType="nt:unstructured"
         sling:resourceType="{{ variables.default_layout }}">
+        <titledraw_a6dd001111
+            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+            jcr:createdBy="{{ author }}"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+            jcr:lastModifiedBy="{{ author }}"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/textdraw"
+            _value="&lt;p>Letto, confermato e sottoscritto. &lt;/p>"
+            dorFieldStyling="{{ variables.dor_field_styling }}"
+            guideNodeClass="guideTextDraw"
+            headingLevel="4"
+            name="ST_Letto"
+            textIsRich="true">
+            <cq:responsive jcr:primaryType="nt:unstructured">
+                <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
+            </cq:responsive>
+        </titledraw_a6dd001111>
         <panel_private_person
             jcr:created="{Date}2025-01-01T00:00:00.000Z"
             jcr:createdBy="{{ author }}"
@@ -30,7 +47,7 @@
             dorFieldStyling="{{ variables.dor_field_styling }}"
             guideNodeClass="guidePanel"
             hideTitle="true"
-            name="PN_SignaturesPrivatePerson"
+            name="PN_165356b3"
             textIsRich="true"
             validateOnStepCompletion="{Boolean}false"
             visible="{Boolean}false">
@@ -48,7 +65,7 @@
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
                     dorFieldStyling="{{ variables.dor_field_styling }}"
-                    fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
+                    fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_ClientSignature1"
                     guideNodeClass="guidePanel"
                     maxOccur="4"
                     minOccur="1"
@@ -78,7 +95,7 @@
                 <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
             </cq:responsive>
             <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures.PN_SignaturesPrivatePerson&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_SignaturesPrivatePerson&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;1&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_FirmaE_de979668.PN_165356b3&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_165356b3&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;1&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
                 jcr:primaryType="nt:unstructured"/>
         </panel_private_person>
         <panel_company
@@ -94,7 +111,7 @@
             dorFieldStyling="{{ variables.dor_field_styling }}"
             guideNodeClass="guidePanel"
             hideTitle="true"
-            name="PN_SignaturesCompany"
+            name="PN_204491df"
             textIsRich="true"
             validateOnStepCompletion="{Boolean}false"
             visible="{Boolean}false">
@@ -112,7 +129,7 @@
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
                     dorFieldStyling="{{ variables.dor_field_styling }}"
-                    fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
+                    fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_LegalRepresentativeSignature1"
                     guideNodeClass="guidePanel"
                     maxOccur="4"
                     minOccur="1"
@@ -142,7 +159,7 @@
                 <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
             </cq:responsive>
             <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures.PN_SignaturesCompany&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_SignaturesCompany&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;BOOLEAN_BINARY_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;OR&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}\,&quot;nested&quot;:false}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;2\\&quot; || RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
+                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_FirmaE_de979668.PN_204491df&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_204491df&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
                 jcr:primaryType="nt:unstructured"/>
         </panel_company>
         <panel_internal_bank_use
