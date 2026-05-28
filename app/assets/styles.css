@@ -2019,3 +2019,13 @@ body > div, #main {
     border: none;
     background: var(--light);
 }
+
+/* ── Missing translation warning icon ───────────────────────────────── */
+
+.node-warning-icon {
+    color: var(--color-text-warning);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    flex-shrink: 0;
+    cursor: default;
+}
