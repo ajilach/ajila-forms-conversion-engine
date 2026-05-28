@@ -507,6 +507,9 @@
                                         nonNavigable="{Boolean}true"
                                         toolbarPosition="Bottom"/>
                                     <items jcr:primaryType="nt:unstructured"/>
+                                    <fd:scripts
+                                        fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_Address.visible = false;\\nDATE_Birth.visible = false;\\nDD_Nationality.visible = false;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.PN_LRP&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        jcr:primaryType="nt:unstructured"/>
                                 </repeatableinner>
                             </items>
                         </panel>

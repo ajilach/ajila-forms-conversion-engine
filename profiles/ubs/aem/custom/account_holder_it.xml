@@ -358,6 +358,9 @@
                                         nonNavigable="{Boolean}true"
                                         toolbarPosition="Bottom"/>
                                     <items jcr:primaryType="nt:unstructured"/>
+                                    <fd:scripts
+                                        fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_TitolareDelContoDiSeguitoIl_a10b5831.PN_legalRepresentative.RCP_LR&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_EntityBasic.dorExclusion = true;\\n\\nPN_AddressClient.visible = false;\\nPN_AddressClient.dorExclusion = true;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        jcr:primaryType="nt:unstructured"/>
                                 </repeatableinner>
                             </items>
                         </panel>
