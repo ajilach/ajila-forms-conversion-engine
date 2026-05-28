@@ -1949,3 +1949,83 @@ body > div, #main {
     border-left: 3px solid #d4a017;
     border-radius: var(--radius-sm);
 }
+
+/* ── Active state for toggle buttons (e.g. Live Preview) ─────────────── */
+
+.editor-btn-active {
+    background: var(--color-primary);
+    color: var(--light);
+    border-color: var(--color-primary);
+}
+
+.editor-btn-active:hover {
+    background: var(--primary600);
+    border-color: var(--primary600);
+}
+
+/* ── Live preview split layout ───────────────────────────────────────── */
+
+/* When live preview is open, the outer editor becomes a two-column grid */
+.structured-editor-split {
+    flex-direction: row !important;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+/* Left pane: the normal editor */
+.editor-main {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--color-border);
+}
+
+/* Right pane: the live HTML preview */
+.editor-preview-panel {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--light);
+}
+
+.editor-preview-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-light);
+    flex-shrink: 0;
+}
+
+.editor-preview-title {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.editor-preview-hint {
+    font-size: var(--font-size-xs, var(--font-size-sm));
+    color: var(--color-text-muted, var(--color-text));
+    opacity: 0.7;
+}
+
+.editor-preview-frame {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: var(--light);
+}
+
+/* ── Missing translation warning icon ───────────────────────────────── */
+
+.node-warning-icon {
+    color: var(--color-text-warning);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    flex-shrink: 0;
+    cursor: default;
+}

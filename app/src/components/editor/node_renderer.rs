@@ -217,6 +217,13 @@ pub fn ListItemsRenderer(props: ListItemsRendererProps) -> Element {
                                     }
                                 } else {
                                     span { class: "list-item-text", "{item.as_plain_text()}" }
+                                    if has_missing {
+                                        span {
+                                            class: "node-warning-icon",
+                                            title: "Missing translations in one or more languages",
+                                            "⚠"
+                                        }
+                                    }
                                     button {
                                         class: "node-edit-btn",
                                         onclick: {
@@ -430,6 +437,15 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
 
                 // Summary text
                 span { class: "node-summary", "{summary}" }
+
+                // Missing translation warning icon
+                if has_missing {
+                    span {
+                        class: "node-warning-icon",
+                        title: "Missing translations in one or more languages",
+                        "⚠"
+                    }
+                }
 
                 // Edit button for text nodes
                 if can_edit_text && !is_editing {

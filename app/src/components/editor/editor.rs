@@ -94,6 +94,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let mut search_query = use_signal(String::new);
     let mut search_index = use_signal(|| 0usize);
 
+    // Live HTML preview toggle
+    let mut live_preview = use_signal(|| false);
+
     // Collect all languages from the document
     let languages: Vec<String> = {
         let env = envelope.read();
@@ -1164,14 +1167,35 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         search_results.iter().cloned().collect();
 
     rsx! {
-        div { class: "structured-editor",
+        div {
+            class: if *live_preview.read() {
+                "structured-editor structured-editor-split"
+            } else {
+                "structured-editor"
+            },
+
+            // ── Left column: editor pane ──────────────────────────────────
+            div { class: "editor-main",
             // Header
             div { class: "editor-header",
                 h2 { "Edit Structure" }
                 div { class: "editor-header-actions",
                     button {
+                        class: if *live_preview.read() {
+                            "editor-btn editor-btn-active"
+                        } else {
+                            "editor-btn editor-btn-secondary"
+                        },
+                        title: "Toggle live HTML preview panel",
+                        onclick: move |_| {
+                            let v = *live_preview.read();
+                            live_preview.set(!v);
+                        },
+                        if *live_preview.read() { "⏹ Live Preview" } else { "▶ Live Preview" }
+                    }
+                    button {
                         class: "editor-btn editor-btn-secondary",
-                        title: "Preview the current (unapplied) changes as HTML",
+                        title: "Open current HTML in a new window",
                         onclick: {
                             let envelope = envelope;
                             move |_| {
@@ -1567,6 +1591,24 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 if !languages.is_empty() {
                     span { class: "editor-status-sep", " • " }
                     span { "Languages: {languages.join(\", \")}" }
+                }
+            }
+            } // end editor-main
+
+            // ── Right column: live preview pane ──────────────────────────
+            if *live_preview.read() {
+                div { class: "editor-preview-panel",
+                    div { class: "editor-preview-header",
+                        span { class: "editor-preview-title", "Live Preview" }
+                        span { class: "editor-preview-hint", "Updates on every change" }
+                    }
+                    iframe {
+                        class: "editor-preview-frame",
+                        srcdoc: blueprint::to_html(
+                            &envelope.read().content,
+                            &blueprint::HtmlConfig::default(),
+                        ),
+                    }
                 }
             }
         }
