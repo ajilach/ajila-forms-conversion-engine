@@ -677,6 +677,12 @@ body > div, #main {
 
 .toolbar-icon {
     font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.toolbar-icon svg {
+    display: block;
 }
 
 .toolbar-label {
@@ -1373,6 +1379,18 @@ body > div, #main {
 .smart-edit-header h3 {
     margin: 0;
     font-size: var(--font-size-lg);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.smart-edit-header-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.smart-edit-header-icon svg {
+    display: block;
 }
 
 /* ==========================================
@@ -1883,6 +1901,12 @@ body > div, #main {
     font-size: var(--font-size-sm);
     opacity: 0.6;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.editor-search-icon svg {
+    display: block;
 }
 
 .editor-search-input {
