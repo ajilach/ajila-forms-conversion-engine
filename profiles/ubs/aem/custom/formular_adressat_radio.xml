@@ -1,24 +1,16 @@
-<{{ element_name }}
-    jcr:created="{Date}2025-01-01T00:00:00.000Z"
-    jcr:createdBy="{{ author }}"
-    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-    jcr:lastModifiedBy="{{ author }}"
+<radiobutton
+    jcr:created="{Date}2026-05-05T16:25:54.053+02:00"
+    jcr:createdBy="admin"
+    jcr:lastModified="{Date}2026-05-05T16:27:41.175+02:00"
+    jcr:lastModifiedBy="admin"
     jcr:primaryType="nt:unstructured"
-    {% if label and label != "" %}jcr:title="{{ label }}"{% endif %}
-    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/radiobutton"
+    jcr:title="Formular Adressat"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
     alignment="guideFieldHorizontalAlignment"
-    css="{{ variables.css_radiobutton }}"
-    {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
+    css="widget_ajila_forms_radiobutton"
     guideNodeClass="guideRadioButton"
     hideTitle="true"
     mandatory="true"
     name="RB_FormularAdressat"
-    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
-    options="{{ options_attr }}"
-    textIsRich="[true,true,true,true,true,true,true]"
-    {% if not visible %}visible="{Boolean}false"
-    dorExclusion="true"{% endif %}>
-    <cq:responsive jcr:primaryType="nt:unstructured">
-        <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
-    </cq:responsive>
-</{{ element_name }}>
+    options="[1=Private Person,2=Minderjährige,3=Firma,4=GbR]"
+    textIsRich="[true,true,true,true,true,true,true]"/>

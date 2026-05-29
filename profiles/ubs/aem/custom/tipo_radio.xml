@@ -1,24 +1,16 @@
-<{{ element_name }}
-    jcr:created="{Date}2025-01-01T00:00:00.000Z"
-    jcr:createdBy="{{ author }}"
-    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-    jcr:lastModifiedBy="{{ author }}"
+<radiobutton_copy
+    jcr:created="{Date}2026-04-15T08:28:03.931+02:00"
+    jcr:createdBy="t406261"
+    jcr:lastModified="{Date}2026-04-22T10:47:20.607+02:00"
+    jcr:lastModifiedBy="admin"
     jcr:primaryType="nt:unstructured"
-    {% if label and label != "" %}jcr:title="{{ label }}"{% endif %}
-    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/radiobutton"
+    jcr:title="Tipo"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
     _value="1"
     alignment="guideFieldHorizontalAlignment"
-    css="{{ variables.css_radiobutton }}"
-    {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
-    dorFieldStyling="{{ variables.dor_field_styling }}"
+    css="widget_ajila_forms_radiobutton"
+    dorFieldStyling="Default"
     guideNodeClass="guideRadioButton"
     name="RB_GroupTipo"
-    {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
-    options="{{ options_attr }}"
-    textIsRich="[true,true,true,true,true]"
-    {% if not visible %}visible="{Boolean}false"
-    dorExclusion="true"{% endif %}>
-    <cq:responsive jcr:primaryType="nt:unstructured">
-        <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
-    </cq:responsive>
-</{{ element_name }}>
+    options="[1=Individual,2=Legal Entity]"
+    textIsRich="[true,true,true,true,true]"/>

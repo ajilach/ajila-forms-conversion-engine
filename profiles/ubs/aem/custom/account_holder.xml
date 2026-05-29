@@ -1,70 +1,70 @@
-<{{ element_name }}
+<panel_3bce6c33db5c40
     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-    jcr:createdBy="{{ author }}"
-    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-    jcr:lastModifiedBy="{{ author }}"
+    jcr:createdBy="blueprint"
+    jcr:lastModified="{Date}2026-05-06T14:57:27.560+02:00"
+    jcr:lastModifiedBy="admin"
     jcr:primaryType="nt:unstructured"
-    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
     css="stepTitle"
     dorExcludeDescription="true"
     dorExcludeTitle="true"
-    dorFieldStyling="{{ variables.dor_field_styling }}"
+    dorFieldStyling="Default"
     guideNodeClass="guidePanel"
     name="PN_AccountHolder"
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false">
     <items
         jcr:primaryType="nt:unstructured"
-        sling:resourceType="{{ variables.default_layout }}">
-        <panel_title
+        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+        <panel_title_855e2ad0
             jcr:created="{Date}2025-01-01T00:00:00.000Z"
-            jcr:createdBy="{{ author }}"
-            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-            jcr:lastModifiedBy="{{ author }}"
+            jcr:createdBy="blueprint"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+            jcr:lastModifiedBy="blueprint"
             jcr:primaryType="nt:unstructured"
-            jcr:title="{{ label }}"
+            jcr:title="Account holder"
             sling:resourceType="fd/af/components/panel"
             dorExcludeDescription="true"
-            dorFieldStyling="{{ variables.dor_field_styling }}"
+            dorFieldStyling="Default"
             guideNodeClass="guidePanel"
             name="PN_AccountHolder_727b1281Title"
             textIsRich="true"
             validateOnStepCompletion="{Boolean}false">
             <layout
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}"
+                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                 columns="1"
                 dorLayoutType="columnar"
                 nonNavigable="{Boolean}true"
                 toolbarPosition="Bottom"/>
             <items
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}">
-                <titledraw
+                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                <titledraw_855e2ad02d
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:createdBy="{{ author }}"
+                    jcr:createdBy="blueprint"
                     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
-                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/titledraw"
-                    _value="&lt;p>{{ label }}&lt;/p>&#xa;"
+                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/titledraw"
+                    _value="&lt;p>Account holder&lt;/p>&#xa;"
                     css="stepTitle"
                     dorExclusion="true"
-                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    dorFieldStyling="Default"
                     guideNodeClass="guideTextDraw"
                     headingLevel="2"
                     name="TTL_AccountHolder_727b1281"
                     summaryExclusion="true"
                     textIsRich="true"/>
             </items>
-        </panel_title>
-        <panel_individual
-            jcr:created="{Date}2025-01-01T00:00:00.000Z"
-            jcr:createdBy="{{ author }}"
-            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-            jcr:lastModifiedBy="{{ author }}"
+        </panel_title_855e2ad0>
+        <panel
+            jcr:created="{Date}2026-04-22T10:49:33.795+02:00"
+            jcr:createdBy="admin"
+            jcr:lastModified="{Date}2026-04-22T10:50:02.887+02:00"
+            jcr:lastModifiedBy="admin"
             jcr:primaryType="nt:unstructured"
-            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
             dorExcludeDescription="true"
             dorExcludeTitle="true"
             guideNodeClass="guidePanel"
@@ -74,7 +74,7 @@
             validateOnStepCompletion="{Boolean}false">
             <layout
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}"
+                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                 columns="1"
                 dorLayoutType="columnar"
                 dorNumCols="1"
@@ -82,12 +82,12 @@
                 toolbarPosition="Bottom"/>
             <items
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}">
-                <repeatable
+                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                <repeatable_fd881019b
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:createdBy="{{ author }}"
+                    jcr:createdBy="blueprint"
                     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
                     sling:resourceType="fd/af/components/panel"
                     dorExcludeDescription="true"
@@ -98,7 +98,7 @@
                     validateOnStepCompletion="{Boolean}false">
                     <layout
                         jcr:primaryType="nt:unstructured"
-                        sling:resourceType="{{ variables.default_layout }}"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
                         columns="1"
                         dorLayoutType="columnar"
                         dorNumCols="1"
@@ -106,14 +106,14 @@
                         toolbarPosition="Bottom"/>
                     <items
                         jcr:primaryType="nt:unstructured"
-                        sling:resourceType="{{ variables.default_layout }}">
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
                         <panel
-                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:createdBy="{{ author }}"
-                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:lastModifiedBy="{{ author }}"
+                            jcr:created="{Date}2026-04-21T16:17:46.770+02:00"
+                            jcr:createdBy="admin"
+                            jcr:lastModified="{Date}2026-04-21T16:38:38.254+02:00"
+                            jcr:lastModifiedBy="admin"
                             jcr:primaryType="nt:unstructured"
-                            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                             dorExcludeDescription="true"
                             dorExcludeTitle="true"
                             guideNodeClass="guidePanel"
@@ -124,7 +124,7 @@
                             validateOnStepCompletion="{Boolean}false">
                             <layout
                                 jcr:primaryType="nt:unstructured"
-                                sling:resourceType="{{ variables.default_layout }}"
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                                 columns="1"
                                 dorLayoutType="columnar"
                                 dorNumCols="1"
@@ -132,41 +132,43 @@
                                 toolbarPosition="Bottom"/>
                             <items
                                 jcr:primaryType="nt:unstructured"
-                                sling:resourceType="{{ variables.default_layout }}">
-                                <removebutton
-                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:createdBy="{{ author }}"
-                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:lastModifiedBy="{{ author }}"
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                <removebutton_copy_co
+                                    jcr:created="{Date}2020-08-31T09:48:34.924+02:00"
+                                    jcr:createdBy="admin"
+                                    jcr:lastModified="{Date}2026-03-20T15:40:57.954+01:00"
+                                    jcr:lastModifiedBy="t406261"
                                     jcr:primaryType="nt:unstructured"
-                                    jcr:title="Remove"
-                                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/removebutton"
+                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
                                     dorExclusion="true"
-                                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                                    dorFieldStyling="Default"
                                     guideNodeClass="guideButton"
                                     name="BT_RemoveLR"
                                     textIsRich="[true,true,true]"
                                     type="Button"
                                     visible="{Boolean}false">
                                     <cq:responsive jcr:primaryType="nt:unstructured">
-                                        <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
+                                        <default
+                                            jcr:primaryType="nt:unstructured"
+                                            offset="0"
+                                            width="12"/>
                                     </cq:responsive>
                                     <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
                                         fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.RP_d9cda7db.PN_AHRP.BT_RemoveLR&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;PN_AHRP.instanceManager.removeInstance(PN_AHRP.instanceIndex);\\nPN_SignatureIndividual.instanceManager.removeInstance(PN_SignatureIndividual.instanceIndex);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;BT_Add.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.RP_d9cda7db.PN_AHRP.BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.RP_d9cda7db.PN_AHRP.BT_RemoveLR&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;this.parent.instanceManager.removeInstance(this.parent.instanceIndex);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:false},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.RP_d9cda7db.PN_AHRP.BT_RemoveLR&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var lenAHRP = PN_AHRP.instanceManager.instances.length;\\n\\n if(lenAHRP&lt;4) {\\n  BT_Add.visible =true;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         fd:visible="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.parent.instanceIndex+1 == this.parent.instanceManager.instances.length &amp;&amp; this.parent.instanceManager.instances.length > 1; &quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.RP_d9cda7db.PN_AHRP.BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
-                                </removebutton>
-                                <repeatableinner
+                                </removebutton_copy_co>
+                                <repeatableinner_copy
                                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:createdBy="{{ author }}"
-                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:lastModifiedBy="{{ author }}"
+                                    jcr:createdBy="blueprint"
+                                    jcr:lastModified="{Date}2026-05-06T15:35:41.085+02:00"
+                                    jcr:lastModifiedBy="admin"
                                     jcr:primaryType="nt:unstructured"
-                                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                                     dorExcludeDescription="true"
                                     dorExcludeTitle="true"
-                                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                                    dorFieldStyling="Default"
                                     fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_IndividualBasic1"
                                     guideNodeClass="guidePanel"
                                     name="PN_IndividualBasic"
@@ -174,29 +176,170 @@
                                     validateOnStepCompletion="{Boolean}false">
                                     <layout
                                         jcr:primaryType="nt:unstructured"
-                                        sling:resourceType="{{ variables.default_layout }}"
+                                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
                                         columns="1"
                                         dorLayoutType="columnar"
                                         dorNumCols="1"
                                         nonNavigable="{Boolean}true"
                                         toolbarPosition="Bottom"/>
-                                    <items jcr:primaryType="nt:unstructured"/>
+                                    <items
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                        <removebutton
+                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:createdBy="blueprint"
+                                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:lastModifiedBy="blueprint"
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
+                                            dorExclusion="true"
+                                            dorFieldStyling="Default"
+                                            guideNodeClass="guideButton"
+                                            name="BT_Remove"
+                                            textIsRich="[true,true]"
+                                            type="Button"
+                                            visible="{Boolean}false">
+                                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                                            <fd:scripts
+                                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;RCP_RP_cfe936aa.instanceManager.removeInstance(this.parent.index);var len = RCP_RP_cfe936aa.instanceManager.instances.length;for (var i = 0; i &lt; len; i++) {RCP_RP_cfe936aa.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;}\\nPN_SignatureLegalRepresentative.instanceManager.removeInstance(this.parent.index);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                jcr:primaryType="nt:unstructured"/>
+                                        </removebutton>
+                                        <panel_copy_copy
+                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:createdBy="blueprint"
+                                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:lastModifiedBy="blueprint"
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                            dorExcludeDescription="true"
+                                            dorExcludeTitle="true"
+                                            guideNodeClass="guidePanel"
+                                            name="panel_RP_cfe936aa"
+                                            textIsRich="true"
+                                            validateOnStepCompletion="{Boolean}false">
+                                            <layout
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                                columns="1"
+                                                dorLayoutType="columnar"
+                                                dorNumCols="1"
+                                                nonNavigable="{Boolean}true"
+                                                toolbarPosition="Bottom"/>
+                                            <items
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                                <panel_9f95cf2446894279b0ce499263e0d475
+                                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                    jcr:createdBy="blueprint"
+                                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+                                                    jcr:lastModifiedBy="blueprint"
+                                                    jcr:primaryType="nt:unstructured"
+                                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                                    dorExcludeDescription="true"
+                                                    dorFieldStyling="Default"
+                                                    guideNodeClass="guidePanel"
+                                                    name="PN_958d2a4a"
+                                                    textIsRich="true"
+                                                    validateOnStepCompletion="{Boolean}false">
+                                                    <items
+                                                        jcr:primaryType="nt:unstructured"
+                                                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                                        <textbox_355e26899fda4cfb8edccbea0e99a5c9
+                                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                            jcr:createdBy="blueprint"
+                                                            jcr:lastModified="{Date}2026-04-10T06:27:27.991+02:00"
+                                                            jcr:lastModifiedBy="admin"
+                                                            jcr:primaryType="nt:unstructured"
+                                                            jcr:title="Cognome"
+                                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                            assistPriority="label"
+                                                            autofillFieldKeyword="name"
+                                                            css="widget_ajila-forms-ubs-textbox"
+                                                            dorColspan="1"
+                                                            dorFieldStyling="Default"
+                                                            guideNodeClass="guideTextBox"
+                                                            name="TXT_Cognome_d9ce00a2"
+                                                            textIsRich="[true,true,true,true]">
+                                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                                <default
+                                                                    jcr:primaryType="nt:unstructured"
+                                                                    offset="0"
+                                                                    width="6"/>
+                                                            </cq:responsive>
+                                                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                            <fd:scripts
+                                                                fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var currentIndex = this.parent.parent.parent.instanceIndex;\\nvar currentFirstname = TXT_Cognome_d9ce00a2.value ? TXT_Cognome_d9ce00a2.value : \\&quot;\\&quot;;\\nvar currentLastname = TXT_NomeI_65e1c6de.value ? TXT_NomeI_65e1c6de.value : \\&quot;\\&quot;;\\nPN_FirmaE_b75ffd17.PN_SignatureLegalRepresentative.instanceManager.instances[currentIndex].TXT_Name_Sign_legalrepresen.value = currentFirstname + \\&quot; \\&quot; + currentLastname;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.panel_RP_cfe936aa.PN_958d2a4a.TXT_Cognome_d9ce00a2&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                                jcr:primaryType="nt:unstructured"/>
+                                                        </textbox_355e26899fda4cfb8edccbea0e99a5c9>
+                                                        <textbox_a5b0e169f8c54db5bb070c73ca67764d
+                                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                            jcr:createdBy="blueprint"
+                                                            jcr:lastModified="{Date}2026-04-10T06:27:37.197+02:00"
+                                                            jcr:lastModifiedBy="admin"
+                                                            jcr:primaryType="nt:unstructured"
+                                                            jcr:title="Nome/i"
+                                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                            assistPriority="label"
+                                                            autofillFieldKeyword="name"
+                                                            css="widget_ajila-forms-ubs-textbox"
+                                                            dorColspan="1"
+                                                            dorFieldStyling="Default"
+                                                            guideNodeClass="guideTextBox"
+                                                            name="TXT_NomeI_65e1c6de"
+                                                            textIsRich="[true,true,true,true]">
+                                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                                <default
+                                                                    jcr:primaryType="nt:unstructured"
+                                                                    offset="0"
+                                                                    width="6"/>
+                                                            </cq:responsive>
+                                                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                            <fd:scripts
+                                                                fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var currentIndex = this.parent.parent.parent.instanceIndex;\\nvar currentFirstname = TXT_Cognome_d9ce00a2.value ? TXT_Cognome_d9ce00a2.value : \\&quot;\\&quot;;\\nvar currentLastname = TXT_NomeI_65e1c6de.value ? TXT_NomeI_65e1c6de.value : \\&quot;\\&quot;;\\nPN_FirmaE_b75ffd17.PN_SignatureLegalRepresentative.instanceManager.instances[currentIndex].TXT_Name_Sign_legalrepresen.value = currentFirstname + \\&quot; \\&quot; + currentLastname;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.panel_RP_cfe936aa.PN_958d2a4a.TXT_NomeI_65e1c6de&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                                jcr:primaryType="nt:unstructured"/>
+                                                        </textbox_a5b0e169f8c54db5bb070c73ca67764d>
+                                                    </items>
+                                                    <layout
+                                                        jcr:primaryType="nt:unstructured"
+                                                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                                        columns="1"
+                                                        dorLayoutType="columnar"
+                                                        dorNumCols="2"
+                                                        nonNavigable="{Boolean}true"
+                                                        toolbarPosition="Bottom"/>
+                                                    <cq:responsive jcr:primaryType="nt:unstructured">
+                                                        <default
+                                                            jcr:primaryType="nt:unstructured"
+                                                            offset="0"
+                                                            width="12"/>
+                                                    </cq:responsive>
+                                                </panel_9f95cf2446894279b0ce499263e0d475>
+                                            </items>
+                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                <default
+                                                    jcr:primaryType="nt:unstructured"
+                                                    offset="0"
+                                                    width="12"/>
+                                            </cq:responsive>
+                                        </panel_copy_copy>
+                                    </items>
+                                    <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
                                         fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_TitolareDelContoDiSeguitoIl_a10b5831.PN_legalRepresentative.RCP_LR&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_EntityBasic.dorExclusion = true;\\n\\nPN_AddressClient.visible = false;\\nPN_AddressClient.dorExclusion = true;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
-                                </repeatableinner>
+                                </repeatableinner_copy>
                             </items>
                         </panel>
                         <tertiarybutton
                             jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:createdBy="{{ author }}"
+                            jcr:createdBy="blueprint"
                             jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:lastModifiedBy="{{ author }}"
+                            jcr:lastModifiedBy="blueprint"
                             jcr:primaryType="nt:unstructured"
                             jcr:title="Add"
-                            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/tertiarybutton"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
-                            dorFieldStyling="{{ variables.dor_field_styling }}"
+                            dorFieldStyling="Default"
                             guideNodeClass="guideButton"
                             name="BT_Add"
                             textIsRich="[true,true]"
@@ -207,20 +350,20 @@
                                 jcr:primaryType="nt:unstructured"/>
                         </tertiarybutton>
                     </items>
-                </repeatable>
+                </repeatable_fd881019b>
             </items>
             <fd:rules
                 fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_IndividualContainer&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_IndividualContainer&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;1&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_FormularAdressat.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
                 jcr:primaryType="nt:unstructured"/>
             <fd:scripts jcr:primaryType="nt:unstructured"/>
-        </panel_individual>
-        <panel_legalguardian
-            jcr:created="{Date}2025-01-01T00:00:00.000Z"
-            jcr:createdBy="{{ author }}"
-            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-            jcr:lastModifiedBy="{{ author }}"
+        </panel>
+        <panel_copy
+            jcr:created="{Date}2026-04-22T10:49:33.795+02:00"
+            jcr:createdBy="admin"
+            jcr:lastModified="{Date}2026-05-11T11:11:08.145+02:00"
+            jcr:lastModifiedBy="admin"
             jcr:primaryType="nt:unstructured"
-            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
             dorExcludeDescription="true"
             dorExcludeTitle="true"
             guideNodeClass="guidePanel"
@@ -230,7 +373,7 @@
             validateOnStepCompletion="{Boolean}false">
             <layout
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}"
+                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                 columns="1"
                 dorLayoutType="columnar"
                 dorNumCols="1"
@@ -238,12 +381,12 @@
                 toolbarPosition="Bottom"/>
             <items
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}">
-                <repeatable
+                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                <repeatable_fd881019b
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:createdBy="{{ author }}"
+                    jcr:createdBy="blueprint"
                     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
                     sling:resourceType="fd/af/components/panel"
                     dorExcludeDescription="true"
@@ -254,7 +397,7 @@
                     validateOnStepCompletion="{Boolean}false">
                     <layout
                         jcr:primaryType="nt:unstructured"
-                        sling:resourceType="{{ variables.default_layout }}"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
                         columns="1"
                         dorLayoutType="columnar"
                         dorNumCols="1"
@@ -262,14 +405,14 @@
                         toolbarPosition="Bottom"/>
                     <items
                         jcr:primaryType="nt:unstructured"
-                        sling:resourceType="{{ variables.default_layout }}">
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
                         <panel
-                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:createdBy="{{ author }}"
-                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:lastModifiedBy="{{ author }}"
+                            jcr:created="{Date}2026-04-21T16:17:46.770+02:00"
+                            jcr:createdBy="admin"
+                            jcr:lastModified="{Date}2026-05-11T11:11:35.205+02:00"
+                            jcr:lastModifiedBy="admin"
                             jcr:primaryType="nt:unstructured"
-                            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                             dorExcludeDescription="true"
                             dorExcludeTitle="true"
                             guideNodeClass="guidePanel"
@@ -280,7 +423,7 @@
                             validateOnStepCompletion="{Boolean}false">
                             <layout
                                 jcr:primaryType="nt:unstructured"
-                                sling:resourceType="{{ variables.default_layout }}"
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                                 columns="1"
                                 dorLayoutType="columnar"
                                 dorNumCols="1"
@@ -288,40 +431,43 @@
                                 toolbarPosition="Bottom"/>
                             <items
                                 jcr:primaryType="nt:unstructured"
-                                sling:resourceType="{{ variables.default_layout }}">
-                                <removebutton
-                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:createdBy="{{ author }}"
-                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:lastModifiedBy="{{ author }}"
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                <removebutton_copy_co
+                                    jcr:created="{Date}2020-08-31T09:48:34.924+02:00"
+                                    jcr:createdBy="admin"
+                                    jcr:lastModified="{Date}2026-03-20T15:40:57.954+01:00"
+                                    jcr:lastModifiedBy="t406261"
                                     jcr:primaryType="nt:unstructured"
-                                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/removebutton"
+                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
                                     dorExclusion="true"
-                                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                                    dorFieldStyling="Default"
                                     guideNodeClass="guideButton"
                                     name="BT_RemoveLR"
                                     textIsRich="[true,true,true]"
                                     type="Button"
                                     visible="{Boolean}false">
                                     <cq:responsive jcr:primaryType="nt:unstructured">
-                                        <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
+                                        <default
+                                            jcr:primaryType="nt:unstructured"
+                                            offset="0"
+                                            width="12"/>
                                     </cq:responsive>
                                     <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
                                         fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalGuardianContainer.RP_d9cda7db.PN_LGA.BT_RemoveLR&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;PN_LGA.instanceManager.removeInstance(PN_LGA.instanceIndex);\\nPN_SignatureIndividual.instanceManager.removeInstance(PN_SignatureIndividual.instanceIndex);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;BT_Add.visible = true;&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalGuardianContainer.RP_d9cda7db.PN_LGA.BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalGuardianContainer.RP_d9cda7db.PN_LGA.BT_RemoveLR&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;this.parent.instanceManager.removeInstance(this.parent.instanceIndex);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:false},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalGuardianContainer.RP_d9cda7db.PN_LGA.BT_RemoveLR&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var lenAHRP = PN_LGA.instanceManager.instances.length;\\n\\n if(PN_LGA&lt;4) {\\n  BT_Add.visible =true;\\n}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         fd:visible="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.parent.instanceIndex+1 == this.parent.instanceManager.instances.length &amp;&amp; this.parent.instanceManager.instances.length > 1; &quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalGuardianContainer.RP_d9cda7db.PN_LGA.BT_RemoveLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
-                                </removebutton>
-                                <repeatableinner
+                                </removebutton_copy_co>
+                                <repeatableinner_copy
                                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:createdBy="{{ author }}"
-                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:lastModifiedBy="{{ author }}"
+                                    jcr:createdBy="blueprint"
+                                    jcr:lastModified="{Date}2026-05-06T15:35:41.085+02:00"
+                                    jcr:lastModifiedBy="admin"
                                     jcr:primaryType="nt:unstructured"
-                                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                                     dorExcludeDescription="true"
                                     dorExcludeTitle="true"
-                                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                                    dorFieldStyling="Default"
                                     fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_IndividualBasic1"
                                     guideNodeClass="guidePanel"
                                     name="PN_IndividualBasic"
@@ -329,26 +475,168 @@
                                     validateOnStepCompletion="{Boolean}false">
                                     <layout
                                         jcr:primaryType="nt:unstructured"
-                                        sling:resourceType="{{ variables.default_layout }}"
+                                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
                                         columns="1"
                                         dorLayoutType="columnar"
                                         dorNumCols="1"
                                         nonNavigable="{Boolean}true"
                                         toolbarPosition="Bottom"/>
-                                    <items jcr:primaryType="nt:unstructured"/>
-                                </repeatableinner>
+                                    <items
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                        <removebutton
+                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:createdBy="blueprint"
+                                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:lastModifiedBy="blueprint"
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
+                                            dorExclusion="true"
+                                            dorFieldStyling="Default"
+                                            guideNodeClass="guideButton"
+                                            name="BT_Remove"
+                                            textIsRich="[true,true]"
+                                            type="Button"
+                                            visible="{Boolean}false">
+                                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                                            <fd:scripts
+                                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;RCP_RP_cfe936aa.instanceManager.removeInstance(this.parent.index);var len = RCP_RP_cfe936aa.instanceManager.instances.length;for (var i = 0; i &lt; len; i++) {RCP_RP_cfe936aa.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;}\\nPN_SignatureLegalRepresentative.instanceManager.removeInstance(this.parent.index);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                jcr:primaryType="nt:unstructured"/>
+                                        </removebutton>
+                                        <panel_copy_copy
+                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:createdBy="blueprint"
+                                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:lastModifiedBy="blueprint"
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                            dorExcludeDescription="true"
+                                            dorExcludeTitle="true"
+                                            guideNodeClass="guidePanel"
+                                            name="panel_RP_cfe936aa"
+                                            textIsRich="true"
+                                            validateOnStepCompletion="{Boolean}false">
+                                            <layout
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                                columns="1"
+                                                dorLayoutType="columnar"
+                                                dorNumCols="1"
+                                                nonNavigable="{Boolean}true"
+                                                toolbarPosition="Bottom"/>
+                                            <items
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                                <panel_9f95cf2446894279b0ce499263e0d475
+                                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                    jcr:createdBy="blueprint"
+                                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+                                                    jcr:lastModifiedBy="blueprint"
+                                                    jcr:primaryType="nt:unstructured"
+                                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                                    dorExcludeDescription="true"
+                                                    dorFieldStyling="Default"
+                                                    guideNodeClass="guidePanel"
+                                                    name="PN_958d2a4a"
+                                                    textIsRich="true"
+                                                    validateOnStepCompletion="{Boolean}false">
+                                                    <items
+                                                        jcr:primaryType="nt:unstructured"
+                                                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                                        <textbox_355e26899fda4cfb8edccbea0e99a5c9
+                                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                            jcr:createdBy="blueprint"
+                                                            jcr:lastModified="{Date}2026-04-10T06:27:27.991+02:00"
+                                                            jcr:lastModifiedBy="admin"
+                                                            jcr:primaryType="nt:unstructured"
+                                                            jcr:title="Cognome"
+                                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                            assistPriority="label"
+                                                            autofillFieldKeyword="name"
+                                                            css="widget_ajila-forms-ubs-textbox"
+                                                            dorColspan="1"
+                                                            dorFieldStyling="Default"
+                                                            guideNodeClass="guideTextBox"
+                                                            name="TXT_Cognome_d9ce00a2"
+                                                            textIsRich="[true,true,true,true]">
+                                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                                <default
+                                                                    jcr:primaryType="nt:unstructured"
+                                                                    offset="0"
+                                                                    width="6"/>
+                                                            </cq:responsive>
+                                                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                            <fd:scripts
+                                                                fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var currentIndex = this.parent.parent.parent.instanceIndex;\\nvar currentFirstname = TXT_Cognome_d9ce00a2.value ? TXT_Cognome_d9ce00a2.value : \\&quot;\\&quot;;\\nvar currentLastname = TXT_NomeI_65e1c6de.value ? TXT_NomeI_65e1c6de.value : \\&quot;\\&quot;;\\nPN_FirmaE_b75ffd17.PN_SignatureLegalRepresentative.instanceManager.instances[currentIndex].TXT_Name_Sign_legalrepresen.value = currentFirstname + \\&quot; \\&quot; + currentLastname;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.panel_RP_cfe936aa.PN_958d2a4a.TXT_Cognome_d9ce00a2&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                                jcr:primaryType="nt:unstructured"/>
+                                                        </textbox_355e26899fda4cfb8edccbea0e99a5c9>
+                                                        <textbox_a5b0e169f8c54db5bb070c73ca67764d
+                                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                            jcr:createdBy="blueprint"
+                                                            jcr:lastModified="{Date}2026-04-10T06:27:37.197+02:00"
+                                                            jcr:lastModifiedBy="admin"
+                                                            jcr:primaryType="nt:unstructured"
+                                                            jcr:title="Nome/i"
+                                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                            assistPriority="label"
+                                                            autofillFieldKeyword="name"
+                                                            css="widget_ajila-forms-ubs-textbox"
+                                                            dorColspan="1"
+                                                            dorFieldStyling="Default"
+                                                            guideNodeClass="guideTextBox"
+                                                            name="TXT_NomeI_65e1c6de"
+                                                            textIsRich="[true,true,true,true]">
+                                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                                <default
+                                                                    jcr:primaryType="nt:unstructured"
+                                                                    offset="0"
+                                                                    width="6"/>
+                                                            </cq:responsive>
+                                                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                            <fd:scripts
+                                                                fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var currentIndex = this.parent.parent.parent.instanceIndex;\\nvar currentFirstname = TXT_Cognome_d9ce00a2.value ? TXT_Cognome_d9ce00a2.value : \\&quot;\\&quot;;\\nvar currentLastname = TXT_NomeI_65e1c6de.value ? TXT_NomeI_65e1c6de.value : \\&quot;\\&quot;;\\nPN_FirmaE_b75ffd17.PN_SignatureLegalRepresentative.instanceManager.instances[currentIndex].TXT_Name_Sign_legalrepresen.value = currentFirstname + \\&quot; \\&quot; + currentLastname;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.panel_RP_cfe936aa.PN_958d2a4a.TXT_NomeI_65e1c6de&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                                jcr:primaryType="nt:unstructured"/>
+                                                        </textbox_a5b0e169f8c54db5bb070c73ca67764d>
+                                                    </items>
+                                                    <layout
+                                                        jcr:primaryType="nt:unstructured"
+                                                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                                        columns="1"
+                                                        dorLayoutType="columnar"
+                                                        dorNumCols="2"
+                                                        nonNavigable="{Boolean}true"
+                                                        toolbarPosition="Bottom"/>
+                                                    <cq:responsive jcr:primaryType="nt:unstructured">
+                                                        <default
+                                                            jcr:primaryType="nt:unstructured"
+                                                            offset="0"
+                                                            width="12"/>
+                                                    </cq:responsive>
+                                                </panel_9f95cf2446894279b0ce499263e0d475>
+                                            </items>
+                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                <default
+                                                    jcr:primaryType="nt:unstructured"
+                                                    offset="0"
+                                                    width="12"/>
+                                            </cq:responsive>
+                                        </panel_copy_copy>
+                                    </items>
+                                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                                    <fd:scripts jcr:primaryType="nt:unstructured"/>
+                                </repeatableinner_copy>
                             </items>
                         </panel>
                         <tertiarybutton
                             jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:createdBy="{{ author }}"
+                            jcr:createdBy="blueprint"
                             jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:lastModifiedBy="{{ author }}"
+                            jcr:lastModifiedBy="blueprint"
                             jcr:primaryType="nt:unstructured"
                             jcr:title="Add"
-                            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/tertiarybutton"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
-                            dorFieldStyling="{{ variables.dor_field_styling }}"
+                            dorFieldStyling="Default"
                             guideNodeClass="guideButton"
                             name="BT_Add"
                             textIsRich="[true,true]"
@@ -359,20 +647,20 @@
                                 jcr:primaryType="nt:unstructured"/>
                         </tertiarybutton>
                     </items>
-                </repeatable>
+                </repeatable_fd881019b>
             </items>
             <fd:rules
                 fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalGuardianContainer&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_LegalGuardianContainer&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_FormularAdressat.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
                 jcr:primaryType="nt:unstructured"/>
             <fd:scripts jcr:primaryType="nt:unstructured"/>
-        </panel_legalguardian>
-        <panel_legalentity
-            jcr:created="{Date}2025-01-01T00:00:00.000Z"
-            jcr:createdBy="{{ author }}"
-            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-            jcr:lastModifiedBy="{{ author }}"
+        </panel_copy>
+        <panel_1794356301
+            jcr:created="{Date}2026-04-22T10:49:36.622+02:00"
+            jcr:createdBy="admin"
+            jcr:lastModified="{Date}2026-04-22T10:50:42.250+02:00"
+            jcr:lastModifiedBy="admin"
             jcr:primaryType="nt:unstructured"
-            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
             dorExcludeDescription="true"
             dorExcludeTitle="true"
             guideNodeClass="guidePanel"
@@ -381,7 +669,7 @@
             validateOnStepCompletion="{Boolean}false">
             <layout
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}"
+                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                 columns="1"
                 dorLayoutType="columnar"
                 dorNumCols="1"
@@ -389,43 +677,46 @@
                 toolbarPosition="Bottom"/>
             <items
                 jcr:primaryType="nt:unstructured"
-                sling:resourceType="{{ variables.default_layout }}">
-                <textbox
+                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                <textbox_54b7a6510733
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:createdBy="{{ author }}"
+                    jcr:createdBy="blueprint"
                     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
                     jcr:title="Company"
-                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/textbox"
+                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
                     assistPriority="label"
-                    css="{{ variables.css_textbox }}"
-                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    css="widget_ajila-forms-ubs-textbox"
+                    dorFieldStyling="Default"
                     guideNodeClass="guideTextBox"
                     mandatory="false"
                     name="TXT_Company_ce212eb9"
                     textIsRich="[true,true,true]">
                     <cq:responsive jcr:primaryType="nt:unstructured">
-                        <default jcr:primaryType="nt:unstructured" offset="0" width="12"/>
+                        <default
+                            jcr:primaryType="nt:unstructured"
+                            offset="0"
+                            width="12"/>
                     </cq:responsive>
-                </textbox>
-                <repeatable
+                </textbox_54b7a6510733>
+                <repeatable_cd38707fc
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:createdBy="{{ author }}"
-                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:createdBy="blueprint"
+                    jcr:lastModified="{Date}2026-04-15T09:14:16.994+02:00"
+                    jcr:lastModifiedBy="t406261"
                     jcr:primaryType="nt:unstructured"
                     sling:resourceType="fd/af/components/panel"
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
-                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    dorFieldStyling="Default"
                     guideNodeClass="guidePanel"
                     name="PN_legalRepresentative"
                     textIsRich="true"
                     validateOnStepCompletion="{Boolean}false">
                     <layout
                         jcr:primaryType="nt:unstructured"
-                        sling:resourceType="{{ variables.default_layout }}"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
                         columns="1"
                         dorLayoutType="columnar"
                         dorNumCols="1"
@@ -433,17 +724,17 @@
                         toolbarPosition="Bottom"/>
                     <items
                         jcr:primaryType="nt:unstructured"
-                        sling:resourceType="{{ variables.default_layout }}">
-                        <panel
-                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:createdBy="{{ author }}"
-                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:lastModifiedBy="{{ author }}"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                        <repeatableInner
+                            jcr:created="{Date}2025-01-01T01:00:00.000+01:00"
+                            jcr:createdBy="blueprint"
+                            jcr:lastModified="{Date}2026-05-11T11:37:42.881+02:00"
+                            jcr:lastModifiedBy="admin"
                             jcr:primaryType="nt:unstructured"
-                            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                             dorExcludeDescription="true"
                             dorExcludeTitle="true"
-                            dorFieldStyling="{{ variables.dor_field_styling }}"
+                            dorFieldStyling="Default"
                             fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_AuthRep"
                             guideNodeClass="guidePanel"
                             maxOccur="4"
@@ -453,7 +744,7 @@
                             validateOnStepCompletion="{Boolean}false">
                             <layout
                                 jcr:primaryType="nt:unstructured"
-                                sling:resourceType="{{ variables.default_layout }}"
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
                                 columns="1"
                                 dorLayoutType="columnar"
                                 dorNumCols="1"
@@ -461,47 +752,160 @@
                                 toolbarPosition="Bottom"/>
                             <items
                                 jcr:primaryType="nt:unstructured"
-                                sling:resourceType="{{ variables.default_layout }}">
-                                <repeatableinner
+                                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                <removebutton
                                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:createdBy="{{ author }}"
+                                    jcr:createdBy="blueprint"
                                     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                                    jcr:lastModifiedBy="{{ author }}"
+                                    jcr:lastModifiedBy="blueprint"
                                     jcr:primaryType="nt:unstructured"
-                                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
+                                    dorExclusion="true"
+                                    dorFieldStyling="Default"
+                                    guideNodeClass="guideButton"
+                                    name="BT_Remove"
+                                    textIsRich="[true,true]"
+                                    type="Button"
+                                    visible="{Boolean}false">
+                                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                                    <fd:scripts
+                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;RCP_RP_cfe936aa.instanceManager.removeInstance(this.parent.index);var len = RCP_RP_cfe936aa.instanceManager.instances.length;for (var i = 0; i &lt; len; i++) {RCP_RP_cfe936aa.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;}\\nPN_SignatureLegalRepresentative.instanceManager.removeInstance(this.parent.index);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        jcr:primaryType="nt:unstructured"/>
+                                </removebutton>
+                                <panel_copy_copy
+                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                    jcr:createdBy="blueprint"
+                                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                                    jcr:lastModifiedBy="blueprint"
+                                    jcr:primaryType="nt:unstructured"
+                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                                     dorExcludeDescription="true"
                                     dorExcludeTitle="true"
-                                    dorFieldStyling="{{ variables.dor_field_styling }}"
-                                    fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_IndividualBasic1"
                                     guideNodeClass="guidePanel"
-                                    name="PN_IndividualBasic"
+                                    name="panel_RP_cfe936aa"
                                     textIsRich="true"
                                     validateOnStepCompletion="{Boolean}false">
                                     <layout
                                         jcr:primaryType="nt:unstructured"
-                                        sling:resourceType="{{ variables.default_layout }}"
+                                        sling:resourceType="fd/af/layouts/gridFluidLayout2"
                                         columns="1"
                                         dorLayoutType="columnar"
                                         dorNumCols="1"
                                         nonNavigable="{Boolean}true"
                                         toolbarPosition="Bottom"/>
-                                    <items jcr:primaryType="nt:unstructured"/>
-                                    <fd:scripts
-                                        fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_Address.visible = false;\\nDATE_Birth.visible = false;\\nDD_Nationality.visible = false;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.PN_LRP&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
-                                        jcr:primaryType="nt:unstructured"/>
-                                </repeatableinner>
+                                    <items
+                                        jcr:primaryType="nt:unstructured"
+                                        sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                        <panel_9f95cf2446894279b0ce499263e0d475
+                                            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                            jcr:createdBy="blueprint"
+                                            jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+                                            jcr:lastModifiedBy="blueprint"
+                                            jcr:primaryType="nt:unstructured"
+                                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                            dorExcludeDescription="true"
+                                            dorFieldStyling="Default"
+                                            guideNodeClass="guidePanel"
+                                            name="PN_958d2a4a"
+                                            textIsRich="true"
+                                            validateOnStepCompletion="{Boolean}false">
+                                            <items
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                                                <textbox_355e26899fda4cfb8edccbea0e99a5c9
+                                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                    jcr:createdBy="blueprint"
+                                                    jcr:lastModified="{Date}2026-04-10T06:27:27.991+02:00"
+                                                    jcr:lastModifiedBy="admin"
+                                                    jcr:primaryType="nt:unstructured"
+                                                    jcr:title="Cognome"
+                                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                    assistPriority="label"
+                                                    autofillFieldKeyword="name"
+                                                    css="widget_ajila-forms-ubs-textbox"
+                                                    dorColspan="1"
+                                                    dorFieldStyling="Default"
+                                                    guideNodeClass="guideTextBox"
+                                                    name="TXT_Cognome_d9ce00a2"
+                                                    textIsRich="[true,true,true,true]">
+                                                    <cq:responsive jcr:primaryType="nt:unstructured">
+                                                        <default
+                                                            jcr:primaryType="nt:unstructured"
+                                                            offset="0"
+                                                            width="6"/>
+                                                    </cq:responsive>
+                                                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                    <fd:scripts
+                                                        fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var currentIndex = this.parent.parent.parent.instanceIndex;\\nvar currentFirstname = TXT_Cognome_d9ce00a2.value ? TXT_Cognome_d9ce00a2.value : \\&quot;\\&quot;;\\nvar currentLastname = TXT_NomeI_65e1c6de.value ? TXT_NomeI_65e1c6de.value : \\&quot;\\&quot;;\\nPN_FirmaE_b75ffd17.PN_SignatureLegalRepresentative.instanceManager.instances[currentIndex].TXT_Name_Sign_legalrepresen.value = currentFirstname + \\&quot; \\&quot; + currentLastname;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.panel_RP_cfe936aa.PN_958d2a4a.TXT_Cognome_d9ce00a2&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                        jcr:primaryType="nt:unstructured"/>
+                                                </textbox_355e26899fda4cfb8edccbea0e99a5c9>
+                                                <textbox_a5b0e169f8c54db5bb070c73ca67764d
+                                                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                                                    jcr:createdBy="blueprint"
+                                                    jcr:lastModified="{Date}2026-04-10T06:27:37.197+02:00"
+                                                    jcr:lastModifiedBy="admin"
+                                                    jcr:primaryType="nt:unstructured"
+                                                    jcr:title="Nome/i"
+                                                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                                    assistPriority="label"
+                                                    autofillFieldKeyword="name"
+                                                    css="widget_ajila-forms-ubs-textbox"
+                                                    dorColspan="1"
+                                                    dorFieldStyling="Default"
+                                                    guideNodeClass="guideTextBox"
+                                                    name="TXT_NomeI_65e1c6de"
+                                                    textIsRich="[true,true,true,true]">
+                                                    <cq:responsive jcr:primaryType="nt:unstructured">
+                                                        <default
+                                                            jcr:primaryType="nt:unstructured"
+                                                            offset="0"
+                                                            width="6"/>
+                                                    </cq:responsive>
+                                                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                                                    <fd:scripts
+                                                        fd:valueCommit="[{&quot;script&quot;:{&quot;content&quot;:&quot;var currentIndex = this.parent.parent.parent.instanceIndex;\\nvar currentFirstname = TXT_Cognome_d9ce00a2.value ? TXT_Cognome_d9ce00a2.value : \\&quot;\\&quot;;\\nvar currentLastname = TXT_NomeI_65e1c6de.value ? TXT_NomeI_65e1c6de.value : \\&quot;\\&quot;;\\nPN_FirmaE_b75ffd17.PN_SignatureLegalRepresentative.instanceManager.instances[currentIndex].TXT_Name_Sign_legalrepresen.value = currentFirstname + \\&quot; \\&quot; + currentLastname;&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_TitolareDelContoDiSeguitoIl_a10b5831.RP_cfe936aa.RCP_RP_cfe936aa.panel_RP_cfe936aa.PN_958d2a4a.TXT_NomeI_65e1c6de&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                                        jcr:primaryType="nt:unstructured"/>
+                                                </textbox_a5b0e169f8c54db5bb070c73ca67764d>
+                                            </items>
+                                            <layout
+                                                jcr:primaryType="nt:unstructured"
+                                                sling:resourceType="fd/af/layouts/gridFluidLayout2"
+                                                columns="1"
+                                                dorLayoutType="columnar"
+                                                dorNumCols="2"
+                                                nonNavigable="{Boolean}true"
+                                                toolbarPosition="Bottom"/>
+                                            <cq:responsive jcr:primaryType="nt:unstructured">
+                                                <default
+                                                    jcr:primaryType="nt:unstructured"
+                                                    offset="0"
+                                                    width="12"/>
+                                            </cq:responsive>
+                                        </panel_9f95cf2446894279b0ce499263e0d475>
+                                    </items>
+                                    <cq:responsive jcr:primaryType="nt:unstructured">
+                                        <default
+                                            jcr:primaryType="nt:unstructured"
+                                            offset="0"
+                                            width="12"/>
+                                    </cq:responsive>
+                                </panel_copy_copy>
                             </items>
-                        </panel>
+                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                            <fd:scripts
+                                fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_Address.visible = false;\\nDATE_Birth.visible = false;\\nDD_Nationality.visible = false;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.PN_LRP&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                jcr:primaryType="nt:unstructured"/>
+                        </repeatableInner>
                         <tertiarybutton
                             jcr:created="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:createdBy="{{ author }}"
-                            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
-                            jcr:lastModifiedBy="{{ author }}"
+                            jcr:createdBy="blueprint"
+                            jcr:lastModified="{Date}2026-04-20T09:58:30.965+02:00"
+                            jcr:lastModifiedBy="t406261"
                             jcr:primaryType="nt:unstructured"
-                            jcr:title="Add"
-                            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/tertiarybutton"
+                            jcr:title="Add legale rappresentante"
+                            sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
-                            dorFieldStyling="{{ variables.dor_field_styling }}"
+                            dorFieldStyling="Default"
                             guideNodeClass="guideButton"
                             name="BT_AddLR"
                             textIsRich="[true,true,true]"
@@ -513,27 +917,30 @@
                                 jcr:primaryType="nt:unstructured"/>
                         </tertiarybutton>
                     </items>
-                </repeatable>
+                </repeatable_cd38707fc>
             </items>
             <fd:rules
                 fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_LegalEntityContainer&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;BOOLEAN_BINARY_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;3&quot;}}]}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;OR&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;4&quot;}}]}\,&quot;nested&quot;:false}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_FormularAdressat.value == \\&quot;3\\&quot; || RB_FormularAdressat.value == \\&quot;4\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
                 jcr:primaryType="nt:unstructured"/>
             <fd:scripts jcr:primaryType="nt:unstructured"/>
-        </panel_legalentity>
+        </panel_1794356301>
     </items>
     <layout
         jcr:primaryType="nt:unstructured"
-        sling:resourceType="{{ variables.default_layout }}"
+        sling:resourceType="fd/af/layouts/gridFluidLayout2"
         columns="1"
         dorLayoutType="columnar"
         dorNumCols="1"
         nonNavigable="{Boolean}true"
         toolbarPosition="Bottom"/>
     <cq:responsive jcr:primaryType="nt:unstructured">
-        <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
+        <default
+            jcr:primaryType="nt:unstructured"
+            offset="0"
+            width="12"/>
     </cq:responsive>
     <fd:rules
         fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_AccountHolder&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;IS_NOT_EMPTY&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:null}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif ( ([null\,\\&quot;\\&quot;].indexOf(RB_FormularAdressat.value) === -1) ) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
         jcr:primaryType="nt:unstructured"/>
     <fd:scripts jcr:primaryType="nt:unstructured"/>
-</{{ element_name }}>
+</panel_3bce6c33db5c40>
