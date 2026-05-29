@@ -360,12 +360,8 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("children", &render_children(children, config));
             ctx.insert("bind_ref", bind_ref);
 
-            // Pre-compute the repeatable button scripts as template variables.
-            // These contain complex JCR-escaped JSON that would be very messy
-            // to write inline in a Tera template.
             let panel_name = format!("RCP_{}", name);
             ctx.insert("panel_name", &panel_name);
-            insert_repeatable_scripts(&mut ctx, &panel_name, *max_occur);
         }
 
         AemNode::Fragment {
@@ -454,73 +450,6 @@ fn insert_conditions_context(
             &xml_escape(&generate_value_commit_json(field_name, conditions)),
         );
     }
-}
-
-/// Insert pre-computed repeatable button scripts into a Tera context.
-///
-/// Generates the `fd:click` / `fd:init` attribute values for the remove and
-/// add buttons of a repeatable section. These are complex JCR-escaped JSON
-/// strings that reference the panel instance manager.
-fn insert_repeatable_scripts(ctx: &mut tera::Context, panel_name: &str, max_occur: u32) {
-    // --- Remove button click script ---
-    let remove_script = format!(
-        "{pn}.instanceManager.removeInstance(this.parent.index);\\\
-\
-\
-var len = {pn}.instanceManager.instances.length;\\\
-for (var i = 0; i < len; i++) {{\\\
-{pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
-}}\\\
-if (len < {max}) {{\\\
-{pn}.BT_Add.visible = true;\\\
-}}",
-        pn = panel_name,
-        max = max_occur
-    );
-    let remove_click_json = format!(
-        "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Click\"\\,\"field\":\"BT_Remove\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
-        script = remove_script
-    );
-    ctx.insert("remove_click_json", &xml_escape(&remove_click_json));
-
-    // --- Add button click script ---
-    let add_click_script = format!(
-        "{pn}.instanceManager.addInstance();\\\
-\
-\
-var len = {pn}.instanceManager.instances.length;\\\
-for (var i = 0; i < len; i++) {{\\\
-{pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
-}}\\\
-if (len >= {max}) {{\\\
-this.visible = false;\\\
-}}",
-        pn = panel_name,
-        max = max_occur
-    );
-    let add_click_json = format!(
-        "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Click\"\\,\"field\":\"BT_Add\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
-        script = add_click_script
-    );
-    ctx.insert("add_click_json", &xml_escape(&add_click_json));
-
-    // --- Add button init script ---
-    let add_init_script = format!(
-        "var len = {pn}.instanceManager.instances.length;\\\
-for (var i = 0; i < len; i++) {{\\\
-{pn}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) && len > 1) ? true : false;\\\
-}}\\\
-if (len >= {max}) {{\\\
-this.visible = false;\\\
-}}",
-        pn = panel_name,
-        max = max_occur
-    );
-    let add_init_json = format!(
-        "[{{\"script\":{{\"content\":\"{script}\"\\,\"event\":\"Initialize\"\\,\"field\":\"BT_Add\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
-        script = add_init_script
-    );
-    ctx.insert("add_init_json", &xml_escape(&add_init_json));
 }
 
 // ============================================================================
@@ -1501,23 +1430,207 @@ mod tests {
     /// add button permanently hidden.
     #[test]
     fn remove_button_script_restores_add_button_when_below_max() {
-        let mut ctx = tera::Context::new();
-        insert_repeatable_scripts(&mut ctx, "RCP_Test", 5);
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config
+            .user_vars
+            .insert("resource_type_base".into(), "fd/af/components".into());
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
 
-        let remove_click_json = ctx
-            .get("remove_click_json")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let node = AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "Test".into(),
+            title: "Repeat Section".into(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+        };
+        let xml = render_node(&node, &config);
 
         assert!(
-            remove_click_json.contains("BT_Add.visible = true"),
+            xml.contains("BT_Add.visible = true"),
             "Remove script must restore BT_Add.visible when below max. Got:\n{}",
-            remove_click_json
+            xml
         );
         assert!(
-            remove_click_json.contains("len < 5") || remove_click_json.contains("len &lt; 5"),
+            xml.contains("len &lt; 5"),
             "Remove script must check len < max_occur. Got:\n{}",
-            remove_click_json
+            xml
+        );
+    }
+
+    #[test]
+    fn repeatable_remove_click_script_exact_output() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config
+            .user_vars
+            .insert("resource_type_base".into(), "fd/af/components".into());
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
+
+        let node = AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "Test".into(),
+            title: "Repeat Section".into(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+        };
+        let xml = render_node(&node, &config);
+
+        let expected_remove_click = concat!(
+            "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
+            "RCP_Test.instanceManager.removeInstance(this.parent.index);",
+            "\\var len = RCP_Test.instanceManager.instances.length;",
+            "\\for (var i = 0; i &lt; len; i++) {",
+            "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\}",
+            "\\if (len &lt; 5) {",
+            "\\RCP_Test.BT_Add.visible = true;",
+            "\\}",
+            "&quot;\\,&quot;event&quot;:&quot;Click&quot;\\,&quot;field&quot;:&quot;BT_Remove&quot;}",
+            "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
+        );
+        assert!(
+            xml.contains(expected_remove_click),
+            "remove_click script mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
+            expected_remove_click,
+            xml
+        );
+    }
+
+    #[test]
+    fn repeatable_add_click_script_exact_output() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config
+            .user_vars
+            .insert("resource_type_base".into(), "fd/af/components".into());
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
+
+        let node = AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "Test".into(),
+            title: "Repeat Section".into(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+        };
+        let xml = render_node(&node, &config);
+
+        let expected_add_click = concat!(
+            "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
+            "RCP_Test.instanceManager.addInstance();",
+            "\\var len = RCP_Test.instanceManager.instances.length;",
+            "\\for (var i = 0; i &lt; len; i++) {",
+            "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\}",
+            "\\if (len &gt;= 5) {",
+            "\\this.visible = false;",
+            "\\}",
+            "&quot;\\,&quot;event&quot;:&quot;Click&quot;\\,&quot;field&quot;:&quot;BT_Add&quot;}",
+            "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
+        );
+        assert!(
+            xml.contains(expected_add_click),
+            "add_click script mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
+            expected_add_click,
+            xml
+        );
+    }
+
+    #[test]
+    fn repeatable_add_init_script_exact_output() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config
+            .user_vars
+            .insert("resource_type_base".into(), "fd/af/components".into());
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
+
+        let node = AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "Test".into(),
+            title: "Repeat Section".into(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+        };
+        let xml = render_node(&node, &config);
+
+        let expected_add_init = concat!(
+            "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
+            "var len = RCP_Test.instanceManager.instances.length;",
+            "\\for (var i = 0; i &lt; len; i++) {",
+            "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\}",
+            "\\if (len &gt;= 5) {",
+            "\\this.visible = false;",
+            "\\}",
+            "&quot;\\,&quot;event&quot;:&quot;Initialize&quot;\\,&quot;field&quot;:&quot;BT_Add&quot;}",
+            "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
+        );
+        assert!(
+            xml.contains(expected_add_init),
+            "add_init script mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
+            expected_add_init,
+            xml
         );
     }
 }
