@@ -602,7 +602,7 @@
                             jcr:lastModified="{Date}2026-04-20T09:58:30.965+02:00"
                             jcr:lastModifiedBy="t406261"
                             jcr:primaryType="nt:unstructured"
-                            jcr:title="Add legale rappresentante"
+                            jcr:title="Add"
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
                             dorFieldStyling="Default"
