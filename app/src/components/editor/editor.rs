@@ -1888,6 +1888,9 @@ fn field_type_from_input_kind(kind: FieldInputKind, existing_options: Vec<NameVa
         FieldInputKind::Radio => FieldType::Radio {
             options: existing_options,
         },
+        FieldInputKind::CheckboxGroup => FieldType::CheckboxGroup {
+            options: existing_options,
+        },
     }
 }
 

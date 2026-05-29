@@ -259,7 +259,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
 
             let label_text = translate_string(label, name, "jcr:title", ctx);
             let field_id = field_id_from_name(name);
-            let option_values = convert_options(options, ctx);
+            let option_values = convert_options(options, name, ctx);
 
             Some(StructuredNode::Field(FieldNode {
                 name: field_id,
@@ -289,7 +289,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
 
             let label_text = translate_string(label, name, "jcr:title", ctx);
             let field_id = field_id_from_name(name);
-            let option_values = convert_options(options, ctx);
+            let option_values = convert_options(options, name, ctx);
 
             Some(StructuredNode::Field(FieldNode {
                 name: field_id,
@@ -306,6 +306,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
 
         AemNode::Checkbox {
             name,
+            label,
             options,
             visible,
             ..
@@ -316,11 +317,11 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             }
 
             let field_id = field_id_from_name(name);
-            // Single checkbox → Bool field; multiple → Select
+            // Single checkbox → Bool field; multiple → CheckboxGroup
             if options.len() <= 1 {
                 let label_text = options
                     .first()
-                    .map(|o| TranslatableString::Plain(o.label.clone()));
+                    .map(|o| TranslatableString::Plain(strip_html_tags(&o.label)));
 
                 Some(StructuredNode::Field(FieldNode {
                     name: field_id,
@@ -332,12 +333,17 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                     required: false,
                 }))
             } else {
-                let option_values = convert_options(options, ctx);
+                let label_text = translate_string(label, name, "jcr:title", ctx);
+                let option_values = convert_options(options, name, ctx);
                 Some(StructuredNode::Field(FieldNode {
                     name: field_id,
                     som_path: Some(SomPath::new(name)),
-                    label: None,
-                    input_type: FieldType::Select {
+                    label: if label_text.as_str().is_empty() {
+                        None
+                    } else {
+                        Some(inline_from_translatable(&label_text))
+                    },
+                    input_type: FieldType::CheckboxGroup {
                         options: option_values,
                     },
                     value: None,
@@ -508,12 +514,19 @@ fn translate_string(
 }
 
 /// Convert AEM options to StructuredNode NameValue options.
-fn convert_options(options: &[AemOption], _ctx: &ConversionContext) -> Vec<NameValue> {
+///
+/// Strips HTML tags from labels and looks up translations via the Sling
+/// `fd_` dictionary key format.
+fn convert_options(options: &[AemOption], component_name: &str, ctx: &ConversionContext) -> Vec<NameValue> {
     options
         .iter()
-        .map(|opt| NameValue {
-            name: TranslatableString::Plain(opt.label.clone()),
-            value: InputValue::Text(opt.value.clone()),
+        .map(|opt| {
+            let plain_label = strip_html_tags(&opt.label);
+            let name = translate_string(&plain_label, component_name, "options", ctx);
+            NameValue {
+                name,
+                value: InputValue::Text(opt.value.clone()),
+            }
         })
         .collect()
 }

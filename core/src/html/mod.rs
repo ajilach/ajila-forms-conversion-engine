@@ -702,6 +702,51 @@ fn generate_field_input(f: &FieldNode, _ctx: &mut GeneratorContext, field_id: &s
             html
         }
 
+        FieldType::CheckboxGroup { options } => {
+            let mut html = format!("<div class=\"checkbox-group\" data-field=\"{}\">\n", name);
+
+            for (i, opt) in options.iter().enumerate() {
+                let option_id = format!("{}_{}", id, i);
+                let opt_value = match &opt.value {
+                    InputValue::Text(s) => s.as_str(),
+                    _ => match &opt.name {
+                        crate::structured::TranslatableString::Plain(s) => s.as_str(),
+                        crate::structured::TranslatableString::Translated(map) => {
+                            map.values().find_map(|o| o.as_deref()).unwrap_or("")
+                        }
+                    },
+                };
+
+                let label_html = match &opt.name {
+                    crate::structured::TranslatableString::Plain(s) => escape_html(s),
+                    crate::structured::TranslatableString::Translated(map) => {
+                        let mut spans = String::new();
+                        for (lang, text) in map {
+                            let display_text = text.as_deref().unwrap_or("MISSING TRANSLATION");
+                            spans.push_str(&format!(
+                                "<span class=\"lang-{}\" lang=\"{}\">{}</span>",
+                                escape_attr(lang),
+                                escape_attr(lang),
+                                escape_html(display_text)
+                            ));
+                        }
+                        spans
+                    }
+                };
+
+                html.push_str(&format!(
+                    "  <label class=\"checkbox-option\">\n    <input type=\"checkbox\" id=\"{}\" name=\"{}\" value=\"{}\" class=\"form-checkbox\"{}>\n    <span>{}</span>\n  </label>\n",
+                    escape_attr(&option_id),
+                    name,
+                    escape_attr(opt_value),
+                    required_attr,
+                    label_html
+                ));
+            }
+            html.push_str("</div>");
+            html
+        }
+
         FieldType::Select { options } => {
             let mut html = format!(
                 "<select id=\"{}\" name=\"{}\" class=\"form-select\"{}>\n",

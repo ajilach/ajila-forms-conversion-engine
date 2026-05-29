@@ -670,7 +670,9 @@ fn extract_from_node(
                 }
             }
             match &f.input_type {
-                FieldType::Radio { options } | FieldType::Select { options } => {
+                FieldType::Radio { options }
+                | FieldType::Select { options }
+                | FieldType::CheckboxGroup { options } => {
                     for opt in options {
                         if let TranslatableString::Translated(tmap) = &opt.name {
                             if let Some(Some(master)) = tmap.get(master_lang) {

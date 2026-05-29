@@ -250,10 +250,12 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
 
             let has_options = matches!(
                 &f.input_type,
-                FieldType::Radio { .. } | FieldType::Select { .. }
+                FieldType::Radio { .. } | FieldType::Select { .. } | FieldType::CheckboxGroup { .. }
             );
             let initial_options = match &f.input_type {
-                FieldType::Radio { options } | FieldType::Select { options } => options.clone(),
+                FieldType::Radio { options }
+                | FieldType::Select { options }
+                | FieldType::CheckboxGroup { options } => options.clone(),
                 _ => vec![],
             };
             let mut options_signal = use_signal(|| initial_options);
@@ -293,7 +295,9 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                         };
                                         let new_has_options = matches!(
                                             kind,
-                                            FieldInputKind::Dropdown | FieldInputKind::Radio
+                                            FieldInputKind::Dropdown
+                                                | FieldInputKind::Radio
+                                                | FieldInputKind::CheckboxGroup
                                         );
                                         if !new_has_options {
                                             options_signal.set(vec![]);
@@ -314,6 +318,7 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                 option { value: "checkbox", "Checkbox" }
                                 option { value: "dropdown", "Dropdown" }
                                 option { value: "radio", "Radio" }
+                                option { value: "checkbox-group", "Checkbox Group" }
                             }
                         }
                         div { class: "metadata-field",
@@ -570,6 +575,7 @@ fn field_input_kind_from_field_type(input_type: &FieldType) -> FieldInputKind {
         FieldType::Bool => FieldInputKind::Checkbox,
         FieldType::Select { .. } => FieldInputKind::Dropdown,
         FieldType::Radio { .. } => FieldInputKind::Radio,
+        FieldType::CheckboxGroup { .. } => FieldInputKind::CheckboxGroup,
     }
 }
 
@@ -584,6 +590,7 @@ fn field_input_kind_value(kind: &FieldInputKind) -> &'static str {
         FieldInputKind::Checkbox => "checkbox",
         FieldInputKind::Dropdown => "dropdown",
         FieldInputKind::Radio => "radio",
+        FieldInputKind::CheckboxGroup => "checkbox-group",
     }
 }
 
@@ -598,6 +605,7 @@ fn parse_field_input_kind(value: &str) -> Option<FieldInputKind> {
         "checkbox" => Some(FieldInputKind::Checkbox),
         "dropdown" => Some(FieldInputKind::Dropdown),
         "radio" => Some(FieldInputKind::Radio),
+        "checkbox-group" => Some(FieldInputKind::CheckboxGroup),
         _ => None,
     }
 }

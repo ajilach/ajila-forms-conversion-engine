@@ -9,6 +9,7 @@
 //! - `TextBlock` / `Paragraph` → `ParagraphNode`
 //! - `LabeledField` → `FieldNode` with label extracted from child text
 //! - `RadioButtonGroup` / `ExclGroup` → `FieldNode` with `FieldType::Radio`
+//! - `CheckboxGroup` → `GroupNode` wrapping individual checkbox `FieldNode`s
 //! - `DateField` → `FieldNode` with `FieldType::Date`
 //! - `Field` → `FieldNode` (unlabeled)
 //! - `RepeatableSection` → `RepeatableNode`
@@ -643,6 +644,9 @@ impl<'a, 'b> Converter<'a, 'b> {
                     Some(GroupKind::ExclGroup { selected_value }) => {
                         self.convert_excl_group(field_group, selected_value, Some(label_text))
                     }
+                    Some(GroupKind::CheckboxGroup) => {
+                        self.convert_checkbox_group(field_group, Some(label_text))
+                    }
                     _ => self.convert_field_group(field_group, Some(label_text)),
                 }
             }
@@ -667,6 +671,9 @@ impl<'a, 'b> Converter<'a, 'b> {
 
             // RadioButtonGroup → FieldNode with Radio type
             GroupKind::RadioButtonGroup => self.convert_radio_button_group(group_idx, None),
+
+            // CheckboxGroup → GroupNode wrapping individual checkbox fields
+            GroupKind::CheckboxGroup => self.convert_checkbox_group(group_idx, None),
 
             // ExclGroup → FieldNode with Radio type
             GroupKind::ExclGroup { selected_value } => {
@@ -1162,6 +1169,38 @@ impl<'a, 'b> Converter<'a, 'b> {
         }))
     }
 
+    /// Convert a CheckboxGroup to a GroupNode wrapping individual checkbox fields.
+    ///
+    /// When a label is provided (from a `LabeledField` wrapper), it is prepended as
+    /// a `ParagraphNode` so the rendered output shows the group heading above the
+    /// checkboxes.
+    fn convert_checkbox_group(
+        &self,
+        group_idx: usize,
+        label: Option<InlineText>,
+    ) -> Option<StructuredNode> {
+        let mut children: Vec<StructuredNode> = Vec::new();
+
+        if let Some(label_text) = label {
+            if !label_text.is_empty() {
+                children.push(StructuredNode::Paragraph(ParagraphNode {
+                    content: self.translated(label_text),
+                    som_path: None,
+                    source_name: None,
+                }));
+            }
+        }
+
+        let checkbox_children = self.convert_children(group_idx);
+        children.extend(checkbox_children);
+
+        if children.is_empty() {
+            return None;
+        }
+
+        Some(StructuredNode::Group(GroupNode { children }))
+    }
+
     /// Convert an ExclGroup to a single FieldNode with Radio type.
     fn convert_excl_group(
         &self,
@@ -1645,6 +1684,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             FieldType::Bool => InputValue::Bool(value == "on" || value == "1" || value == "true"),
             FieldType::Radio { .. } => InputValue::Text(value.to_string()),
             FieldType::Select { .. } => InputValue::Text(value.to_string()),
+            FieldType::CheckboxGroup { .. } => InputValue::Text(value.to_string()),
             FieldType::Date => InputValue::Text(value.to_string()),
             FieldType::Number { .. } => {
                 // Try to parse as decimal, fallback to text

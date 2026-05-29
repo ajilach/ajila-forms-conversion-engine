@@ -268,6 +268,9 @@ impl AnalysisModule for LabelAttacher {
 
         // Step 4: attach labels to radio/excl groups
         self.attach_labels_to_radio_groups(doc);
+
+        // Step 5: attach labels to checkbox groups
+        self.attach_labels_to_checkbox_groups(doc);
     }
 }
 
@@ -402,6 +405,73 @@ impl LabelAttacher {
         for (label_idx, radio_idx) in radio_pairs {
             doc.merge_inferred(
                 vec![label_idx, radio_idx],
+                GroupKind::LabeledField { label: 0, field: 1 },
+                self.name(),
+            );
+        }
+    }
+
+    /// Attach labels to checkbox groups.
+    ///
+    /// Runs after radio group label attachment. Uses remaining unclaimed
+    /// text blocks and tries Above, Left, Below in order.
+    fn attach_labels_to_checkbox_groups(&self, doc: &mut Document) {
+        let roots_after = doc.roots();
+
+        let remaining_text_groups: Vec<usize> = roots_after
+            .iter()
+            .filter(|&&idx| {
+                doc.is_text_block(idx)
+                    && !doc.is_heading(idx)
+                    && !doc.get_text_content(idx).trim().is_empty()
+            })
+            .copied()
+            .collect();
+
+        let checkbox_groups: Vec<usize> = roots_after
+            .iter()
+            .filter(|&&idx| doc.is_checkbox_group(idx))
+            .copied()
+            .collect();
+
+        if remaining_text_groups.is_empty() || checkbox_groups.is_empty() {
+            return;
+        }
+
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        let mut used_labels: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+        let directions = [
+            LabelPosition::Above,
+            LabelPosition::Left,
+            LabelPosition::Below,
+        ];
+
+        for &group_idx in &checkbox_groups {
+            let available: Vec<_> = remaining_text_groups
+                .iter()
+                .filter(|idx| !used_labels.contains(idx))
+                .copied()
+                .collect();
+
+            let mut matched = None;
+            for &dir in &directions {
+                if let Some(result) = self.find_label_at_position(doc, group_idx, &available, dir)
+                {
+                    matched = Some(result);
+                    break;
+                }
+            }
+
+            if let Some((label_idx, _gap)) = matched {
+                pairs.push((label_idx, group_idx));
+                used_labels.insert(label_idx);
+            }
+        }
+
+        for (label_idx, group_idx) in pairs {
+            doc.merge_inferred(
+                vec![label_idx, group_idx],
                 GroupKind::LabeledField { label: 0, field: 1 },
                 self.name(),
             );

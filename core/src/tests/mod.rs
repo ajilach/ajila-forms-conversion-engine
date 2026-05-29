@@ -30281,3 +30281,84 @@ fn test_aads_no_duplicated_content() {
         merged.len()
     );
 }
+
+#[test]
+fn test_aafm_checkbox_group_detected_with_german_labels() {
+    use crate::structured::FieldType;
+
+    let zip_bytes =
+        std::fs::read(input_path("AAFM_019.zip")).expect("Failed to read AAFM_019.zip");
+    let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AAFM_019.zip");
+    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let fields = collect_fields(&envelope.content);
+
+    // Find the checkbox group for industries/activities.
+    // Use plain_text_in("de") since the form has jcr:language="en" but German translations exist.
+    let cb_group = fields
+        .iter()
+        .find(|f| {
+            matches!(&f.input_type, FieldType::CheckboxGroup { .. })
+                && f.label
+                    .as_ref()
+                    .map(|l| l.plain_text_in("de").contains("wesentliche Beziehung"))
+                    .unwrap_or(false)
+        })
+        .unwrap_or_else(|| {
+            let all_labels: Vec<String> = fields
+                .iter()
+                .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+                .collect();
+            let checkbox_group_labels: Vec<String> = fields
+                .iter()
+                .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+                .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+                .collect();
+            panic!(
+                "Expected a CheckboxGroup with label containing 'wesentliche Beziehung'.\n\
+                 CheckboxGroup labels: {:?}\n\
+                 All field labels: {:?}",
+                checkbox_group_labels, all_labels
+            );
+        });
+
+    assert!(
+        cb_group
+            .label
+            .as_ref()
+            .map(|l| l.plain_text_in("de").contains(
+                "Unterhalten Sie eine wesentliche Beziehung zu einer der folgenden Industrien"
+            ))
+            .unwrap_or(false),
+        "Expected label containing German industries text, got: {:?}",
+        cb_group.label.as_ref().map(|l| l.plain_text_in("de"))
+    );
+
+    let FieldType::CheckboxGroup { options } = &cb_group.input_type else {
+        panic!("Expected CheckboxGroup");
+    };
+    assert_eq!(
+        options.len(),
+        7,
+        "Expected 7 options, got: {:?}",
+        options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+    );
+
+    // Use TranslatableString::contains() which checks ALL language variants,
+    // since the form has jcr:language="en" but translations are in German.
+    let expected_substrings = [
+        "Casinos",
+        "Waffen",
+        "Diamantenhändler",
+        "Geldtransferunternehmen",
+        "Wechselstuben",
+        "religiöse Personen",
+        "keine der genannten",
+    ];
+    for needle in &expected_substrings {
+        assert!(
+            options.iter().any(|o| o.name.contains(needle)),
+            "Expected an option containing {needle:?} in any language, got options: {:?}",
+            options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+        );
+    }
+}
