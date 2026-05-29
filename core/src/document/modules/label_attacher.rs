@@ -418,11 +418,12 @@ impl LabelAttacher {
     fn attach_labels_to_checkbox_groups(&self, doc: &mut Document) {
         let roots_after = doc.roots();
 
+        // For checkbox groups, also consider headings as label candidates
+        // since the group label is often a section heading placed above.
         let remaining_text_groups: Vec<usize> = roots_after
             .iter()
             .filter(|&&idx| {
-                doc.is_text_block(idx)
-                    && !doc.is_heading(idx)
+                (doc.is_text_block(idx) || doc.is_heading(idx))
                     && !doc.get_text_content(idx).trim().is_empty()
             })
             .copied()

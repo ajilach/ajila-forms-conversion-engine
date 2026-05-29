@@ -9,7 +9,7 @@
 //! - `TextBlock` / `Paragraph` → `ParagraphNode`
 //! - `LabeledField` → `FieldNode` with label extracted from child text
 //! - `RadioButtonGroup` / `ExclGroup` → `FieldNode` with `FieldType::Radio`
-//! - `CheckboxGroup` → `GroupNode` wrapping individual checkbox `FieldNode`s
+//! - `CheckboxGroup` → `FieldNode` with `FieldType::CheckboxGroup`
 //! - `DateField` → `FieldNode` with `FieldType::Date`
 //! - `Field` → `FieldNode` (unlabeled)
 //! - `RepeatableSection` → `RepeatableNode`
@@ -1169,36 +1169,66 @@ impl<'a, 'b> Converter<'a, 'b> {
         }))
     }
 
-    /// Convert a CheckboxGroup to a GroupNode wrapping individual checkbox fields.
+    /// Convert a CheckboxGroup to a single FieldNode with CheckboxGroup type.
     ///
-    /// When a label is provided (from a `LabeledField` wrapper), it is prepended as
-    /// a `ParagraphNode` so the rendered output shows the group heading above the
-    /// checkboxes.
+    /// Mirrors the radio-button-group pattern: each child Checkbox's label becomes
+    /// an option name, and the field's SOM path becomes the option value.
     fn convert_checkbox_group(
         &self,
         group_idx: usize,
         label: Option<InlineText>,
     ) -> Option<StructuredNode> {
-        let mut children: Vec<StructuredNode> = Vec::new();
+        let group = self.doc.get_group(group_idx)?;
 
-        if let Some(label_text) = label {
-            if !label_text.is_empty() {
-                children.push(StructuredNode::Paragraph(ParagraphNode {
-                    content: self.translated(label_text),
-                    som_path: None,
-                    source_name: None,
-                }));
+        let mut options = Vec::new();
+        let mut first_som_path: Option<SomPath> = None;
+        let mut first_field_id: Option<FieldId> = None;
+
+        for &child_idx in &group.children {
+            if let Some(child_group) = self.doc.get_group(child_idx)
+                && let GroupKind::Checkbox { field: _, label } = &child_group.kind
+            {
+                // Get label text
+                let option_label = if let Some(&label_group_idx) = child_group.children.get(*label)
+                {
+                    self.doc.get_text_content(label_group_idx)
+                } else {
+                    String::new()
+                };
+
+                // Get field info
+                let nodes = self.doc.collect_nodes(child_idx);
+                for node in &nodes {
+                    if let FlattenedNodeKind::Field { name, .. } = &node.kind {
+                        if first_som_path.is_none() {
+                            first_som_path = node.som_path().cloned();
+                            first_field_id = Some(self.get_field_id(node));
+                        }
+                        options.push(NameValue {
+                            name: TranslatableString::Plain(option_label.clone()),
+                            value: InputValue::Text(name.clone()),
+                        });
+                        break;
+                    }
+                }
             }
         }
 
-        let checkbox_children = self.convert_children(group_idx);
-        children.extend(checkbox_children);
-
-        if children.is_empty() {
+        if options.is_empty() {
             return None;
         }
 
-        Some(StructuredNode::Group(GroupNode { children }))
+        let field_id = first_field_id.unwrap_or_else(FieldId::random);
+
+        Some(StructuredNode::Field(FieldNode {
+            name: field_id,
+            som_path: first_som_path,
+            label: label.map(|l| self.translated(l.to_plain())),
+            input_type: FieldType::CheckboxGroup { options },
+            value: None,
+            placeholder: None,
+            required: false,
+        }))
     }
 
     /// Convert an ExclGroup to a single FieldNode with Radio type.

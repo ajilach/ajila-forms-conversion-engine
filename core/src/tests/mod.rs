@@ -5618,6 +5618,85 @@ fn test_aaaa_019_checkbox_detection() {
 }
 
 #[test]
+fn test_aaaa_019_checkbox_group_for_communication_changes() {
+    use crate::structured::FieldType;
+
+    let mut bp = Blueprint::from_pdf(input_path("AAAA_019_EN.pdf")).expect("Failed to load AAAA PDF");
+    let ctx = bp.context();
+    let states = bp.states().expect("Failed to explore AAAA states");
+
+    let mut checkbox_groups = Vec::new();
+    for state in states.iter() {
+        let envelope = state.structured(ctx.clone());
+        let fields = collect_fields(&envelope.content);
+        checkbox_groups.extend(
+            fields
+                .iter()
+                .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+                .cloned(),
+        );
+    }
+
+    let communication_group = checkbox_groups
+        .iter()
+        .find(|field| {
+            field
+                .label
+                .as_ref()
+                .map(|label| label.as_plain_text().contains("Further communication changes"))
+                .unwrap_or(false)
+        })
+        .unwrap_or_else(|| {
+            let labels: Vec<String> = checkbox_groups
+                .iter()
+                .filter_map(|field| field.label.as_ref().map(|label| label.as_plain_text()))
+                .collect();
+            panic!(
+                "Expected a CheckboxGroup labeled 'Further communication changes'. Found labels: {:?}",
+                labels
+            );
+        });
+
+    let label_text = communication_group
+        .label
+        .as_ref()
+        .map(|label| label.as_plain_text())
+        .unwrap_or_default();
+    assert!(
+        label_text.contains("Further communication changes"),
+        "Expected label containing 'Further communication changes', got: {:?}",
+        label_text
+    );
+
+    let FieldType::CheckboxGroup { options } = &communication_group.input_type else {
+        panic!("Expected CheckboxGroup");
+    };
+
+    let option_texts: Vec<String> = options.iter().map(|option| option.name.as_str().to_string()).collect();
+    let expected_options = [
+        "All telephone numbers for a callback regarding the issue of quality management remain unchanged",
+        "The subsequent invalid contact details will no longer be used",
+    ];
+
+    assert_eq!(
+        options.len(),
+        expected_options.len(),
+        "Expected exactly {} checkbox options, got {:?}",
+        expected_options.len(),
+        option_texts
+    );
+
+    for expected in expected_options {
+        assert!(
+            option_texts.iter().any(|option| option.contains(expected)),
+            "Expected checkbox option containing {:?}, got {:?}",
+            expected,
+            option_texts
+        );
+    }
+}
+
+#[test]
 fn test_aaai_multi_paragraph_split_at_flattening() {
     // Test that the AAAI document's long multi-paragraph German legal text
     // is split into separate FlattenedNode objects — one per paragraph — during flattening.
