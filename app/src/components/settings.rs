@@ -34,6 +34,7 @@ pub fn SettingsPanel(
                 {
                     let settings_for_aot = settings.clone();
                     let settings_for_port = settings.clone();
+                    let settings_for_apikey = settings.clone();
                     rsx! {
                         div { class: "settings-section",
                             h3 { class: "settings-section-title", "Window" }
@@ -86,6 +87,32 @@ pub fn SettingsPanel(
                                         }
                                     }
                                 },
+                            }
+                        }
+                        div { class: "settings-section",
+                            h3 { class: "settings-section-title", "AI (Smart Edit)" }
+                            div { class: "settings-row",
+                                div { class: "settings-row-info",
+                                    span { class: "settings-row-label", "OpenAI API Key" }
+                                    span { class: "settings-row-desc",
+                                        "Paste your OpenAI API key here. Used for Smart Edit. Stored locally on disk."
+                                    }
+                                }
+                                input {
+                                    class: "settings-input-apikey",
+                                    r#type: "password",
+                                    placeholder: "sk-...",
+                                    value: "{settings_for_apikey.openai_api_key}",
+                                    onchange: {
+                                        let on_changed = on_settings_changed;
+                                        let s = settings_for_apikey.clone();
+                                        move |e: Event<FormData>| {
+                                            let mut new_s = s.clone();
+                                            new_s.openai_api_key = e.value().trim().to_string();
+                                            on_changed.call(new_s);
+                                        }
+                                    },
+                                }
                             }
                         }
                     }
