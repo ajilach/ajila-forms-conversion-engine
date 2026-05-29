@@ -200,7 +200,15 @@ async fn run_smart_edit(
     let mut history: ChatHistory = Vec::new();
     let raw = openai_chat_turn(&mut history, &user_text, &images, api_key, model).await?;
     let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
-    ensure_change_list(content, selected_indices, &mut history, &mut result, api_key, model).await;
+    ensure_change_list(
+        content,
+        selected_indices,
+        &mut history,
+        &mut result,
+        api_key,
+        model,
+    )
+    .await;
     Ok(result)
 }
 
@@ -213,17 +221,20 @@ async fn parse_with_repair(
     match parse_smart_edit_response(raw) {
         Ok(result) => Ok(result),
         Err(original_error) => {
-            // The bad response is already in history; just ask for a correction.
-            let repair_prompt =
-                "Your previous response was not parseable by the consumer. Re-emit the SAME \
-                 answer in the exact required format.\n\
+            // The bad response is already in history; include the parse error
+            // so the model knows what to fix.
+            let repair_prompt = format!(
+                "Your previous response was not parseable by the consumer. \
+                 Parse error: {original_error}\n\n\
+                 Re-emit the SAME answer in the exact required format.\n\
                  Return ONLY one valid JSON object with exactly two keys:\n\
                  - \"nodes\": array of StructuredNode JSON\n\
-                 - \"changes\": array of {\"id\": int, \"description\": string}\n\
-                 Do not add explanations, markdown, or code fences.";
+                 - \"changes\": array of {{\"id\": int, \"description\": string}}\n\
+                 Do not add explanations, markdown, or code fences."
+            );
 
             if let Ok(repaired_raw) =
-                openai_chat_turn(history, repair_prompt, &[], api_key, model).await
+                openai_chat_turn(history, &repair_prompt, &[], api_key, model).await
                 && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
             {
                 return Ok(parsed);
@@ -271,8 +282,7 @@ async fn ensure_change_list(
          No surrounding prose, no markdown fences, no backticks."
     );
 
-    if let Ok(raw) =
-        openai_chat_turn(history, &followup_prompt, &[], api_key, model).await
+    if let Ok(raw) = openai_chat_turn(history, &followup_prompt, &[], api_key, model).await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {
@@ -378,7 +388,7 @@ async fn openai_chat_turn(
     api_key: &str,
     model: &str,
 ) -> Result<String, String> {
-    use async_openai::{config::OpenAIConfig, Client};
+    use async_openai::{Client, config::OpenAIConfig};
 
     if api_key.is_empty() {
         return Err(
@@ -407,6 +417,7 @@ async fn openai_chat_turn(
     let request = serde_json::json!({
         "model": model,
         "messages": history,
+        "response_format": { "type": "json_object" },
     });
 
     let response: serde_json::Value = client

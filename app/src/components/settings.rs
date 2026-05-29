@@ -6,6 +6,17 @@ use dioxus::prelude::*;
 
 use crate::settings::AppSettings;
 
+/// Hardcoded fallback model list, used when models cannot be fetched from the API.
+const FALLBACK_MODELS: &[&str] = &[
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4.1-nano",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o3",
+    "o4-mini",
+];
+
 #[component]
 pub fn SettingsPanel(
     /// Whether the panel is visible.
@@ -36,6 +47,19 @@ pub fn SettingsPanel(
                     let settings_for_port = settings.clone();
                     let settings_for_apikey = settings.clone();
                     let settings_for_model = settings.clone();
+                    let api_key_for_fetch = settings.openai_api_key.clone();
+
+                    // Fetch available models whenever the API key changes.
+                    let models = use_resource(move || {
+                        let key = api_key_for_fetch.clone();
+                        async move { crate::platform::openai_list_models(&key).await }
+                    });
+
+                    let model_list: Vec<String> = match &*models.read() {
+                        Some(Ok(list)) if !list.is_empty() => list.clone(),
+                        _ => FALLBACK_MODELS.iter().map(|s| s.to_string()).collect(),
+                    };
+
                     rsx! {
                         div { class: "settings-section",
                             h3 { class: "settings-section-title", "Window" }
@@ -118,9 +142,7 @@ pub fn SettingsPanel(
                             div { class: "settings-row",
                                 div { class: "settings-row-info",
                                     span { class: "settings-row-label", "Model" }
-                                    span { class: "settings-row-desc",
-                                        "OpenAI model to use for Smart Edit."
-                                    }
+                                    span { class: "settings-row-desc", "OpenAI model to use for Smart Edit." }
                                 }
                                 select {
                                     class: "settings-select-model",
@@ -134,13 +156,13 @@ pub fn SettingsPanel(
                                             on_changed.call(new_s);
                                         }
                                     },
-                                    option { value: "gpt-4o", selected: settings_for_model.openai_model == "gpt-4o", "GPT-4o" }
-                                    option { value: "gpt-4o-mini", selected: settings_for_model.openai_model == "gpt-4o-mini", "GPT-4o mini" }
-                                    option { value: "gpt-4.1", selected: settings_for_model.openai_model == "gpt-4.1", "GPT-4.1" }
-                                    option { value: "gpt-4.1-mini", selected: settings_for_model.openai_model == "gpt-4.1-mini", "GPT-4.1 mini" }
-                                    option { value: "gpt-4.1-nano", selected: settings_for_model.openai_model == "gpt-4.1-nano", "GPT-4.1 nano" }
-                                    option { value: "o3", selected: settings_for_model.openai_model == "o3", "o3" }
-                                    option { value: "o4-mini", selected: settings_for_model.openai_model == "o4-mini", "o4-mini" }
+                                    for model_id in model_list.iter() {
+                                        option {
+                                            value: "{model_id}",
+                                            selected: settings_for_model.openai_model == *model_id,
+                                            "{model_id}"
+                                        }
+                                    }
                                 }
                             }
                         }

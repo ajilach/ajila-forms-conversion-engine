@@ -26,7 +26,7 @@ impl Default for AppSettings {
             always_on_top: false,
             live_preview_port: 3718,
             openai_api_key: String::new(),
-            openai_model: "gpt-4o".to_string(),
+            openai_model: "gpt-4.1".to_string(),
         }
     }
 }

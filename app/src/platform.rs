@@ -141,7 +141,7 @@ pub async fn openai_chat_turn(
     api_key: &str,
     model: &str,
 ) -> Result<String, String> {
-    use async_openai::{config::OpenAIConfig, Client};
+    use async_openai::{Client, config::OpenAIConfig};
 
     if api_key.is_empty() {
         return Err(
@@ -170,6 +170,7 @@ pub async fn openai_chat_turn(
     let request = serde_json::json!({
         "model": model,
         "messages": history,
+        "response_format": { "type": "json_object" },
     });
 
     let response: serde_json::Value = client
@@ -197,6 +198,69 @@ pub async fn openai_chat_turn(
     _model: &str,
 ) -> Result<String, String> {
     Err("Smart Edit is only supported in the desktop app. The web version cannot call the OpenAI API directly.".to_string())
+}
+
+// ── List available OpenAI models ─────────────────────────────────────
+
+/// Fetch the list of available model IDs from the OpenAI API,
+/// filtered to chat-capable models and sorted alphabetically.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn openai_list_models(api_key: &str) -> Result<Vec<String>, String> {
+    use async_openai::{Client, config::OpenAIConfig};
+
+    if api_key.is_empty() {
+        return Err("OpenAI API key is not configured.".to_string());
+    }
+
+    let config = OpenAIConfig::new().with_api_key(api_key);
+    let client = Client::with_config(config);
+
+    let response = client
+        .models()
+        .list()
+        .await
+        .map_err(|e| format!("Failed to list models: {e}"))?;
+
+    let mut ids: Vec<String> = response
+        .data
+        .into_iter()
+        .map(|m| m.id)
+        .filter(|id| is_chat_model(id))
+        .collect();
+
+    ids.sort();
+    Ok(ids)
+}
+
+/// Returns `true` only for models known to support the chat completions endpoint.
+fn is_chat_model(id: &str) -> bool {
+    // Allowlist of chat-capable model families that support image_url (vision).
+    // Excludes models without vision: gpt-3.5-turbo, gpt-4 (non-turbo),
+    // o1-mini, o1-preview, o3-mini.
+    const CHAT_MODELS: &[&str] = &[
+        "chatgpt-4o-latest",
+        "gpt-4-turbo",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
+        "gpt-4.5-preview",
+        "o1",
+        "o3",
+        "o3-pro",
+        "o4-mini",
+    ];
+
+    CHAT_MODELS.iter().any(|base| {
+        // Exact match or dated snapshot (e.g. "gpt-4o-2024-11-20").
+        id == *base || id.starts_with(&format!("{base}-2"))
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn openai_list_models(_api_key: &str) -> Result<Vec<String>, String> {
+    Err("Listing models is only supported in the desktop app.".to_string())
 }
 
 // ── File explorer reveal ─────────────────────────────────────────────
