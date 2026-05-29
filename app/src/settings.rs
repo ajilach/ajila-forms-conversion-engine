@@ -16,6 +16,8 @@ pub struct AppSettings {
     pub live_preview_port: u16,
     /// OpenAI API key used for Smart Edit. Stored in the settings file on disk.
     pub openai_api_key: String,
+    /// OpenAI model used for Smart Edit (e.g. "gpt-4o", "gpt-4.1").
+    pub openai_model: String,
 }
 
 impl Default for AppSettings {
@@ -24,6 +26,7 @@ impl Default for AppSettings {
             always_on_top: false,
             live_preview_port: 3718,
             openai_api_key: String::new(),
+            openai_model: "gpt-4o".to_string(),
         }
     }
 }

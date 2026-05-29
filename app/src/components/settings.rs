@@ -35,6 +35,7 @@ pub fn SettingsPanel(
                     let settings_for_aot = settings.clone();
                     let settings_for_port = settings.clone();
                     let settings_for_apikey = settings.clone();
+                    let settings_for_model = settings.clone();
                     rsx! {
                         div { class: "settings-section",
                             h3 { class: "settings-section-title", "Window" }
@@ -112,6 +113,34 @@ pub fn SettingsPanel(
                                             on_changed.call(new_s);
                                         }
                                     },
+                                }
+                            }
+                            div { class: "settings-row",
+                                div { class: "settings-row-info",
+                                    span { class: "settings-row-label", "Model" }
+                                    span { class: "settings-row-desc",
+                                        "OpenAI model to use for Smart Edit."
+                                    }
+                                }
+                                select {
+                                    class: "settings-select-model",
+                                    value: "{settings_for_model.openai_model}",
+                                    onchange: {
+                                        let on_changed = on_settings_changed;
+                                        let s = settings_for_model.clone();
+                                        move |e: Event<FormData>| {
+                                            let mut new_s = s.clone();
+                                            new_s.openai_model = e.value();
+                                            on_changed.call(new_s);
+                                        }
+                                    },
+                                    option { value: "gpt-4o", selected: settings_for_model.openai_model == "gpt-4o", "GPT-4o" }
+                                    option { value: "gpt-4o-mini", selected: settings_for_model.openai_model == "gpt-4o-mini", "GPT-4o mini" }
+                                    option { value: "gpt-4.1", selected: settings_for_model.openai_model == "gpt-4.1", "GPT-4.1" }
+                                    option { value: "gpt-4.1-mini", selected: settings_for_model.openai_model == "gpt-4.1-mini", "GPT-4.1 mini" }
+                                    option { value: "gpt-4.1-nano", selected: settings_for_model.openai_model == "gpt-4.1-nano", "GPT-4.1 nano" }
+                                    option { value: "o3", selected: settings_for_model.openai_model == "o3", "o3" }
+                                    option { value: "o4-mini", selected: settings_for_model.openai_model == "o4-mini", "o4-mini" }
                                 }
                             }
                         }
