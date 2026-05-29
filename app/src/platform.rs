@@ -125,47 +125,32 @@ pub fn show_html_preview(html: String, filename: &str) {
 
 // ── Smart edit (OpenAI API) ───────────────────────────────────────────
 
-/// Call the OpenAI chat completions API with a prompt and optional image attachments.
+/// Send one turn of a multi-turn chat to the OpenAI API and return the assistant's reply.
 ///
-/// `prompt` is the user instruction (already includes schema description and output format).
-/// `json_context` is the serialised structured nodes; pass an empty string for follow-up calls.
-/// `images` is a list of `(label, base64_png)` pairs from the plain render stage.
+/// `history` is the ongoing conversation; this function appends both the new user message
+/// and the assistant reply so subsequent calls automatically continue the thread.
+/// `user_text` is the user message text for this turn.
+/// `images` is a list of `(label, base64_png)` pairs; pass an empty slice for follow-up turns.
 /// `api_key` is the OpenAI API key.
-///
-/// Returns `Ok(response_text)` on success.
+/// `model` is the OpenAI model identifier (e.g. "gpt-4o").
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn run_copilot_smart_edit(
-    prompt: &str,
-    json_context: &str,
+pub async fn openai_chat_turn(
+    history: &mut Vec<serde_json::Value>,
+    user_text: &str,
     images: &[(String, String)],
     api_key: &str,
+    model: &str,
 ) -> Result<String, String> {
+    use async_openai::{config::OpenAIConfig, Client};
+
     if api_key.is_empty() {
         return Err(
             "OpenAI API key is not configured. Open Settings and paste your API key.".to_string(),
         );
     }
 
-    let text = if json_context.is_empty() {
-        prompt.to_string()
-    } else {
-        format!(
-            "{prompt}\n\n\
-             The structured JSON representation of the selected form nodes is included below. \
-             The attached PNG images show the rendered form pages for visual reference.\n\n\
-             BEGIN STRUCTURED NODES JSON\n\
-             {json_context}\n\
-             END STRUCTURED NODES JSON\n\n\
-             Return ONLY a valid JSON object with exactly two keys: \
-             \"nodes\" (the replacement Vec<StructuredNode> array) and \
-             \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
-             describing each logical change you made). \
-             No surrounding prose, no markdown fences, no trailing notes."
-        )
-    };
-
     let mut content: Vec<serde_json::Value> =
-        vec![serde_json::json!({"type": "text", "text": text})];
+        vec![serde_json::json!({"type": "text", "text": user_text})];
 
     for (_label, b64) in images {
         content.push(serde_json::json!({
@@ -177,46 +162,39 @@ pub async fn run_copilot_smart_edit(
         }));
     }
 
-    let request_body = serde_json::json!({
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": content}]
+    history.push(serde_json::json!({"role": "user", "content": content}));
+
+    let config = OpenAIConfig::new().with_api_key(api_key);
+    let client = Client::with_config(config);
+
+    let request = serde_json::json!({
+        "model": model,
+        "messages": history,
     });
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&request_body)
-        .send()
+    let response: serde_json::Value = client
+        .chat()
+        .create_byot(request)
         .await
-        .map_err(|e| format!("Failed to call OpenAI API: {e}"))?;
+        .map_err(|e| format!("OpenAI API error: {e}"))?;
 
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read OpenAI response: {e}"))?;
-
-    if !status.is_success() {
-        return Err(format!("OpenAI API returned HTTP {status}: {body}"));
-    }
-
-    let parsed: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse OpenAI response: {e}"))?;
-
-    let content_text = parsed["choices"][0]["message"]["content"]
+    let response_text = response["choices"][0]["message"]["content"]
         .as_str()
-        .ok_or_else(|| format!("Unexpected OpenAI response structure: {body}"))?;
+        .ok_or_else(|| format!("Unexpected OpenAI response structure: {response}"))?
+        .to_string();
 
-    Ok(content_text.to_string())
+    history.push(serde_json::json!({"role": "assistant", "content": response_text}));
+
+    Ok(response_text)
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn run_copilot_smart_edit(
-    _prompt: &str,
-    _json_context: &str,
+pub async fn openai_chat_turn(
+    _history: &mut Vec<serde_json::Value>,
+    _user_text: &str,
     _images: &[(String, String)],
     _api_key: &str,
+    _model: &str,
 ) -> Result<String, String> {
     Err("Smart Edit is only supported in the desktop app. The web version cannot call the OpenAI API directly.".to_string())
 }

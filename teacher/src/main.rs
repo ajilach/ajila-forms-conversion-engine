@@ -50,6 +50,10 @@ struct Args {
     /// OpenAI API key. Falls back to the OPENAI_API_KEY environment variable if not set.
     #[arg(long, env = "OPENAI_API_KEY")]
     api_key: String,
+
+    /// OpenAI model to use (default: gpt-4o).
+    #[arg(long, default_value = "gpt-4o")]
+    model: String,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -131,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Run smart edit ───────────────────────────────────────────────────
     eprintln!("Running smart edit via OpenAI API...");
-    let result = run_smart_edit(content, &[], &plain_images, &args.api_key).await?;
+    let result = run_smart_edit(content, &[], &plain_images, &args.api_key, &args.model).await?;
 
     // ── Output results ───────────────────────────────────────────────────
     match args.format {
@@ -157,6 +161,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ─── Multi-turn conversation history ────────────────────────────────────────
+
+type ChatHistory = Vec<serde_json::Value>;
+
 // ─── Smart edit logic ────────────────────────────────────────────────────────
 
 fn serialize_selected_nodes(
@@ -179,6 +187,7 @@ async fn run_smart_edit(
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
     api_key: &str,
+    model: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let images: Vec<(String, String)> = plain_images
@@ -186,38 +195,35 @@ async fn run_smart_edit(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let prompt = build_smart_edit_prompt(selected_indices, plain_images);
-    let raw = run_copilot_smart_edit(&prompt, &json_context, &images, api_key).await?;
-    let mut result = parse_with_repair(&raw, &images, api_key).await?;
-    ensure_change_list(
-        content,
-        selected_indices,
-        &images,
-        &mut result,
-        api_key,
-    )
-    .await;
+    let user_text = build_initial_user_text(&prompt, &json_context);
+
+    let mut history: ChatHistory = Vec::new();
+    let raw = openai_chat_turn(&mut history, &user_text, &images, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
+    ensure_change_list(content, selected_indices, &mut history, &mut result, api_key, model).await;
     Ok(result)
 }
 
 async fn parse_with_repair(
     raw: &str,
-    images: &[(String, String)],
+    history: &mut ChatHistory,
     api_key: &str,
+    model: &str,
 ) -> Result<SmartEditResult, String> {
     match parse_smart_edit_response(raw) {
         Ok(result) => Ok(result),
         Err(original_error) => {
-            let repair_prompt = format!(
-                "Your previous response was not parseable by the consumer. Re-emit the SAME answer in the exact required format.\n\
+            // The bad response is already in history; just ask for a correction.
+            let repair_prompt =
+                "Your previous response was not parseable by the consumer. Re-emit the SAME \
+                 answer in the exact required format.\n\
                  Return ONLY one valid JSON object with exactly two keys:\n\
                  - \"nodes\": array of StructuredNode JSON\n\
-                 - \"changes\": array of {{\"id\": int, \"description\": string}}\n\
-                 Do not add explanations, markdown, or code fences.\n\
-                 PREVIOUS RESPONSE:\n{raw}"
-            );
+                 - \"changes\": array of {\"id\": int, \"description\": string}\n\
+                 Do not add explanations, markdown, or code fences.";
 
             if let Ok(repaired_raw) =
-                run_copilot_smart_edit(&repair_prompt, "", images, api_key).await
+                openai_chat_turn(history, repair_prompt, &[], api_key, model).await
                 && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
             {
                 return Ok(parsed);
@@ -231,9 +237,10 @@ async fn parse_with_repair(
 async fn ensure_change_list(
     content: &[StructuredNode],
     selected_indices: &[usize],
-    images: &[(String, String)],
+    history: &mut ChatHistory,
     result: &mut SmartEditResult,
     api_key: &str,
+    model: &str,
 ) {
     if !result.changes.is_empty() {
         return;
@@ -265,7 +272,7 @@ async fn ensure_change_list(
     );
 
     if let Ok(raw) =
-        run_copilot_smart_edit(&followup_prompt, "", images, api_key).await
+        openai_chat_turn(history, &followup_prompt, &[], api_key, model).await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {
@@ -348,38 +355,39 @@ fn build_smart_edit_prompt(
 
 // ─── OpenAI API integration ──────────────────────────────────────────────────
 
-async fn run_copilot_smart_edit(
-    prompt: &str,
-    json_context: &str,
+fn build_initial_user_text(prompt: &str, json_context: &str) -> String {
+    format!(
+        "{prompt}\n\n\
+         The structured JSON representation of the selected form nodes is included below. \
+         The attached PNG images show the rendered form pages for visual reference.\n\n\
+         BEGIN STRUCTURED NODES JSON\n\
+         {json_context}\n\
+         END STRUCTURED NODES JSON\n\n\
+         Return ONLY a valid JSON object with exactly two keys: \
+         \"nodes\" (the replacement Vec<StructuredNode> array) and \
+         \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
+         describing each logical change you made). \
+         No surrounding prose, no markdown fences, no trailing notes."
+    )
+}
+
+async fn openai_chat_turn(
+    history: &mut ChatHistory,
+    user_text: &str,
     images: &[(String, String)],
     api_key: &str,
+    model: &str,
 ) -> Result<String, String> {
+    use async_openai::{config::OpenAIConfig, Client};
+
     if api_key.is_empty() {
         return Err(
             "OpenAI API key is not set. Pass --api-key or set the OPENAI_API_KEY environment variable.".to_string(),
         );
     }
 
-    let text = if json_context.is_empty() {
-        prompt.to_string()
-    } else {
-        format!(
-            "{prompt}\n\n\
-             The structured JSON representation of the selected form nodes is included below. \
-             The attached PNG images show the rendered form pages for visual reference.\n\n\
-             BEGIN STRUCTURED NODES JSON\n\
-             {json_context}\n\
-             END STRUCTURED NODES JSON\n\n\
-             Return ONLY a valid JSON object with exactly two keys: \
-             \"nodes\" (the replacement Vec<StructuredNode> array) and \
-             \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
-             describing each logical change you made). \
-             No surrounding prose, no markdown fences, no trailing notes."
-        )
-    };
-
     let mut content: Vec<serde_json::Value> =
-        vec![serde_json::json!({"type": "text", "text": text})];
+        vec![serde_json::json!({"type": "text", "text": user_text})];
 
     for (_label, b64) in images {
         content.push(serde_json::json!({
@@ -391,38 +399,30 @@ async fn run_copilot_smart_edit(
         }));
     }
 
-    let request_body = serde_json::json!({
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": content}]
+    history.push(serde_json::json!({"role": "user", "content": content}));
+
+    let config = OpenAIConfig::new().with_api_key(api_key);
+    let client = Client::with_config(config);
+
+    let request = serde_json::json!({
+        "model": model,
+        "messages": history,
     });
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&request_body)
-        .send()
+    let response: serde_json::Value = client
+        .chat()
+        .create_byot(request)
         .await
-        .map_err(|e| format!("Failed to call OpenAI API: {e}"))?;
+        .map_err(|e| format!("OpenAI API error: {e}"))?;
 
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read OpenAI response: {e}"))?;
-
-    if !status.is_success() {
-        return Err(format!("OpenAI API returned HTTP {status}: {body}"));
-    }
-
-    let parsed: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse OpenAI response: {e}"))?;
-
-    let content_text = parsed["choices"][0]["message"]["content"]
+    let response_text = response["choices"][0]["message"]["content"]
         .as_str()
-        .ok_or_else(|| format!("Unexpected OpenAI response structure: {body}"))?;
+        .ok_or_else(|| format!("Unexpected OpenAI response structure: {response}"))?
+        .to_string();
 
-    Ok(content_text.to_string())
+    history.push(serde_json::json!({"role": "assistant", "content": response_text}));
+
+    Ok(response_text)
 }
 
 // ─── Response parsing ────────────────────────────────────────────────────────

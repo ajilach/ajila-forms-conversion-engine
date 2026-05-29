@@ -38,6 +38,8 @@ pub struct SmartEditModalProps {
     pub plain_images: HashMap<String, String>,
     /// OpenAI API key for Smart Edit.
     pub openai_api_key: String,
+    /// OpenAI model for Smart Edit.
+    pub openai_model: String,
     /// Called when the user accepts the suggested nodes.
     pub on_accept: EventHandler<Vec<StructuredNode>>,
     /// Called when the user cancels.
@@ -49,6 +51,7 @@ impl PartialEq for SmartEditModalProps {
         self.selected_indices == other.selected_indices
             && self.plain_images == other.plain_images
             && self.openai_api_key == other.openai_api_key
+            && self.openai_model == other.openai_model
             && self.on_accept == other.on_accept
             && self.on_cancel == other.on_cancel
     }
@@ -64,6 +67,7 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
         let selected_indices = props.selected_indices.clone();
         let plain_images = props.plain_images.clone();
         let api_key = props.openai_api_key.clone();
+        let model = props.openai_model.clone();
         move |_| {
             phase.set(SmartEditPhase::Loading);
 
@@ -71,12 +75,14 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
             let selected_indices = selected_indices.clone();
             let plain_images = plain_images.clone();
             let api_key = api_key.clone();
+            let model = model.clone();
             spawn(async move {
                 match smart_edit::run_smart_edit(
                     &content,
                     &selected_indices,
                     &plain_images,
                     &api_key,
+                    &model,
                 )
                 .await
                 {
