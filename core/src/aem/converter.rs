@@ -994,6 +994,7 @@ fn convert_field(
             AemNode::Checkbox {
                 uuid,
                 name,
+                label: String::new(),
                 options: vec![AemOption {
                     label: option_label,
                     value: "true".into(),
@@ -1038,6 +1039,25 @@ fn convert_field(
                 label,
                 options: aem_options,
                 mandatory: f.required,
+                visible: true,
+                colspan,
+                dor_colspan,
+                field_id: Some(f.name.clone()),
+                conditions: Vec::new(),
+                bind_ref,
+            }
+        }
+
+        FieldType::CheckboxGroup { options } => {
+            let name = ctx.make_name("CB", &source_text);
+            let uuid = ctx.uuid(&name);
+            let aem_options = convert_name_values(options, &ctx.language);
+            AemNode::Checkbox {
+                uuid,
+                name,
+                label,
+                options: aem_options,
+                alignment: OptionAlignment::Vertical,
                 visible: true,
                 colspan,
                 dor_colspan,

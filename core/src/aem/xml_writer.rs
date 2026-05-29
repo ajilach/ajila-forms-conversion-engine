@@ -222,6 +222,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         AemNode::Checkbox {
             uuid,
             name,
+            label,
             options,
             alignment,
             visible,
@@ -233,6 +234,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
+            ctx.insert("label", &xml_escape(label));
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
@@ -773,7 +775,7 @@ mod tests {
         );
         config.component_templates.insert(
             "checkbox".into(),
-            "<{{ element_name }} guideNodeClass=\"guideCheckBox\" name=\"{{ name }}\" options=\"{{ options_attr }}\" alignment=\"{{ alignment }}\"{% if conditions_script %}>{% if conditions_script %}<fd:scripts fd:valueCommit=\"{{ conditions_script }}\" jcr:primaryType=\"nt:unstructured\"/>{% endif %}</{{ element_name }}>{% else %}/>{% endif %}".into(),
+            "<{{ element_name }} guideNodeClass=\"guideCheckBox\" name=\"{{ name }}\"{% if label %} jcr:title=\"{{ label }}\"{% endif %} options=\"{{ options_attr }}\" alignment=\"{{ alignment }}\"{% if conditions_script %}>{% if conditions_script %}<fd:scripts fd:valueCommit=\"{{ conditions_script }}\" jcr:primaryType=\"nt:unstructured\"/>{% endif %}</{{ element_name }}>{% else %}/>{% endif %}".into(),
         );
         config.component_templates.insert(
             "radiobutton".into(),
@@ -849,6 +851,7 @@ mod tests {
             children: vec![AemNode::Checkbox {
                 uuid: fixed_uuid(),
                 name: "CB_test".into(),
+                label: String::new(),
                 options: vec![
                     AemOption {
                         label: "Yes".into(),
@@ -952,6 +955,7 @@ mod tests {
             children: vec![AemNode::Checkbox {
                 uuid: fixed_uuid(),
                 name: "CB_comma".into(),
+                label: String::new(),
                 options: vec![
                     AemOption {
                         label: "I agree, fully".into(),
@@ -1200,6 +1204,7 @@ mod tests {
             children: vec![AemNode::Checkbox {
                 uuid: fixed_uuid(),
                 name: "CB_Trigger".into(),
+                label: String::new(),
                 options: vec![AemOption {
                     label: "Accept".into(),
                     value: "true".into(),

@@ -289,6 +289,10 @@ pub enum FieldType {
     Select {
         options: Vec<NameValue>,
     },
+    /// Multi-select checkbox group (AEM `guideCheckBox` with multiple options).
+    CheckboxGroup {
+        options: Vec<NameValue>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1111,7 +1115,9 @@ impl StructuredNode {
                     langs.extend(map.keys().cloned());
                 }
                 match &f.input_type {
-                    FieldType::Radio { options } | FieldType::Select { options } => {
+                    FieldType::Radio { options }
+                    | FieldType::Select { options }
+                    | FieldType::CheckboxGroup { options } => {
                         for opt in options {
                             if let TranslatableString::Translated(map) = &opt.name {
                                 langs.extend(map.keys().cloned());
@@ -1278,7 +1284,11 @@ impl FieldType {
             (FieldType::Tel, FieldType::Tel) => true,
             (FieldType::Bool, FieldType::Bool) => true,
             (FieldType::Radio { options: opts1 }, FieldType::Radio { options: opts2 })
-            | (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 }) => {
+            | (FieldType::Select { options: opts1 }, FieldType::Select { options: opts2 })
+            | (
+                FieldType::CheckboxGroup { options: opts1 },
+                FieldType::CheckboxGroup { options: opts2 },
+            ) => {
                 option_name_values_structural_eq(opts1, opts2)
             }
             _ => false,

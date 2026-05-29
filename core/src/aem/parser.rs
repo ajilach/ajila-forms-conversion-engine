@@ -647,6 +647,7 @@ fn convert_radiobutton(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
 
 fn convert_checkbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     let name = node.component_name().unwrap_or("checkbox").to_string();
+    let label = node.attr("jcr:title").unwrap_or("").to_string();
     let uuid = ctx.next_uuid(&name);
     let options = parse_options(node);
     let alignment = if node.attr("optionLayout") == Some("horizontal") {
@@ -658,6 +659,7 @@ fn convert_checkbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     AemNode::Checkbox {
         uuid,
         name,
+        label,
         options,
         alignment,
         visible: parse_visible(node),

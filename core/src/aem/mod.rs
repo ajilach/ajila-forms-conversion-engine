@@ -495,6 +495,8 @@ pub enum AemNode {
     Checkbox {
         uuid: Uuid,
         name: String,
+        /// Group label from `jcr:title` (empty for single-option Bool checkboxes).
+        label: String,
         options: Vec<AemOption>,
         alignment: OptionAlignment,
         visible: bool,

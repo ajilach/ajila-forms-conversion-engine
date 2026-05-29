@@ -1684,6 +1684,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             FieldType::Bool => InputValue::Bool(value == "on" || value == "1" || value == "true"),
             FieldType::Radio { .. } => InputValue::Text(value.to_string()),
             FieldType::Select { .. } => InputValue::Text(value.to_string()),
+            FieldType::CheckboxGroup { .. } => InputValue::Text(value.to_string()),
             FieldType::Date => InputValue::Text(value.to_string()),
             FieldType::Number { .. } => {
                 // Try to parse as decimal, fallback to text

@@ -656,7 +656,9 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
                 }
             }
             match &f.input_type {
-                FieldType::Radio { options } | FieldType::Select { options } => {
+                FieldType::Radio { options }
+                | FieldType::Select { options }
+                | FieldType::CheckboxGroup { options } => {
                     for opt in options {
                         if let TranslatableString::Translated(tmap) = &opt.name {
                             if let Some(Some(master)) = tmap.get(master_lang) {

@@ -451,7 +451,9 @@ fn fill_node(node: &mut StructuredNode, all_languages: &[String], _primary_langu
 
 fn fill_field_type(input_type: &mut FieldType, all_languages: &[String], primary_language: &str) {
     match input_type {
-        FieldType::Radio { options } | FieldType::Select { options } => {
+        FieldType::Radio { options }
+        | FieldType::Select { options }
+        | FieldType::CheckboxGroup { options } => {
             for NameValue { name, .. } in options {
                 fill_translatable_string(name, all_languages, primary_language);
             }
@@ -974,6 +976,15 @@ fn localize_field_type(field_type: &FieldType, lang: &str) -> FieldType {
                 .collect(),
         },
         FieldType::Select { options } => FieldType::Select {
+            options: options
+                .iter()
+                .map(|option| NameValue {
+                    name: localize_translatable_string(&option.name, lang),
+                    value: option.value.clone(),
+                })
+                .collect(),
+        },
+        FieldType::CheckboxGroup { options } => FieldType::CheckboxGroup {
             options: options
                 .iter()
                 .map(|option| NameValue {
@@ -2058,6 +2069,12 @@ fn merge_field_type(
                 FieldType::Select { options }
             })
         }
+        (
+            FieldType::CheckboxGroup { options: opts_a },
+            FieldType::CheckboxGroup { options: opts_b },
+        ) => merge_option_field_type(opts_a, base_lang, opts_b, other_lang, |options| {
+            FieldType::CheckboxGroup { options }
+        }),
         _ => base.clone(),
     }
 }

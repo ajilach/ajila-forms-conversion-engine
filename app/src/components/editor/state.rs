@@ -220,6 +220,7 @@ pub enum FieldInputKind {
     Checkbox,
     Dropdown,
     Radio,
+    CheckboxGroup,
 }
 
 /// Types of nodes that can be added.
