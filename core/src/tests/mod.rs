@@ -13958,6 +13958,66 @@ fn test_aahq_dritte_partei_has_radio_buttons() {
 }
 
 #[test]
+fn test_aahq_checkbox_group_versand_abweichend() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAHQ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AAHQ");
+
+    let fields = collect_fields(&structured);
+
+    let expected_labels = [
+        "Couponsabrechnung CP62 (EP03) soll abweichend vom DWD10 versendet werden",
+        "Verlustschwelle und Berichtsperiode (N050) soll abweichend vom DWD10 versendet werden",
+        "Vermögensausweis L-JEV (N009) soll abweichend vom DWD10 versendet werden",
+    ];
+
+    // First try: look for a CheckboxGroup containing all three options
+    let checkbox_groups: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+        .collect();
+
+    let found_as_group = checkbox_groups.iter().any(|field| {
+        if let FieldType::CheckboxGroup { options } = &field.input_type {
+            expected_labels.iter().all(|expected| {
+                options.iter().any(|o| o.name.contains(expected))
+            })
+        } else {
+            false
+        }
+    });
+
+    // Second try: look for individual Bool fields with these labels
+    let found_as_individual = if !found_as_group {
+        expected_labels.iter().all(|expected| {
+            fields.iter().any(|f| {
+                matches!(&f.input_type, FieldType::Bool)
+                    && f.label
+                        .as_ref()
+                        .map(|l| l.as_plain_text().contains(expected))
+                        .unwrap_or(false)
+            })
+        })
+    } else {
+        false
+    };
+
+    assert!(
+        found_as_group || found_as_individual,
+        "Expected checkboxes with labels containing {:?}. Found {} checkbox groups and {} Bool fields with labels: {:?}",
+        expected_labels,
+        checkbox_groups.len(),
+        fields.iter().filter(|f| matches!(&f.input_type, FieldType::Bool)).count(),
+        fields.iter()
+            .filter(|f| matches!(&f.input_type, FieldType::Bool))
+            .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn test_antrag_sozialhilfe_font_generic_family_not_monospace() {
     // Regression test: AcroForm text nodes must have a non-Monospace generic_family.
     // Previously, Font::default() spread GenericFamily::Monospace onto all text nodes,
