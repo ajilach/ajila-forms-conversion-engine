@@ -2,7 +2,6 @@
 //! the suggested changes.
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -47,6 +46,10 @@ struct Args {
     /// Output format for the results.
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
+
+    /// OpenAI API key. Falls back to the OPENAI_API_KEY environment variable if not set.
+    #[arg(long, env = "OPENAI_API_KEY")]
+    api_key: String,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -127,8 +130,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // ── Run smart edit ───────────────────────────────────────────────────
-    eprintln!("Running smart edit via gh copilot...");
-    let result = run_smart_edit(content, &[], &plain_images).await?;
+    eprintln!("Running smart edit via OpenAI API...");
+    let result = run_smart_edit(content, &[], &plain_images, &args.api_key).await?;
 
     // ── Output results ───────────────────────────────────────────────────
     match args.format {
@@ -175,6 +178,7 @@ async fn run_smart_edit(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
+    api_key: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let images: Vec<(String, String)> = plain_images
@@ -182,25 +186,23 @@ async fn run_smart_edit(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let prompt = build_smart_edit_prompt(selected_indices, plain_images);
-    let session_name = "teacher";
-    let raw =
-        run_copilot_smart_edit(&prompt, &json_context, &images, Some(session_name), false).await?;
-    let mut result = parse_with_same_session_repair(&raw, &images, session_name).await?;
+    let raw = run_copilot_smart_edit(&prompt, &json_context, &images, api_key).await?;
+    let mut result = parse_with_repair(&raw, &images, api_key).await?;
     ensure_change_list(
         content,
         selected_indices,
         &images,
         &mut result,
-        session_name,
+        api_key,
     )
     .await;
     Ok(result)
 }
 
-async fn parse_with_same_session_repair(
+async fn parse_with_repair(
     raw: &str,
     images: &[(String, String)],
-    session_name: &str,
+    api_key: &str,
 ) -> Result<SmartEditResult, String> {
     match parse_smart_edit_response(raw) {
         Ok(result) => Ok(result),
@@ -215,7 +217,7 @@ async fn parse_with_same_session_repair(
             );
 
             if let Ok(repaired_raw) =
-                run_copilot_smart_edit(&repair_prompt, "", images, Some(session_name), true).await
+                run_copilot_smart_edit(&repair_prompt, "", images, api_key).await
                 && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
             {
                 return Ok(parsed);
@@ -231,7 +233,7 @@ async fn ensure_change_list(
     selected_indices: &[usize],
     images: &[(String, String)],
     result: &mut SmartEditResult,
-    session_name: &str,
+    api_key: &str,
 ) {
     if !result.changes.is_empty() {
         return;
@@ -263,7 +265,7 @@ async fn ensure_change_list(
     );
 
     if let Ok(raw) =
-        run_copilot_smart_edit(&followup_prompt, "", images, Some(session_name), true).await
+        run_copilot_smart_edit(&followup_prompt, "", images, api_key).await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {
@@ -344,105 +346,83 @@ fn build_smart_edit_prompt(
     )
 }
 
-// ─── Copilot CLI integration ─────────────────────────────────────────────────
+// ─── OpenAI API integration ──────────────────────────────────────────────────
 
 async fn run_copilot_smart_edit(
     prompt: &str,
     json_context: &str,
     images: &[(String, String)],
-    session_name: Option<&str>,
-    resume_session: bool,
+    api_key: &str,
 ) -> Result<String, String> {
-    let tmp_dir = std::env::temp_dir().join("teacher-smart-edit");
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-
-    // Write images to temp PNG files
-    let mut image_paths: Vec<PathBuf> = Vec::new();
-    for (label, b64) in images {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(b64)
-            .map_err(|e| format!("Failed to decode image {label}: {e}"))?;
-        let path = tmp_dir.join(format!("{label}.png"));
-        let mut f = std::fs::File::create(&path)
-            .map_err(|e| format!("Failed to create temp image: {e}"))?;
-        f.write_all(&bytes)
-            .map_err(|e| format!("Failed to write temp image: {e}"))?;
-        image_paths.push(path);
+    if api_key.is_empty() {
+        return Err(
+            "OpenAI API key is not set. Pass --api-key or set the OPENAI_API_KEY environment variable.".to_string(),
+        );
     }
 
-    let full_prompt = format!(
-        "{prompt}\n\n\
-         The structured JSON representation of the selected form nodes is included below. \
-         The attached PNG images show the rendered form pages for visual reference.\n\n\
-         BEGIN STRUCTURED NODES JSON\n\
-         {json_context}\n\
-         END STRUCTURED NODES JSON\n\n\
-         Return ONLY a valid JSON object with exactly two keys: \
-         \"nodes\" (the replacement Vec<StructuredNode> array) and \
-         \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
-         describing each logical change you made). \
-         No surrounding prose, no markdown fences, no trailing notes."
-    );
+    let text = if json_context.is_empty() {
+        prompt.to_string()
+    } else {
+        format!(
+            "{prompt}\n\n\
+             The structured JSON representation of the selected form nodes is included below. \
+             The attached PNG images show the rendered form pages for visual reference.\n\n\
+             BEGIN STRUCTURED NODES JSON\n\
+             {json_context}\n\
+             END STRUCTURED NODES JSON\n\n\
+             Return ONLY a valid JSON object with exactly two keys: \
+             \"nodes\" (the replacement Vec<StructuredNode> array) and \
+             \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
+             describing each logical change you made). \
+             No surrounding prose, no markdown fences, no trailing notes."
+        )
+    };
 
-    let mut cmd = tokio::process::Command::new("gh");
-    cmd.arg("copilot").arg("--");
+    let mut content: Vec<serde_json::Value> =
+        vec![serde_json::json!({"type": "text", "text": text})];
 
-    if let Some(name) = session_name {
-        if resume_session {
-            cmd.arg(format!("--resume={name}"));
-        } else {
-            cmd.arg("--name").arg(name);
-        }
+    for (_label, b64) in images {
+        content.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": {
+                "url": format!("data:image/png;base64,{b64}"),
+                "detail": "high"
+            }
+        }));
     }
 
-    cmd.arg("-p")
-        .arg(&full_prompt)
-        .arg("--output-format")
-        .arg("text")
-        .arg("--allow-all-tools");
+    let request_body = serde_json::json!({
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": content}]
+    });
 
-    for img_path in &image_paths {
-        cmd.arg("--attachment").arg(img_path);
-    }
-
-    let output = cmd
-        .output()
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&request_body)
+        .send()
         .await
-        .map_err(|e| format!("Failed to run gh copilot: {e}"))?;
+        .map_err(|e| format!("Failed to call OpenAI API: {e}"))?;
 
-    // Clean up temp files (best effort)
-    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read OpenAI response: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("gh copilot failed: {stderr}"));
+    if !status.is_success() {
+        return Err(format!("OpenAI API returned HTTP {status}: {body}"));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let trimmed = stdout.trim();
-    let lower = trimmed.to_ascii_lowercase();
+    let parsed: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse OpenAI response: {e}"))?;
 
-    if trimmed.is_empty() {
-        return Err(format!(
-            "gh copilot returned no content. stderr: {}",
-            stderr.trim()
-        ));
-    }
+    let content_text = parsed["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| format!("Unexpected OpenAI response structure: {body}"))?;
 
-    let looks_like_cli_help = (lower.contains("usage:") && lower.contains("gh copilot"))
-        || lower.contains("github cli")
-        || lower.contains("unknown command")
-        || lower.contains("authentication required");
-
-    if looks_like_cli_help {
-        return Err(format!(
-            "gh copilot returned CLI/help output instead of model content. stdout: {}",
-            trimmed
-        ));
-    }
-
-    Ok(stdout)
+    Ok(content_text.to_string())
 }
 
 // ─── Response parsing ────────────────────────────────────────────────────────

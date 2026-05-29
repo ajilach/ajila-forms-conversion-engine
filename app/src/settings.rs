@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 pub struct AppSettings {
     pub always_on_top: bool,
     pub live_preview_port: u16,
+    /// OpenAI API key used for Smart Edit. Stored in the settings file on disk.
+    pub openai_api_key: String,
 }
 
 impl Default for AppSettings {
@@ -21,6 +23,7 @@ impl Default for AppSettings {
         Self {
             always_on_top: false,
             live_preview_port: 3718,
+            openai_api_key: String::new(),
         }
     }
 }

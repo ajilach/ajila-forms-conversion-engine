@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
-use uuid::Uuid;
 
 use blueprint::StructuredNode;
 
@@ -37,6 +36,8 @@ pub struct SmartEditModalProps {
     pub content: Vec<StructuredNode>,
     /// Plain render images (label → base64 PNG).
     pub plain_images: HashMap<String, String>,
+    /// OpenAI API key for Smart Edit.
+    pub openai_api_key: String,
     /// Called when the user accepts the suggested nodes.
     pub on_accept: EventHandler<Vec<StructuredNode>>,
     /// Called when the user cancels.
@@ -45,11 +46,9 @@ pub struct SmartEditModalProps {
 
 impl PartialEq for SmartEditModalProps {
     fn eq(&self, other: &Self) -> bool {
-        // `content` is intentionally excluded because StructuredNode does not
-        // implement PartialEq.  The modal is always shown fresh via the
-        // `show_smart_edit` signal, so stale-equality is not a concern.
         self.selected_indices == other.selected_indices
             && self.plain_images == other.plain_images
+            && self.openai_api_key == other.openai_api_key
             && self.on_accept == other.on_accept
             && self.on_cancel == other.on_cancel
     }
@@ -64,20 +63,20 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
         let content = props.content.clone();
         let selected_indices = props.selected_indices.clone();
         let plain_images = props.plain_images.clone();
+        let api_key = props.openai_api_key.clone();
         move |_| {
             phase.set(SmartEditPhase::Loading);
 
             let content = content.clone();
             let selected_indices = selected_indices.clone();
             let plain_images = plain_images.clone();
+            let api_key = api_key.clone();
             spawn(async move {
-                let session_name = format!("smart-edit-modal-{}", Uuid::new_v4());
                 match smart_edit::run_smart_edit(
                     &content,
                     &selected_indices,
                     &plain_images,
-                    &session_name,
-                    false,
+                    &api_key,
                 )
                 .await
                 {

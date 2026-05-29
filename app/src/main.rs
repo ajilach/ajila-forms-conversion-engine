@@ -157,6 +157,7 @@ fn App() -> Element {
                 StructuredEditor {
                     envelope: EnvelopeWrapper(envelope),
                     plain_images: processing_state.read().plain_images.clone(),
+                    openai_api_key: app_settings.read().openai_api_key.clone(),
                     on_apply: handle_editor_apply,
                     on_cancel: move |_| editor_envelope.set(None),
                 }

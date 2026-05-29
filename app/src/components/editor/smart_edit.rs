@@ -56,6 +56,7 @@ pub fn serialize_selected_nodes(
 /// * `content` – full document content.
 /// * `selected_indices` – root-level indices of selected nodes (empty = all).
 /// * `plain_images` – label→base64-PNG map from the plain render stage.
+/// * `api_key` – OpenAI API key.
 ///
 /// Returns a [`SmartEditResult`] containing the suggested nodes and the
 /// structured change list.
@@ -63,8 +64,7 @@ pub async fn run_smart_edit(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
-    session_name: &str,
-    resume_session: bool,
+    api_key: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let images: Vec<(String, String)> = plain_images
@@ -76,30 +76,29 @@ pub async fn run_smart_edit(
         &prompt,
         &json_context,
         &images,
-        Some(session_name),
-        resume_session,
+        api_key,
     )
     .await?;
-    let mut result = parse_with_same_session_repair(&raw, &images, session_name).await?;
+    let mut result = parse_with_repair(&raw, &images, api_key).await?;
     ensure_change_list(
         content,
         selected_indices,
         &images,
         &mut result,
-        session_name,
+        api_key,
     )
     .await;
     Ok(result)
 }
 
-/// Run a follow-up smart-edit call, informing Copilot which previously
+/// Run a follow-up smart-edit call, informing the AI which previously
 /// proposed changes were rejected so it should avoid repeating them.
 pub async fn run_smart_edit_with_feedback(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
     rejected_changes: &[ChangeItem],
-    session_name: &str,
+    api_key: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let images: Vec<(String, String)> = plain_images
@@ -108,23 +107,23 @@ pub async fn run_smart_edit_with_feedback(
         .collect();
     let prompt = build_feedback_prompt(selected_indices, plain_images, rejected_changes);
     let raw =
-        run_copilot_smart_edit(&prompt, &json_context, &images, Some(session_name), true).await?;
-    let mut result = parse_with_same_session_repair(&raw, &images, session_name).await?;
+        run_copilot_smart_edit(&prompt, &json_context, &images, api_key).await?;
+    let mut result = parse_with_repair(&raw, &images, api_key).await?;
     ensure_change_list(
         content,
         selected_indices,
         &images,
         &mut result,
-        session_name,
+        api_key,
     )
     .await;
     Ok(result)
 }
 
-async fn parse_with_same_session_repair(
+async fn parse_with_repair(
     raw: &str,
     images: &[(String, String)],
-    session_name: &str,
+    api_key: &str,
 ) -> Result<SmartEditResult, String> {
     match parse_smart_edit_response(raw) {
         Ok(result) => Ok(result),
@@ -139,7 +138,7 @@ async fn parse_with_same_session_repair(
             );
 
             if let Ok(repaired_raw) =
-                run_copilot_smart_edit(&repair_prompt, "", images, Some(session_name), true).await
+                run_copilot_smart_edit(&repair_prompt, "", images, api_key).await
                 && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
             {
                 return Ok(parsed);
@@ -150,15 +149,12 @@ async fn parse_with_same_session_repair(
     }
 }
 
-/// If the AI returned nodes but no change list, and the nodes actually
-/// differ from the originals, ask Copilot for the change list in a
-/// follow-up call.
 async fn ensure_change_list(
     content: &[StructuredNode],
     selected_indices: &[usize],
     images: &[(String, String)],
     result: &mut SmartEditResult,
-    session_name: &str,
+    api_key: &str,
 ) {
     if !result.changes.is_empty() {
         return;
@@ -192,7 +188,7 @@ async fn ensure_change_list(
     );
 
     if let Ok(raw) =
-        run_copilot_smart_edit(&followup_prompt, "", images, Some(session_name), true).await
+        run_copilot_smart_edit(&followup_prompt, "", images, api_key).await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {
