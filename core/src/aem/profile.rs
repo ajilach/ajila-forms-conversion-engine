@@ -133,7 +133,7 @@ pub struct AemProfile {
     /// Default translations for predefined UI elements (toolbar buttons,
     /// message boxes, etc.) that are not part of the form content tree.
     ///
-    /// Loaded from `translations.json` in the profile directory.
+    /// Loaded from per-language TOML files in the `translations/` profile directory.
     /// Structure: `{ "master_text": { "lang": "translated_text", ... }, ... }`.
     ///
     /// These are merged into the Sling i18n dictionaries at package generation

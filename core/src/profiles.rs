@@ -51,18 +51,7 @@ pub fn load_aem_profile(
 
     let mut profile: AemProfile = read_profile_config_toml(name, "aem")?;
 
-    // Load optional translations.json for predefined UI element translations.
-    if let Some(translations_file) = aem_dir.get_file(format!("{name}/aem/translations.json")) {
-        if let Some(content) = translations_file.contents_utf8() {
-            let translations: HashMap<String, HashMap<String, String>> =
-                serde_json::from_str(content)
-                    .map_err(|e| format!("Failed to parse translations.json: {e}"))?;
-            profile.default_translations = translations;
-        }
-    }
-
     // Load translations from the `translations/` directory (per-language TOML files).
-    // These are merged on top of translations.json (if both exist, TOML takes precedence).
     if let Some(translations_dir) = aem_dir.get_dir(format!("{name}/aem/translations")) {
         for entry in translations_dir.files() {
             let path = entry.path();
