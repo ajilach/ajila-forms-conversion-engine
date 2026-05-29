@@ -42,6 +42,9 @@
 //! RadioButtonGrouper          ─── groups radio buttons on same line
 //!     │
 //!     ▼
+//! CheckboxGrouper              ─── groups checkboxes spatially
+//!     │
+//!     ▼
 //! SelectionInlineFieldDetector ── detects inline fields next to checkboxes/radio buttons
 //!     │
 //!     ▼
@@ -93,6 +96,7 @@
 
 mod checkbox_content;
 mod checkbox_detector;
+mod checkbox_grouper;
 mod column_layout;
 mod date_field_detector;
 mod field_column_table_detector;
@@ -119,6 +123,7 @@ mod text_block_merger;
 
 pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
+pub use checkbox_grouper::CheckboxGrouper;
 pub use column_layout::ColumnLayoutDetector;
 pub use date_field_detector::DateFieldDetector;
 pub use field_column_table_detector::FieldColumnTableDetector;
@@ -213,6 +218,7 @@ pub fn run_analysis_pipeline_with_context(
     CheckboxDetector::new().process_with_context(doc, ctx);
     ListDetector::new().process_with_context(doc, ctx);
     RadioButtonGrouper::new().process_with_context(doc, ctx);
+    CheckboxGrouper::new().process_with_context(doc, ctx);
     SelectionInlineFieldDetector::new().process_with_context(doc, ctx);
     RadioButtonContentDetector::new().process_with_context(doc, ctx);
     CheckboxContentDetector::new().process_with_context(doc, ctx);

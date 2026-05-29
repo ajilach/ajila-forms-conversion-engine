@@ -178,6 +178,12 @@ pub enum GroupKind {
     /// A group of radio buttons on the same line (children are RadioButton groups)
     RadioButtonGroup,
 
+    /// A group of related checkboxes (children are Checkbox groups).
+    ///
+    /// Created by `CheckboxGrouper` for checkboxes that are spatially aligned
+    /// (horizontally or vertically).
+    CheckboxGroup,
+
     /// A date field composed of multiple input fields separated by delimiters
     DateField {
         /// Number of field components (e.g., 2 for month.year, 3 for day.month.year)
@@ -708,6 +714,11 @@ impl<'a> Document<'a> {
         self.find_groups(|k| matches!(k, GroupKind::RadioButtonGroup))
     }
 
+    /// Find all CheckboxGroup groups.
+    pub fn checkbox_groups(&self) -> Vec<usize> {
+        self.find_groups(|k| matches!(k, GroupKind::CheckboxGroup))
+    }
+
     /// Find all DateField groups.
     pub fn date_fields(&self) -> Vec<usize> {
         self.find_groups(|k| matches!(k, GroupKind::DateField { .. }))
@@ -746,6 +757,11 @@ impl<'a> Document<'a> {
         self.is_group_kind(group_idx, |k| {
             matches!(k, GroupKind::RadioButtonGroup | GroupKind::ExclGroup { .. })
         })
+    }
+
+    /// Check if a group is a CheckboxGroup.
+    pub fn is_checkbox_group(&self, group_idx: usize) -> bool {
+        self.is_group_kind(group_idx, |k| matches!(k, GroupKind::CheckboxGroup))
     }
 
     /// Check if any node in the group has bold text.
@@ -1106,6 +1122,7 @@ impl<'a> Document<'a> {
             GroupKind::RadioButton { .. } => "RadioButton".to_string(),
             GroupKind::Checkbox { .. } => "Checkbox".to_string(),
             GroupKind::RadioButtonGroup => "RadioButtonGroup".to_string(),
+            GroupKind::CheckboxGroup => "CheckboxGroup".to_string(),
             GroupKind::DateField { num_fields } => format!("DateField[{}]", num_fields),
             GroupKind::ExclGroup { selected_value } => {
                 if let Some(val) = selected_value {
