@@ -27547,6 +27547,126 @@ fn test_aaam_contains_footnotes() {
     );
 }
 
+/// Test that the AAEP structured output detects a footnote with marker "1".
+#[test]
+fn test_aaep_contains_footnote() {
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_footnotes;
+
+    let structured = run_exhaustive_to_merged(input_path("AAEP_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge for AAEP_019_EN");
+
+    let footnotes = collect_footnotes(&structured);
+    assert!(
+        !footnotes.is_empty(),
+        "AAEP should contain at least one footnote"
+    );
+    let footnote_1 = footnotes.iter().find(|(m, _)| m.as_deref() == Some("1"));
+    assert!(
+        footnote_1.is_some(),
+        "AAEP should contain a footnote with marker '1'. Found: {:?}",
+        footnotes
+    );
+}
+
+/// Test that the AAGG AEM output embeds footnotes inline using
+/// `data-af-footnote-id` + hidden `footnoteDescription` paragraphs,
+/// and includes a `FootnotePlaceholder` component.
+#[test]
+fn test_aagg_aem_footnote_inline_embedding() {
+    use crate::aem::AemNode;
+    use helpers::{build_aem_test_output, walk_aem_nodes};
+
+    let (_content, root, _config) =
+        build_aem_test_output(&[("AAGG_019_EN.pdf", "en"), ("AAGG_019_DE.pdf", "de")]);
+
+    let mut footnote_textdraw_found = false;
+    let mut placeholder_found = false;
+
+    walk_aem_nodes(&root, &mut |node| {
+        match node {
+            AemNode::TextDraw { content, .. } | AemNode::TitleDraw { content, .. } => {
+                if content.contains("data-af-footnote-id") {
+                    footnote_textdraw_found = true;
+
+                    // Must use <sup>#</sup> (the AEM placeholder marker)
+                    assert!(
+                        content.contains("<sup>#</sup>"),
+                        "Footnote reference should use <sup>#</sup>.\nContent: {content}"
+                    );
+
+                    // Must contain the hidden footnote description paragraph
+                    assert!(
+                        content.contains("footnoteDescription"),
+                        "Footnote description paragraph missing.\nContent: {content}"
+                    );
+                    assert!(
+                        content.contains("footnoteDescText"),
+                        "Footnote description text span missing.\nContent: {content}"
+                    );
+                }
+            }
+            AemNode::FootnotePlaceholder { .. } => {
+                placeholder_found = true;
+            }
+            _ => {}
+        }
+    });
+
+    assert!(
+        footnote_textdraw_found,
+        "AAGG AEM output should contain a TextDraw with inline footnote references \
+         (data-af-footnote-id pattern)"
+    );
+    assert!(
+        placeholder_found,
+        "AAGG AEM output should contain a FootnotePlaceholder node"
+    );
+}
+
+/// Test that the AAGG AEM XML includes `guideFootnotePlaceHolder` and
+/// does not contain standalone `FN_` text draws.
+#[test]
+fn test_aagg_aem_no_standalone_footnote() {
+    use crate::aem::{AemNode, generate_aem_xml};
+    use helpers::build_aem_test_output;
+
+    let (_content, root, config) =
+        build_aem_test_output(&[("AAGG_019_EN.pdf", "en"), ("AAGG_019_DE.pdf", "de")]);
+
+    let xml = generate_aem_xml(&root, &config);
+
+    // The XML should contain inline footnote references
+    assert!(
+        xml.contains("data-af-footnote-id"),
+        "AEM XML should contain inline footnote references"
+    );
+
+    // The XML should contain a footnote placeholder component
+    assert!(
+        xml.contains("guideFootnotePlaceHolder"),
+        "AEM XML should contain a FootnotePlaceholder component"
+    );
+    assert!(
+        xml.contains("guidefootnoteplaceholder"),
+        "AEM XML should reference guidefootnoteplaceholder sling:resourceType"
+    );
+
+    // No standalone FN_ text draws should remain
+    let mut found_standalone = false;
+    helpers::walk_aem_nodes(&root, &mut |node| {
+        if let AemNode::TextDraw { content, name, .. } = node {
+            if name.starts_with("FN_") && !content.contains("data-af-footnote-id") {
+                found_standalone = true;
+            }
+        }
+    });
+    assert!(
+        !found_standalone,
+        "AAGG AEM output should not contain standalone FN_ text draws"
+    );
+}
+
 #[test]
 fn test_aacs_de_structured_document_order() {
     use crate::run_exhaustive_to_merged;

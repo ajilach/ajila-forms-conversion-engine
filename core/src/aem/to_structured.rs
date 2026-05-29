@@ -446,7 +446,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             None
         }
 
-        AemNode::Preface { .. } | AemNode::Appendix { .. } | AemNode::Footnote { .. } => None,
+        AemNode::Preface { .. } | AemNode::Appendix { .. } | AemNode::FootnotePlaceholder { .. } => None,
     }
 }
 

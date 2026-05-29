@@ -13,6 +13,100 @@ use crate::structured::{
     ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
 };
 
+// ============================================================================
+// Footnote embedding
+// ============================================================================
+
+/// Data needed to embed a footnote reference inline in an AEM `_value`.
+#[derive(Debug, Clone)]
+pub(crate) struct FootnoteEmbed {
+    /// Unique HTML ID linking the reference to the description (e.g. `"MC4x"`).
+    pub(crate) id: String,
+    /// The footnote marker digit(s) (e.g. `"1"`, `"2"`).
+    pub(crate) marker: String,
+    /// Translated footnote body text.
+    pub(crate) content: TranslatedText,
+}
+
+/// Build `FootnoteEmbed` entries from the structured node tree.
+///
+/// Collects all `FootnoteNode`s with a marker and generates a deterministic
+/// HTML ID for each.
+pub(crate) fn build_footnote_embeds(nodes: &[StructuredNode]) -> Vec<FootnoteEmbed> {
+    let mut footnotes: Vec<&FootnoteNode> = Vec::new();
+    collect_all_footnotes(nodes, &mut footnotes);
+    footnotes
+        .into_iter()
+        .filter_map(|f| {
+            f.marker.as_ref().map(|marker| FootnoteEmbed {
+                id: generate_footnote_id(marker),
+                marker: marker.clone(),
+                content: f.content.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Generate a deterministic HTML-safe ID for a footnote marker.
+fn generate_footnote_id(marker: &str) -> String {
+    let raw = format!("0.{marker}");
+    crate::util::base64_encode(raw.as_bytes())
+        .replace('=', "")
+        .replace('+', "")
+        .replace('/', "")
+}
+
+/// Embed footnote references and descriptions into an AEM `_value` string.
+///
+/// For each footnote whose `<sup>MARKER</sup>` pattern appears in `value`:
+/// 1. Replaces `<sup>MARKER</sup>` with
+///    `<span data-af-footnote-id="ID"><sup>#</sup></span>`.
+/// 2. Appends a hidden `<p>` containing the footnote description text.
+///
+/// The `language` parameter selects which translation of the footnote
+/// content to use.
+pub(crate) fn embed_footnotes_in_value(
+    value: &str,
+    footnotes: &[FootnoteEmbed],
+    language: &str,
+) -> String {
+    let mut result = value.to_string();
+    for footnote in footnotes {
+        let sup_pattern = format!("<sup>{}</sup>", escape_html(&footnote.marker));
+        if result.contains(&sup_pattern) {
+            let replacement = format!(
+                "<span data-af-footnote-id=\"{}\"><sup>#</sup></span>",
+                footnote.id
+            );
+            result = result.replacen(&sup_pattern, &replacement, 1);
+
+            // Render footnote body in the target language, stripping the
+            // leading marker number (e.g. "1 ") that the structured layer
+            // includes.
+            let fn_html = inline_text_to_html(&footnote.content, language);
+            let fn_text = strip_footnote_marker(&fn_html, &footnote.marker);
+
+            result.push_str(&format!(
+                "\n<p id=\"{}\" class=\"footnoteDescription\" style=\"display: none;\"><span class=\"footnoteDescText\">{}</span></p>\n",
+                footnote.id, fn_text
+            ));
+        }
+    }
+    result
+}
+
+/// Strip the leading marker number and whitespace from footnote text.
+///
+/// E.g. `"1 Once opted up..."` → `"Once opted up..."`.
+fn strip_footnote_marker(html: &str, marker: &str) -> String {
+    let trimmed = html.trim_start();
+    if trimmed.starts_with(marker) {
+        trimmed[marker.len()..].trim_start().to_string()
+    } else {
+        html.to_string()
+    }
+}
+
 use super::fragment_parser::ParsedFragment;
 use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
 
@@ -58,6 +152,8 @@ struct ConversionContext {
     bind_refs: Option<crate::xsd::BindRefMaps>,
     /// Map from field ID to human-readable label.
     field_labels: HashMap<FieldId, String>,
+    /// Footnotes to embed inline in referencing text nodes.
+    footnote_embeds: Vec<FootnoteEmbed>,
 }
 
 impl ConversionContext {
@@ -69,6 +165,7 @@ impl ConversionContext {
             collected_conditions: Vec::new(),
             bind_refs: None,
             field_labels: HashMap::new(),
+            footnote_embeds: Vec::new(),
         }
     }
 
@@ -251,6 +348,9 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut footnotes: Vec<&FootnoteNode> = Vec::new();
     collect_all_footnotes(nodes, &mut footnotes);
 
+    // Build footnote embeds for inline embedding in text node values.
+    ctx.footnote_embeds = build_footnote_embeds(nodes);
+
     for node in nodes {
         if matches!(node, StructuredNode::Footnote(_)) {
             continue;
@@ -343,12 +443,11 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         });
     }
 
-    // Place footnotes on the page panels where they are referenced.
-    // For each footnote with a marker, scan each page's structured nodes for
-    // superscript text matching that marker. Place on the matching page,
-    // or fall back to the last page.
+    // Place footnote placeholders on pages where footnotes were embedded
+    // inline in text nodes. The actual footnote content is already embedded
+    // in the referencing text node's _value by convert_paragraph/convert_heading.
     if !footnotes.is_empty() {
-        place_footnotes_on_pages(&mut children, &footnotes, &sections, config, &mut ctx);
+        place_footnote_placeholders(&mut children, config, &mut ctx);
     }
 
     inject_page_edge_templates(&mut children, config, &mut ctx);
@@ -453,24 +552,14 @@ fn collect_all_footnotes<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a Foot
     }
 }
 
-/// Place footnotes on the AEM page panels where they are referenced.
-///
-/// For each footnote with a marker (e.g. "1"), searches the structured nodes
-/// in each H2-page section for a `Superscript` inline node containing that
-/// marker text. The footnote is placed at the end of the matching page panel.
-/// Footnotes without a match are placed on the last page.
-fn place_footnotes_on_pages(
+/// Place `FootnotePlaceholder` nodes at the end of page panels that contain
+/// embedded footnote references (detected by the presence of
+/// `data-af-footnote-id` in child node content).
+fn place_footnote_placeholders(
     children: &mut [AemNode],
-    footnotes: &[&FootnoteNode],
-    sections: &[(Option<String>, Vec<&StructuredNode>)],
     config: &AemConfig,
     ctx: &mut ConversionContext,
 ) {
-    if footnotes.is_empty() {
-        return;
-    }
-
-    // Build page indices (panels with is_page: true)
     let page_indices: Vec<usize> = children
         .iter()
         .enumerate()
@@ -480,150 +569,48 @@ fn place_footnotes_on_pages(
         })
         .collect();
 
-    if page_indices.is_empty() {
-        return;
-    }
-
-    let last_page_idx = *page_indices.last().unwrap();
-
-    // Map sections to page indices. Sections with a title (H2) map 1:1 to pages.
-    // The preamble (no title) is merged into the first page.
-    let mut section_to_page: Vec<usize> = Vec::new();
-    let mut page_counter = 0usize;
-    for (title, _) in sections {
-        if title.is_some() {
-            if page_counter < page_indices.len() {
-                section_to_page.push(page_indices[page_counter]);
-                page_counter += 1;
-            }
-        } else {
-            // Preamble → first page
-            section_to_page.push(page_indices[0]);
-        }
-    }
-
-    for footnote in footnotes {
-        let target_page = if let Some(marker) = &footnote.marker {
-            // Search each section's nodes for a superscript reference with this marker
-            let mut found_page = None;
-            for (section_idx, (_, section_nodes)) in sections.iter().enumerate() {
-                if section_nodes
-                    .iter()
-                    .any(|n| node_contains_superscript_marker(n, marker))
-                {
-                    if let Some(&page_idx) = section_to_page.get(section_idx) {
-                        found_page = Some(page_idx);
-                        break;
-                    }
-                }
-            }
-            found_page.unwrap_or(last_page_idx)
-        } else {
-            last_page_idx
-        };
-
-        // Convert the footnote to an AemNode
-        let plain = inline_text_to_html(&footnote.content, &ctx.language);
-        let content = format!("<p>{plain}</p>");
-        let source_text = footnote.content.plain_text_in(&ctx.language);
-        let name = ctx.make_name("FN", &source_text);
-        let uuid = ctx.uuid(&name);
-        let aem_footnote = AemNode::Footnote {
-            uuid,
-            name,
-            content,
-            colspan: config.grid_columns,
-            dor_colspan: None,
-        };
-
-        // Place on the target page panel
-        if let AemNode::Panel {
+    for page_idx in page_indices {
+        let has_footnotes = if let AemNode::Panel {
             children: page_children,
             ..
-        } = &mut children[target_page]
+        } = &children[page_idx]
         {
-            page_children.push(aem_footnote);
-        }
-    }
-}
+            page_has_embedded_footnotes(page_children)
+        } else {
+            false
+        };
 
-/// Check if a `StructuredNode` (or its descendants) contains a `Superscript`
-/// inline node whose text matches the given marker.
-fn node_contains_superscript_marker(node: &StructuredNode, marker: &str) -> bool {
-    match node {
-        StructuredNode::Heading(h) => inline_text_has_superscript_marker(&h.content, marker),
-        StructuredNode::Paragraph(p) => inline_text_has_superscript_marker(&p.content, marker),
-        StructuredNode::Group(g) => g
-            .children
-            .iter()
-            .any(|c| node_contains_superscript_marker(c, marker)),
-        StructuredNode::Conditional(c) => node_contains_superscript_marker(&c.content, marker),
-        StructuredNode::GridLayout(gl) => gl
-            .elements
-            .iter()
-            .any(|e| node_contains_superscript_marker(&e.node, marker)),
-        StructuredNode::Repeatable(r) => node_contains_superscript_marker(&r.item, marker),
-        StructuredNode::Table(t) => {
-            let header_match = t
-                .header
-                .as_ref()
-                .map(|h| {
-                    h.cells
-                        .iter()
-                        .any(|c| node_contains_superscript_marker(c, marker))
-                })
-                .unwrap_or(false);
-            header_match
-                || t.rows.iter().any(|r| {
-                    r.cells
-                        .iter()
-                        .any(|c| node_contains_superscript_marker(c, marker))
-                })
-        }
-        StructuredNode::List(l) => l
-            .items
-            .iter()
-            .any(|item| inline_text_has_superscript_marker(&item.content, marker)),
-        StructuredNode::Field(f) => f
-            .label
-            .as_ref()
-            .map(|l| inline_text_has_superscript_marker(l, marker))
-            .unwrap_or(false),
-        _ => false,
-    }
-}
-
-/// Check if a `TranslatedText` contains a `Superscript` node whose plain text matches `marker`.
-fn inline_text_has_superscript_marker(text: &TranslatedText, marker: &str) -> bool {
-    text.0.values().any(|inline| {
-        inline
-            .0
-            .iter()
-            .any(|node| inline_node_has_superscript_marker(node, marker))
-    })
-}
-
-/// Recursively check if an `InlineNode` is or contains a `Superscript` whose text matches `marker`.
-fn inline_node_has_superscript_marker(node: &InlineNode, marker: &str) -> bool {
-    match node {
-        InlineNode::Superscript(inner) => {
-            // Check if the inner text matches the marker
-            if let Some(text) = inner.leading_text() {
-                text.trim() == marker
-            } else {
-                false
+        if has_footnotes {
+            let name = ctx.make_name("FNP", "FootnotePlaceholder");
+            let uuid = ctx.uuid(&name);
+            let placeholder = AemNode::FootnotePlaceholder {
+                uuid,
+                name,
+                colspan: config.grid_columns,
+            };
+            if let AemNode::Panel {
+                children: page_children,
+                ..
+            } = &mut children[page_idx]
+            {
+                page_children.push(placeholder);
             }
         }
-        InlineNode::Strong(inner) | InlineNode::Emphasis(inner) => {
-            inline_node_has_superscript_marker(inner, marker)
-        }
-        InlineNode::Link(link) => link
-            .content
-            .0
-            .iter()
-            .any(|node| inline_node_has_superscript_marker(node, marker)),
-        _ => false,
     }
+}
+
+/// Check if any AEM node in `nodes` (or their descendants) contains an
+/// embedded footnote reference (`data-af-footnote-id`).
+fn page_has_embedded_footnotes(nodes: &[AemNode]) -> bool {
+    nodes.iter().any(|node| match node {
+        AemNode::TextDraw { content, .. } | AemNode::TitleDraw { content, .. } => {
+            content.contains("data-af-footnote-id")
+        }
+        AemNode::Panel { children, .. } | AemNode::Repeatable { children, .. } => {
+            page_has_embedded_footnotes(children)
+        }
+        _ => false,
+    })
 }
 
 // ============================================================================
@@ -680,7 +667,10 @@ fn convert_heading(
     dor_colspan: Option<u32>,
 ) -> AemNode {
     let plain = inline_text_to_html(&h.content, &ctx.language);
-    let content = format!("<p>{plain}</p>");
+    let mut content = format!("<p>{plain}</p>");
+    if !ctx.footnote_embeds.is_empty() {
+        content = embed_footnotes_in_value(&content, &ctx.footnote_embeds, &ctx.language);
+    }
     let source_text = h.content.plain_text_in(&ctx.language);
     let name = ctx.make_name("TTL", &source_text);
     let uuid = ctx.uuid(&name);
@@ -702,7 +692,10 @@ fn convert_paragraph(
     dor_colspan: Option<u32>,
 ) -> AemNode {
     let html = inline_text_to_html(&p.content, &ctx.language);
-    let content = format!("<p>{html}</p>");
+    let mut content = format!("<p>{html}</p>");
+    if !ctx.footnote_embeds.is_empty() {
+        content = embed_footnotes_in_value(&content, &ctx.footnote_embeds, &ctx.language);
+    }
     let source_text = p.content.plain_text_in(&ctx.language);
     let name = ctx.make_name("ST", &source_text);
     let uuid = ctx.uuid(&name);
@@ -2013,7 +2006,7 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::TitleDraw { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
-            | AemNode::Footnote { .. } => {}
+            | AemNode::FootnotePlaceholder { .. } => {}
         }
     }
 }

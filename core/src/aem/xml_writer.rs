@@ -55,7 +55,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         AemNode::Fragment { .. } => "fragment",
         AemNode::Preface { .. } => "preface",
         AemNode::Appendix { .. } => "appendix",
-        AemNode::Footnote { .. } => "footnote",
+        AemNode::FootnotePlaceholder { .. } => "footnoteplaceholder",
     };
 
     let template = match config.component_templates.get(template_key) {
@@ -361,18 +361,14 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("name", name);
         }
 
-        AemNode::Footnote {
+        AemNode::FootnotePlaceholder {
             uuid,
             name,
-            content,
             colspan,
-            dor_colspan,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("content", &xml_escape(content));
             ctx.insert("colspan", colspan);
-            ctx.insert("dor_colspan", dor_colspan);
         }
     }
 
