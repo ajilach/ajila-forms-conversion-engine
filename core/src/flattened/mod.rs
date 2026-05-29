@@ -3153,9 +3153,30 @@ impl Flattened {
             container: &'a XfaNode,
             container_name: &str,
         ) -> Vec<(&'a XfaNode, String)> {
+            // Collect fingerprints of visible content subforms so we can detect
+            // hidden duplicates (e.g. XFA overflow page copies with identical structure).
+            let visible_fingerprints: Vec<Vec<Option<&str>>> = container
+                .children
+                .iter()
+                .filter(|c| is_content_subform(c) && !c.presence.should_skip_layout())
+                .map(|c| c.children.iter().map(|gc| gc.name.as_deref()).collect())
+                .collect();
+
             let mut result = Vec::new();
             for child in &container.children {
                 if is_content_subform(child) {
+                    // Skip hidden/inactive content subforms that are structural
+                    // duplicates of a visible sibling (same child names in same order).
+                    // These are XFA overflow page copies that should not be rendered.
+                    // Hidden subforms with unique structure are dynamic pages
+                    // toggled by scripts and must be kept.
+                    if child.presence.should_skip_layout() {
+                        let fingerprint: Vec<Option<&str>> =
+                            child.children.iter().map(|gc| gc.name.as_deref()).collect();
+                        if visible_fingerprints.contains(&fingerprint) {
+                            continue;
+                        }
+                    }
                     let path = if let Some(name) = child.name.as_deref() {
                         if container_name.is_empty() {
                             name.to_string()

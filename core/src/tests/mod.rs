@@ -19426,6 +19426,94 @@ fn test_aagx_en_repeatable_not_replaced_by_fragment() {
 }
 
 #[test]
+fn test_aaed_de_has_two_repeatables_not_replaced_by_fragments_in_aem() {
+    // Regression guard for AAED DE:
+    // 1) merged structured output must contain exactly two repeatables
+    // 2) AEM conversion must preserve those as repeatables (not fragment replacements)
+    use crate::Blueprint;
+    use crate::aem::{AemConfig, AemNode, convert_to_aem, generate_aem_xml};
+    use crate::structured::StructuredNode;
+    use std::collections::HashSet;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAED_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AAED_019_DE.pdf");
+
+    let mut structured_repeatable_count = 0usize;
+    helpers::walk_structured_nodes(&structured_nodes, &mut |node| {
+        if matches!(node, StructuredNode::Repeatable(_)) {
+            structured_repeatable_count += 1;
+        }
+    });
+
+    assert_eq!(
+        structured_repeatable_count, 2,
+        "AAED should have exactly 2 repeatables in merged structured output, found {}",
+        structured_repeatable_count
+    );
+
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAED_019_DE.pdf")).expect("Failed to load AAED_019_DE.pdf");
+    let ctx = bp.context();
+    let form_states = bp.states().expect("Failed to get form states");
+    let content = crate::merge_form_states(&form_states, ctx.clone());
+
+    let (profile, templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+
+    let xsd_config = helpers::load_ubs_xsd_config().with_master_language("de");
+    config.xsd_config = Some(xsd_config);
+
+    let fragments_path = helpers::profiles_path("ubs/aem/fragments/afforms_ubs_fragmentlib");
+    let fragments_dir = std::path::Path::new(&fragments_path);
+    config.fragments = crate::scan_fragments(fragments_dir, &config.fragment_ref_prefix);
+    config.use_fragments = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+    let xml = generate_aem_xml(&root, &config);
+
+    let mut aem_repeatable_count = 0usize;
+    let mut repeatable_bind_refs: HashSet<String> = HashSet::new();
+    let mut fragment_bind_refs: HashSet<String> = HashSet::new();
+
+    helpers::walk_aem_nodes(&root, &mut |node| match node {
+        AemNode::Repeatable { bind_ref, .. } => {
+            aem_repeatable_count += 1;
+            if let Some(bind_ref) = bind_ref {
+                repeatable_bind_refs.insert(bind_ref.clone());
+            }
+        }
+        AemNode::Fragment { bind_ref, .. } => {
+            if let Some(bind_ref) = bind_ref {
+                fragment_bind_refs.insert(bind_ref.clone());
+            }
+        }
+        _ => {}
+    });
+
+    assert_eq!(
+        aem_repeatable_count, 2,
+        "AAED should have exactly 2 repeatables in AEM tree, found {}",
+        aem_repeatable_count
+    );
+
+    assert!(
+        repeatable_bind_refs.is_disjoint(&fragment_bind_refs),
+        "AAED repeatable bindRefs must not appear on fragments; repeatable_bind_refs={:?}, fragment_bind_refs={:?}",
+        repeatable_bind_refs,
+        fragment_bind_refs
+    );
+
+    let xml_repeatable_count = xml.matches("<repeatableInner").count();
+    assert_eq!(
+        xml_repeatable_count, 2,
+        "AAED AEM XML should contain exactly 2 repeatableInner blocks, found {}",
+        xml_repeatable_count
+    );
+}
+
+#[test]
 fn test_aaaq_de_field_row_ordering() {
     // In AAAQ DE, the fields under the first section should be on separate rows:
     //   Row 1: Nachname, Vorname(n)
@@ -30022,5 +30110,54 @@ fn test_aafw_radio_button_values_in_html() {
          Found radio inside conditional with condition: {:?}\n\
          This causes the radio to be hidden and never visible.",
         radio_in_cond.as_ref().map(|(_, c)| c)
+    );
+}
+
+#[test]
+fn test_aads_no_duplicated_content() {
+    // AADS_019_DE is a simple single-state form with no interactive elements.
+    // The exhaustive merger should NOT duplicate the entire content.
+    // Previously the H1 and all sections appeared twice in the output.
+
+    let merged = crate::run_exhaustive_to_merged(input_path("AADS_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AADS_019_DE.pdf");
+
+    // Collect all H1 headings — the document title is split across two H1 nodes
+    // due to a line break, so we expect exactly 2 H1 nodes (one logical title).
+    let headings = collect_headings(&merged);
+    let h1_headings: Vec<_> = headings.iter().filter(|(level, _)| *level == 1).collect();
+
+    assert!(
+        h1_headings.len() <= 2,
+        "AADS should have at most 2 H1 heading nodes (one logical title split across lines), \
+         but found {}. This indicates content duplication in the merged output.\n\
+         H1 headings found: {:?}",
+        h1_headings.len(),
+        h1_headings
+    );
+
+    // Also check H2 headings are not duplicated
+    let h2_headings: Vec<_> = headings.iter().filter(|(level, _)| *level == 2).collect();
+    let h2_texts: Vec<&str> = h2_headings.iter().map(|(_, t)| t.as_str()).collect();
+    let unique_h2: std::collections::HashSet<&str> = h2_texts.iter().copied().collect();
+
+    assert_eq!(
+        h2_texts.len(),
+        unique_h2.len(),
+        "AADS should not have duplicate H2 headings. \
+         Found {} H2 headings but only {} unique ones.\n\
+         All H2 headings: {:?}",
+        h2_texts.len(),
+        unique_h2.len(),
+        h2_texts
+    );
+
+    // Count total top-level nodes — if content is duplicated, count will be ~2x expected
+    // A non-duplicated AADS should have roughly 35 top-level nodes, not 67
+    assert!(
+        merged.len() <= 40,
+        "AADS has {} top-level nodes which suggests content duplication \
+         (expected around 35, not ~67).",
+        merged.len()
     );
 }
