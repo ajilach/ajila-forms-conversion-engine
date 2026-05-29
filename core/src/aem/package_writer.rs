@@ -19,8 +19,7 @@ use crate::aem::generate_aem_xml;
 use crate::aem::template;
 use crate::aem::xml_writer::reformat_attributes;
 use crate::structured::{
-    FieldType, HeadingLevel, ListNode, StructuredNode, TranslatableString,
-    TranslatedText,
+    FieldType, HeadingLevel, ListNode, StructuredNode, TranslatableString, TranslatedText,
 };
 
 // ============================================================================
@@ -633,7 +632,9 @@ fn extract_from_node(
                 // Footnotes may be embedded inline.
                 _ => {
                     extract_rich_text_translations_with_footnotes(
-                        &h.content, master_lang, map,
+                        &h.content,
+                        master_lang,
+                        map,
                         |html| format!("<p>{html}</p>"),
                         footnote_embeds,
                     );
@@ -642,7 +643,9 @@ fn extract_from_node(
         }
         StructuredNode::Paragraph(p) => {
             extract_rich_text_translations_with_footnotes(
-                &p.content, master_lang, map,
+                &p.content,
+                master_lang,
+                map,
                 |html| format!("<p>{html}</p>"),
                 footnote_embeds,
             );
@@ -819,7 +822,11 @@ fn extract_list_translations(list: &ListNode, master_lang: &str, map: &mut I18nD
 
 /// Extract translations from plain inline text (for field labels, captions, etc.
 /// that are NOT wrapped in HTML tags).
-fn extract_from_translated_text(text: &TranslatedText, master_lang: &str, map: &mut I18nDictionary) {
+fn extract_from_translated_text(
+    text: &TranslatedText,
+    master_lang: &str,
+    map: &mut I18nDictionary,
+) {
     let master = text.plain_text_in(master_lang);
     if master.is_empty() {
         return;
@@ -1320,7 +1327,11 @@ mod tests {
         tmap.insert("de".into(), Some("Vertretungsberechtigte(r)".into()));
 
         let node = StructuredNode::Paragraph(ParagraphNode {
-            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
+            content: TranslatedText::new(
+                tmap.into_iter()
+                    .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
             som_path: None,
             source_name: None,
         });
@@ -1365,7 +1376,11 @@ mod tests {
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H1,
-            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
+            content: TranslatedText::new(
+                tmap.into_iter()
+                    .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
             som_path: None,
             source_name: None,
         });
@@ -1409,7 +1424,11 @@ mod tests {
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H2,
-            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
+            content: TranslatedText::new(
+                tmap.into_iter()
+                    .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
             som_path: None,
             source_name: None,
         });
@@ -1450,7 +1469,11 @@ mod tests {
 
         let node = StructuredNode::Heading(HeadingNode {
             level: HeadingLevel::H3,
-            content: TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>()),
+            content: TranslatedText::new(
+                tmap.into_iter()
+                    .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
             som_path: None,
             source_name: None,
         });
@@ -1486,8 +1509,18 @@ mod tests {
         let node = StructuredNode::List(ListNode {
             list_style: ListStyleType::Disc,
             items: vec![
-                ListItem::simple(TranslatedText::new(tmap1.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
-                ListItem::simple(TranslatedText::new(tmap2.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
+                ListItem::simple(TranslatedText::new(
+                    tmap1
+                        .into_iter()
+                        .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                        .collect::<std::collections::HashMap<_, _>>(),
+                )),
+                ListItem::simple(TranslatedText::new(
+                    tmap2
+                        .into_iter()
+                        .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                        .collect::<std::collections::HashMap<_, _>>(),
+                )),
             ],
         });
 
@@ -1521,7 +1554,11 @@ mod tests {
         tmap.insert("de".into(), Some("Firma".into()));
 
         let node = StructuredNode::Field(FieldNode {
-            label: Some(TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
+            label: Some(TranslatedText::new(
+                tmap.into_iter()
+                    .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            )),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
@@ -1756,7 +1793,11 @@ mod tests {
         tmap.insert("de".into(), Some("Firma".into()));
 
         let content = vec![StructuredNode::Field(FieldNode {
-            label: Some(TranslatedText::new(tmap.into_iter().filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s)))).collect::<std::collections::HashMap<_, _>>())),
+            label: Some(TranslatedText::new(
+                tmap.into_iter()
+                    .filter_map(|(k, v)| v.map(|s| (k, InlineText::plain(s))))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            )),
             input_type: FieldType::Text {
                 regex: None,
                 max_length: None,
