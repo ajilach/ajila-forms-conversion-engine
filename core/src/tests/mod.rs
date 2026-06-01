@@ -13973,7 +13973,7 @@ fn test_aahq_checkbox_group_versand_abweichend() {
         "Vermögensausweis L-JEV (N009) soll abweichend vom DWD10 versendet werden",
     ];
 
-    // First try: look for a CheckboxGroup containing all three options
+    // Look for a CheckboxGroup containing all three options
     let checkbox_groups: Vec<_> = fields
         .iter()
         .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
@@ -13989,30 +13989,19 @@ fn test_aahq_checkbox_group_versand_abweichend() {
         }
     });
 
-    // Second try: look for individual Bool fields with these labels
-    let found_as_individual = if !found_as_group {
-        expected_labels.iter().all(|expected| {
-            fields.iter().any(|f| {
-                matches!(&f.input_type, FieldType::Bool)
-                    && f.label
-                        .as_ref()
-                        .map(|l| l.as_plain_text().contains(expected))
-                        .unwrap_or(false)
-            })
-        })
-    } else {
-        false
-    };
-
     assert!(
-        found_as_group || found_as_individual,
-        "Expected checkboxes with labels containing {:?}. Found {} checkbox groups and {} Bool fields with labels: {:?}",
+        found_as_group,
+        "Expected a CheckboxGroup containing {:?}. Found {} checkbox groups: {:?}",
         expected_labels,
         checkbox_groups.len(),
-        fields.iter().filter(|f| matches!(&f.input_type, FieldType::Bool)).count(),
-        fields.iter()
-            .filter(|f| matches!(&f.input_type, FieldType::Bool))
-            .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+        checkbox_groups.iter()
+            .filter_map(|f| {
+                if let FieldType::CheckboxGroup { options } = &f.input_type {
+                    Some(options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>())
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>()
     );
 }
@@ -30498,6 +30487,83 @@ fn test_aafm_checkbox_group_detected_with_german_labels() {
             options.iter().any(|o| o.name.contains(needle)),
             "Expected an option containing {needle:?} in any language, got options: {:?}",
             options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn test_aabk_direktvereinbarungen_and_retro_are_independent_checkboxes() {
+    // In AABK's tabular layout, these two checkboxes are in the second column
+    // with their labels in the first column. They must NOT be grouped into a
+    // CheckboxGroup — they are independent Bool checkboxes.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AABK_019_DE.pdf"))
+        .expect("Failed to process AABK PDF");
+
+    let fields = collect_fields(&structured);
+
+    // Find all CheckboxGroups and verify none contains "Ja" duplicates
+    // that would indicate these two checkboxes were incorrectly grouped.
+    let checkbox_groups: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+        .collect();
+
+    // There should be no CheckboxGroup with two "Ja" options
+    for group in &checkbox_groups {
+        if let FieldType::CheckboxGroup { options } = &group.input_type {
+            let ja_count = options.iter().filter(|o| o.name.as_str() == "Ja").count();
+            assert!(
+                ja_count < 2,
+                "Found CheckboxGroup with {} 'Ja' options — the Direktvereinbarungen and \
+                 Retro-Sonderkonditionen checkboxes should be independent Bool fields, \
+                 not grouped. Group label: {:?}, options: {:?}",
+                ja_count,
+                group.label.as_ref().map(|l| l.as_plain_text()),
+                options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    // Verify these exist as independent Bool checkboxes.
+    // At structured level, the label for these checkboxes includes the question
+    // text from the table's first column (attached by LabelAttacher).
+    // We check by SOM path suffix since the inline label is just "Ja".
+    let direktvereinbarungen = fields.iter().find(|f| {
+        matches!(f.input_type, FieldType::Bool)
+            && f.label
+                .as_ref()
+                .map(|l| l.as_plain_text().contains("Direktvereinbarungen"))
+                .unwrap_or(false)
+    });
+
+    let retro_sonderkonditionen = fields.iter().find(|f| {
+        matches!(f.input_type, FieldType::Bool)
+            && f.label
+                .as_ref()
+                .map(|l| l.as_plain_text().contains("Retro-Sonderkonditionen"))
+                .unwrap_or(false)
+    });
+
+    // If the full-question labels aren't attached yet, at minimum verify
+    // there are at least 2 independent Bool fields labeled "Ja" (not grouped).
+    if direktvereinbarungen.is_none() && retro_sonderkonditionen.is_none() {
+        let ja_bools: Vec<_> = fields
+            .iter()
+            .filter(|f| {
+                matches!(f.input_type, FieldType::Bool)
+                    && f.label
+                        .as_ref()
+                        .map(|l| l.as_plain_text() == "Ja")
+                        .unwrap_or(false)
+            })
+            .collect();
+        assert!(
+            ja_bools.len() >= 2,
+            "Expected at least 2 independent Bool checkboxes with label 'Ja', found {}",
+            ja_bools.len()
         );
     }
 }

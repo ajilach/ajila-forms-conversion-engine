@@ -25,6 +25,8 @@ pub struct CheckboxGrouper {
     pub max_horizontal_gap: Decimal,
     /// Maximum vertical gap between checkboxes to group them
     pub max_vertical_gap: Decimal,
+    /// Maximum vertical gap for sibling checkboxes (with blocking content between)
+    pub max_sibling_gap: Decimal,
     /// Tolerance for considering elements on the same line
     pub alignment_tolerance: Decimal,
 }
@@ -40,6 +42,7 @@ impl CheckboxGrouper {
         CheckboxGrouper {
             max_horizontal_gap: Decimal::from_str("50.0").unwrap(),
             max_vertical_gap: Decimal::from_str("30.0").unwrap(),
+            max_sibling_gap: Decimal::from_str("300.0").unwrap(),
             alignment_tolerance: Decimal::from_str("10.0").unwrap(),
         }
     }
@@ -54,6 +57,77 @@ impl CheckboxGrouper {
             return doc.get_bounds(field_group_idx);
         }
         None
+    }
+
+    /// Get the SOM path of a checkbox's field.
+    fn get_checkbox_som_path(
+        &self,
+        doc: &Document,
+        cb_idx: usize,
+    ) -> Option<crate::xfa::scripting::SomPath> {
+        let group = doc.get_group(cb_idx)?;
+        if let GroupKind::Checkbox { field, .. } = &group.kind {
+            let field_group_idx = *group.children.get(*field)?;
+            return doc.som_path(field_group_idx);
+        }
+        None
+    }
+
+    /// Get the label text of a checkbox.
+    fn get_checkbox_label(&self, doc: &Document, cb_idx: usize) -> Option<String> {
+        let group = doc.get_group(cb_idx)?;
+        if let GroupKind::Checkbox { label, .. } = &group.kind {
+            let label_group_idx = *group.children.get(*label)?;
+            let text = doc.get_text_content(label_group_idx);
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Check if two checkboxes are in the same form section based on SOM paths.
+    ///
+    /// Two checkboxes are "siblings" if their SOM paths have the same length and
+    /// differ in exactly one segment (excluding the leaf). This indicates they are
+    /// parallel instances of the same checkbox template within a section, with
+    /// conditional content between them.
+    fn are_section_siblings(&self, doc: &Document, cb1_idx: usize, cb2_idx: usize) -> bool {
+        let Some(path1) = self.get_checkbox_som_path(doc, cb1_idx) else {
+            return false;
+        };
+        let Some(path2) = self.get_checkbox_som_path(doc, cb2_idx) else {
+            return false;
+        };
+
+        let segments1: Vec<&str> = path1.as_str().split('.').collect();
+        let segments2: Vec<&str> = path2.as_str().split('.').collect();
+
+        // Must be same length and differ
+        if segments1.len() != segments2.len() || path1.as_str() == path2.as_str() {
+            return false;
+        }
+
+        // The leaf (field name) must be identical — true conditional siblings
+        // share the same field template name (e.g., "CB_Checkbox") placed in
+        // different container sections.
+        if segments1.last() != segments2.last() {
+            return false;
+        }
+
+        // Count differing segments (excluding the leaf field name)
+        let differing_count = segments1
+            .iter()
+            .zip(segments2.iter())
+            .take(segments1.len().saturating_sub(1)) // exclude leaf
+            .filter(|(a, b)| a != b)
+            .count();
+
+        // Exactly one differing non-leaf segment = sibling checkboxes
+        differing_count == 1
     }
 
     /// Check if there are any elements between two checkboxes.
@@ -87,6 +161,8 @@ impl CheckboxGrouper {
     ///
     /// Elements that are inset to the right of the checkboxes (e.g. conditional content
     /// below a checkbox) are ignored, analogous to the radio button grouper.
+    ///
+    /// Zero-width elements and other checkbox groups are also skipped.
     fn has_non_inset_elements_between(
         &self,
         doc: &Document,
@@ -121,24 +197,29 @@ impl CheckboxGrouper {
                 continue;
             };
 
+            // Skip zero-width elements (invisible placeholders)
+            if bounds.width.is_zero() {
+                continue;
+            }
+
             if region.overlaps(&bounds) {
                 let is_inset =
                     bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
 
                 if !is_inset {
-                    let is_checkbox_related = doc
-                        .get_group(root_idx)
-                        .map(|g| {
-                            matches!(
-                                g.kind,
-                                GroupKind::Checkbox { .. } | GroupKind::CheckboxGroup
-                            )
+                    let group_kind = doc.get_group(root_idx).map(|g| &g.kind);
+
+                    let is_checkbox_related = group_kind
+                        .map(|k| {
+                            matches!(k, GroupKind::Checkbox { .. } | GroupKind::CheckboxGroup)
                         })
                         .unwrap_or(false);
 
-                    if !is_checkbox_related {
-                        return true;
+                    if is_checkbox_related {
+                        continue;
                     }
+
+                    return true;
                 }
             }
         }
@@ -163,6 +244,7 @@ impl CheckboxGrouper {
             let Some(cb_field_bounds) = self.get_field_bounds(doc, cb_idx) else {
                 continue;
             };
+
             let cb_group_bounds = doc.get_bounds(cb_idx).unwrap_or(cb_field_bounds);
 
             let mut group: Vec<usize> = vec![cb_idx];
@@ -248,13 +330,19 @@ impl CheckboxGrouper {
                             inset_threshold,
                         );
 
-                        let max_gap = if has_blocking {
-                            self.max_vertical_gap
+                        let should_group = if !has_blocking {
+                            // No blocking elements: group if within normal gap
+                            distance <= self.max_vertical_gap
                         } else {
-                            Decimal::from_str("500.0").unwrap()
+                            // Blocking elements exist: only group if the
+                            // checkboxes are siblings in the same form section
+                            // (indicating the content between them is conditional)
+                            // and within sibling distance.
+                            distance <= self.max_sibling_gap
+                                && self.are_section_siblings(doc, *group.last().unwrap(), candidate_idx)
                         };
 
-                        if distance <= max_gap && !has_blocking {
+                        if should_group {
                             group.push(candidate_idx);
                             grouped.insert(candidate_idx);
                             last_field_bounds = candidate_field_bounds;
@@ -266,7 +354,21 @@ impl CheckboxGrouper {
             }
 
             if group.len() > 1 {
-                doc.merge_inferred(group, GroupKind::CheckboxGroup, self.name());
+                // Don't group checkboxes that all have the same label text.
+                // Identical labels (e.g., multiple "Ja" checkboxes) indicate
+                // independent yes/no fields for different questions in a
+                // tabular layout, not options within a single group.
+                let labels: Vec<Option<String>> = group
+                    .iter()
+                    .map(|&idx| self.get_checkbox_label(doc, idx))
+                    .collect();
+
+                let all_same_label = labels.iter().all(|l| l.is_some())
+                    && labels.windows(2).all(|w| w[0] == w[1]);
+
+                if !all_same_label {
+                    doc.merge_inferred(group, GroupKind::CheckboxGroup, self.name());
+                }
             }
         }
     }
