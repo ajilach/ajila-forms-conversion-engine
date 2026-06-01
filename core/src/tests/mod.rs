@@ -30970,3 +30970,61 @@ fn test_aagz_authentifizierungsmittel_checkbox_group() {
         );
     }
 }
+
+#[test]
+fn test_aagz_edokumente_checkbox_is_standalone() {
+    // The "E-Dokumente" confirmation checkbox is a single standalone checkbox
+    // and must NOT be merged into a CheckboxGroup. It should appear as a
+    // standalone Bool field, and no CheckboxGroup option should carry its text.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAGZ_019_DE.pdf"))
+        .expect("Failed to process AAGZ PDF");
+
+    let fields = collect_fields(&structured);
+
+    // Distinctive fragments of the checkbox label.
+    let matches_edokumente = |text: &str| {
+        text.contains("E-Dokumente")
+            && text.contains("UBS Digital Banking")
+            && text.contains("nutzen zu wollen")
+    };
+
+    // 1. No CheckboxGroup option may contain the E-Dokumente confirmation text.
+    for field in &fields {
+        if let FieldType::CheckboxGroup { options } = &field.input_type {
+            let offending: Vec<String> = options
+                .iter()
+                .map(|o| o.name.as_str().to_string())
+                .filter(|name| matches_edokumente(name))
+                .collect();
+            assert!(
+                offending.is_empty(),
+                "E-Dokumente checkbox must not be an option of a CheckboxGroup \
+                 (label {:?}), but found options: {:?}",
+                field.label.as_ref().map(|l| l.as_plain_text()),
+                offending
+            );
+        }
+    }
+
+    // 2. The E-Dokumente checkbox must exist as a standalone Bool field.
+    let standalone = fields.iter().any(|f| {
+        matches!(f.input_type, FieldType::Bool)
+            && f.label
+                .as_ref()
+                .map(|l| matches_edokumente(&l.as_plain_text()))
+                .unwrap_or(false)
+    });
+    assert!(
+        standalone,
+        "Expected the E-Dokumente confirmation to be a standalone Bool checkbox. \
+         Bool field labels: {:?}",
+        fields
+            .iter()
+            .filter(|f| matches!(f.input_type, FieldType::Bool))
+            .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+            .collect::<Vec<_>>()
+    );
+}
