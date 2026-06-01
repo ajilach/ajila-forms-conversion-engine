@@ -27569,6 +27569,176 @@ fn test_aaep_contains_footnote() {
     );
 }
 
+#[test]
+fn test_aaam_aem_footnote_structure_matches_aaep_reference() {
+    use crate::aem::AemNode;
+    use helpers::{build_aem_test_output, walk_aem_nodes};
+
+    fn normalize_footnote_fragment(fragment: &str) -> String {
+        use quick_xml::Reader;
+        use quick_xml::events::Event;
+
+        let wrapped = format!("<root>{fragment}</root>");
+        let mut reader = Reader::from_str(&wrapped);
+        reader.config_mut().trim_text(true);
+
+        let mut tokens = Vec::new();
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(event)) | Ok(Event::Empty(event)) => {
+                    let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                    if tag == "root" || tag == "b" {
+                        continue;
+                    }
+
+                    let mut attrs = Vec::new();
+                    for attr in event.attributes().with_checks(false) {
+                        let attr = attr.expect("valid footnote fragment attribute");
+                        let key = String::from_utf8_lossy(attr.key.as_ref());
+                        let value = attr
+                            .decode_and_unescape_value(reader.decoder())
+                            .expect("valid footnote fragment attribute value");
+
+                        match key.as_ref() {
+                            "data-af-footnote-id" => attrs.push("data-af-footnote-id".to_string()),
+                            "id" => attrs.push("id".to_string()),
+                            "class" if value == "footnoteDescription" => {
+                                attrs.push("class=footnoteDescription".to_string())
+                            }
+                            "class" if value == "footnoteDescText" => {
+                                attrs.push("class=footnoteDescText".to_string())
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if attrs.is_empty() {
+                        tokens.push(tag);
+                    } else {
+                        tokens.push(format!("{}[{}]", tag, attrs.join(",")));
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(error) => panic!("Failed to normalize footnote fragment: {error}"),
+            }
+        }
+
+        tokens.join(">")
+    }
+
+    fn collect_footnote_signatures(root: &AemNode) -> (Vec<String>, usize) {
+        let mut signatures = Vec::new();
+        let mut placeholder_count = 0;
+
+        walk_aem_nodes(root, &mut |node| match node {
+            AemNode::TextDraw { content, .. } | AemNode::TitleDraw { content, .. } => {
+                if content.contains("data-af-footnote-id") {
+                    signatures.push(normalize_footnote_fragment(content));
+                }
+            }
+            AemNode::FootnotePlaceholder { .. } => {
+                placeholder_count += 1;
+            }
+            _ => {}
+        });
+
+        (signatures, placeholder_count)
+    }
+
+    fn collect_footnote_signatures_from_xml(xml: &str) -> (Vec<String>, usize) {
+        use quick_xml::Reader;
+        use quick_xml::events::Event;
+
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().trim_text(true);
+
+        let mut signatures = Vec::new();
+        let mut placeholder_count = 0;
+
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(event)) | Ok(Event::Empty(event)) => {
+                    let mut footnote_fragment = None;
+                    let mut is_placeholder = false;
+
+                    for attr in event.attributes().with_checks(false) {
+                        let attr = attr.expect("valid reference XML attribute");
+                        let key = String::from_utf8_lossy(attr.key.as_ref());
+                        let value = attr
+                            .decode_and_unescape_value(reader.decoder())
+                            .expect("valid reference XML attribute value");
+
+                        match key.as_ref() {
+                            "_value" if value.contains("data-af-footnote-id") => {
+                                footnote_fragment = Some(value.into_owned());
+                            }
+                            "guideNodeClass" if value == "guideFootnotePlaceHolder" => {
+                                is_placeholder = true;
+                            }
+                            "sling:resourceType" if value.contains("guidefootnoteplaceholder") => {
+                                is_placeholder = true;
+                            }
+                            "jcr:title" if value == "Footnote Placeholder" => {
+                                is_placeholder = true;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if let Some(fragment) = footnote_fragment {
+                        signatures.push(normalize_footnote_fragment(&fragment));
+                    }
+
+                    if is_placeholder {
+                        placeholder_count += 1;
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(error) => panic!("Failed to parse AAEP reference XML: {error}"),
+            }
+        }
+
+        (signatures, placeholder_count)
+    }
+
+    let (_, aaam_root, _) = build_aem_test_output(&[("AAAM_019_DE.pdf", "de")]);
+    let aaep_reference_xml = std::fs::read_to_string(
+        "/Users/fboesiger/Documents/blueprint/specs/migrated/reference/Germany_AAEP (1)/jcr_root/content/forms/af/afforms_germany_all/af_aa/AF_AAEP/.content.xml",
+    )
+    .expect("Failed to read AAEP reference AEM content.xml");
+
+    let (aaam_signatures, aaam_placeholders) = collect_footnote_signatures(&aaam_root);
+    let (aaep_signatures, aaep_placeholders) =
+        collect_footnote_signatures_from_xml(&aaep_reference_xml);
+
+    assert!(
+        !aaam_signatures.is_empty(),
+        "AAAM AEM output should contain at least one footnote-bearing node"
+    );
+    assert!(
+        aaam_placeholders > 0,
+        "AAAM AEM output should contain at least one footnote placeholder"
+    );
+    assert!(
+        aaep_placeholders > 0,
+        "AAEP reference AEM output should contain at least one footnote placeholder"
+    );
+
+    let reference_signature = aaep_signatures
+        .first()
+        .expect("AAEP reference form should contain a footnote signature");
+
+    for signature in &aaam_signatures {
+        assert_eq!(
+            signature, reference_signature,
+            "AAAM footnote structure should match the AAEP reference form\nAAAM: {:?}\nAAEP reference: {:?}",
+            aaam_signatures, aaep_signatures
+        );
+    }
+}
+
 /// Test that the AAGG AEM output embeds footnotes inline using
 /// `data-af-footnote-id` + hidden `footnoteDescription` paragraphs,
 /// and includes a `FootnotePlaceholder` component.
