@@ -31184,3 +31184,64 @@ fn test_aalp_bucket_checkbox_groups() {
         ],
     );
 }
+
+#[test]
+fn test_bagq_currencies_checkbox_group() {
+    // BAGQ lays out the currency checkboxes in a multi-column grid that must be
+    // detected as a single CheckboxGroup labeled "Currencies (max. 4 Währungen)"
+    // containing all eight currency options.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("BAGQ_019_DE.pdf"))
+        .expect("Failed to process BAGQ PDF");
+    let fields = collect_fields(&structured);
+
+    let checkbox_groups: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+        .collect();
+
+    let group = checkbox_groups
+        .iter()
+        .find(|field| {
+            field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text().contains("Currencies (max. 4 Währungen)"))
+                .unwrap_or(false)
+        })
+        .copied()
+        .unwrap_or_else(|| {
+            let labels: Vec<String> = checkbox_groups
+                .iter()
+                .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+                .collect();
+            panic!(
+                "Expected a CheckboxGroup labeled \"Currencies (max. 4 Währungen)\". Found labels: {:?}",
+                labels
+            );
+        });
+
+    let FieldType::CheckboxGroup { options } = &group.input_type else {
+        unreachable!()
+    };
+    let actual: Vec<String> = options.iter().map(|o| o.name.as_str().to_string()).collect();
+
+    let expected = ["EUR", "USD", "CHF", "GBP", "CAD", "JPY", "AUD", "MXN"];
+    assert_eq!(
+        options.len(),
+        expected.len(),
+        "Currencies group should have {} options, got {:?}",
+        expected.len(),
+        actual
+    );
+    for exp in expected {
+        assert!(
+            actual.iter().any(|a| a.contains(exp)),
+            "Currencies group should contain an option matching {:?}. Got {:?}",
+            exp,
+            actual
+        );
+    }
+}
