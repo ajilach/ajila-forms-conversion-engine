@@ -779,7 +779,7 @@ fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bo
         }
         AemNode::Preface { .. }
         | AemNode::Appendix { .. }
-        | AemNode::Footnote { .. }
+        | AemNode::FootnotePlaceholder { .. }
         | AemNode::Custom { .. } => {}
     }
 }

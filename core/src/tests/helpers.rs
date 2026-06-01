@@ -1002,6 +1002,7 @@ fn validate_guide_node_classes(doc: &ParsedXmlDocument, violations: &mut Vec<Str
         "guideButton",
         "guideNumericBox",
         "guideToolbar",
+        "guideFootnotePlaceHolder",
     ];
 
     for node in &doc.nodes {

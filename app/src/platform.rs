@@ -123,271 +123,144 @@ pub fn show_html_preview(html: String, filename: &str) {
     }
 }
 
-// ── Smart edit (gh copilot) ───────────────────────────────────────────
+// ── Smart edit (OpenAI API) ───────────────────────────────────────────
 
-/// Run `gh copilot` with a prompt and optional image attachments.
+/// Send one turn of a multi-turn chat to the OpenAI API and return the assistant's reply.
 ///
-/// `prompt` is the user instruction.
-/// `json_context` is the serialised structured nodes to include in the prompt.
-/// `images` is a list of `(label, base64_png)` pairs from the plain render stage.
-///
-/// Returns `Ok(response_text)` on success.
+/// `history` is the ongoing conversation; this function appends both the new user message
+/// and the assistant reply so subsequent calls automatically continue the thread.
+/// `user_text` is the user message text for this turn.
+/// `images` is a list of `(label, base64_png)` pairs; pass an empty slice for follow-up turns.
+/// `api_key` is the OpenAI API key.
+/// `model` is the OpenAI model identifier (e.g. "gpt-4o").
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn run_copilot_smart_edit(
-    prompt: &str,
-    json_context: &str,
+pub async fn openai_chat_turn(
+    history: &mut Vec<serde_json::Value>,
+    user_text: &str,
     images: &[(String, String)],
-    session_name: Option<&str>,
-    resume_session: bool,
+    api_key: &str,
+    model: &str,
 ) -> Result<String, String> {
-    use base64::Engine;
-    use std::io::Write;
+    use async_openai::{Client, config::OpenAIConfig};
 
-    let tmp_dir = std::env::temp_dir().join("blueprint-smart-edit");
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-
-    // Write images to temp PNG files
-    let mut image_paths: Vec<std::path::PathBuf> = Vec::new();
-    for (label, b64) in images {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(b64)
-            .map_err(|e| format!("Failed to decode image {label}: {e}"))?;
-        let path = tmp_dir.join(format!("{label}.png"));
-        let mut f = std::fs::File::create(&path)
-            .map_err(|e| format!("Failed to create temp image: {e}"))?;
-        f.write_all(&bytes)
-            .map_err(|e| format!("Failed to write temp image: {e}"))?;
-        image_paths.push(path);
+    if api_key.is_empty() {
+        return Err(
+            "OpenAI API key is not configured. Open Settings and paste your API key.".to_string(),
+        );
     }
 
-    // Build the full prompt
-    let full_prompt = format!(
-        "{prompt}\n\n\
-         The structured JSON representation of the selected form nodes is included below. \
-         The attached PNG images show the rendered form pages for visual reference.\n\n\
-         BEGIN STRUCTURED NODES JSON\n\
-         {json_context}\n\
-         END STRUCTURED NODES JSON\n\n\
-         Return ONLY a valid JSON object with exactly two keys: \
-         \"nodes\" (the replacement Vec<StructuredNode> array) and \
-         \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
-         describing each logical change you made). \
-         No surrounding prose, no markdown fences, no trailing notes."
-    );
+    let mut content: Vec<serde_json::Value> =
+        vec![serde_json::json!({"type": "text", "text": user_text})];
 
-    // Resolve gh explicitly because packaged desktop apps often run with a
-    // minimal PATH that does not include Homebrew locations.
-    let gh_executable = resolve_gh_executable().ok_or_else(|| {
-        format!(
-            "Failed to locate GitHub CLI executable 'gh'. Install GitHub CLI and ensure it is available in PATH, or set GITHUB_CLI_PATH. Current PATH: {}",
-            std::env::var("PATH").unwrap_or_else(|_| "<unset>".to_string())
-        )
-    })?;
-
-    // Build command
-    let mut cmd = tokio::process::Command::new(&gh_executable);
-    cmd.arg("copilot").arg("--");
-
-    if let Some(name) = session_name {
-        if resume_session {
-            cmd.arg(format!("--resume={name}"));
-        } else {
-            cmd.arg("--name").arg(name);
-        }
+    for (_label, b64) in images {
+        content.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": {
+                "url": format!("data:image/png;base64,{b64}"),
+                "detail": "high"
+            }
+        }));
     }
 
-    cmd.arg("-p")
-        .arg(&full_prompt)
-        .arg("--output-format")
-        .arg("text")
-        .arg("--allow-all-tools");
+    history.push(serde_json::json!({"role": "user", "content": content}));
 
-    for img_path in &image_paths {
-        cmd.arg("--attachment").arg(img_path);
-    }
+    let config = OpenAIConfig::new().with_api_key(api_key);
+    let client = Client::with_config(config);
 
-    let output = cmd
-        .output()
+    let request = serde_json::json!({
+        "model": model,
+        "messages": history,
+        "response_format": { "type": "json_object" },
+    });
+
+    let response: serde_json::Value = client
+        .chat()
+        .create_byot(request)
         .await
-        .map_err(|e| format!("Failed to run gh copilot: {e}"))?;
+        .map_err(|e| format!("OpenAI API error: {e}"))?;
 
-    // Clean up temp files (best effort)
-    if let Err(e) = std::fs::remove_dir_all(&tmp_dir) {
-        eprintln!("Warning: failed to clean up smart-edit temp dir: {e}");
-    }
+    let response_text = response["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| format!("Unexpected OpenAI response structure: {response}"))?
+        .to_string();
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("gh copilot failed: {stderr}"));
-    }
+    history.push(serde_json::json!({"role": "assistant", "content": response_text}));
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let trimmed = stdout.trim();
-    let lower = trimmed.to_ascii_lowercase();
-
-    if trimmed.is_empty() {
-        return Err(format!(
-            "gh copilot returned no content. stderr: {}",
-            stderr.trim()
-        ));
-    }
-
-    let looks_like_cli_help = (lower.contains("usage:") && lower.contains("gh copilot"))
-        || lower.contains("github cli")
-        || lower.contains("unknown command")
-        || lower.contains("authentication required");
-
-    if looks_like_cli_help {
-        return Err(format!(
-            "gh copilot returned CLI/help output instead of model content. stdout: {}",
-            trimmed
-        ));
-    }
-
-    Ok(stdout)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn resolve_gh_executable() -> Option<std::path::PathBuf> {
-    use std::ffi::OsStr;
-    use std::path::{Path, PathBuf};
-
-    fn executable_name() -> &'static str {
-        #[cfg(target_os = "windows")]
-        {
-            "gh.exe"
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            "gh"
-        }
-    }
-
-    fn has_file(path: &Path) -> bool {
-        path.is_file()
-    }
-
-    fn find_in_path(path_var: Option<&OsStr>, executable: &str) -> Option<PathBuf> {
-        let path_var = path_var?;
-        for dir in std::env::split_paths(path_var) {
-            let candidate = dir.join(executable);
-            if has_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-        None
-    }
-
-    let executable = executable_name();
-
-    if let Some(path_override) = std::env::var_os("GITHUB_CLI_PATH") {
-        let override_path = PathBuf::from(path_override);
-        if has_file(&override_path) {
-            return Some(override_path);
-        }
-    }
-
-    if let Some(path_hit) = find_in_path(std::env::var_os("PATH").as_deref(), executable) {
-        return Some(path_hit);
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        for candidate in [
-            "/opt/homebrew/bin/gh",
-            "/usr/local/bin/gh",
-            "/opt/local/bin/gh",
-            "/usr/bin/gh",
-        ] {
-            let candidate = PathBuf::from(candidate);
-            if has_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        for candidate in ["/usr/local/bin/gh", "/usr/bin/gh", "/snap/bin/gh"] {
-            let candidate = PathBuf::from(candidate);
-            if has_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-            let candidate = PathBuf::from(local_app_data)
-                .join("GitHubCLI")
-                .join("bin")
-                .join("gh.exe");
-            if has_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
-    use super::resolve_gh_executable;
-
-    #[test]
-    fn resolves_gh_from_path() {
-        use std::fs;
-
-        let tmp_root =
-            std::env::temp_dir().join(format!("blueprint-gh-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&tmp_root);
-        fs::create_dir_all(&tmp_root).expect("create tmp root");
-
-        #[cfg(target_os = "windows")]
-        let gh_name = "gh.exe";
-        #[cfg(not(target_os = "windows"))]
-        let gh_name = "gh";
-
-        let gh_path = tmp_root.join(gh_name);
-        fs::write(&gh_path, b"#!/bin/sh\n").expect("write fake gh");
-
-        let old_path = std::env::var_os("PATH");
-        let old_override = std::env::var_os("GITHUB_CLI_PATH");
-
-        unsafe {
-            std::env::set_var("GITHUB_CLI_PATH", "");
-            std::env::set_var("PATH", &tmp_root);
-        }
-
-        let resolved = resolve_gh_executable();
-
-        match old_path {
-            Some(v) => unsafe { std::env::set_var("PATH", v) },
-            None => unsafe { std::env::remove_var("PATH") },
-        }
-        match old_override {
-            Some(v) => unsafe { std::env::set_var("GITHUB_CLI_PATH", v) },
-            None => unsafe { std::env::remove_var("GITHUB_CLI_PATH") },
-        }
-
-        assert_eq!(resolved, Some(gh_path));
-
-        let _ = fs::remove_dir_all(&tmp_root);
-    }
+    Ok(response_text)
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn run_copilot_smart_edit(
-    _prompt: &str,
-    _json_context: &str,
+pub async fn openai_chat_turn(
+    _history: &mut Vec<serde_json::Value>,
+    _user_text: &str,
     _images: &[(String, String)],
-    _session_name: Option<&str>,
-    _resume_session: bool,
+    _api_key: &str,
+    _model: &str,
 ) -> Result<String, String> {
-    Err("Smart Edit is only supported in the desktop app. The web version cannot invoke local CLI tools.".to_string())
+    Err("Smart Edit is only supported in the desktop app. The web version cannot call the OpenAI API directly.".to_string())
+}
+
+// ── List available OpenAI models ─────────────────────────────────────
+
+/// Fetch the list of available model IDs from the OpenAI API,
+/// filtered to chat-capable models and sorted alphabetically.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn openai_list_models(api_key: &str) -> Result<Vec<String>, String> {
+    use async_openai::{Client, config::OpenAIConfig};
+
+    if api_key.is_empty() {
+        return Err("OpenAI API key is not configured.".to_string());
+    }
+
+    let config = OpenAIConfig::new().with_api_key(api_key);
+    let client = Client::with_config(config);
+
+    let response = client
+        .models()
+        .list()
+        .await
+        .map_err(|e| format!("Failed to list models: {e}"))?;
+
+    let mut ids: Vec<String> = response
+        .data
+        .into_iter()
+        .map(|m| m.id)
+        .filter(|id| is_chat_model(id))
+        .collect();
+
+    ids.sort();
+    Ok(ids)
+}
+
+/// Returns `true` only for models known to support the chat completions endpoint.
+fn is_chat_model(id: &str) -> bool {
+    // Allowlist of chat-capable model families that support image_url (vision).
+    // Excludes models without vision: gpt-3.5-turbo, gpt-4 (non-turbo),
+    // o1-mini, o1-preview, o3-mini.
+    const CHAT_MODELS: &[&str] = &[
+        "chatgpt-4o-latest",
+        "gpt-4-turbo",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
+        "gpt-4.5-preview",
+        "o1",
+        "o3",
+        "o3-pro",
+        "o4-mini",
+    ];
+
+    CHAT_MODELS.iter().any(|base| {
+        // Exact match or dated snapshot (e.g. "gpt-4o-2024-11-20").
+        id == *base || id.starts_with(&format!("{base}-2"))
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn openai_list_models(_api_key: &str) -> Result<Vec<String>, String> {
+    Err("Listing models is only supported in the desktop app.".to_string())
 }
 
 // ── File explorer reveal ─────────────────────────────────────────────

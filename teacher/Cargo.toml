@@ -10,10 +10,12 @@ path = "src/main.rs"
 [dependencies]
 blueprint = { path = "../core" }
 base64 = "0.22"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 env_logger = "0.11"
 image = { version = "0.25", features = ["png"] }
 log = "0.4"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+async-openai = { version = "0.40", features = ["chat-completion", "byot"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }

@@ -616,13 +616,19 @@ type I18nDictionary = HashMap<String, HashMap<String, String>>;
 /// is a map of language codes to their translations.
 fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> I18nDictionary {
     let mut map = I18nDictionary::new();
+    let footnote_embeds = crate::aem::converter::build_footnote_embeds(nodes);
     for node in nodes {
-        extract_from_node(node, master_lang, &mut map);
+        extract_from_node(node, master_lang, &mut map, &footnote_embeds);
     }
     map
 }
 
-fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDictionary) {
+fn extract_from_node(
+    node: &StructuredNode,
+    master_lang: &str,
+    map: &mut I18nDictionary,
+    footnote_embeds: &[crate::aem::converter::FootnoteEmbed],
+) {
     match node {
         StructuredNode::Heading(h) => {
             match h.level {
@@ -641,18 +647,27 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
                         format!("<p>{html}</p>")
                     });
                 }
-                // H3+ become TitleDraw _value (HTML-wrapped), so use HTML-wrapped keys
+                // H3+ become TitleDraw _value (HTML-wrapped), so use HTML-wrapped keys.
+                // Footnotes may be embedded inline.
                 _ => {
-                    extract_rich_text_translations(&h.content, master_lang, map, |html| {
-                        format!("<p>{html}</p>")
-                    });
+                    extract_rich_text_translations_with_footnotes(
+                        &h.content,
+                        master_lang,
+                        map,
+                        |html| format!("<p>{html}</p>"),
+                        footnote_embeds,
+                    );
                 }
             }
         }
         StructuredNode::Paragraph(p) => {
-            extract_rich_text_translations(&p.content, master_lang, map, |html| {
-                format!("<p>{html}</p>")
-            });
+            extract_rich_text_translations_with_footnotes(
+                &p.content,
+                master_lang,
+                map,
+                |html| format!("<p>{html}</p>"),
+                footnote_embeds,
+            );
         }
         StructuredNode::List(list) => {
             extract_list_translations(list, master_lang, map);
@@ -699,29 +714,29 @@ fn extract_from_node(node: &StructuredNode, master_lang: &str, map: &mut I18nDic
             }
             if let Some(header) = &t.header {
                 for cell in &header.cells {
-                    extract_from_node(cell, master_lang, map);
+                    extract_from_node(cell, master_lang, map, footnote_embeds);
                 }
             }
             for row in &t.rows {
                 for cell in &row.cells {
-                    extract_from_node(cell, master_lang, map);
+                    extract_from_node(cell, master_lang, map, footnote_embeds);
                 }
             }
         }
         StructuredNode::Group(g) => {
             for child in &g.children {
-                extract_from_node(child, master_lang, map);
+                extract_from_node(child, master_lang, map, footnote_embeds);
             }
         }
         StructuredNode::Repeatable(r) => {
-            extract_from_node(&r.item, master_lang, map);
+            extract_from_node(&r.item, master_lang, map, footnote_embeds);
         }
         StructuredNode::Conditional(c) => {
-            extract_from_node(&c.content, master_lang, map);
+            extract_from_node(&c.content, master_lang, map, footnote_embeds);
         }
         StructuredNode::GridLayout(g) => {
             for elem in &g.elements {
-                extract_from_node(&elem.node, master_lang, map);
+                extract_from_node(&elem.node, master_lang, map, footnote_embeds);
             }
         }
         _ => {}
@@ -749,6 +764,45 @@ fn extract_rich_text_translations(
         .iter()
         .filter(|l| l.as_str() != master_lang)
         .map(|l| (l.clone(), wrap(&inline_text_to_html(text, l))))
+        .collect();
+    if !others.is_empty() {
+        map.insert(master_html, others);
+    }
+}
+
+/// Like [`extract_rich_text_translations`] but also embeds inline footnote
+/// references and descriptions into the rendered HTML, so the translation
+/// key matches the AEM `_value` that contains embedded footnotes.
+fn extract_rich_text_translations_with_footnotes(
+    text: &TranslatedText,
+    master_lang: &str,
+    map: &mut I18nDictionary,
+    wrap: impl Fn(&str) -> String,
+    footnotes: &[crate::aem::converter::FootnoteEmbed],
+) {
+    use crate::aem::converter::embed_footnotes_in_value;
+
+    let mut langs = BTreeSet::new();
+    text.collect_languages(&mut langs);
+    // Also collect languages from referenced footnotes so that forms with
+    // translated footnote content get proper dictionary entries.
+    for footnote in footnotes {
+        footnote.content.collect_languages(&mut langs);
+    }
+    if langs.len() <= 1 {
+        return;
+    }
+
+    let master_html = wrap(&inline_text_to_html(text, master_lang));
+    let master_html = embed_footnotes_in_value(&master_html, footnotes, master_lang);
+    let others: HashMap<String, String> = langs
+        .iter()
+        .filter(|l| l.as_str() != master_lang)
+        .map(|l| {
+            let html = wrap(&inline_text_to_html(text, l));
+            let html = embed_footnotes_in_value(&html, footnotes, l);
+            (l.clone(), html)
+        })
         .collect();
     if !others.is_empty() {
         map.insert(master_html, others);

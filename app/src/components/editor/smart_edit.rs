@@ -1,9 +1,12 @@
-//! Smart edit: AI-assisted document editing via `gh copilot` CLI.
+//! Smart edit: AI-assisted document editing via the OpenAI API.
 //!
 //! Serialises the selected structured nodes to JSON, attaches rendered
-//! page images, sends the bundle to GitHub Copilot, and parses the
-//! response back into structured nodes along with a structured list of
-//! proposed changes that the user can accept or reject individually.
+//! page images, and sends the bundle to the configured OpenAI model as a
+//! multi-turn conversation. Each smart-edit session maintains its own
+//! [`ChatHistory`] so repair and follow-up calls benefit from full context
+//! rather than repeating content. The response is parsed back into
+//! structured nodes along with a structured list of proposed changes that
+//! the user can accept or reject individually.
 
 use std::collections::HashMap;
 
@@ -11,7 +14,10 @@ use blueprint::StructuredNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::platform::run_copilot_smart_edit;
+use crate::platform::openai_chat_turn;
+
+/// Ordered list of OpenAI chat messages for a single smart-edit session.
+pub type ChatHistory = Vec<serde_json::Value>;
 
 /// A single proposed change returned by Copilot alongside the new nodes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,6 +62,8 @@ pub fn serialize_selected_nodes(
 /// * `content` – full document content.
 /// * `selected_indices` – root-level indices of selected nodes (empty = all).
 /// * `plain_images` – label→base64-PNG map from the plain render stage.
+/// * `api_key` – OpenAI API key.
+/// * `model` – OpenAI model identifier (e.g. "gpt-4o").
 ///
 /// Returns a [`SmartEditResult`] containing the suggested nodes and the
 /// structured change list.
@@ -63,8 +71,8 @@ pub async fn run_smart_edit(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
-    session_name: &str,
-    resume_session: bool,
+    api_key: &str,
+    model: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let images: Vec<(String, String)> = plain_images
@@ -72,34 +80,32 @@ pub async fn run_smart_edit(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let prompt = build_smart_edit_prompt(selected_indices, plain_images);
-    let raw = run_copilot_smart_edit(
-        &prompt,
-        &json_context,
-        &images,
-        Some(session_name),
-        resume_session,
-    )
-    .await?;
-    let mut result = parse_with_same_session_repair(&raw, &images, session_name).await?;
+    let user_text = build_initial_user_text(&prompt, &json_context);
+
+    let mut history: ChatHistory = Vec::new();
+    let raw = openai_chat_turn(&mut history, &user_text, &images, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
     ensure_change_list(
         content,
         selected_indices,
-        &images,
+        &mut history,
         &mut result,
-        session_name,
+        api_key,
+        model,
     )
     .await;
     Ok(result)
 }
 
-/// Run a follow-up smart-edit call, informing Copilot which previously
+/// Run a follow-up smart-edit call, informing the AI which previously
 /// proposed changes were rejected so it should avoid repeating them.
 pub async fn run_smart_edit_with_feedback(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
     rejected_changes: &[ChangeItem],
-    session_name: &str,
+    api_key: &str,
+    model: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let images: Vec<(String, String)> = plain_images
@@ -107,39 +113,46 @@ pub async fn run_smart_edit_with_feedback(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let prompt = build_feedback_prompt(selected_indices, plain_images, rejected_changes);
-    let raw =
-        run_copilot_smart_edit(&prompt, &json_context, &images, Some(session_name), true).await?;
-    let mut result = parse_with_same_session_repair(&raw, &images, session_name).await?;
+    let user_text = build_initial_user_text(&prompt, &json_context);
+
+    let mut history: ChatHistory = Vec::new();
+    let raw = openai_chat_turn(&mut history, &user_text, &images, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
     ensure_change_list(
         content,
         selected_indices,
-        &images,
+        &mut history,
         &mut result,
-        session_name,
+        api_key,
+        model,
     )
     .await;
     Ok(result)
 }
 
-async fn parse_with_same_session_repair(
+async fn parse_with_repair(
     raw: &str,
-    images: &[(String, String)],
-    session_name: &str,
+    history: &mut ChatHistory,
+    api_key: &str,
+    model: &str,
 ) -> Result<SmartEditResult, String> {
     match parse_smart_edit_response(raw) {
         Ok(result) => Ok(result),
         Err(original_error) => {
+            // The bad response is already in history; include the parse error
+            // so the model knows what to fix.
             let repair_prompt = format!(
-                "Your previous response was not parseable by the consumer. Re-emit the SAME answer in the exact required format.\n\
+                "Your previous response was not parseable by the consumer. \
+                 Parse error: {original_error}\n\n\
+                 Re-emit the SAME answer in the exact required format.\n\
                  Return ONLY one valid JSON object with exactly two keys:\n\
                  - \"nodes\": array of StructuredNode JSON\n\
                  - \"changes\": array of {{\"id\": int, \"description\": string}}\n\
-                 Do not add explanations, markdown, or code fences.\n\
-                 PREVIOUS RESPONSE:\n{raw}"
+                 Do not add explanations, markdown, or code fences."
             );
 
             if let Ok(repaired_raw) =
-                run_copilot_smart_edit(&repair_prompt, "", images, Some(session_name), true).await
+                openai_chat_turn(history, &repair_prompt, &[], api_key, model).await
                 && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
             {
                 return Ok(parsed);
@@ -150,15 +163,13 @@ async fn parse_with_same_session_repair(
     }
 }
 
-/// If the AI returned nodes but no change list, and the nodes actually
-/// differ from the originals, ask Copilot for the change list in a
-/// follow-up call.
 async fn ensure_change_list(
     content: &[StructuredNode],
     selected_indices: &[usize],
-    images: &[(String, String)],
+    history: &mut ChatHistory,
     result: &mut SmartEditResult,
-    session_name: &str,
+    api_key: &str,
+    model: &str,
 ) {
     if !result.changes.is_empty() {
         return;
@@ -191,8 +202,7 @@ async fn ensure_change_list(
          No surrounding prose, no markdown fences, no backticks."
     );
 
-    if let Ok(raw) =
-        run_copilot_smart_edit(&followup_prompt, "", images, Some(session_name), true).await
+    if let Ok(raw) = openai_chat_turn(history, &followup_prompt, &[], api_key, model).await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {
@@ -224,6 +234,24 @@ fn parse_change_list(response: &str) -> Result<Vec<ChangeItem>, String> {
     }
 
     Err("Could not parse change list".to_string())
+}
+
+/// Build the full user text for the initial smart-edit call by combining the
+/// system prompt with the serialised JSON context.
+fn build_initial_user_text(prompt: &str, json_context: &str) -> String {
+    format!(
+        "{prompt}\n\n\
+         The structured JSON representation of the selected form nodes is included below. \
+         The attached PNG images show the rendered form pages for visual reference.\n\n\
+         BEGIN STRUCTURED NODES JSON\n\
+         {json_context}\n\
+         END STRUCTURED NODES JSON\n\n\
+         Return ONLY a valid JSON object with exactly two keys: \
+         \"nodes\" (the replacement Vec<StructuredNode> array) and \
+         \"changes\" (an array of objects, each with \"id\" (integer) and \"description\" (string), \
+         describing each logical change you made). \
+         No surrounding prose, no markdown fences, no trailing notes."
+    )
 }
 
 fn build_smart_edit_prompt(
