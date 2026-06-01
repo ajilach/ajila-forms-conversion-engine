@@ -19459,9 +19459,9 @@ fn test_aaed_de_has_two_repeatables_not_replaced_by_fragments_in_aem() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("de");
     config.xsd_config = Some(xsd_config);
