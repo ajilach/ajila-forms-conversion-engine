@@ -31028,3 +31028,64 @@ fn test_aagz_edokumente_checkbox_is_standalone() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn test_aags_has_no_checkbox_groups_only_standalone_checkboxes() {
+    // AAGS contains only standalone checkboxes (rendered as Bool fields) and
+    // must not produce any CheckboxGroup. The three expected checkboxes are:
+    //   - "Legitimation durch IDnow"
+    //   - "Compliance Register geprüft (COSIMA)"
+    //   - "Eine Kopie dieses Formulars wurde dem Kontoinhaber übergeben/zugesandt."
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAGS_019_DE.pdf"))
+        .expect("Failed to process AAGS PDF");
+
+    let fields = collect_fields(&structured);
+
+    // No CheckboxGroup may be present.
+    let checkbox_group_labels: Vec<String> = fields
+        .iter()
+        .filter(|f| matches!(f.input_type, FieldType::CheckboxGroup { .. }))
+        .map(|f| {
+            f.label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_else(|| "<no label>".to_string())
+        })
+        .collect();
+    assert!(
+        checkbox_group_labels.is_empty(),
+        "Expected AAGS to have no CheckboxGroups, but found: {:?}",
+        checkbox_group_labels
+    );
+
+    // Exactly three standalone Bool checkboxes are expected.
+    let bool_labels: Vec<String> = fields
+        .iter()
+        .filter(|f| matches!(f.input_type, FieldType::Bool))
+        .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+        .collect();
+
+    assert_eq!(
+        bool_labels.len(),
+        3,
+        "Expected exactly 3 standalone checkboxes in AAGS, got: {:?}",
+        bool_labels
+    );
+
+    let expected = [
+        "Legitimation durch IDnow",
+        "Compliance Register geprüft (COSIMA)",
+        "Eine Kopie dieses Formulars wurde dem Kontoinhaber übergeben/zugesandt.",
+    ];
+    for fragment in expected {
+        assert!(
+            bool_labels.iter().any(|l| l.contains(fragment)),
+            "Expected a standalone checkbox containing {:?}. Found: {:?}",
+            fragment,
+            bool_labels
+        );
+    }
+}
