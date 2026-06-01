@@ -1032,7 +1032,8 @@ fn normalize_split_checkbox_groups_recursive(nodes: &mut Vec<StructuredNode>) {
                 StructuredNode::Field(f3),
             ) if matches!(f1.input_type, FieldType::Bool)
                 && matches!(f2.input_type, FieldType::Bool)
-                && matches!(f3.input_type, FieldType::Bool) => {
+                && matches!(f3.input_type, FieldType::Bool) =>
+            {
                 (f1.clone(), f2.clone(), cond.clone(), f3.clone())
             }
             _ => {

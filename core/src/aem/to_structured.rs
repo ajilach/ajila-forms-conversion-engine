@@ -519,7 +519,11 @@ fn translate_string(
 ///
 /// Strips HTML tags from labels and looks up translations via the Sling
 /// `fd_` dictionary key format.
-fn convert_options(options: &[AemOption], component_name: &str, ctx: &ConversionContext) -> Vec<NameValue> {
+fn convert_options(
+    options: &[AemOption],
+    component_name: &str,
+    ctx: &ConversionContext,
+) -> Vec<NameValue> {
     options
         .iter()
         .map(|opt| {

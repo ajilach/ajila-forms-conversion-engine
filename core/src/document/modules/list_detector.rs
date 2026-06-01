@@ -943,14 +943,17 @@ impl AnalysisModule for ListDetector {
                 let last_height = last.2.height;
 
                 // Find all non-marker TextBlocks in the range between items
-                let tbs_in_range: Vec<&Bounds> = all_non_marker_tb_bounds.iter().filter(|sep| {
-                    let sep_bottom = sep.y + sep.height;
-                    let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
-                    let item_x_lo = last.2.x.min(bounds.x);
-                    let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
-                    let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
-                    y_overlap && x_overlap
-                }).collect();
+                let tbs_in_range: Vec<&Bounds> = all_non_marker_tb_bounds
+                    .iter()
+                    .filter(|sep| {
+                        let sep_bottom = sep.y + sep.height;
+                        let y_overlap = sep_bottom > range_lo && sep.y < range_hi;
+                        let item_x_lo = last.2.x.min(bounds.x);
+                        let item_x_hi = (last.2.x + last.2.width).max(bounds.x + bounds.width);
+                        let x_overlap = sep.x < item_x_hi && (sep.x + sep.width) > item_x_lo;
+                        y_overlap && x_overlap
+                    })
+                    .collect();
 
                 // Check continuation text between bold items.  Body text
                 // below a heading fills most of the vertical gap or is

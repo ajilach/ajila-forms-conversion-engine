@@ -10,10 +10,10 @@ use std::collections::HashSet;
 use blueprint::document::ListStyleType;
 use blueprint::{FieldId, ListNode, StructuredNode};
 
-use super::metadata_editor::{has_editable_metadata, MetadataEditor, MetadataNodeWrapper};
+use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
 use super::state::{
-    list_item_has_missing_translations, node_has_children, node_has_missing_translations,
-    node_summary, node_type_name, EditorAction, NodePath, PathSegment, SelectionState,
+    EditorAction, NodePath, PathSegment, SelectionState, list_item_has_missing_translations,
+    node_has_children, node_has_missing_translations, node_summary, node_type_name,
 };
 use super::text_editor::{InlineTextWrapper, TextEditor};
 
@@ -283,11 +283,7 @@ fn alpha_index(mut n: usize, uppercase: bool) -> String {
     }
     chars.reverse();
     let s: String = chars.into_iter().collect();
-    if uppercase {
-        s.to_uppercase()
-    } else {
-        s
-    }
+    if uppercase { s.to_uppercase() } else { s }
 }
 
 fn roman_index(mut n: usize, uppercase: bool) -> String {
@@ -362,8 +358,16 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
         "node-item {} {} {} {}",
         if is_selected { "selected" } else { "" },
         if is_editing { "editing" } else { "" },
-        if is_highlighted { "node-search-match" } else { "" },
-        if has_missing { "node-missing-translation" } else { "" },
+        if is_highlighted {
+            "node-search-match"
+        } else {
+            ""
+        },
+        if has_missing {
+            "node-missing-translation"
+        } else {
+            ""
+        },
     );
 
     let type_name = node_type_name(&props.node.0);

@@ -79,11 +79,7 @@ impl CheckboxGrouper {
         if let GroupKind::Checkbox { label, .. } = &group.kind {
             let label_group_idx = *group.children.get(*label)?;
             let text = doc.get_text_content(label_group_idx);
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
+            if text.is_empty() { None } else { Some(text) }
         } else {
             None
         }
@@ -248,8 +244,7 @@ impl CheckboxGrouper {
                 return true;
             }
 
-            let is_inset =
-                bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
+            let is_inset = bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
             if !is_inset {
                 return false;
             }
@@ -280,8 +275,7 @@ impl CheckboxGrouper {
                 continue;
             }
 
-            let is_inset =
-                bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
+            let is_inset = bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
 
             if is_inset {
                 continue;
@@ -678,8 +672,8 @@ impl CheckboxGrouper {
                     .map(|&idx| self.get_checkbox_label(doc, idx))
                     .collect();
 
-                let all_same_label = labels.iter().all(|l| l.is_some())
-                    && labels.windows(2).all(|w| w[0] == w[1]);
+                let all_same_label =
+                    labels.iter().all(|l| l.is_some()) && labels.windows(2).all(|w| w[0] == w[1]);
 
                 if !all_same_label {
                     doc.merge_inferred(group, GroupKind::CheckboxGroup, self.name());

@@ -5621,7 +5621,8 @@ fn test_aaaa_019_checkbox_detection() {
 fn test_aaaa_019_checkbox_group_for_communication_changes() {
     use crate::structured::FieldType;
 
-    let mut bp = Blueprint::from_pdf(input_path("AAAA_019_EN.pdf")).expect("Failed to load AAAA PDF");
+    let mut bp =
+        Blueprint::from_pdf(input_path("AAAA_019_EN.pdf")).expect("Failed to load AAAA PDF");
     let ctx = bp.context();
     let states = bp.states().expect("Failed to explore AAAA states");
 
@@ -5672,7 +5673,10 @@ fn test_aaaa_019_checkbox_group_for_communication_changes() {
         panic!("Expected CheckboxGroup");
     };
 
-    let option_texts: Vec<String> = options.iter().map(|option| option.name.as_str().to_string()).collect();
+    let option_texts: Vec<String> = options
+        .iter()
+        .map(|option| option.name.as_str().to_string())
+        .collect();
     let expected_options = [
         "All telephone numbers for a callback regarding the issue of quality management remain unchanged",
         "The subsequent invalid contact details will no longer be used",
@@ -14003,9 +14007,9 @@ fn test_aahq_checkbox_group_versand_abweichend() {
 
     let found_as_group = checkbox_groups.iter().any(|field| {
         if let FieldType::CheckboxGroup { options } = &field.input_type {
-            expected_labels.iter().all(|expected| {
-                options.iter().any(|o| o.name.contains(expected))
-            })
+            expected_labels
+                .iter()
+                .all(|expected| options.iter().any(|o| o.name.contains(expected)))
         } else {
             false
         }
@@ -14016,7 +14020,8 @@ fn test_aahq_checkbox_group_versand_abweichend() {
         "Expected a CheckboxGroup containing {:?}. Found {} checkbox groups: {:?}",
         expected_labels,
         checkbox_groups.len(),
-        checkbox_groups.iter()
+        checkbox_groups
+            .iter()
             .filter_map(|f| {
                 if let FieldType::CheckboxGroup { options } = &f.input_type {
                     Some(options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>())
@@ -19530,8 +19535,8 @@ fn test_aagx_en_repeatable_not_replaced_by_fragment() {
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -30168,10 +30173,6 @@ fn test_aaha_custom_elements_form_addressee_replaced_with_radio() {
     );
 }
 
-
-
-
-
 #[test]
 fn test_aaha_custom_elements_signatures_on_last_page() {
     let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
@@ -30987,10 +30988,11 @@ fn test_aads_no_duplicated_content() {
 fn test_aafm_checkbox_group_detected_with_german_labels() {
     use crate::structured::FieldType;
 
-    let zip_bytes =
-        std::fs::read(input_path("AAFM_019.zip")).expect("Failed to read AAFM_019.zip");
+    let zip_bytes = std::fs::read(input_path("AAFM_019.zip")).expect("Failed to read AAFM_019.zip");
     let bp = Blueprint::from_aem_zip(&zip_bytes).expect("Failed to parse AAFM_019.zip");
-    let envelope = bp.aem_structured().expect("Failed to get AEM structured output");
+    let envelope = bp
+        .aem_structured()
+        .expect("Failed to get AEM structured output");
     let fields = collect_fields(&envelope.content);
 
     // Find the checkbox group for industries/activities.
@@ -31169,10 +31171,17 @@ fn test_aagz_autorisierungsreferenz_checkbox_group_with_conditional() {
                 table
                     .header
                     .as_ref()
-                    .map(|header| header.cells.iter().any(|cell| node_contains_text(cell, needle)))
+                    .map(|header| {
+                        header
+                            .cells
+                            .iter()
+                            .any(|cell| node_contains_text(cell, needle))
+                    })
                     .unwrap_or(false)
                     || table.rows.iter().any(|row| {
-                        row.cells.iter().any(|cell| node_contains_text(cell, needle))
+                        row.cells
+                            .iter()
+                            .any(|cell| node_contains_text(cell, needle))
                     })
             }
             _ => false,
@@ -31270,10 +31279,7 @@ fn test_aagz_autorisierungsreferenz_checkbox_group_with_conditional() {
 
     assert!(
         matching_conditionals.iter().any(|cond| {
-            node_contains_text(
-                cond.content.as_ref(),
-                "Erfasste Zahlungsaufträge freigeben",
-            )
+            node_contains_text(cond.content.as_ref(), "Erfasste Zahlungsaufträge freigeben")
         }),
         "Expected the conditional gated on the second option to contain the \
          'Erfasste Zahlungsaufträge freigeben' content"
@@ -31517,7 +31523,10 @@ fn test_aalp_bucket_checkbox_groups() {
         let FieldType::CheckboxGroup { options } = &group.input_type else {
             unreachable!()
         };
-        let actual: Vec<String> = options.iter().map(|o| o.name.as_str().to_string()).collect();
+        let actual: Vec<String> = options
+            .iter()
+            .map(|o| o.name.as_str().to_string())
+            .collect();
         assert_eq!(
             options.len(),
             expected.len(),
@@ -31607,7 +31616,10 @@ fn test_bagq_currencies_checkbox_group() {
     let FieldType::CheckboxGroup { options } = &group.input_type else {
         unreachable!()
     };
-    let actual: Vec<String> = options.iter().map(|o| o.name.as_str().to_string()).collect();
+    let actual: Vec<String> = options
+        .iter()
+        .map(|o| o.name.as_str().to_string())
+        .collect();
 
     let expected = ["EUR", "USD", "CHF", "GBP", "CAD", "JPY", "AUD", "MXN"];
     assert_eq!(

@@ -833,14 +833,8 @@ pub(crate) fn node_matches_for_similarity(a: &StructuredNode, b: &StructuredNode
 /// were rendered with different styling (e.g. a non-bold introduction and a
 /// bold instruction line).
 fn inline_text_structure_compatible(a: &TranslatedText, b: &TranslatedText) -> bool {
-    let a_bold =
-        a.0.values()
-            .next()
-            .is_some_and(inline_text_is_bold);
-    let b_bold =
-        b.0.values()
-            .next()
-            .is_some_and(inline_text_is_bold);
+    let a_bold = a.0.values().next().is_some_and(inline_text_is_bold);
+    let b_bold = b.0.values().next().is_some_and(inline_text_is_bold);
     a_bold == b_bold
 }
 

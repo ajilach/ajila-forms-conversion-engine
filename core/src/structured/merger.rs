@@ -1143,8 +1143,7 @@ fn recurse_into_node(node: StructuredNode) -> StructuredNode {
 mod tests {
     use super::*;
     use crate::structured::{
-        HeadingLevel, HeadingNode, InlineText, ParagraphNode, StructuredNode,
-        TranslatedText,
+        HeadingLevel, HeadingNode, InlineText, ParagraphNode, StructuredNode, TranslatedText,
     };
 
     fn translated_text(entries: &[(&str, &str)]) -> TranslatedText {

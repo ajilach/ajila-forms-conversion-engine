@@ -174,11 +174,22 @@ fn classify_node(node: &AemNode) -> (&'static str, String, Vec<AemNode>) {
         }
         AemNode::Preface { .. } => ("aem-static aem-preface", "Preface".into(), vec![]),
         AemNode::Appendix { .. } => ("aem-static aem-appendix", "Appendix".into(), vec![]),
-        AemNode::FootnotePlaceholder { name, .. } => {
-            ("aem-static aem-footnote-placeholder", format!("Footnote Placeholder ({name})"), vec![])
-        }
-        AemNode::Custom { name, label, template_key, .. } => {
-            let display = format!("[custom:{}] {}", template_key, if label.is_empty() { name } else { label });
+        AemNode::FootnotePlaceholder { name, .. } => (
+            "aem-static aem-footnote-placeholder",
+            format!("Footnote Placeholder ({name})"),
+            vec![],
+        ),
+        AemNode::Custom {
+            name,
+            label,
+            template_key,
+            ..
+        } => {
+            let display = format!(
+                "[custom:{}] {}",
+                template_key,
+                if label.is_empty() { name } else { label }
+            );
             ("aem-field aem-custom", display, vec![])
         }
     }

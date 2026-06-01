@@ -4,8 +4,8 @@ mod file_upload;
 mod image_grid;
 mod progress;
 mod results;
-pub(crate) mod spinner;
 mod settings;
+pub(crate) mod spinner;
 
 pub use aem_preview::{AemPreview, AemPreviewEnvelope};
 pub use editor::{EnvelopeWrapper, StructuredEditor};

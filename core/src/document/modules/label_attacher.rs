@@ -457,8 +457,7 @@ impl LabelAttacher {
 
             let mut matched = None;
             for &dir in &directions {
-                if let Some(result) = self.find_label_at_position(doc, group_idx, &available, dir)
-                {
+                if let Some(result) = self.find_label_at_position(doc, group_idx, &available, dir) {
                     matched = Some(result);
                     break;
                 }

@@ -530,7 +530,9 @@ impl<'a, 'b> Converter<'a, 'b> {
         let mut i = 0;
         while i + 2 < nodes.len() {
             let group_name = match &nodes[i] {
-                StructuredNode::Field(f) if matches!(f.input_type, FieldType::CheckboxGroup { .. }) => {
+                StructuredNode::Field(f)
+                    if matches!(f.input_type, FieldType::CheckboxGroup { .. }) =>
+                {
                     Some(f.name.clone())
                 }
                 _ => None,
@@ -587,9 +589,9 @@ impl<'a, 'b> Converter<'a, 'b> {
             if let StructuredNode::Field(f) = &mut nodes[i]
                 && let FieldType::CheckboxGroup { options } = &mut f.input_type
             {
-                let exists = options
-                    .iter()
-                    .any(|o| o.name.contains(&option_label) || option_label.contains(o.name.as_str()));
+                let exists = options.iter().any(|o| {
+                    o.name.contains(&option_label) || option_label.contains(o.name.as_str())
+                });
                 if !exists {
                     options.push(NameValue {
                         name: TranslatableString::Plain(option_label),
@@ -603,7 +605,8 @@ impl<'a, 'b> Converter<'a, 'b> {
 
         let mut j = 0;
         while j + 3 < nodes.len() {
-            let (f1, f2, cond, f3) = match (&nodes[j], &nodes[j + 1], &nodes[j + 2], &nodes[j + 3]) {
+            let (f1, f2, cond, f3) = match (&nodes[j], &nodes[j + 1], &nodes[j + 2], &nodes[j + 3])
+            {
                 (
                     StructuredNode::Field(f1),
                     StructuredNode::Field(f2),
@@ -611,7 +614,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                     StructuredNode::Field(f3),
                 ) if matches!(f1.input_type, FieldType::Bool)
                     && matches!(f2.input_type, FieldType::Bool)
-                    && matches!(f3.input_type, FieldType::Bool) => (f1.clone(), f2.clone(), cond.clone(), f3.clone()),
+                    && matches!(f3.input_type, FieldType::Bool) =>
+                {
+                    (f1.clone(), f2.clone(), cond.clone(), f3.clone())
+                }
                 _ => {
                     j += 1;
                     continue;
@@ -1004,7 +1010,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                     .cloned();
 
                 let (field_name, value) = mapped.unwrap_or_else(|| {
-                    (FieldId::from_som_path(checkbox_som_path), InputValue::Bool(true))
+                    (
+                        FieldId::from_som_path(checkbox_som_path),
+                        InputValue::Bool(true),
+                    )
                 });
 
                 Some(StructuredNode::Conditional(ConditionalNode {
@@ -1418,7 +1427,10 @@ impl<'a, 'b> Converter<'a, 'b> {
             let mut map = self.checkbox_condition_map.borrow_mut();
             for (opt, som_path) in options.iter().zip(option_som_paths.iter()) {
                 if let Some(path) = som_path {
-                    map.insert(path.as_str().to_string(), (field_id.clone(), opt.value.clone()));
+                    map.insert(
+                        path.as_str().to_string(),
+                        (field_id.clone(), opt.value.clone()),
+                    );
                 }
             }
         }

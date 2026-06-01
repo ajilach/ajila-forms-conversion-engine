@@ -250,7 +250,9 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
 
             let has_options = matches!(
                 &f.input_type,
-                FieldType::Radio { .. } | FieldType::Select { .. } | FieldType::CheckboxGroup { .. }
+                FieldType::Radio { .. }
+                    | FieldType::Select { .. }
+                    | FieldType::CheckboxGroup { .. }
             );
             let initial_options = match &f.input_type {
                 FieldType::Radio { options }

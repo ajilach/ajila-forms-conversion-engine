@@ -304,7 +304,10 @@ mod tests {
 
     #[test]
     fn test_plain_text_roundtrip() {
-        let text = TranslatedText::single("en", InlineText(vec![InlineNode::Text("Hello world".to_string())]));
+        let text = TranslatedText::single(
+            "en",
+            InlineText(vec![InlineNode::Text("Hello world".to_string())]),
+        );
         let md = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md, "Hello world");
 
@@ -314,11 +317,14 @@ mod tests {
 
     #[test]
     fn test_bold_roundtrip() {
-        let text = TranslatedText::single("it", InlineText(vec![
-            InlineNode::Text("A tal fine, il Cliente ".to_string()),
-            InlineNode::Strong(Box::new(InlineNode::Text("dichiara".to_string()))),
-            InlineNode::Text(" di avere".to_string()),
-        ]));
+        let text = TranslatedText::single(
+            "it",
+            InlineText(vec![
+                InlineNode::Text("A tal fine, il Cliente ".to_string()),
+                InlineNode::Strong(Box::new(InlineNode::Text("dichiara".to_string()))),
+                InlineNode::Text(" di avere".to_string()),
+            ]),
+        );
 
         let md = inline_text_to_markdown(&text, Some("it"));
         assert_eq!(md, "A tal fine, il Cliente **dichiara** di avere");
@@ -330,11 +336,14 @@ mod tests {
 
     #[test]
     fn test_italic_roundtrip() {
-        let text = TranslatedText::single("en", InlineText(vec![
-            InlineNode::Text("Some ".to_string()),
-            InlineNode::Emphasis(Box::new(InlineNode::Text("italic".to_string()))),
-            InlineNode::Text(" text".to_string()),
-        ]));
+        let text = TranslatedText::single(
+            "en",
+            InlineText(vec![
+                InlineNode::Text("Some ".to_string()),
+                InlineNode::Emphasis(Box::new(InlineNode::Text("italic".to_string()))),
+                InlineNode::Text(" text".to_string()),
+            ]),
+        );
 
         let md = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md, "Some *italic* text");
@@ -346,11 +355,14 @@ mod tests {
 
     #[test]
     fn test_mixed_formatting() {
-        let text = TranslatedText::single("en", InlineText(vec![
-            InlineNode::Strong(Box::new(InlineNode::Text("bold".to_string()))),
-            InlineNode::Text(" and ".to_string()),
-            InlineNode::Emphasis(Box::new(InlineNode::Text("italic".to_string()))),
-        ]));
+        let text = TranslatedText::single(
+            "en",
+            InlineText(vec![
+                InlineNode::Strong(Box::new(InlineNode::Text("bold".to_string()))),
+                InlineNode::Text(" and ".to_string()),
+                InlineNode::Emphasis(Box::new(InlineNode::Text("italic".to_string()))),
+            ]),
+        );
 
         let md = inline_text_to_markdown(&text, Some("en"));
         assert_eq!(md, "**bold** and *italic*");
@@ -380,14 +392,20 @@ mod tests {
     fn test_multilingual_display_per_language() {
         // Create multilingual text with different formatting per language
         let mut text = TranslatedText::empty();
-        text.insert("de", InlineText(vec![
-            InlineNode::Strong(Box::new(InlineNode::Text("fett".to_string()))),
-            InlineNode::Text(" Text".to_string()),
-        ]));
-        text.insert("en", InlineText(vec![
-            InlineNode::Strong(Box::new(InlineNode::Text("bold".to_string()))),
-            InlineNode::Text(" text".to_string()),
-        ]));
+        text.insert(
+            "de",
+            InlineText(vec![
+                InlineNode::Strong(Box::new(InlineNode::Text("fett".to_string()))),
+                InlineNode::Text(" Text".to_string()),
+            ]),
+        );
+        text.insert(
+            "en",
+            InlineText(vec![
+                InlineNode::Strong(Box::new(InlineNode::Text("bold".to_string()))),
+                InlineNode::Text(" text".to_string()),
+            ]),
+        );
 
         // Display for German
         let md_de = inline_text_to_markdown(&text, Some("de"));

@@ -1298,9 +1298,7 @@ impl FieldType {
             | (
                 FieldType::CheckboxGroup { options: opts1 },
                 FieldType::CheckboxGroup { options: opts2 },
-            ) => {
-                option_name_values_structural_eq(opts1, opts2)
-            }
+            ) => option_name_values_structural_eq(opts1, opts2),
             _ => false,
         }
     }

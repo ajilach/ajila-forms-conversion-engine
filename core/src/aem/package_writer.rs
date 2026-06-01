@@ -7,11 +7,11 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Cursor, Write};
 
-use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use quick_xml::Writer;
+use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use uuid::Uuid;
-use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
+use zip::write::SimpleFileOptions;
 
 use super::{AemConfig, AemNode};
 use crate::aem::converter::inline_text_to_html;
@@ -70,7 +70,13 @@ pub fn generate_aem_package(
         "META-INF/MANIFEST.MF",
         &generate_manifest(&package_name, &filter_roots),
     );
-    write_entry(&mut zip, &opts, &mut written, "META-INF/vault/config.xml", VAULT_CONFIG);
+    write_entry(
+        &mut zip,
+        &opts,
+        &mut written,
+        "META-INF/vault/config.xml",
+        VAULT_CONFIG,
+    );
     write_entry(
         &mut zip,
         &opts,
@@ -101,7 +107,13 @@ pub fn generate_aem_package(
     );
 
     // ── jcr_root boilerplate ────────────────────────────────────────────
-    write_entry(&mut zip, &opts, &mut written, "jcr_root/.content.xml", JCR_ROOT_XML);
+    write_entry(
+        &mut zip,
+        &opts,
+        &mut written,
+        "jcr_root/.content.xml",
+        JCR_ROOT_XML,
+    );
     write_entry(
         &mut zip,
         &opts,

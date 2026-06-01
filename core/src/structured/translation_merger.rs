@@ -1321,10 +1321,13 @@ mod tests {
             "de",
             vec![StructuredNode::List(ListNode {
                 list_style: crate::document::ListStyleType::Disc,
-                items: vec![ListItem::simple(TranslatedText::single("de", InlineText(vec![
-                    InlineNode::Text("Prefix ".to_string()),
-                    InlineNode::Strong(Box::new(InlineNode::Text("Suffix".to_string()))),
-                ])))],
+                items: vec![ListItem::simple(TranslatedText::single(
+                    "de",
+                    InlineText(vec![
+                        InlineNode::Text("Prefix ".to_string()),
+                        InlineNode::Strong(Box::new(InlineNode::Text("Suffix".to_string()))),
+                    ]),
+                ))],
             })],
         );
 
@@ -1343,7 +1346,10 @@ mod tests {
             _ => panic!("Expected list node"),
         };
 
-        assert_eq!(list.items[0].content.get("de").unwrap().as_plain_text(), "Prefix Suffix");
+        assert_eq!(
+            list.items[0].content.get("de").unwrap().as_plain_text(),
+            "Prefix Suffix"
+        );
         assert!(
             list.items[0]
                 .content
@@ -1538,7 +1544,10 @@ mod tests {
         assert_eq!(result.content.len(), 2);
 
         if let StructuredNode::Heading(heading) = &result.content[1] {
-            assert_eq!(heading.content.get("de").unwrap().as_plain_text(), "Nur Deutsch");
+            assert_eq!(
+                heading.content.get("de").unwrap().as_plain_text(),
+                "Nur Deutsch"
+            );
             assert!(
                 heading
                     .content
@@ -1556,9 +1565,12 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: TranslatedText::single("de", InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
-                    "Basis".to_string(),
-                )))])),
+                content: TranslatedText::single(
+                    "de",
+                    InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                        "Basis".to_string(),
+                    )))]),
+                ),
                 som_path: None,
                 source_name: None,
             })],
@@ -1572,9 +1584,12 @@ mod tests {
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: TranslatedText::single("en", InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
-                        "Other".to_string(),
-                    )))])),
+                    content: TranslatedText::single(
+                        "en",
+                        InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                            "Other".to_string(),
+                        )))]),
+                    ),
                     som_path: None,
                     source_name: None,
                 }),
@@ -1602,10 +1617,13 @@ mod tests {
         let de = make_envelope(
             "de",
             vec![StructuredNode::Paragraph(ParagraphNode {
-                content: TranslatedText::single("de", InlineText(vec![
-                    InlineNode::Strong(Box::new(InlineNode::Text("Basis".to_string()))),
-                    InlineNode::Text(" Ende".to_string()),
-                ])),
+                content: TranslatedText::single(
+                    "de",
+                    InlineText(vec![
+                        InlineNode::Strong(Box::new(InlineNode::Text("Basis".to_string()))),
+                        InlineNode::Text(" Ende".to_string()),
+                    ]),
+                ),
                 som_path: None,
                 source_name: None,
             })],
@@ -1619,10 +1637,13 @@ mod tests {
                     source_name: None,
                 }),
                 StructuredNode::Paragraph(ParagraphNode {
-                    content: TranslatedText::single("en", InlineText(vec![
-                        InlineNode::Strong(Box::new(InlineNode::Text("Other".to_string()))),
-                        InlineNode::Text(" tail".to_string()),
-                    ])),
+                    content: TranslatedText::single(
+                        "en",
+                        InlineText(vec![
+                            InlineNode::Strong(Box::new(InlineNode::Text("Other".to_string()))),
+                            InlineNode::Text(" tail".to_string()),
+                        ]),
+                    ),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2314,9 +2335,18 @@ mod tests {
 
         // The single H2 must carry all three translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
-            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Kundenerklärungen");
-            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Client representations");
-            assert_eq!(h.content.get("es").unwrap().as_plain_text(), "Declaraciones del Cliente");
+            assert_eq!(
+                h.content.get("de").unwrap().as_plain_text(),
+                "Kundenerklärungen"
+            );
+            assert_eq!(
+                h.content.get("en").unwrap().as_plain_text(),
+                "Client representations"
+            );
+            assert_eq!(
+                h.content.get("es").unwrap().as_plain_text(),
+                "Declaraciones del Cliente"
+            );
         } else {
             panic!("Expected Heading as first node");
         }
@@ -2444,8 +2474,14 @@ mod tests {
 
         // The single H2 must carry both translations.
         if let StructuredNode::Heading(h) = &result.content[0] {
-            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Kundenkontoverwaltung");
-            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Customer account management");
+            assert_eq!(
+                h.content.get("de").unwrap().as_plain_text(),
+                "Kundenkontoverwaltung"
+            );
+            assert_eq!(
+                h.content.get("en").unwrap().as_plain_text(),
+                "Customer account management"
+            );
         } else {
             panic!("Expected Heading as first node");
         }
@@ -2473,7 +2509,10 @@ mod tests {
             vec![
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: TranslatedText::plain_with_lang("de", "Kontoeröffnungsantragsbearbeitung"),
+                    content: TranslatedText::plain_with_lang(
+                        "de",
+                        "Kontoeröffnungsantragsbearbeitung",
+                    ),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2511,7 +2550,10 @@ mod tests {
                 }),
                 StructuredNode::Heading(HeadingNode {
                     level: HeadingLevel::H2,
-                    content: TranslatedText::plain_with_lang("en", "Processing of account opening applications"),
+                    content: TranslatedText::plain_with_lang(
+                        "en",
+                        "Processing of account opening applications",
+                    ),
                     som_path: None,
                     source_name: None,
                 }),
@@ -2540,8 +2582,14 @@ mod tests {
             .find(|n| matches!(n, StructuredNode::Heading(h) if h.level.as_u8() == HeadingLevel::H2.as_u8()))
             .expect("H2 heading not found");
         if let StructuredNode::Heading(h) = heading {
-            assert_eq!(h.content.get("de").unwrap().as_plain_text(), "Kontoeröffnungsantragsbearbeitung");
-            assert_eq!(h.content.get("en").unwrap().as_plain_text(), "Processing of account opening applications");
+            assert_eq!(
+                h.content.get("de").unwrap().as_plain_text(),
+                "Kontoeröffnungsantragsbearbeitung"
+            );
+            assert_eq!(
+                h.content.get("en").unwrap().as_plain_text(),
+                "Processing of account opening applications"
+            );
         }
     }
 }
