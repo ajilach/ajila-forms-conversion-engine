@@ -4,14 +4,14 @@
 //! FileVault content package (ZIP) that can be uploaded directly to an AEM
 //! instance via the Package Manager.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{Cursor, Write};
 
-use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
+use quick_xml::Writer;
 use uuid::Uuid;
-use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 use super::{AemConfig, AemNode};
 use crate::aem::converter::inline_text_to_html;
@@ -60,69 +60,80 @@ pub fn generate_aem_package(
     let buf = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(buf);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut written: HashSet<String> = HashSet::new();
 
     // ── META-INF ────────────────────────────────────────────────────────
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "META-INF/MANIFEST.MF",
         &generate_manifest(&package_name, &filter_roots),
     );
-    write_entry(&mut zip, &opts, "META-INF/vault/config.xml", VAULT_CONFIG);
+    write_entry(&mut zip, &opts, &mut written, "META-INF/vault/config.xml", VAULT_CONFIG);
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "META-INF/vault/nodetypes.cnd",
         NODETYPES_CND,
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "META-INF/vault/filter.xml",
         &generate_filter_xml(&filter_roots),
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "META-INF/vault/properties.xml",
         &generate_properties_xml(&package_name, &config.author),
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "META-INF/vault/definition/.content.xml",
         &generate_definition_xml(&package_name, &config.author, &filter_roots),
     );
 
     // ── jcr_root boilerplate ────────────────────────────────────────────
-    write_entry(&mut zip, &opts, "jcr_root/.content.xml", JCR_ROOT_XML);
+    write_entry(&mut zip, &opts, &mut written, "jcr_root/.content.xml", JCR_ROOT_XML);
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/.content.xml",
         CONTENT_XML,
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/forms/.content.xml",
         FORMS_XML,
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/forms/af/.content.xml",
         AF_XML,
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/dam/.content.xml",
         DAM_XML,
     );
     write_entry(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/dam/formsanddocuments/.content.xml",
         FORMSANDDOCUMENTS_XML,
     );
@@ -133,6 +144,7 @@ pub fn generate_aem_package(
     write_intermediate_folders(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/forms/af",
         &path_segments,
         false,
@@ -141,6 +153,7 @@ pub fn generate_aem_package(
     write_intermediate_folders(
         &mut zip,
         &opts,
+        &mut written,
         "jcr_root/content/dam/formsanddocuments",
         &path_segments,
         true,
@@ -151,14 +164,14 @@ pub fn generate_aem_package(
         "jcr_root/content/forms/af/{}/{}/.content.xml",
         config.form_path, form_dir
     );
-    write_entry(&mut zip, &opts, &form_content_path, &form_xml);
+    write_entry(&mut zip, &opts, &mut written, &form_content_path, &form_xml);
 
     // ── DAM asset .content.xml ──────────────────────────────────────────
     let dam_content_path = format!(
         "jcr_root/content/dam/formsanddocuments/{}/{}/.content.xml",
         config.form_path, form_dir
     );
-    write_entry(&mut zip, &opts, &dam_content_path, &dam_xml);
+    write_entry(&mut zip, &opts, &mut written, &dam_content_path, &dam_xml);
 
     // ── Translation dictionaries ────────────────────────────────────────
     let mut translations = extract_translations(content, &config.master_language);
@@ -200,14 +213,14 @@ pub fn generate_aem_package(
             if !entries.is_empty() {
                 let dict_xml = generate_dictionary_xml(lang, &entries, &basename);
                 let dict_path = format!("{}/{}.xml", dict_base, lang);
-                write_entry(&mut zip, &opts, &dict_path, &dict_xml);
+                write_entry(&mut zip, &opts, &mut written, &dict_path, &dict_xml);
 
                 // Generate dictionary files for language synonyms with the same translations
                 if let Some(synonyms) = config.language_synonyms.get(lang) {
                     for synonym in synonyms {
                         let syn_xml = generate_dictionary_xml(synonym, &entries, &basename);
                         let syn_path = format!("{}/{}.xml", dict_base, synonym);
-                        write_entry(&mut zip, &opts, &syn_path, &syn_xml);
+                        write_entry(&mut zip, &opts, &mut written, &syn_path, &syn_xml);
                     }
                 }
             }
@@ -233,6 +246,7 @@ pub fn generate_aem_package(
                     write_intermediate_folders(
                         &mut zip,
                         &opts,
+                        &mut written,
                         "jcr_root/content/dam/formsanddocuments",
                         dir_segments,
                         true,
@@ -240,7 +254,7 @@ pub fn generate_aem_package(
                 }
             }
 
-            write_entry(&mut zip, &opts, &xsd_zip_path, &xsd_content);
+            write_entry(&mut zip, &opts, &mut written, &xsd_zip_path, &xsd_content);
         }
     }
 
@@ -254,9 +268,13 @@ pub fn generate_aem_package(
 fn write_entry(
     zip: &mut ZipWriter<Cursor<Vec<u8>>>,
     opts: &SimpleFileOptions,
+    written: &mut HashSet<String>,
     path: &str,
     content: &str,
 ) {
+    if !written.insert(path.to_string()) {
+        return;
+    }
     zip.start_file(path, *opts).expect("zip start_file");
     zip.write_all(content.as_bytes()).expect("zip write");
 }
@@ -267,6 +285,7 @@ fn write_entry(
 fn write_intermediate_folders(
     zip: &mut ZipWriter<Cursor<Vec<u8>>>,
     opts: &SimpleFileOptions,
+    written: &mut HashSet<String>,
     base: &str,
     segments: &[&str],
     is_dam: bool,
@@ -276,9 +295,9 @@ fn write_intermediate_folders(
         current = format!("{}/{}", current, seg);
         let path = format!("{}/.content.xml", current);
         if is_dam {
-            write_entry(zip, opts, &path, DAM_FOLDER_XML);
+            write_entry(zip, opts, written, &path, DAM_FOLDER_XML);
         } else {
-            write_entry(zip, opts, &path, ORDERED_FOLDER_XML);
+            write_entry(zip, opts, written, &path, ORDERED_FOLDER_XML);
         }
     }
 }
@@ -1872,5 +1891,39 @@ mod tests {
             "de-ch synonym dictionary must contain the same translations as de, got: {}",
             de_ch_xml
         );
+    }
+
+    /// Regression test: when the XSD path shares a common prefix with the form
+    /// path, `write_intermediate_folders` would previously try to add the same
+    /// ZIP entry twice, causing an `InvalidArchive("Duplicate filename")` panic.
+    #[test]
+    fn package_no_duplicate_filenames_when_xsd_shares_form_path_prefix() {
+        let mut config = AemConfig::test_default("TEST");
+        config.bind_to_xsd = true;
+        config.xsd_config = Some(XsdConfig::from_profile(XsdProfile::default()));
+        // XSD path under the same "test/path" prefix as form_path
+        config.xsd_path =
+            Some("/content/dam/formsanddocuments/test/path/AF_TEST/schema.xsd".into());
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+
+        // Must not panic
+        let zip_bytes = generate_aem_package(&root, &config, &[]);
+        let reader = std::io::Cursor::new(zip_bytes);
+        let archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        // Verify no duplicate names exist
+        let mut names = std::collections::HashSet::new();
+        for i in 0..archive.len() {
+            let entry = archive.file_names().nth(i).unwrap().to_string();
+            assert!(
+                names.insert(entry.clone()),
+                "duplicate ZIP entry found: {}",
+                entry
+            );
+        }
     }
 }

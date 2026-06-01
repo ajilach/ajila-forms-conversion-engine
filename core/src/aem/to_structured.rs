@@ -16,9 +16,8 @@ use super::parser::{TranslationData, VisibilityCondition};
 use super::{AemNode, AemOption};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GridLayout, GridLayoutElement,
-    GroupNode, HeadingLevel, HeadingNode, InlineText, InputValue, NameValue,
-    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslatedText,
-    TranslationMap,
+    GroupNode, HeadingLevel, HeadingNode, InlineText, InputValue, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TranslatableString, TranslatedText, TranslationMap,
 };
 use crate::xfa::scripting::SomPath;
 
@@ -452,7 +451,10 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             None
         }
 
-        AemNode::Preface { .. } | AemNode::Appendix { .. } | AemNode::FootnotePlaceholder { .. } => None,
+        AemNode::Preface { .. }
+        | AemNode::Appendix { .. }
+        | AemNode::FootnotePlaceholder { .. }
+        | AemNode::Custom { .. } => None,
     }
 }
 

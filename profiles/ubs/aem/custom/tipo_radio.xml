@@ -1,0 +1,16 @@
+<radiobutton_copy
+    jcr:created="{Date}2026-04-15T08:28:03.931+02:00"
+    jcr:createdBy="t406261"
+    jcr:lastModified="{Date}2026-04-22T10:47:20.607+02:00"
+    jcr:lastModifiedBy="admin"
+    jcr:primaryType="nt:unstructured"
+    jcr:title="Tipo"
+    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
+    _value="1"
+    alignment="guideFieldHorizontalAlignment"
+    css="widget_ajila_forms_radiobutton"
+    dorFieldStyling="Default"
+    guideNodeClass="guideRadioButton"
+    name="RB_GroupTipo"
+    options="[1=Individual,2=Legal Entity]"
+    textIsRich="[true,true,true,true,true]"/>

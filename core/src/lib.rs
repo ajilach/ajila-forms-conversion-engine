@@ -149,8 +149,8 @@ pub use structured::{
 // AEM generation
 pub use aem::{
     AemConfig, AemNode, AemProfile, AemScriptEngine, ParsedAemPackage, ParsedFragment,
-    aem_to_structured, collect_languages, convert_to_aem, detect_aem_zip, generate_aem_package,
-    generate_aem_xml, parse_aem_zip, parse_fragment_content, scan_fragments,
+    ResolvedCustomElement, aem_to_structured, collect_languages, convert_to_aem, detect_aem_zip,
+    generate_aem_package, generate_aem_xml, parse_aem_zip, parse_fragment_content, scan_fragments,
 };
 
 // GraphViz decision-flow output
@@ -781,7 +781,8 @@ fn collect_aem_field_names_recursive(node: &AemNode, names: &mut Vec<(String, bo
         }
         AemNode::Preface { .. }
         | AemNode::Appendix { .. }
-        | AemNode::FootnotePlaceholder { .. } => {}
+        | AemNode::FootnotePlaceholder { .. }
+        | AemNode::Custom { .. } => {}
     }
 }
 

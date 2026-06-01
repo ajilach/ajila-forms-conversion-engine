@@ -89,3 +89,52 @@ css_textbox_multiline = "widget_ajila-forms-ubs-textbox ubs-textbox-multiline"
 [language_synonyms]
 de = ["de-ch"]
 sp = ["es"]
+
+# =============================================================================
+# Custom Elements — regex-based element replacement with custom templates
+# =============================================================================
+[[custom_elements]]
+field_name = "(?i)^Tipo$"
+template = "tipo_radio"
+
+[[custom_elements]]
+field_name = "^(Formular Adressat|Form addressee)$"
+template = "formular_adressat_radio"
+
+# account_holder cross-references panels produced by `signatures` (BT_Add /
+# BT_AddLR / BT_RemoveLR scripts call into PN_SignatureIndividual and
+# PN_ARP_Sign) and reads `RB_FormularAdressat` from `formular_adressat_radio`
+# in its visibility rules, so both must also be present in the form.
+# Matches German (and English-mirrored) forms only; the Italian variant lives
+# in `account_holder_it`.
+[[custom_elements]]
+field_name = '^Kundendaten$'
+template = "account_holder"
+page = 0
+depends_on = ["signatures", "formular_adressat_radio"]
+
+# signatures' three conditional containers use `RB_FormularAdressat` in their
+# visibility rules, so `formular_adressat_radio` must also be present.
+# Italian forms use `signatures_it` instead.
+[[custom_elements]]
+field_name = '^(Signature\(s\)|Unterschrift\(en\))$'
+template = "signatures"
+page = -1
+depends_on = ["formular_adressat_radio"]
+
+# Italian variant of account_holder: visibility/scripts reference
+# `RB_GroupTipo` (Individual=1, Legal entity=2) and cross-reference
+# `PN_SignatureIndividual` / `PN_LRP_Sign` from `signatures_it`.
+[[custom_elements]]
+field_name = '^Dati del/i cliente/i(?: \(di seguito il «Cliente»\))?$'
+template = "account_holder_it"
+page = 0
+depends_on = ["signatures_it", "tipo_radio"]
+
+# Italian variant of signatures: two conditional containers driven by
+# `RB_GroupTipo` from `tipo_radio` (no Minor branch).
+[[custom_elements]]
+field_name = '^Firma/e$'
+template = "signatures_it"
+page = -1
+depends_on = ["tipo_radio"]

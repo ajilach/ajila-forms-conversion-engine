@@ -43,6 +43,7 @@ pub use script_engine::AemScriptEngine;
 pub use to_structured::aem_to_structured;
 pub use xml_writer::generate_aem_xml;
 
+use regex_lite::Regex;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -52,6 +53,20 @@ use crate::xsd::XsdConfig;
 // ============================================================================
 // Configuration
 // ============================================================================
+
+/// A compiled custom element rule ready for matching.
+#[derive(Debug, Clone)]
+pub struct ResolvedCustomElement {
+    /// Compiled regex pattern for matching element labels/titles.
+    pub pattern: Regex,
+    /// Name of the custom template to use.
+    pub template: String,
+    /// Optional target page index for moving the element.
+    pub page: Option<i32>,
+    /// Templates this rule depends on; the rule is skipped unless every
+    /// listed template is also matched somewhere in the form.
+    pub depends_on: Vec<String>,
+}
 
 /// Configuration for AEM Forms XML generation.
 ///
@@ -164,6 +179,14 @@ pub struct AemConfig {
     /// Merged into the Sling i18n dictionaries at package generation time.
     /// Form-content translations take precedence over defaults.
     pub default_translations: HashMap<String, HashMap<String, String>>,
+
+    // -- Custom elements -----------------------------------------------------
+    /// Compiled custom element replacement rules.
+    pub custom_elements: Vec<ResolvedCustomElement>,
+
+    /// Custom element templates loaded from the `custom/` subdirectory.
+    /// Key = template name (file stem), Value = Tera template string.
+    pub custom_templates: HashMap<String, String>,
 }
 
 impl AemConfig {
@@ -177,6 +200,7 @@ impl AemConfig {
     pub fn from_profile(
         profile: &AemProfile,
         templates: HashMap<String, String>,
+        custom_templates: HashMap<String, String>,
         ctx: &crate::Context,
     ) -> Result<Self, crate::Error> {
         let xfa_vars = ctx.variables.clone();
@@ -257,6 +281,26 @@ impl AemConfig {
             fragments: Vec::new(),
 
             default_translations: profile.default_translations.clone(),
+
+            custom_elements: profile
+                .custom_elements
+                .iter()
+                .map(|rule| {
+                    let pattern = Regex::new(&rule.field_name).map_err(|e| {
+                        crate::Error::AemConfig(format!(
+                            "Invalid regex in custom_elements.field_name '{}': {}",
+                            rule.field_name, e
+                        ))
+                    })?;
+                    Ok(ResolvedCustomElement {
+                        pattern,
+                        template: rule.template.clone(),
+                        page: rule.page,
+                        depends_on: rule.depends_on.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, crate::Error>>()?,
+            custom_templates,
         })
     }
 
@@ -351,6 +395,9 @@ impl AemConfig {
             fragments: Vec::new(),
 
             default_translations: HashMap::new(),
+
+            custom_elements: Vec::new(),
+            custom_templates: HashMap::new(),
         }
     }
 }
@@ -594,6 +641,30 @@ pub enum AemNode {
         name: String,
         colspan: u32,
     },
+
+    /// Custom element — replaces a matched field/panel with a custom template.
+    /// Created by the `apply_custom_elements()` pass when a node's label/title
+    /// matches a `[[custom_elements]]` rule.
+    Custom {
+        uuid: Uuid,
+        name: String,
+        /// The custom template key (file stem from `custom/` directory).
+        template_key: String,
+        /// The label or title of the matched element.
+        label: String,
+        /// Options from the original element (if it was a Dropdown/RadioButton/Checkbox).
+        options: Vec<AemOption>,
+        /// Whether the original element was mandatory.
+        mandatory: bool,
+        /// Whether the original element was visible.
+        visible: bool,
+        /// Column span of the original element.
+        colspan: u32,
+        /// DOR column span from the original element.
+        dor_colspan: Option<u32>,
+        /// Bind ref from the original element.
+        bind_ref: Option<String>,
+    },
 }
 
 // ============================================================================
@@ -620,6 +691,13 @@ impl AemNode {
             AemNode::Appendix { uuid, .. } => format!("appendix_{}", uuid.as_simple()),
             AemNode::FootnotePlaceholder { uuid, .. } => {
                 format!("guidefootnoteplaceho_{}", uuid.as_simple())
+            }
+            AemNode::Custom { uuid, name, .. } => {
+                if name.is_empty() {
+                    format!("custom_{}", uuid.as_simple())
+                } else {
+                    name.clone()
+                }
             }
         }
     }

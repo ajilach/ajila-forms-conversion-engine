@@ -42,20 +42,29 @@ pub fn has_xsd_config(name: &str) -> bool {
 
 /// Load and parse `{profile}/aem/config.toml` and all top-level `*.xml`
 /// component templates from `{profile}/aem/`.
-pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, String>), String> {
+pub fn load_aem_profile(
+    name: &str,
+) -> Result<(AemProfile, HashMap<String, String>, HashMap<String, String>), String> {
     let aem_dir = PROFILES_DIR
         .get_dir(format!("{name}/aem"))
         .ok_or_else(|| format!("Profile '{name}' has no aem/ subdirectory"))?;
 
     let mut profile: AemProfile = read_profile_config_toml(name, "aem")?;
 
-    // Load optional translations.json for predefined UI element translations.
-    if let Some(translations_file) = aem_dir.get_file(format!("{name}/aem/translations.json")) {
-        if let Some(content) = translations_file.contents_utf8() {
-            let translations: HashMap<String, HashMap<String, String>> =
-                serde_json::from_str(content)
-                    .map_err(|e| format!("Failed to parse translations.json: {e}"))?;
-            profile.default_translations = translations;
+    // Load translations from the `translations/` directory (per-language TOML files).
+    if let Some(translations_dir) = aem_dir.get_dir(format!("{name}/aem/translations")) {
+        for entry in translations_dir.files() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+                if let Some(lang) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Some(content) = entry.contents_utf8() {
+                        parse_translation_toml(content, lang, &mut profile.default_translations)
+                            .map_err(|e| {
+                                format!("Failed to parse translations/{lang}.toml: {e}")
+                            })?;
+                    }
+                }
+            }
         }
     }
 
@@ -70,7 +79,21 @@ pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, Strin
         }
     }
 
-    Ok((profile, templates))
+    // Load custom element templates from the `custom/` subdirectory.
+    let mut custom_templates = HashMap::new();
+    if let Some(custom_dir) = aem_dir.get_dir(format!("{name}/aem/custom")) {
+        for entry in custom_dir.files() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("xml")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                && let Some(content) = entry.contents_utf8()
+            {
+                custom_templates.insert(stem.to_string(), content.to_string());
+            }
+        }
+    }
+
+    Ok((profile, templates, custom_templates))
 }
 
 /// Build a full `AemConfig` for an embedded profile.
@@ -80,9 +103,9 @@ pub fn load_aem_profile(name: &str) -> Result<(AemProfile, HashMap<String, Strin
 /// - optional XSD binding (requires embedded xsd config when bind_to_xsd=true)
 /// - optional embedded fragment scan
 pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
-    let (profile, templates) = load_aem_profile(name)?;
+    let (profile, templates, custom_templates) = load_aem_profile(name)?;
 
-    let mut config = AemConfig::from_profile(&profile, templates, ctx)
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, ctx)
         .map_err(|e| format!("Failed to build AEM config: {e}"))?;
 
     if config.bind_to_xsd || config.use_fragments {
@@ -539,6 +562,37 @@ fn resolve_embedded_fragment_paths(frag_ref: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+/// Parse a translation TOML file (from the `translations/` directory) and merge
+/// entries into the `default_translations` map.
+///
+/// Expected format:
+/// ```toml
+/// [translations]
+/// "Master text" = "Translated text"
+/// ```
+pub fn parse_translation_toml(
+    toml_str: &str,
+    lang: &str,
+    translations: &mut HashMap<String, HashMap<String, String>>,
+) -> Result<(), String> {
+    #[derive(serde::Deserialize)]
+    struct TranslationFile {
+        #[serde(default)]
+        translations: HashMap<String, String>,
+    }
+
+    let file: TranslationFile = toml::from_str(toml_str).map_err(|e| e.to_string())?;
+
+    for (key, message) in file.translations {
+        translations
+            .entry(key)
+            .or_default()
+            .insert(lang.to_string(), message);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -15,6 +15,35 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// A rule for replacing matched form elements with custom templates.
+///
+/// Each rule matches elements by label (for fields) or title (for panels)
+/// using a regex pattern, and replaces them with the specified custom template.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CustomElementRule {
+    /// Regex pattern matched against the element's label (for fields) or
+    /// title (for panels). Uses Rust regex syntax.
+    pub field_name: String,
+
+    /// Name of the custom template (without `.xml` extension).
+    /// Loaded from the `custom/` subdirectory of the profile.
+    pub template: String,
+
+    /// Optional target page index. When set, the custom element is moved
+    /// to the specified page. 0 = first page, 1 = second page, -1 = last page,
+    /// -2 = second-to-last, etc.
+    pub page: Option<i32>,
+
+    /// Names of other custom element templates this rule depends on.
+    ///
+    /// A custom element is only applied when every template listed here is
+    /// also matched somewhere in the form. This prevents scripts/visibility
+    /// rules in one template from referencing element names that another,
+    /// missing template would have produced.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
 /// An AEM output profile loaded from a TOML file.
 ///
 /// All template-typed fields accept Tera syntax. Non-template fields are
@@ -104,11 +133,16 @@ pub struct AemProfile {
     /// Default translations for predefined UI elements (toolbar buttons,
     /// message boxes, etc.) that are not part of the form content tree.
     ///
-    /// Loaded from `translations.json` in the profile directory.
+    /// Loaded from per-language TOML files in the `translations/` profile directory.
     /// Structure: `{ "master_text": { "lang": "translated_text", ... }, ... }`.
     ///
     /// These are merged into the Sling i18n dictionaries at package generation
     /// time. Form-content translations take precedence over defaults.
     #[serde(default)]
     pub default_translations: HashMap<String, HashMap<String, String>>,
+
+    /// Custom element replacement rules. Each rule matches form elements by
+    /// label/title regex and replaces them with a custom template.
+    #[serde(default)]
+    pub custom_elements: Vec<CustomElementRule>,
 }

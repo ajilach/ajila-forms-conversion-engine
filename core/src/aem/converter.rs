@@ -108,7 +108,7 @@ fn strip_footnote_marker(html: &str, marker: &str) -> String {
 }
 
 use super::fragment_parser::ParsedFragment;
-use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
+use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, ResolvedCustomElement};
 
 // ============================================================================
 // Conversion context
@@ -344,7 +344,9 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
 
     // First pass: separate footnotes from normal nodes, then split by H2.
     // Each section is (Option<heading_text>, nodes_in_section).
+    // Also collect all language variants of H2 titles for custom element matching.
     let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
+    let mut section_all_titles: Vec<Vec<String>> = Vec::new();
     let mut footnotes: Vec<&FootnoteNode> = Vec::new();
     collect_all_footnotes(nodes, &mut footnotes);
 
@@ -358,6 +360,15 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         if let StructuredNode::Heading(h) = node {
             if matches!(h.level, HeadingLevel::H2) {
                 let title = h.content.plain_text_in(&ctx.language).trim().to_string();
+                // Collect all language variants for custom element matching.
+                let all_texts: Vec<String> = h
+                    .content
+                    .all_plain_texts()
+                    .into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                section_all_titles.push(all_texts);
                 sections.push((Some(title), vec![]));
                 continue;
             }
@@ -367,6 +378,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             last.1.push(node);
         } else {
             sections.push((None, vec![node]));
+            section_all_titles.push(Vec::new());
         }
     }
 
@@ -376,8 +388,10 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     // preface/intro content appears at the start of the first content page.
     let mut children: Vec<AemNode> = Vec::new();
     let mut preamble_nodes: Vec<AemNode> = Vec::new();
+    // Map panel name → all language variants of its title (for custom element matching).
+    let mut panel_alt_titles: HashMap<String, Vec<String>> = HashMap::new();
 
-    for (title, section_nodes) in &sections {
+    for ((title, section_nodes), all_titles) in sections.iter().zip(section_all_titles.iter()) {
         let converted: Vec<AemNode> = section_nodes
             .iter()
             .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns, None))
@@ -392,6 +406,11 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 .cloned();
             let name = ctx.make_name("PN", title);
             let uuid = ctx.uuid(&name);
+
+            // Store all language variants for this panel for custom element matching.
+            if !all_titles.is_empty() {
+                panel_alt_titles.insert(name.clone(), all_titles.clone());
+            }
 
             // Prepend preamble content to the first H2 section
             let section_children = if children.is_empty() && !preamble_nodes.is_empty() {
@@ -452,6 +471,11 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
 
     inject_page_edge_templates(&mut children, config, &mut ctx);
 
+    // --- Second-B pass: apply custom element replacements ---
+    if !config.custom_elements.is_empty() {
+        apply_custom_elements(&mut children, config, &panel_alt_titles);
+    }
+
     // --- Second pass: wire conditions onto trigger fields ---
     let conditions = std::mem::take(&mut ctx.collected_conditions);
     if !conditions.is_empty() {
@@ -475,6 +499,9 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     if !config.bind_to_xsd {
         strip_bind_refs(&mut children);
     }
+
+    // --- Final pass: remove empty non-page panels ---
+    remove_empty_panels(&mut children);
 
     AemNode::Root {
         title: form_display_title,
@@ -531,6 +558,425 @@ fn inject_page_edge_templates(
         {
             page_children.push(appendix);
         }
+    }
+}
+
+// ============================================================================
+// Custom element replacement
+// ============================================================================
+
+/// Apply custom element rules: walk the AEM node tree, match elements by
+/// label/title against compiled regex patterns, replace matches with
+/// `AemNode::Custom` nodes, and optionally move them to a target page.
+fn apply_custom_elements(
+    children: &mut Vec<AemNode>,
+    config: &AemConfig,
+    alt_titles: &HashMap<String, Vec<String>>,
+) {
+    // Discover which custom element templates have at least one match in the
+    // tree, then drop any rule whose declared `depends_on` templates are not
+    // all matched. Iterate to a fixed point so that transitive dependencies
+    // are honoured.
+    let matching_templates = discover_matching_templates(children, config, alt_titles);
+    let enabled_templates = resolve_enabled_templates(&config.custom_elements, &matching_templates);
+    let enabled_rules: Vec<ResolvedCustomElement> = config
+        .custom_elements
+        .iter()
+        .filter(|r| enabled_templates.contains(&r.template))
+        .cloned()
+        .collect();
+    if enabled_rules.is_empty() {
+        return;
+    }
+
+    // First pass: replace matching nodes in-place with Custom nodes.
+    apply_custom_elements_recursive(children, &enabled_rules, alt_titles);
+
+    // Second pass: move custom elements that have a `page` target.
+    move_custom_elements_to_pages(children, &enabled_rules);
+}
+
+/// Return the set of template names whose regex matches at least one node in
+/// the tree, ignoring dependency requirements.
+fn discover_matching_templates(
+    nodes: &[AemNode],
+    config: &AemConfig,
+    alt_titles: &HashMap<String, Vec<String>>,
+) -> std::collections::HashSet<String> {
+    let mut matched = std::collections::HashSet::new();
+    discover_matching_templates_recursive(nodes, &config.custom_elements, alt_titles, &mut matched);
+    matched
+}
+
+fn discover_matching_templates_recursive(
+    nodes: &[AemNode],
+    rules: &[ResolvedCustomElement],
+    alt_titles: &HashMap<String, Vec<String>>,
+    matched: &mut std::collections::HashSet<String>,
+) {
+    for node in nodes {
+        let match_texts: Vec<String> = match node {
+            AemNode::TextField { label, .. } => vec![label.clone()],
+            AemNode::Dropdown { label, .. } => vec![label.clone()],
+            AemNode::Panel { title, name, .. } => {
+                let mut texts = vec![title.clone()];
+                if let Some(alts) = alt_titles.get(name) {
+                    for alt in alts {
+                        if !texts.contains(alt) {
+                            texts.push(alt.clone());
+                        }
+                    }
+                }
+                texts
+            }
+            _ => Vec::new(),
+        };
+        for rule in rules {
+            if matched.contains(&rule.template) {
+                continue;
+            }
+            if match_texts.iter().any(|t| rule.pattern.is_match(t)) {
+                matched.insert(rule.template.clone());
+            }
+        }
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                discover_matching_templates_recursive(children, rules, alt_titles, matched);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Iteratively prune rules whose declared dependencies are not satisfied by
+/// any other rule that also matches. Returns the set of template names that
+/// should actually be applied.
+fn resolve_enabled_templates(
+    rules: &[ResolvedCustomElement],
+    matching: &std::collections::HashSet<String>,
+) -> std::collections::HashSet<String> {
+    let mut enabled: std::collections::HashSet<String> = matching.clone();
+    loop {
+        let to_remove: Vec<String> = enabled
+            .iter()
+            .filter(|template| {
+                let Some(rule) = rules.iter().find(|r| &r.template == *template) else {
+                    return false;
+                };
+                !rule
+                    .depends_on
+                    .iter()
+                    .all(|dep| enabled.contains(dep.as_str()))
+            })
+            .cloned()
+            .collect();
+        if to_remove.is_empty() {
+            break;
+        }
+        for t in to_remove {
+            enabled.remove(&t);
+        }
+    }
+    enabled
+}
+
+/// Recursively walk the tree and replace matching nodes with Custom nodes.
+fn apply_custom_elements_recursive(
+    nodes: &mut Vec<AemNode>,
+    rules: &[ResolvedCustomElement],
+    alt_titles: &HashMap<String, Vec<String>>,
+) {
+    for node in nodes.iter_mut() {
+        // Recurse into containers first.
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                apply_custom_elements_recursive(children, rules, alt_titles);
+            }
+            _ => {}
+        }
+
+        // Try matching this node against custom element rules.
+        // For panels, also check all language variants of the title.
+        let match_texts = match node {
+            AemNode::TextField { label, .. } => vec![label.clone()],
+            AemNode::Dropdown { label, .. } => vec![label.clone()],
+            AemNode::Panel { title, name, .. } => {
+                let mut texts = vec![title.clone()];
+                if let Some(alts) = alt_titles.get(name) {
+                    for alt in alts {
+                        if !texts.contains(alt) {
+                            texts.push(alt.clone());
+                        }
+                    }
+                }
+                texts
+            }
+            _ => vec![],
+        };
+
+        if match_texts.is_empty() {
+            continue;
+        }
+
+        'rule_loop: for rule in rules {
+            let matched = match_texts.iter().any(|t| rule.pattern.is_match(t));
+            if !matched {
+                continue;
+            }
+
+            // Page panels are special: keep the page wrapper and
+            // replace its children with a single Custom node so the
+            // wizard step structure (title, navigation, etc.) is
+            // preserved while the body becomes the custom template.
+            if let AemNode::Panel {
+                is_page: true,
+                name,
+                title,
+                children,
+                ..
+            } = node
+            {
+                let custom = AemNode::Custom {
+                    uuid: uuid::Uuid::new_v4(),
+                    name: name.clone(),
+                    template_key: rule.template.clone(),
+                    label: title.clone(),
+                    options: Vec::new(),
+                    mandatory: false,
+                    visible: true,
+                    colspan: 12,
+                    dor_colspan: Some(12),
+                    bind_ref: None,
+                };
+                *children = vec![custom];
+                break 'rule_loop;
+            }
+
+            // Non-page nodes: replace the node entirely.
+            let custom = match std::mem::replace(
+                node,
+                AemNode::Preface {
+                    uuid: uuid::Uuid::nil(),
+                    name: String::new(),
+                },
+            ) {
+                AemNode::TextField {
+                    uuid,
+                    name,
+                    label,
+                    mandatory,
+                    visible,
+                    bind_ref,
+                    ..
+                } => AemNode::Custom {
+                    uuid,
+                    name,
+                    template_key: rule.template.clone(),
+                    label,
+                    options: Vec::new(),
+                    mandatory,
+                    visible,
+                    colspan: 12,
+                    dor_colspan: Some(12),
+                    bind_ref,
+                },
+                AemNode::Dropdown {
+                    uuid,
+                    name,
+                    label,
+                    options,
+                    mandatory,
+                    visible,
+                    bind_ref,
+                    ..
+                } => AemNode::Custom {
+                    uuid,
+                    name,
+                    template_key: rule.template.clone(),
+                    label,
+                    options,
+                    mandatory,
+                    visible,
+                    colspan: 12,
+                    dor_colspan: Some(12),
+                    bind_ref,
+                },
+                AemNode::Panel {
+                    uuid,
+                    name,
+                    title,
+                    visible,
+                    bind_ref,
+                    ..
+                } => AemNode::Custom {
+                    uuid,
+                    name,
+                    template_key: rule.template.clone(),
+                    label: title,
+                    options: Vec::new(),
+                    mandatory: false,
+                    visible,
+                    colspan: 12,
+                    dor_colspan: Some(12),
+                    bind_ref,
+                },
+                _ => unreachable!(),
+            };
+            *node = custom;
+            break 'rule_loop;
+        }
+    }
+}
+
+/// Move custom elements with a `page` target to the specified page.
+fn move_custom_elements_to_pages(children: &mut Vec<AemNode>, rules: &[ResolvedCustomElement]) {
+    // Collect page indices (panels with is_page=true that are direct children of Root).
+    let page_indices: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, node)| match node {
+            AemNode::Panel { is_page: true, .. } => Some(idx),
+            _ => None,
+        })
+        .collect();
+
+    if page_indices.is_empty() {
+        return;
+    }
+
+    // Build a map from rule template to page target.
+    let page_targets: std::collections::HashMap<&str, i32> = rules
+        .iter()
+        .filter_map(|rule| rule.page.map(|p| (rule.template.as_str(), p)))
+        .collect();
+
+    if page_targets.is_empty() {
+        return;
+    }
+
+    // Extract custom elements (with their parent conditional panels) that need
+    // to be moved. When a page panel's sole child is a Custom node, it was
+    // created via in-place page-panel replacement and the Custom is moved directly.
+    let mut to_move: Vec<(AemNode, i32)> = Vec::new();
+    for &page_idx in &page_indices {
+        if let AemNode::Panel {
+            children: page_children,
+            ..
+        } = &mut children[page_idx]
+        {
+            extract_custom_elements_for_move(page_children, &page_targets, &mut to_move);
+        }
+    }
+
+    // Insert moved elements into their target pages.
+    for (custom_node, page_target) in to_move {
+        let target_idx = resolve_page_index(page_target, &page_indices);
+        if let Some(target_page_idx) = target_idx {
+            if let AemNode::Panel {
+                children: page_children,
+                ..
+            } = &mut children[target_page_idx]
+            {
+                page_children.push(custom_node);
+            }
+        }
+    }
+
+    // Remove empty page panels left behind after extraction.
+    children.retain(|node| {
+        if let AemNode::Panel {
+            is_page: true,
+            children: page_children,
+            ..
+        } = node
+        {
+            !page_children.is_empty()
+        } else {
+            true
+        }
+    });
+}
+
+/// Recursively extract custom elements that need to be moved from a subtree.
+/// When a Custom node lives inside a parent panel (e.g. a conditional panel),
+/// the entire parent is moved so that conditions are preserved.
+fn extract_custom_elements_for_move(
+    nodes: &mut Vec<AemNode>,
+    page_targets: &std::collections::HashMap<&str, i32>,
+    out: &mut Vec<(AemNode, i32)>,
+) {
+    let mut i = 0;
+    while i < nodes.len() {
+        // Check if this node directly is a Custom with a page target.
+        if let AemNode::Custom { template_key, .. } = &nodes[i] {
+            if let Some(&target) = page_targets.get(template_key.as_str()) {
+                let removed = nodes.remove(i);
+                out.push((removed, target));
+                continue;
+            }
+        }
+
+        // Check if this node is a panel that contains (directly or nested)
+        // a Custom node with a page target. If so, move the entire panel.
+        if let Some(target) = panel_contains_movable_custom(&nodes[i], page_targets) {
+            let removed = nodes.remove(i);
+            out.push((removed, target));
+            continue;
+        }
+
+        // Otherwise recurse into panel children.
+        match &mut nodes[i] {
+            AemNode::Panel { children, .. } | AemNode::Repeatable { children, .. } => {
+                extract_custom_elements_for_move(children, page_targets, out);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+}
+
+/// Check if a node is a panel that contains a Custom node with a page target.
+/// Returns the page target if found, None otherwise.
+fn panel_contains_movable_custom(
+    node: &AemNode,
+    page_targets: &std::collections::HashMap<&str, i32>,
+) -> Option<i32> {
+    match node {
+        AemNode::Panel { children, .. } => {
+            for child in children {
+                if let AemNode::Custom { template_key, .. } = child {
+                    if let Some(&target) = page_targets.get(template_key.as_str()) {
+                        return Some(target);
+                    }
+                }
+                // Recurse deeper.
+                if let Some(target) = panel_contains_movable_custom(child, page_targets) {
+                    return Some(target);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Resolve a signed page index to an actual index into the page_indices array.
+/// 0 = first page, 1 = second page, -1 = last page, -2 = second-to-last, etc.
+fn resolve_page_index(page_target: i32, page_indices: &[usize]) -> Option<usize> {
+    let num_pages = page_indices.len() as i32;
+    let resolved = if page_target >= 0 {
+        page_target
+    } else {
+        num_pages + page_target
+    };
+    if resolved >= 0 && resolved < num_pages {
+        Some(page_indices[resolved as usize])
+    } else {
+        None
     }
 }
 
@@ -2026,9 +2472,31 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::TitleDraw { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
-            | AemNode::FootnotePlaceholder { .. } => {}
+            | AemNode::FootnotePlaceholder { .. }
+            | AemNode::Custom { .. } => {}
         }
     }
+}
+
+/// Recursively remove empty Panel nodes from the tree.
+/// A panel is considered empty if it has no children after its own children
+/// have been recursively pruned.
+fn remove_empty_panels(nodes: &mut Vec<AemNode>) {
+    for node in nodes.iter_mut() {
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => remove_empty_panels(children),
+            _ => {}
+        }
+    }
+    nodes.retain(|node| {
+        if let AemNode::Panel { children, .. } = node {
+            !children.is_empty()
+        } else {
+            true
+        }
+    });
 }
 
 // ============================================================================
@@ -3382,5 +3850,65 @@ mod tests {
         // Empty leaves → trivially true (empty set is subset of any set)
         let leaves: Vec<String> = vec![];
         assert!(panel_leaves_subset_of_fragment(&fragment, &leaves));
+    }
+
+    // ========================================================================
+    // Custom element dependency-resolution tests
+    // ========================================================================
+
+    fn mk_rule(template: &str, deps: &[&str]) -> ResolvedCustomElement {
+        ResolvedCustomElement {
+            pattern: regex_lite::Regex::new("never").unwrap(),
+            template: template.to_string(),
+            page: None,
+            depends_on: deps.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn matched_set(items: &[&str]) -> std::collections::HashSet<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn resolve_enabled_templates_keeps_rules_with_satisfied_deps() {
+        let rules = vec![
+            mk_rule("a", &[]),
+            mk_rule("b", &["a"]),
+            mk_rule("c", &["a", "b"]),
+        ];
+        let matching = matched_set(&["a", "b", "c"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a", "b", "c"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_drops_rule_with_missing_dep() {
+        let rules = vec![mk_rule("a", &[]), mk_rule("b", &["missing"])];
+        let matching = matched_set(&["a", "b"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_propagates_drops_transitively() {
+        // c depends on b, b depends on missing → both b and c must drop.
+        let rules = vec![
+            mk_rule("a", &[]),
+            mk_rule("b", &["missing"]),
+            mk_rule("c", &["b"]),
+        ];
+        let matching = matched_set(&["a", "b", "c"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_drops_when_dep_not_matched_in_form() {
+        // Rule b depends on a; even though a is in `rules`, it never matched
+        // anything in the form, so b must also be dropped.
+        let rules = vec![mk_rule("a", &[]), mk_rule("b", &["a"])];
+        let matching = matched_set(&["b"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert!(enabled.is_empty());
     }
 }

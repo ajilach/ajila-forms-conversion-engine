@@ -1,11 +1,11 @@
 pub mod helpers;
 
 use helpers::{
-    assert_aem_package_valid_for, assert_aem_xml_valid_for, collect_conditionals,
-    collect_field_labels, collect_field_labels_trimmed, collect_field_names, collect_fields,
-    collect_headings, collect_radio_fields, collect_textarea_fields, count_conditionals,
-    find_field_by_name, find_field_id_by_suffix, input_path, load_ubs_profile,
-    walk_structured_nodes,
+    assert_aem_package_valid_for, assert_aem_xml_valid_for,
+    build_aem_test_output_with_custom_elements, collect_conditionals, collect_field_labels,
+    collect_field_labels_trimmed, collect_field_names, collect_fields, collect_headings,
+    collect_radio_fields, collect_textarea_fields, count_conditionals, find_field_by_name,
+    find_field_id_by_suffix, input_path, load_ubs_profile, walk_structured_nodes,
 };
 
 use crate::{Blueprint, Flattened, FlattenedNodeKind, SelectionKind, XfaNode, flattened, xfa};
@@ -6770,9 +6770,9 @@ fn test_aaei_repeatable_buttons_have_scripts() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = load_ubs_profile();
-    let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
 
     let root = convert_to_aem(&content, &config);
@@ -11248,9 +11248,9 @@ fn test_aaab_aem_config_form_path_title_code() {
     variables.insert("formrange_entity".to_string(), "019".to_string());
     let ctx = crate::Context::new("de".to_string(), variables);
 
-    let (profile, templates) = load_ubs_profile();
-    let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
 
     // form_code should be the raw code (first segment)
     assert_eq!(config.form_code, "AAAB", "form_code should be 'AAAB'");
@@ -14622,14 +14622,14 @@ fn test_aaqm_inline_field_contratto() {
 fn test_ubs_profile_entity_folder_mapping() {
     use crate::aem::AemConfig;
 
-    let (profile, _) = load_ubs_profile();
+    let (profile, _, _) = load_ubs_profile();
 
     // Germany (019)
     let mut vars = std::collections::HashMap::new();
     vars.insert("formrange_code".into(), "AAEI".into());
     vars.insert("formrange_entity".into(), "019".into());
     let ctx = crate::Context::new("de".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_germany_all/af_aa");
 
     // Italy (033)
@@ -14637,7 +14637,7 @@ fn test_ubs_profile_entity_folder_mapping() {
     vars.insert("formrange_code".into(), "AAOE".into());
     vars.insert("formrange_entity".into(), "033".into());
     let ctx = crate::Context::new("it".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_italy_all/af_aa");
 
     // Switzerland (001)
@@ -14645,7 +14645,7 @@ fn test_ubs_profile_entity_folder_mapping() {
     vars.insert("formrange_code".into(), "ACAV".into());
     vars.insert("formrange_entity".into(), "001".into());
     let ctx = crate::Context::new("de".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_ch_all/af_ac");
 
     // Unknown entity
@@ -14653,7 +14653,7 @@ fn test_ubs_profile_entity_folder_mapping() {
     vars.insert("formrange_code".into(), "TEST".into());
     vars.insert("formrange_entity".into(), "999".into());
     let ctx = crate::Context::new("en".to_string(), vars);
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx).unwrap();
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx).unwrap();
     assert_eq!(config.form_path, "afforms_global_all/af_te");
 }
 
@@ -14672,7 +14672,7 @@ bind_to_xsd = true
     vars.insert("formrange_code".to_string(), "AAAB".to_string());
     let ctx = crate::Context::new("en".to_string(), vars);
 
-    let config = AemConfig::from_profile(&profile, HashMap::new(), &ctx)
+    let config = AemConfig::from_profile(&profile, HashMap::new(), HashMap::new(), &ctx)
         .expect("bind_to_xsd=true without xsd_path should succeed");
 
     assert!(config.bind_to_xsd);
@@ -14694,9 +14694,9 @@ fn test_ubs_profile_aem_output_matches_legacy() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = load_ubs_profile();
-    let profile_config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Profile config");
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let profile_config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Profile config");
     let profile_config = crate::resolve_aem_languages(&content, &profile_config);
     let profile_root = convert_to_aem(&content, &profile_config);
     let profile_xml = generate_aem_xml(&profile_root, &profile_config);
@@ -16582,9 +16582,9 @@ fn test_aaki_fragment_count() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
     assert!(
@@ -16661,9 +16661,9 @@ fn test_aaai_has_exactly_two_signature_fragments() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
     config.xsd_config = Some(xsd_config);
@@ -16813,9 +16813,10 @@ fn test_bage_has_exactly_five_signature_fragments() {
     let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge BAGE DE+EN");
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
-        .expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, custom_templates, &merged.context)
+            .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -16858,9 +16859,10 @@ fn test_bage_aem_has_expected_fields() {
     let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge BAGE DE+EN");
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
-        .expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, custom_templates, &merged.context)
+            .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config();
     config.xsd_config = Some(xsd_config);
@@ -19226,9 +19228,9 @@ fn test_aaai_has_address_and_individual_fragments() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -19303,9 +19305,9 @@ fn test_fragments_work_without_bind_to_xsd() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     // Explicitly disable bind_to_xsd but enable fragments
     config.bind_to_xsd = false;
@@ -19527,9 +19529,9 @@ fn test_aagx_en_repeatable_not_replaced_by_fragment() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+        AemConfig::from_profile(&profile, templates, custom_templates, &ctx).expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -19607,9 +19609,9 @@ fn test_aaed_de_has_two_repeatables_not_replaced_by_fragments_in_aem() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("de");
     config.xsd_config = Some(xsd_config);
@@ -23574,9 +23576,9 @@ fn test_aem_form_xml_has_utf8_declaration() {
     let form_states = bp.states().expect("Failed to explore states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = load_ubs_profile();
-    let config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("Failed to create AemConfig");
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
     let config = crate::resolve_aem_languages(&content, &config);
 
     let root = convert_to_aem(&content, &config);
@@ -26388,9 +26390,9 @@ fn test_fragment_bind_refs_use_configured_prefix() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     // Configure with a form-specific root and a different fragment prefix.
     // The profile has rootElementName = "UBSAF_{{ form_code }}" and
@@ -26465,9 +26467,9 @@ fn test_repeatable_panels_have_bind_ref() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     config.bind_to_xsd = true;
     config.xsd_config = Some(helpers::load_ubs_xsd_config().with_master_language("en"));
@@ -26522,9 +26524,9 @@ fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
     let form_states = bp.states().expect("Failed to get form states");
     let content = crate::merge_form_states(&form_states, ctx.clone());
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config =
-        AemConfig::from_profile(&profile, templates, &ctx).expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("AemConfig from profile");
 
     config.bind_to_xsd = false;
     config.use_fragments = true;
@@ -29728,9 +29730,10 @@ fn test_bage_aem_fragment_position_within_panel() {
     let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
         .expect("Failed to merge BAGE DE+EN");
 
-    let (profile, templates) = helpers::load_ubs_profile();
-    let mut config = AemConfig::from_profile(&profile, templates, &merged.context)
-        .expect("AemConfig from profile");
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut config =
+        AemConfig::from_profile(&profile, templates, custom_templates, &merged.context)
+            .expect("AemConfig from profile");
 
     let xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     config.xsd_config = Some(xsd_config);
@@ -29927,6 +29930,138 @@ fn test_bbdo_019_merge_contains_tax_compliance_text_in_all_languages() {
     );
 }
 
+// =============================================================================
+// Custom element placement tests
+// =============================================================================
+
+/// Get the direct page-panel children of the Root node.
+fn get_page_panels(root: &crate::aem::AemNode) -> Vec<&crate::aem::AemNode> {
+    match root {
+        crate::aem::AemNode::Root { children, .. } => children
+            .iter()
+            .filter(|n| matches!(n, crate::aem::AemNode::Panel { is_page: true, .. }))
+            .collect(),
+        _ => panic!("Expected Root node"),
+    }
+}
+
+/// Get the `name` field of a Panel node.
+fn panel_name(node: &crate::aem::AemNode) -> &str {
+    match node {
+        crate::aem::AemNode::Panel { name, .. } => name.as_str(),
+        _ => "",
+    }
+}
+
+/// Get the `title` field of a Panel node.
+fn panel_title(node: &crate::aem::AemNode) -> &str {
+    match node {
+        crate::aem::AemNode::Panel { title, .. } => title.as_str(),
+        _ => "",
+    }
+}
+
+/// Count Custom nodes with the given template_key anywhere in the subtree.
+fn count_custom_elements(node: &crate::aem::AemNode, template: &str) -> usize {
+    match node {
+        crate::aem::AemNode::Custom { template_key, .. } if template_key == template => 1,
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. } => children
+            .iter()
+            .map(|c| count_custom_elements(c, template))
+            .sum(),
+        crate::aem::AemNode::Repeatable { children, .. } => children
+            .iter()
+            .map(|c| count_custom_elements(c, template))
+            .sum(),
+        _ => 0,
+    }
+}
+
+/// Collect all custom nodes in a subtree.
+fn collect_custom_nodes<'a>(node: &'a crate::aem::AemNode, out: &mut Vec<&'a crate::aem::AemNode>) {
+    match node {
+        crate::aem::AemNode::Custom { .. } => out.push(node),
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. }
+        | crate::aem::AemNode::Repeatable { children, .. } => {
+            for child in children {
+                collect_custom_nodes(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Find the first Custom node with the given template_key.
+fn find_custom_by_template<'a>(
+    node: &'a crate::aem::AemNode,
+    template: &str,
+) -> Option<&'a crate::aem::AemNode> {
+    match node {
+        crate::aem::AemNode::Custom { template_key, .. } if template_key == template => Some(node),
+        crate::aem::AemNode::Root { children, .. }
+        | crate::aem::AemNode::Panel { children, .. }
+        | crate::aem::AemNode::Repeatable { children, .. } => children
+            .iter()
+            .find_map(|child| find_custom_by_template(child, template)),
+        _ => None,
+    }
+}
+
+/// Check if any page panel with the given title prefix exists among Root children.
+fn has_page_with_title_containing(root: &crate::aem::AemNode, needle: &str) -> bool {
+    get_page_panels(root)
+        .iter()
+        .any(|p| panel_title(p).contains(needle))
+}
+
+/// Collect names of all empty Panel nodes (children.is_empty()) in the subtree.
+fn collect_empty_panels(node: &crate::aem::AemNode) -> Vec<String> {
+    let mut result = Vec::new();
+    match node {
+        crate::aem::AemNode::Panel { name, children, .. } => {
+            if children.is_empty() {
+                result.push(name.clone());
+            }
+            for child in children {
+                result.extend(collect_empty_panels(child));
+            }
+        }
+        crate::aem::AemNode::Root { children, .. } => {
+            for child in children {
+                result.extend(collect_empty_panels(child));
+            }
+        }
+        crate::aem::AemNode::Repeatable { children, .. } => {
+            for child in children {
+                result.extend(collect_empty_panels(child));
+            }
+        }
+        _ => {}
+    }
+    result
+}
+
+#[test]
+fn test_aagz_custom_elements_account_holders_on_first_page() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+    let pages = get_page_panels(&root);
+
+    // First page should be FormConfigurator with all 3 AccountHolder custom elements.
+    let first_page = pages[0];
+    assert!(
+        panel_name(first_page).starts_with("PN_FormConfigurator"),
+        "First page should be FormConfigurator, got: {}",
+        panel_name(first_page)
+    );
+    let ah_count = count_custom_elements(first_page, "account_holder");
+    assert_eq!(
+        ah_count, 3,
+        "FormConfigurator should contain 3 AccountHolder custom elements, found {ah_count}"
+    );
+}
+
 #[test]
 fn test_bbdo_adresszusatz_is_not_textarea() {
     let structured = crate::run_exhaustive_to_merged(input_path("BBDO_019_DE.pdf"))
@@ -29964,6 +30099,252 @@ fn test_bbdo_adresszusatz_is_not_textarea() {
         ),
         "Adresszusatz should have FieldType::Text, got {:?}",
         adresszusatz_field.unwrap().input_type
+    );
+}
+
+#[test]
+fn test_aagz_custom_elements_signatures_on_last_page() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+    let pages = get_page_panels(&root);
+
+    // Last content page (before summary/preview/toolbar) should have all 3 Signatures.
+    let last_content_page = pages
+        .iter()
+        .rev()
+        .find(|p| {
+            let name = panel_name(p);
+            !name.starts_with("summaryPanel")
+                && !name.starts_with("preview")
+                && !name.starts_with("toolbar")
+        })
+        .expect("Should have a last content page");
+    let sig_count = count_custom_elements(last_content_page, "signatures");
+    assert_eq!(
+        sig_count, 3,
+        "Last content page should contain 3 Signatures custom elements, found {sig_count}"
+    );
+}
+
+#[test]
+fn test_aagz_custom_elements_empty_kundendaten_pages_removed() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+
+    // No page panel should have "Kundendaten" in its title (they were emptied and removed).
+    assert!(
+        !has_page_with_title_containing(&root, "Kundendaten"),
+        "Empty Kundendaten pages should be removed after custom element extraction"
+    );
+}
+
+#[test]
+fn test_aaha_custom_elements_account_holder_on_first_page() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+    let pages = get_page_panels(&root);
+
+    // First page is FormConfigurator with AccountHolder.
+    let first_page = pages[0];
+    assert!(
+        panel_name(first_page).starts_with("PN_FormConfigurator"),
+        "First page should be FormConfigurator, got: {}",
+        panel_name(first_page)
+    );
+    let ah_count = count_custom_elements(first_page, "account_holder");
+    assert_eq!(
+        ah_count, 1,
+        "FormConfigurator should contain 1 AccountHolder custom element, found {ah_count}"
+    );
+}
+
+#[test]
+fn test_aaha_custom_elements_form_addressee_replaced_with_radio() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+    let pages = get_page_panels(&root);
+    let first_page = pages[0];
+
+    let addressee_count = count_custom_elements(first_page, "formular_adressat_radio");
+    assert_eq!(
+        addressee_count, 1,
+        "Form addressee should be replaced by formular_adressat_radio, found {addressee_count}"
+    );
+}
+
+
+
+
+
+#[test]
+fn test_aaha_custom_elements_signatures_on_last_page() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+    let pages = get_page_panels(&root);
+
+    // Last content page should have Signatures.
+    let last_content_page = pages
+        .iter()
+        .rev()
+        .find(|p| {
+            let name = panel_name(p);
+            !name.starts_with("summaryPanel")
+                && !name.starts_with("preview")
+                && !name.starts_with("toolbar")
+        })
+        .expect("Should have a last content page");
+    let sig_count = count_custom_elements(last_content_page, "signatures");
+    assert_eq!(
+        sig_count, 1,
+        "Last content page should contain 1 Signatures custom element, found {sig_count}"
+    );
+    assert!(
+        panel_title(last_content_page).contains("Unterschrift"),
+        "Last content page should be the Unterschrift page, got: {}",
+        panel_title(last_content_page)
+    );
+}
+
+#[test]
+fn test_aaha_custom_element_xml_tag_uses_replaced_name() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+
+    let account_holder = find_custom_by_template(&root, "account_holder")
+        .expect("Expected Account Holder custom element");
+    let signatures =
+        find_custom_by_template(&root, "signatures").expect("Expected Signatures custom element");
+
+    assert!(
+        account_holder.element_name().starts_with("PN_Kundendaten_"),
+        "Account holder custom element tag should reuse replaced panel name, got: {}",
+        account_holder.element_name()
+    );
+    assert!(
+        signatures.element_name().starts_with("PN_UnterschriftEn_"),
+        "Signatures custom element tag should reuse replaced panel name, got: {}",
+        signatures.element_name()
+    );
+}
+
+#[test]
+fn test_custom_elements_are_full_width() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAHA_019_DE.pdf", "de")]);
+    let mut custom_nodes = Vec::new();
+    collect_custom_nodes(&root, &mut custom_nodes);
+
+    assert!(
+        !custom_nodes.is_empty(),
+        "Expected at least one custom element in AAHA output"
+    );
+
+    for node in custom_nodes {
+        if let crate::aem::AemNode::Custom {
+            template_key,
+            colspan,
+            dor_colspan,
+            ..
+        } = node
+        {
+            assert_eq!(
+                *colspan, 12,
+                "Custom element '{}' should have colspan=12",
+                template_key
+            );
+            assert_eq!(
+                *dor_colspan,
+                Some(12),
+                "Custom element '{}' should have dor_colspan=12",
+                template_key
+            );
+        }
+    }
+}
+
+#[test]
+fn test_aaox_custom_elements_signatures_on_last_page() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAOX_033_IT.pdf", "it")]);
+    let pages = get_page_panels(&root);
+
+    // Last content page should have Signatures titled "Firma/e".
+    let last_content_page = pages
+        .iter()
+        .rev()
+        .find(|p| {
+            let name = panel_name(p);
+            !name.starts_with("summaryPanel")
+                && !name.starts_with("preview")
+                && !name.starts_with("toolbar")
+        })
+        .expect("Should have a last content page");
+    let sig_count = count_custom_elements(last_content_page, "signatures_it");
+    assert_eq!(
+        sig_count, 1,
+        "Last content page should contain 1 Signatures custom element, found {sig_count}"
+    );
+    assert!(
+        panel_title(last_content_page).contains("Firma"),
+        "Last content page should be the Firma/e page, got: {}",
+        panel_title(last_content_page)
+    );
+}
+
+#[test]
+fn test_aagz_no_empty_panels_in_tree() {
+    let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+    let empty = collect_empty_panels(&root);
+    assert!(
+        empty.is_empty(),
+        "AEM tree should have no empty panels, but found {} empty: {:?}",
+        empty.len(),
+        empty
+    );
+}
+
+#[test]
+fn test_aagz_no_empty_panels_without_custom_elements() {
+    let (_, root, _) = helpers::build_aem_test_output(&[("AAGZ_019_DE.pdf", "de")]);
+    let empty = collect_empty_panels(&root);
+    assert!(
+        empty.is_empty(),
+        "AEM tree (without custom elements) should have no empty panels, but found {} empty: {:?}",
+        empty.len(),
+        empty
+    );
+}
+
+#[test]
+fn test_aaha_multilang_custom_elements_account_holder() {
+    // Multi-language merge: custom elements should still be matched
+    // because the regex is checked against ALL language variants.
+    let root = build_aem_test_output_with_custom_elements(&[
+        ("AAHA_019_DE.pdf", "de"),
+        ("AAHA_019_EN.pdf", "en"),
+    ]);
+    let pages = get_page_panels(&root);
+    let first_page = pages[0];
+    let ah_count = count_custom_elements(first_page, "account_holder");
+    assert_eq!(
+        ah_count, 1,
+        "First page should have 1 AccountHolder custom element after multi-lang merge, found {ah_count}"
+    );
+}
+
+#[test]
+fn test_aaha_multilang_custom_elements_signatures() {
+    let root = build_aem_test_output_with_custom_elements(&[
+        ("AAHA_019_DE.pdf", "de"),
+        ("AAHA_019_EN.pdf", "en"),
+    ]);
+    let pages = get_page_panels(&root);
+    let last_content_page = pages
+        .iter()
+        .rev()
+        .find(|p| {
+            let name = panel_name(p);
+            !name.starts_with("summaryPanel")
+                && !name.starts_with("preview")
+                && !name.starts_with("toolbar")
+        })
+        .expect("Should have a last content page");
+    let sig_count = count_custom_elements(last_content_page, "signatures");
+    assert_eq!(
+        sig_count, 1,
+        "Last content page should have 1 Signatures custom element after multi-lang merge, found {sig_count}"
     );
 }
 
