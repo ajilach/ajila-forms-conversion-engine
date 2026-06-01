@@ -15,6 +15,10 @@ use std::collections::HashMap;
 
 static PROFILES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../profiles");
 
+/// Result of loading an AEM profile: the parsed profile, its component
+/// templates, and its translations.
+pub type AemProfileLoad = (AemProfile, HashMap<String, String>, HashMap<String, String>);
+
 /// Return all embedded profile names (top-level profile directories).
 pub fn list_profiles() -> Vec<String> {
     PROFILES_DIR
@@ -42,9 +46,7 @@ pub fn has_xsd_config(name: &str) -> bool {
 
 /// Load and parse `{profile}/aem/config.toml` and all top-level `*.xml`
 /// component templates from `{profile}/aem/`.
-pub fn load_aem_profile(
-    name: &str,
-) -> Result<(AemProfile, HashMap<String, String>, HashMap<String, String>), String> {
+pub fn load_aem_profile(name: &str) -> Result<AemProfileLoad, String> {
     let aem_dir = PROFILES_DIR
         .get_dir(format!("{name}/aem"))
         .ok_or_else(|| format!("Profile '{name}' has no aem/ subdirectory"))?;

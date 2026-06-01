@@ -1894,42 +1894,6 @@ fn field_type_from_input_kind(kind: FieldInputKind, existing_options: Vec<NameVa
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use blueprint::structured::{InputValue, TranslatableString};
-
-    #[test]
-    fn textarea_kind_converts_to_textarea_field_type() {
-        let converted = field_type_from_input_kind(FieldInputKind::Textarea, vec![]);
-        assert!(matches!(
-            converted,
-            FieldType::Textarea { max_length: None }
-        ));
-    }
-
-    #[test]
-    fn dropdown_and_radio_keep_existing_options() {
-        let existing_options = vec![NameValue {
-            name: TranslatableString::Plain("Option".to_string()),
-            value: InputValue::Text("value".to_string()),
-        }];
-
-        let dropdown =
-            field_type_from_input_kind(FieldInputKind::Dropdown, existing_options.clone());
-        let radio = field_type_from_input_kind(FieldInputKind::Radio, existing_options.clone());
-
-        assert!(matches!(
-            dropdown,
-            FieldType::Select { options } if options == existing_options
-        ));
-        assert!(matches!(
-            radio,
-            FieldType::Radio { options } if options == existing_options
-        ));
-    }
-}
-
 /// Check if a node is a container that can accept children (Group or GridLayout).
 fn is_children_container_node(node: &StructuredNode) -> bool {
     match node {
@@ -1976,5 +1940,41 @@ fn append_to_container_node(
             Some(segments)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueprint::structured::{InputValue, TranslatableString};
+
+    #[test]
+    fn textarea_kind_converts_to_textarea_field_type() {
+        let converted = field_type_from_input_kind(FieldInputKind::Textarea, vec![]);
+        assert!(matches!(
+            converted,
+            FieldType::Textarea { max_length: None }
+        ));
+    }
+
+    #[test]
+    fn dropdown_and_radio_keep_existing_options() {
+        let existing_options = vec![NameValue {
+            name: TranslatableString::Plain("Option".to_string()),
+            value: InputValue::Text("value".to_string()),
+        }];
+
+        let dropdown =
+            field_type_from_input_kind(FieldInputKind::Dropdown, existing_options.clone());
+        let radio = field_type_from_input_kind(FieldInputKind::Radio, existing_options.clone());
+
+        assert!(matches!(
+            dropdown,
+            FieldType::Select { options } if options == existing_options
+        ));
+        assert!(matches!(
+            radio,
+            FieldType::Radio { options } if options == existing_options
+        ));
     }
 }

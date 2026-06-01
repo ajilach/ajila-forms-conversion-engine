@@ -50,10 +50,7 @@ pub(crate) fn build_footnote_embeds(nodes: &[StructuredNode]) -> Vec<FootnoteEmb
 /// Generate a deterministic HTML-safe ID for a footnote marker.
 fn generate_footnote_id(marker: &str) -> String {
     let raw = format!("0.{marker}");
-    crate::util::base64_encode(raw.as_bytes())
-        .replace('=', "")
-        .replace('+', "")
-        .replace('/', "")
+    crate::util::base64_encode(raw.as_bytes()).replace(['=', '+', '/'], "")
 }
 
 /// Embed footnote references and descriptions into an AEM `_value` string.
@@ -100,8 +97,8 @@ pub(crate) fn embed_footnotes_in_value(
 /// E.g. `"1 Once opted up..."` → `"Once opted up..."`.
 fn strip_footnote_marker(html: &str, marker: &str) -> String {
     let trimmed = html.trim_start();
-    if trimmed.starts_with(marker) {
-        trimmed[marker.len()..].trim_start().to_string()
+    if let Some(rest) = trimmed.strip_prefix(marker) {
+        rest.trim_start().to_string()
     } else {
         html.to_string()
     }
@@ -684,7 +681,7 @@ fn resolve_enabled_templates(
 
 /// Recursively walk the tree and replace matching nodes with Custom nodes.
 fn apply_custom_elements_recursive(
-    nodes: &mut Vec<AemNode>,
+    nodes: &mut [AemNode],
     rules: &[ResolvedCustomElement],
     alt_titles: &HashMap<String, Vec<String>>,
 ) {

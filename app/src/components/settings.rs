@@ -103,13 +103,12 @@ pub fn SettingsPanel(
                                     let on_changed = on_settings_changed;
                                     let s = settings_for_port.clone();
                                     move |e: Event<FormData>| {
-                                        if let Ok(port) = e.value().parse::<u16>() {
-                                            if port >= 1024 {
+                                        if let Ok(port) = e.value().parse::<u16>()
+                                            && port >= 1024 {
                                                 let mut new_s = s.clone();
                                                 new_s.live_preview_port = port;
                                                 on_changed.call(new_s);
                                             }
-                                        }
                                     }
                                 },
                             }

@@ -296,8 +296,8 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                         let new_has_options = matches!(
                                             kind,
                                             FieldInputKind::Dropdown
-                                                | FieldInputKind::Radio
-                                                | FieldInputKind::CheckboxGroup
+                                            | FieldInputKind::Radio
+                                            | FieldInputKind::CheckboxGroup
                                         );
                                         if !new_has_options {
                                             options_signal.set(vec![]);
@@ -416,7 +416,6 @@ pub fn MetadataEditor(props: MetadataEditorProps) -> Element {
                                                                 value: "{name_str}",
                                                                 oninput: {
                                                                     let lang = active_option_lang.read().clone();
-                                                                    let is_multilingual = is_multilingual;
                                                                     move |evt: Event<FormData>| {
                                                                         let mut opts = options_signal.read().clone();
                                                                         if let Some(opt) = opts.get_mut(idx) {

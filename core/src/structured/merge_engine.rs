@@ -836,11 +836,11 @@ fn inline_text_structure_compatible(a: &TranslatedText, b: &TranslatedText) -> b
     let a_bold =
         a.0.values()
             .next()
-            .map_or(false, |t| inline_text_is_bold(t));
+            .is_some_and(inline_text_is_bold);
     let b_bold =
         b.0.values()
             .next()
-            .map_or(false, |t| inline_text_is_bold(t));
+            .is_some_and(inline_text_is_bold);
     a_bold == b_bold
 }
 

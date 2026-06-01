@@ -1279,8 +1279,8 @@ pub fn can_indent(content: &[StructuredNode], path: &NodePath) -> bool {
             }
             return is_children_container(&content[idx - 1]);
         }
-    } else if is_container_child_path(path) {
-        if let Some((parent_path, child_idx)) = get_container_child_info(path) {
+    } else if is_container_child_path(path)
+        && let Some((parent_path, child_idx)) = get_container_child_info(path) {
             if child_idx == 0 {
                 return false;
             }
@@ -1295,7 +1295,6 @@ pub fn can_indent(content: &[StructuredNode], path: &NodePath) -> bool {
                 }
             }
         }
-    }
     false
 }
 
@@ -1721,7 +1720,7 @@ fn search_nodes_recursive(
             StructuredNode::Field(f) => f
                 .label
                 .as_ref()
-                .map_or(false, |l| translated_text_contains(l, query)),
+                .is_some_and(|l| translated_text_contains(l, query)),
             StructuredNode::Footnote(n) => translated_text_contains(&n.content, query),
             _ => false,
         };
@@ -1825,7 +1824,7 @@ fn translated_text_has_missing(text: &TranslatedText, document_languages: &[Stri
 
     let any_has_content = document_languages
         .iter()
-        .any(|l| text.get(l).map_or(false, |t| !t.is_empty()));
+        .any(|l| text.get(l).is_some_and(|t| !t.is_empty()));
 
     if !any_has_content {
         return false;
@@ -1834,7 +1833,7 @@ fn translated_text_has_missing(text: &TranslatedText, document_languages: &[Stri
     // At least one doc language has content; flag if any other lacks it
     document_languages
         .iter()
-        .any(|l| text.get(l).map_or(true, |t| t.is_empty()))
+        .any(|l| text.get(l).is_none_or(|t| t.is_empty()))
 }
 
 /// Check whether a node has missing translations for any of the given document languages.
@@ -1847,7 +1846,7 @@ pub fn node_has_missing_translations(node: &StructuredNode, document_languages: 
     match node {
         StructuredNode::Paragraph(p) => translated_text_has_missing(&p.content, document_languages),
         StructuredNode::Heading(h) => translated_text_has_missing(&h.content, document_languages),
-        StructuredNode::Field(f) => f.label.as_ref().map_or(false, |l| {
+        StructuredNode::Field(f) => f.label.as_ref().is_some_and(|l| {
             translated_text_has_missing(l, document_languages)
         }),
         StructuredNode::Footnote(n) => translated_text_has_missing(&n.content, document_languages),

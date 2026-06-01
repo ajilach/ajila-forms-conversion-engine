@@ -30550,7 +30550,7 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
     );
 
     let bemerkung_textarea = textareas.iter().find(|f| {
-        f.label.as_ref().map_or(false, |l| {
+        f.label.as_ref().is_some_and(|l| {
             let de = l.plain_text_in("de");
             let en = l.plain_text_in("en");
             let sp = l.plain_text_in("sp");
@@ -30624,7 +30624,7 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
             // Check DE options
             de_options.iter().all(|expected| {
                 options.iter().any(|opt| {
-                    opt.name.get("de").map_or(false, |n| n.contains(expected))
+                    opt.name.get("de").is_some_and(|n| n.contains(expected))
                         || opt.name.as_str().contains(expected)
                 })
             })
@@ -30656,7 +30656,7 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
         if let FieldType::Radio { options } = &field.input_type {
             en_options.iter().all(|expected| {
                 options.iter().any(|opt| {
-                    opt.name.get("en").map_or(false, |n| n.contains(expected))
+                    opt.name.get("en").is_some_and(|n| n.contains(expected))
                         || opt.name.as_str().contains(expected)
                 })
             })
@@ -30675,7 +30675,7 @@ fn test_aafw_multilingual_textarea_radio_headings_no_lists() {
         if let FieldType::Radio { options } = &field.input_type {
             sp_options.iter().all(|expected| {
                 options.iter().any(|opt| {
-                    opt.name.get("sp").map_or(false, |n| n.contains(expected))
+                    opt.name.get("sp").is_some_and(|n| n.contains(expected))
                         || opt.name.as_str().contains(expected)
                 })
             })
@@ -30846,7 +30846,7 @@ fn test_aafw_radio_button_values_in_html() {
         if let FieldType::Radio { options } = &field.input_type {
             options.iter().any(|opt| {
                 opt.name.as_str().contains("Bietung")
-                    || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+                    || opt.name.get("de").is_some_and(|n| n.contains("Bietung"))
             })
         } else {
             false
@@ -30912,7 +30912,7 @@ fn test_aafw_radio_button_values_in_html() {
                     if let FieldType::Radio { options } = &f.input_type {
                         if options.iter().any(|opt| {
                             opt.name.as_str().contains("Bietung")
-                                || opt.name.get("de").map_or(false, |n| n.contains("Bietung"))
+                                || opt.name.get("de").is_some_and(|n| n.contains("Bietung"))
                         }) {
                             found_radio.push(f.clone());
                         }
