@@ -443,56 +443,90 @@ impl CheckboxGrouper {
     }
 
     /// Group spatially aligned checkboxes together.
+    ///
+    /// A seed checkbox is first extended horizontally and then vertically to
+    /// build the row/column "spine" of a group. Afterwards a horizontal-fill
+    /// pass extends *every* member rightward along its own row, so that
+    /// multi-column ("grid") layouts are fully captured even when the columns
+    /// are ragged (the second-column checkbox's X depends on the first
+    /// column's label width and therefore does not line up vertically). Because
+    /// the fill only ever adds same-row neighbours, it cannot bridge separate
+    /// groups that are stacked vertically.
     fn group_aligned_checkboxes(&self, doc: &mut Document, checkboxes: &[usize]) {
         if checkboxes.is_empty() {
             return;
         }
 
+        let inset_threshold = Decimal::from_str("10.0").unwrap();
         let mut grouped: HashSet<usize> = HashSet::new();
         let checkbox_set: HashSet<usize> = checkboxes.iter().copied().collect();
 
-        for &cb_idx in checkboxes {
-            if grouped.contains(&cb_idx) {
+        // Whether `candidate` sits in the same row as `member` and is close
+        // enough horizontally (with nothing in between) to be grouped.
+        let horizontally_adjacent = |doc: &Document,
+                                     member_idx: usize,
+                                     candidate_field_bounds: &Bounds,
+                                     candidate_group_bounds: &Bounds|
+         -> bool {
+            let Some(member_field_bounds) = self.get_field_bounds(doc, member_idx) else {
+                return false;
+            };
+            if !member_field_bounds
+                .is_horizontally_aligned(candidate_field_bounds, self.alignment_tolerance)
+            {
+                return false;
+            }
+            let member_group_bounds = doc.get_bounds(member_idx).unwrap_or(member_field_bounds);
+            let distance = member_group_bounds
+                .horizontal_gap_to(candidate_group_bounds)
+                .unwrap_or(Decimal::MAX);
+            distance <= self.max_horizontal_gap
+                && !self.has_elements_between(
+                    doc,
+                    &member_field_bounds,
+                    candidate_field_bounds,
+                    &checkbox_set,
+                )
+        };
+
+        for &seed_idx in checkboxes {
+            if grouped.contains(&seed_idx) {
                 continue;
             }
 
-            let Some(cb_field_bounds) = self.get_field_bounds(doc, cb_idx) else {
+            let Some(cb_field_bounds) = self.get_field_bounds(doc, seed_idx) else {
                 continue;
             };
+            let cb_group_bounds = doc.get_bounds(seed_idx).unwrap_or(cb_field_bounds);
 
-            let cb_group_bounds = doc.get_bounds(cb_idx).unwrap_or(cb_field_bounds);
+            let mut group: Vec<usize> = vec![seed_idx];
+            grouped.insert(seed_idx);
 
-            let mut group: Vec<usize> = vec![cb_idx];
-            grouped.insert(cb_idx);
-
-            // Try horizontal direction
+            // 1. Extend horizontally along the seed's row.
             let mut found_horizontal = true;
             let mut last_field_bounds = cb_field_bounds;
             let mut last_group_bounds = cb_group_bounds;
 
             while found_horizontal {
                 found_horizontal = false;
-
                 for &candidate_idx in checkboxes {
                     if grouped.contains(&candidate_idx) {
                         continue;
                     }
-
                     let Some(candidate_field_bounds) = self.get_field_bounds(doc, candidate_idx)
                     else {
                         continue;
                     };
+                    let candidate_group_bounds = doc
+                        .get_bounds(candidate_idx)
+                        .unwrap_or(candidate_field_bounds);
 
                     if last_field_bounds
                         .is_horizontally_aligned(&candidate_field_bounds, self.alignment_tolerance)
                     {
-                        let candidate_group_bounds = doc
-                            .get_bounds(candidate_idx)
-                            .unwrap_or(candidate_field_bounds);
                         let distance = last_group_bounds
                             .horizontal_gap_to(&candidate_group_bounds)
                             .unwrap_or(Decimal::MAX);
-
                         if distance <= self.max_horizontal_gap
                             && !self.has_elements_between(
                                 doc,
@@ -512,19 +546,16 @@ impl CheckboxGrouper {
                 }
             }
 
-            // Try vertical direction
-            let inset_threshold = Decimal::from_str("10.0").unwrap();
+            // 2. Extend vertically along the seed's column.
             let mut found_vertical = true;
             let mut last_field_bounds = cb_field_bounds;
 
             while found_vertical {
                 found_vertical = false;
-
                 for &candidate_idx in checkboxes {
                     if grouped.contains(&candidate_idx) {
                         continue;
                     }
-
                     let Some(candidate_field_bounds) = self.get_field_bounds(doc, candidate_idx)
                     else {
                         continue;
@@ -544,7 +575,6 @@ impl CheckboxGrouper {
                             &checkbox_set,
                             inset_threshold,
                         );
-
                         let has_inset_content = self.has_inset_content_between(
                             doc,
                             &last_field_bounds,
@@ -552,7 +582,6 @@ impl CheckboxGrouper {
                             &checkbox_set,
                             inset_threshold,
                         );
-
                         let has_radio_conditional_between = self.has_radio_related_between(
                             doc,
                             &last_field_bounds,
@@ -561,24 +590,14 @@ impl CheckboxGrouper {
                         );
 
                         let should_group = if !has_blocking {
-                            // No blocking elements: group within normal gap, or
-                            // within sibling distance if the gap is filled with
-                            // inset conditional content belonging to the upper
-                            // checkbox (e.g. a nested radio group).
                             distance <= self.max_vertical_gap
-                                || (has_inset_content
-                                    && distance <= self.max_sibling_gap)
+                                || (has_inset_content && distance <= self.max_sibling_gap)
                         } else {
-                            // Blocking elements exist: only group if the
-                            // checkboxes are siblings in the same form section
-                            // (indicating the content between them is conditional)
-                            // and within sibling distance. Also allow known
-                            // radio-conditional split regions between options.
                             distance <= self.max_sibling_gap
                                 && (self.are_section_siblings(
                                     doc,
                                     *group.last().unwrap(),
-                                    candidate_idx
+                                    candidate_idx,
                                 ) || has_radio_conditional_between)
                         };
 
@@ -593,7 +612,63 @@ impl CheckboxGrouper {
                 }
             }
 
+            // 3. Horizontal-fill pass: extend every member rightward along its
+            // own row. This captures the second (and further) columns of a
+            // multi-column bucket even when the columns are ragged and do not
+            // line up vertically. Iterates to a fixpoint so each newly added
+            // cell can itself anchor further horizontal neighbours. Only
+            // same-row neighbours are added, so vertically-stacked groups are
+            // never merged.
+            let mut changed = true;
+            while changed {
+                changed = false;
+                'candidate: for &candidate_idx in checkboxes {
+                    if grouped.contains(&candidate_idx) {
+                        continue;
+                    }
+                    let Some(candidate_field_bounds) = self.get_field_bounds(doc, candidate_idx)
+                    else {
+                        continue;
+                    };
+                    let candidate_group_bounds = doc
+                        .get_bounds(candidate_idx)
+                        .unwrap_or(candidate_field_bounds);
+
+                    for &member_idx in &group {
+                        if horizontally_adjacent(
+                            doc,
+                            member_idx,
+                            &candidate_field_bounds,
+                            &candidate_group_bounds,
+                        ) {
+                            group.push(candidate_idx);
+                            grouped.insert(candidate_idx);
+                            changed = true;
+                            continue 'candidate;
+                        }
+                    }
+                }
+            }
+
             if group.len() > 1 {
+                // Sort members into reading order (row by row, left to right) so
+                // grid layouts produce options in the expected sequence. Mirrors
+                // `compare_bounds_reading_order`: quantize Y into 4.0pt bands,
+                // then order by X.
+                let band = Decimal::new(40, 1);
+                group.sort_by(|&a, &b| {
+                    let ba = self.get_field_bounds(doc, a);
+                    let bb = self.get_field_bounds(doc, b);
+                    match (ba, bb) {
+                        (Some(ba), Some(bb)) => {
+                            let qa = (ba.y / band).round() * band;
+                            let qb = (bb.y / band).round() * band;
+                            qa.cmp(&qb).then_with(|| ba.x.cmp(&bb.x))
+                        }
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
+
                 // Don't group checkboxes that all have the same label text.
                 // Identical labels (e.g., multiple "Ja" checkboxes) indicate
                 // independent yes/no fields for different questions in a

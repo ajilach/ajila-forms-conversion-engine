@@ -31089,3 +31089,98 @@ fn test_aags_has_no_checkbox_groups_only_standalone_checkboxes() {
         );
     }
 }
+
+#[test]
+fn test_aalp_bucket_checkbox_groups() {
+    // AALP arranges the asset-class checkboxes in multi-column grids ("buckets").
+    // Each bucket must be detected as a single CheckboxGroup containing all of
+    // its checkboxes, even when they are laid out across multiple columns
+    // (horizontally aligned), not just a single vertical column.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AALP_019_DE.pdf"))
+        .expect("Failed to process AALP PDF");
+    let fields = collect_fields(&structured);
+
+    let checkbox_groups: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+        .collect();
+
+    let find_group = |label_text: &str| {
+        checkbox_groups
+            .iter()
+            .find(|field| {
+                field
+                    .label
+                    .as_ref()
+                    .map(|l| l.as_plain_text().contains(label_text))
+                    .unwrap_or(false)
+            })
+            .copied()
+            .unwrap_or_else(|| {
+                let labels: Vec<String> = checkbox_groups
+                    .iter()
+                    .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+                    .collect();
+                panic!(
+                    "Expected a CheckboxGroup labeled {:?}. Found labels: {:?}",
+                    label_text, labels
+                );
+            })
+    };
+
+    let assert_options = |label_text: &str, expected: &[&str]| {
+        let group = find_group(label_text);
+        let FieldType::CheckboxGroup { options } = &group.input_type else {
+            unreachable!()
+        };
+        let actual: Vec<String> = options.iter().map(|o| o.name.as_str().to_string()).collect();
+        assert_eq!(
+            options.len(),
+            expected.len(),
+            "Bucket {:?} should have {} options, got {:?}",
+            label_text,
+            expected.len(),
+            actual
+        );
+        for exp in expected {
+            assert!(
+                actual.iter().any(|a| a.contains(exp)),
+                "Bucket {:?} should contain an option matching {:?}. Got {:?}",
+                label_text,
+                exp,
+                actual
+            );
+        }
+    };
+
+    assert_options(
+        "Bucket 1",
+        &[
+            "Aktien (inkl. Aktienfonds und börsengehandelte Fonds)",
+            "Obligationen (inkl. Obligationenfonds und börsengehandelte Fonds)",
+            "Liquidität und Geldmarktprodukte",
+            "Edelmetalle & Rohstoffe (inkl. Fonds)",
+            "Multi-Asset-Class Fonds (inkl. Strategie-Fonds)",
+        ],
+    );
+
+    assert_options(
+        "Bucket 2",
+        &[
+            "Hedge Funds",
+            "Private Markets",
+            "Immobilien (inkl. Immobilienfonds)",
+        ],
+    );
+
+    assert_options(
+        "Bucket 3",
+        &[
+            "Strukturierte Produkte (Schutz, Optimierung, Partizipation)",
+            "Andere Derivate (strukturierte Produkte mit Hebelwirkung, ETDs, OTCs)",
+        ],
+    );
+}
