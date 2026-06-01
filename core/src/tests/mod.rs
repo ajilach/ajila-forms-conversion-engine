@@ -7689,30 +7689,41 @@ fn test_aagz_checkbox_checked_content_contains_text_and_radio_group() {
 
     let all_fields = collect_fields(&structured);
 
-    let checkbox = all_fields
-        .into_iter()
-        .find(|field| {
-            matches!(field.input_type, FieldType::Bool)
+    let (trigger_field_name, trigger_value) = all_fields
+        .iter()
+        .find_map(|field| {
+            if matches!(field.input_type, FieldType::Bool)
                 && field
                     .label
                     .as_ref()
                     .map(|label| label.as_plain_text().contains("Zahlungsaufträge erfassen"))
                     .unwrap_or(false)
+            {
+                return Some((field.name.clone(), InputValue::Bool(true)));
+            }
+
+            if let FieldType::CheckboxGroup { options } = &field.input_type {
+                let opt = options
+                    .iter()
+                    .find(|o| o.name.contains("Zahlungsaufträge erfassen"))?;
+                return Some((field.name.clone(), opt.value.clone()));
+            }
+
+            None
         })
-        .expect("Expected checkbox labeled 'Zahlungsaufträge erfassen'");
+        .expect("Expected Bool checkbox or CheckboxGroup option 'Zahlungsaufträge erfassen'");
 
     let checked_conditionals: Vec<_> = collect_conditionals(&structured)
         .into_iter()
         .filter(|cond| {
-            cond.condition.field_name == checkbox.name
-                && cond.condition.value == InputValue::Bool(true)
+            cond.condition.field_name == trigger_field_name && cond.condition.value == trigger_value
         })
         .collect();
 
     assert!(
         !checked_conditionals.is_empty(),
-        "Expected checked-only conditional content for checkbox '{}'",
-        checkbox.name,
+        "Expected checked-only conditional content for field '{}'",
+        trigger_field_name,
     );
 
     assert!(
@@ -7772,7 +7783,7 @@ fn test_aagz_checkbox_checked_content_contains_text_and_radio_group() {
 
     assert!(
         !collect_conditionals(&structured).into_iter().any(|cond| {
-            cond.condition.field_name == checkbox.name
+            cond.condition.field_name == trigger_field_name
                 && cond.condition.value == InputValue::Bool(false)
                 && node_contains_text(
                     cond.content.as_ref(),
@@ -7933,23 +7944,34 @@ fn test_aagz_approval_text_preserves_space_before_parenthesis() {
         .expect("Failed to process AAGZ PDF");
 
     let all_fields = collect_fields(&structured);
-    let checkbox = all_fields
-        .into_iter()
-        .find(|field| {
-            matches!(field.input_type, FieldType::Bool)
+    let (trigger_field_name, trigger_value) = all_fields
+        .iter()
+        .find_map(|field| {
+            if matches!(field.input_type, FieldType::Bool)
                 && field
                     .label
                     .as_ref()
                     .map(|label| label.as_plain_text().contains("Zahlungsaufträge erfassen"))
                     .unwrap_or(false)
+            {
+                return Some((field.name.clone(), InputValue::Bool(true)));
+            }
+
+            if let FieldType::CheckboxGroup { options } = &field.input_type {
+                let opt = options
+                    .iter()
+                    .find(|o| o.name.contains("Zahlungsaufträge erfassen"))?;
+                return Some((field.name.clone(), opt.value.clone()));
+            }
+
+            None
         })
-        .expect("Expected checkbox labeled 'Zahlungsaufträge erfassen'");
+        .expect("Expected Bool checkbox or CheckboxGroup option 'Zahlungsaufträge erfassen'");
 
     let checked_conditionals: Vec<_> = collect_conditionals(&structured)
         .into_iter()
         .filter(|cond| {
-            cond.condition.field_name == checkbox.name
-                && cond.condition.value == InputValue::Bool(true)
+            cond.condition.field_name == trigger_field_name && cond.condition.value == trigger_value
         })
         .collect();
 
@@ -30734,6 +30756,217 @@ fn test_aabk_direktvereinbarungen_and_retro_are_independent_checkboxes() {
             ja_bools.len() >= 2,
             "Expected at least 2 independent Bool checkboxes with label 'Ja', found {}",
             ja_bools.len()
+        );
+    }
+}
+
+#[test]
+fn test_aagz_autorisierungsreferenz_checkbox_group_with_conditional() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::{FieldType, StructuredNode};
+
+    fn node_contains_text(node: &StructuredNode, needle: &str) -> bool {
+        match node {
+            StructuredNode::Paragraph(p) => p.content.as_plain_text().contains(needle),
+            StructuredNode::Heading(h) => h.content.as_plain_text().contains(needle),
+            StructuredNode::Field(field) => field
+                .label
+                .as_ref()
+                .map(|label| label.as_plain_text().contains(needle))
+                .unwrap_or(false),
+            StructuredNode::Group(group) => group
+                .children
+                .iter()
+                .any(|child| node_contains_text(child, needle)),
+            StructuredNode::Conditional(cond) => node_contains_text(cond.content.as_ref(), needle),
+            StructuredNode::Repeatable(rep) => node_contains_text(rep.item.as_ref(), needle),
+            StructuredNode::GridLayout(grid) => grid
+                .elements
+                .iter()
+                .any(|element| node_contains_text(&element.node, needle)),
+            StructuredNode::Table(table) => {
+                table
+                    .header
+                    .as_ref()
+                    .map(|header| header.cells.iter().any(|cell| node_contains_text(cell, needle)))
+                    .unwrap_or(false)
+                    || table.rows.iter().any(|row| {
+                        row.cells.iter().any(|cell| node_contains_text(cell, needle))
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    let structured = run_exhaustive_to_merged(input_path("AAGZ_019_DE.pdf"))
+        .expect("Failed to process AAGZ PDF");
+
+    let fields = collect_fields(&structured);
+
+    let checkbox_groups: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+        .collect();
+
+    let cb_group = checkbox_groups
+        .iter()
+        .find(|field| {
+            field
+                .label
+                .as_ref()
+                .map(|label| {
+                    let text = label.as_plain_text();
+                    text.contains("Autorisierungsreferenz")
+                        && text.contains("(Zutreffendes bitte ankreuzen)")
+                })
+                .unwrap_or(false)
+        })
+        .copied()
+        .unwrap_or_else(|| {
+            let labels: Vec<String> = checkbox_groups
+                .iter()
+                .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+                .collect();
+            panic!(
+                "Expected a CheckboxGroup labeled \
+                 'Autorisierungsreferenz (Zutreffendes bitte ankreuzen)'. \
+                 Found CheckboxGroup labels: {:?}",
+                labels
+            );
+        });
+
+    let FieldType::CheckboxGroup { options } = &cb_group.input_type else {
+        unreachable!()
+    };
+
+    let expected_options = [
+        "Abfragen tätigen",
+        "Zahlungsaufträge erfassen",
+        "Wertpapieraufträge mit Einzelzeichnungsberechtigung erteilen \
+         (kollektive Verfügungsbefugnis schließt Börsenaufträge aus)",
+    ];
+
+    assert_eq!(
+        options.len(),
+        expected_options.len(),
+        "Expected exactly {} options in Autorisierungsreferenz CheckboxGroup, got: {:?}",
+        expected_options.len(),
+        options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+    );
+
+    for (i, expected) in expected_options.iter().enumerate() {
+        let normalized_expected: String = expected.split_whitespace().collect::<Vec<_>>().join(" ");
+        let actual_normalized: String = options[i]
+            .name
+            .as_str()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            actual_normalized, normalized_expected,
+            "Option {} mismatch. Got {:?}, expected {:?}",
+            i, actual_normalized, normalized_expected
+        );
+    }
+
+    let second_option_value = options[1].value.clone();
+
+    let matching_conditionals: Vec<_> = collect_conditionals(&structured)
+        .into_iter()
+        .filter(|cond| {
+            cond.condition.field_name == cb_group.name
+                && cond.condition.value == second_option_value
+        })
+        .collect();
+
+    assert!(
+        !matching_conditionals.is_empty(),
+        "Expected a conditional gated on the second option ('Zahlungsaufträge erfassen', \
+         value {:?}) of the Autorisierungsreferenz CheckboxGroup '{}'",
+        second_option_value,
+        cb_group.name,
+    );
+
+    assert!(
+        matching_conditionals.iter().any(|cond| {
+            node_contains_text(
+                cond.content.as_ref(),
+                "Erfasste Zahlungsaufträge freigeben",
+            )
+        }),
+        "Expected the conditional gated on the second option to contain the \
+         'Erfasste Zahlungsaufträge freigeben' content"
+    );
+}
+
+#[test]
+fn test_aagz_authentifizierungsmittel_checkbox_group() {
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAGZ_019_DE.pdf"))
+        .expect("Failed to process AAGZ PDF");
+
+    let fields = collect_fields(&structured);
+
+    let checkbox_groups: Vec<_> = fields
+        .iter()
+        .filter(|f| matches!(&f.input_type, FieldType::CheckboxGroup { .. }))
+        .collect();
+
+    let cb_group = checkbox_groups
+        .iter()
+        .find(|field| {
+            field
+                .label
+                .as_ref()
+                .map(|label| label.as_plain_text().contains("Authentifizierungsmittel"))
+                .unwrap_or(false)
+        })
+        .copied()
+        .unwrap_or_else(|| {
+            let labels: Vec<String> = checkbox_groups
+                .iter()
+                .filter_map(|f| f.label.as_ref().map(|l| l.as_plain_text()))
+                .collect();
+            panic!(
+                "Expected a CheckboxGroup labeled 'Authentifizierungsmittel'. \
+                 Found CheckboxGroup labels: {:?}",
+                labels
+            );
+        });
+
+    let FieldType::CheckboxGroup { options } = &cb_group.input_type else {
+        unreachable!()
+    };
+
+    let expected_options = [
+        "UBS Access App (default) (kostenfrei), Nummer Mobiltelefon (verpflichtend):",
+        "UBS Access Card display (Kosten gem. Preis und Leistungsverzeichnis)",
+        "UBS Access Card und Kartenleser \
+         (Kosten gem. Preis und Leistungsverzeichnis + Zoll/Einfuhr)",
+    ];
+
+    assert_eq!(
+        options.len(),
+        expected_options.len(),
+        "Expected exactly {} options in Authentifizierungsmittel CheckboxGroup, got: {:?}",
+        expected_options.len(),
+        options.iter().map(|o| o.name.as_str()).collect::<Vec<_>>()
+    );
+
+    for (i, expected) in expected_options.iter().enumerate() {
+        let normalized_expected: String = expected.split_whitespace().collect::<Vec<_>>().join(" ");
+        let actual_normalized: String = options[i]
+            .name
+            .as_str()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            actual_normalized, normalized_expected,
+            "Option {} mismatch. Got {:?}, expected {:?}",
+            i, actual_normalized, normalized_expected
         );
     }
 }

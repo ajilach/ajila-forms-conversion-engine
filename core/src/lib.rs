@@ -125,10 +125,12 @@ pub use structured::{
     ImageNode,
     InlineNode,
     InlineText,
+    InputValue,
     ListItem,
     ListNode,
     MergeError,
     MergeInput,
+    NameValue,
     ParagraphNode,
     RecursiveMerger,
     RepeatableNode,
@@ -922,7 +924,189 @@ pub(crate) fn merge_structured_outputs(
         .collect();
 
     let merger = RecursiveMerger::new(merge_inputs);
-    merger.merge()
+    let mut merged = merger.merge();
+    normalize_split_checkbox_groups_recursive(&mut merged);
+    merged
+}
+
+fn normalize_split_checkbox_groups_recursive(nodes: &mut Vec<StructuredNode>) {
+    fn option_value_from_field(field: &FieldNode) -> InputValue {
+        field
+            .som_path
+            .as_ref()
+            .map(|p| {
+                InputValue::Text(
+                    p.as_str()
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(p.as_str())
+                        .to_string(),
+                )
+            })
+            .unwrap_or_else(|| InputValue::Text(field.name.to_string()))
+    }
+
+    for node in nodes.iter_mut() {
+        match node {
+            StructuredNode::Group(g) => normalize_split_checkbox_groups_recursive(&mut g.children),
+            StructuredNode::Conditional(c) => {
+                if let StructuredNode::Group(g) = c.content.as_mut() {
+                    normalize_split_checkbox_groups_recursive(&mut g.children);
+                }
+            }
+            StructuredNode::Repeatable(r) => {
+                if let StructuredNode::Group(g) = r.item.as_mut() {
+                    normalize_split_checkbox_groups_recursive(&mut g.children);
+                }
+            }
+            StructuredNode::GridLayout(g) => {
+                for e in &mut g.elements {
+                    if let StructuredNode::Group(gr) = &mut e.node {
+                        normalize_split_checkbox_groups_recursive(&mut gr.children);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut i = 0;
+    while i + 2 < nodes.len() {
+        let group_and_options = match &nodes[i] {
+            StructuredNode::Field(f) => match &f.input_type {
+                FieldType::CheckboxGroup { options } if options.len() >= 2 => {
+                    Some((f.name.clone(), options[1].value.clone()))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+
+        let Some((group_name, second_value)) = group_and_options else {
+            i += 1;
+            continue;
+        };
+
+        let cond = match &nodes[i + 1] {
+            StructuredNode::Conditional(c) => Some(c.clone()),
+            _ => None,
+        };
+        let trailing_bool = match &nodes[i + 2] {
+            StructuredNode::Field(f) if matches!(f.input_type, FieldType::Bool) => Some(f.clone()),
+            _ => None,
+        };
+
+        if let (Some(mut cond), Some(trailing_bool)) = (cond, trailing_bool) {
+            if let StructuredNode::Field(f) = &mut nodes[i]
+                && let FieldType::CheckboxGroup { options } = &mut f.input_type
+            {
+                if let Some(label) = trailing_bool.label.as_ref().map(|l| l.as_plain_text())
+                    && !label.trim().is_empty()
+                    && !options.iter().any(|o| o.name.contains(&label))
+                {
+                    options.push(NameValue {
+                        name: TranslatableString::Plain(label),
+                        value: option_value_from_field(&trailing_bool),
+                    });
+                }
+            }
+
+            cond.condition.field_name = group_name;
+            cond.condition.value = second_value;
+            nodes[i + 1] = StructuredNode::Conditional(cond);
+            nodes.remove(i + 2);
+            continue;
+        }
+
+        i += 1;
+    }
+
+    let mut j = 0;
+    while j + 3 < nodes.len() {
+        let (f1, f2, cond, f3) = match (&nodes[j], &nodes[j + 1], &nodes[j + 2], &nodes[j + 3]) {
+            (
+                StructuredNode::Field(f1),
+                StructuredNode::Field(f2),
+                StructuredNode::Conditional(cond),
+                StructuredNode::Field(f3),
+            ) if matches!(f1.input_type, FieldType::Bool)
+                && matches!(f2.input_type, FieldType::Bool)
+                && matches!(f3.input_type, FieldType::Bool) => {
+                (f1.clone(), f2.clone(), cond.clone(), f3.clone())
+            }
+            _ => {
+                j += 1;
+                continue;
+            }
+        };
+
+        if cond.condition.field_name != f2.name || cond.condition.value != InputValue::Bool(true) {
+            j += 1;
+            continue;
+        }
+
+        let Some(name1) = f1.label.as_ref().map(|l| l.as_plain_text()) else {
+            j += 1;
+            continue;
+        };
+        let Some(name2) = f2.label.as_ref().map(|l| l.as_plain_text()) else {
+            j += 1;
+            continue;
+        };
+        let Some(name3) = f3.label.as_ref().map(|l| l.as_plain_text()) else {
+            j += 1;
+            continue;
+        };
+
+        let group_label = if j > 0 {
+            if let StructuredNode::Paragraph(p) = &nodes[j - 1] {
+                Some(TranslatedText::single(
+                    "default",
+                    InlineText::plain(p.content.as_plain_text()),
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let options = vec![
+            NameValue {
+                name: TranslatableString::Plain(name1),
+                value: option_value_from_field(&f1),
+            },
+            NameValue {
+                name: TranslatableString::Plain(name2),
+                value: option_value_from_field(&f2),
+            },
+            NameValue {
+                name: TranslatableString::Plain(name3),
+                value: option_value_from_field(&f3),
+            },
+        ];
+
+        let mut new_cond = cond;
+        new_cond.condition.field_name = f1.name.clone();
+        new_cond.condition.value = options[1].value.clone();
+
+        nodes[j] = StructuredNode::Field(FieldNode {
+            name: f1.name.clone(),
+            som_path: f1.som_path.clone(),
+            label: group_label,
+            input_type: FieldType::CheckboxGroup { options },
+            value: None,
+            placeholder: None,
+            required: false,
+        });
+        nodes[j + 1] = StructuredNode::Conditional(new_cond);
+        nodes.remove(j + 3);
+        nodes.remove(j + 2);
+        if j > 0 && matches!(nodes[j - 1], StructuredNode::Paragraph(_)) {
+            nodes.remove(j - 1);
+            j = j.saturating_sub(1);
+        }
+    }
 }
 
 // ============================================================================

@@ -30,6 +30,8 @@ use crate::structured::{
 use crate::xfa::scripting::SomPath;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// Check if a StructuredNode contains any fields (recursively).
 fn contains_fields(node: &StructuredNode) -> bool {
@@ -195,6 +197,7 @@ pub fn convert_with_language(doc: &Document, language: &str) -> Vec<StructuredNo
     let converter = Converter {
         doc,
         language: language.to_string(),
+        checkbox_condition_map: RefCell::new(HashMap::new()),
     };
 
     // Get roots and sort by reading order (y first, then x)
@@ -519,9 +522,189 @@ fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cm
 struct Converter<'a, 'b> {
     doc: &'a Document<'b>,
     language: String,
+    checkbox_condition_map: RefCell<HashMap<String, (FieldId, InputValue)>>,
 }
 
 impl<'a, 'b> Converter<'a, 'b> {
+    fn normalize_split_checkbox_groups(&self, nodes: &mut Vec<StructuredNode>) {
+        let mut i = 0;
+        while i + 2 < nodes.len() {
+            let group_name = match &nodes[i] {
+                StructuredNode::Field(f) if matches!(f.input_type, FieldType::CheckboxGroup { .. }) => {
+                    Some(f.name.clone())
+                }
+                _ => None,
+            };
+
+            let Some(group_name) = group_name else {
+                i += 1;
+                continue;
+            };
+
+            let conditional_targets_group = match &nodes[i + 1] {
+                StructuredNode::Conditional(c) => c.condition.field_name == group_name,
+                _ => false,
+            };
+
+            if !conditional_targets_group {
+                i += 1;
+                continue;
+            }
+
+            let next_bool_field = match &nodes[i + 2] {
+                StructuredNode::Field(f) if matches!(f.input_type, FieldType::Bool) => Some(f),
+                _ => None,
+            };
+            let Some(next_bool_field) = next_bool_field else {
+                i += 1;
+                continue;
+            };
+
+            let Some(option_label) = next_bool_field
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .filter(|s| !s.trim().is_empty())
+            else {
+                i += 1;
+                continue;
+            };
+
+            let option_value = next_bool_field
+                .som_path
+                .as_ref()
+                .map(|p| {
+                    InputValue::Text(
+                        p.as_str()
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or(p.as_str())
+                            .to_string(),
+                    )
+                })
+                .unwrap_or_else(|| InputValue::Text(next_bool_field.name.to_string()));
+
+            if let StructuredNode::Field(f) = &mut nodes[i]
+                && let FieldType::CheckboxGroup { options } = &mut f.input_type
+            {
+                let exists = options
+                    .iter()
+                    .any(|o| o.name.contains(&option_label) || option_label.contains(o.name.as_str()));
+                if !exists {
+                    options.push(NameValue {
+                        name: TranslatableString::Plain(option_label),
+                        value: option_value,
+                    });
+                }
+            }
+
+            nodes.remove(i + 2);
+        }
+
+        let mut j = 0;
+        while j + 3 < nodes.len() {
+            let (f1, f2, cond, f3) = match (&nodes[j], &nodes[j + 1], &nodes[j + 2], &nodes[j + 3]) {
+                (
+                    StructuredNode::Field(f1),
+                    StructuredNode::Field(f2),
+                    StructuredNode::Conditional(cond),
+                    StructuredNode::Field(f3),
+                ) if matches!(f1.input_type, FieldType::Bool)
+                    && matches!(f2.input_type, FieldType::Bool)
+                    && matches!(f3.input_type, FieldType::Bool) => (f1.clone(), f2.clone(), cond.clone(), f3.clone()),
+                _ => {
+                    j += 1;
+                    continue;
+                }
+            };
+
+            if cond.condition.field_name != f2.name
+                || cond.condition.value != InputValue::Bool(true)
+            {
+                j += 1;
+                continue;
+            }
+
+            let Some(name1) = f1.label.as_ref().map(|l| l.as_plain_text()) else {
+                j += 1;
+                continue;
+            };
+            let Some(name2) = f2.label.as_ref().map(|l| l.as_plain_text()) else {
+                j += 1;
+                continue;
+            };
+            let Some(name3) = f3.label.as_ref().map(|l| l.as_plain_text()) else {
+                j += 1;
+                continue;
+            };
+
+            let value_from_field = |f: &FieldNode| {
+                f.som_path
+                    .as_ref()
+                    .map(|p| {
+                        InputValue::Text(
+                            p.as_str()
+                                .rsplit('.')
+                                .next()
+                                .unwrap_or(p.as_str())
+                                .to_string(),
+                        )
+                    })
+                    .unwrap_or_else(|| InputValue::Text(f.name.to_string()))
+            };
+
+            let options = vec![
+                NameValue {
+                    name: TranslatableString::Plain(name1),
+                    value: value_from_field(&f1),
+                },
+                NameValue {
+                    name: TranslatableString::Plain(name2.clone()),
+                    value: value_from_field(&f2),
+                },
+                NameValue {
+                    name: TranslatableString::Plain(name3),
+                    value: value_from_field(&f3),
+                },
+            ];
+
+            let second_value = options[1].value.clone();
+
+            let mut group_label = None;
+            let mut remove_label_paragraph = false;
+            if j > 0
+                && let StructuredNode::Paragraph(p) = &nodes[j - 1]
+            {
+                group_label = Some(self.translated(InlineText::plain(p.content.as_plain_text())));
+                remove_label_paragraph = true;
+            }
+
+            let group_field = StructuredNode::Field(FieldNode {
+                name: f1.name.clone(),
+                som_path: f1.som_path.clone(),
+                label: group_label,
+                input_type: FieldType::CheckboxGroup { options },
+                value: None,
+                placeholder: None,
+                required: false,
+            });
+
+            let mut updated_cond = cond;
+            updated_cond.condition.field_name = f1.name;
+            updated_cond.condition.value = second_value;
+
+            nodes[j] = group_field;
+            nodes[j + 1] = StructuredNode::Conditional(updated_cond);
+            nodes.remove(j + 3);
+            nodes.remove(j + 2);
+
+            if remove_label_paragraph {
+                nodes.remove(j - 1);
+                j = j.saturating_sub(1);
+            }
+        }
+    }
+
     /// Wrap an InlineText into a TranslatedText with the converter's language.
     fn translated(&self, text: InlineText) -> TranslatedText {
         TranslatedText::single(&self.language, text)
@@ -813,11 +996,19 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else {
                     StructuredNode::Group(GroupNode { children })
                 };
+
+                let mapped = self
+                    .checkbox_condition_map
+                    .borrow()
+                    .get(checkbox_som_path.as_str())
+                    .cloned();
+
+                let (field_name, value) = mapped.unwrap_or_else(|| {
+                    (FieldId::from_som_path(checkbox_som_path), InputValue::Bool(true))
+                });
+
                 Some(StructuredNode::Conditional(ConditionalNode {
-                    condition: FieldCondition {
-                        field_name: FieldId::from_som_path(checkbox_som_path),
-                        value: InputValue::Bool(true),
-                    },
+                    condition: FieldCondition { field_name, value },
                     content: Box::new(content),
                 }))
             }
@@ -976,6 +1167,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             .filter_map(|&child_idx| self.convert_group(child_idx))
             .collect();
 
+        self.normalize_split_checkbox_groups(&mut result);
         inherit_heading_labels_for_radios(&mut result);
 
         result
@@ -1181,6 +1373,7 @@ impl<'a, 'b> Converter<'a, 'b> {
         let group = self.doc.get_group(group_idx)?;
 
         let mut options = Vec::new();
+        let mut option_som_paths: Vec<Option<SomPath>> = Vec::new();
         let mut first_som_path: Option<SomPath> = None;
         let mut first_field_id: Option<FieldId> = None;
 
@@ -1208,6 +1401,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                             name: TranslatableString::Plain(option_label.clone()),
                             value: InputValue::Text(name.clone()),
                         });
+                        option_som_paths.push(node.som_path().cloned());
                         break;
                     }
                 }
@@ -1219,6 +1413,15 @@ impl<'a, 'b> Converter<'a, 'b> {
         }
 
         let field_id = first_field_id.unwrap_or_else(FieldId::random);
+
+        {
+            let mut map = self.checkbox_condition_map.borrow_mut();
+            for (opt, som_path) in options.iter().zip(option_som_paths.iter()) {
+                if let Some(path) = som_path {
+                    map.insert(path.as_str().to_string(), (field_id.clone(), opt.value.clone()));
+                }
+            }
+        }
 
         Some(StructuredNode::Field(FieldNode {
             name: field_id,

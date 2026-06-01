@@ -10,8 +10,8 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind};
 use crate::flattened::Bounds;
+use crate::flattened::FlattenedNodeKind;
 use rust_decimal::prelude::*;
-use rust_decimal::Decimal;
 use std::collections::HashSet;
 
 /// Groups adjacent checkboxes into `CheckboxGroup`.
@@ -87,6 +87,35 @@ impl CheckboxGrouper {
         } else {
             None
         }
+    }
+
+    /// Returns true if a group or any descendant is radio-related conditional content.
+    fn is_radio_related_group_or_descendant(&self, doc: &Document, group_idx: usize) -> bool {
+        let mut stack = vec![group_idx];
+        let mut visited = HashSet::new();
+
+        while let Some(idx) = stack.pop() {
+            if !visited.insert(idx) {
+                continue;
+            }
+
+            let Some(group) = doc.get_group(idx) else {
+                continue;
+            };
+
+            if matches!(
+                group.kind,
+                GroupKind::RadioButtonGroup
+                    | GroupKind::RadioButton { .. }
+                    | GroupKind::ExclGroup { .. }
+            ) {
+                return true;
+            }
+
+            stack.extend(group.children.iter().copied());
+        }
+
+        false
     }
 
     /// Check if two checkboxes are in the same form section based on SOM paths.
@@ -185,6 +214,8 @@ impl CheckboxGrouper {
             }
         }
 
+        // Collect overlapping roots once so we can do a two-pass classification.
+        let mut overlapping: Vec<usize> = Vec::new();
         for root_idx in doc.roots() {
             if checkbox_indices.contains(&root_idx) {
                 continue;
@@ -192,35 +223,219 @@ impl CheckboxGrouper {
             if checkbox_children.contains(&root_idx) {
                 continue;
             }
-
             let Some(bounds) = doc.get_bounds(root_idx) else {
                 continue;
             };
-
-            // Skip zero-width elements (invisible placeholders)
             if bounds.width.is_zero() {
                 continue;
             }
-
             if region.overlaps(&bounds) {
-                let is_inset =
-                    bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
+                overlapping.push(root_idx);
+            }
+        }
 
-                if !is_inset {
-                    let group_kind = doc.get_group(root_idx).map(|g| &g.kind);
+        // Detect whether the gap already contains evidence of conditional
+        // content for the upper checkbox.
+        let has_inset_conditional_content = overlapping.iter().any(|&root_idx| {
+            let Some(bounds) = doc.get_bounds(root_idx) else {
+                return false;
+            };
+            let Some(group) = doc.get_group(root_idx) else {
+                return false;
+            };
+            let is_radio_related = self.is_radio_related_group_or_descendant(doc, root_idx);
+            if is_radio_related {
+                return true;
+            }
 
-                    let is_checkbox_related = group_kind
-                        .map(|k| {
-                            matches!(k, GroupKind::Checkbox { .. } | GroupKind::CheckboxGroup)
-                        })
-                        .unwrap_or(false);
+            let is_inset =
+                bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
+            if !is_inset {
+                return false;
+            }
+            matches!(
+                group.kind,
+                GroupKind::RadioButtonGroup
+                    | GroupKind::RadioButton { .. }
+                    | GroupKind::ExclGroup { .. }
+                    | GroupKind::Field
+                    | GroupKind::LabeledField { .. }
+                    | GroupKind::InlineField { .. }
+                    | GroupKind::InlineDateField { .. }
+                    | GroupKind::DateField { .. }
+            )
+        });
 
-                    if is_checkbox_related {
-                        continue;
-                    }
+        for &root_idx in &overlapping {
+            let bounds = doc.get_bounds(root_idx).unwrap();
+            let group_kind = doc.get_group(root_idx).map(|g| &g.kind);
 
+            let is_checkbox_related = group_kind
+                .map(|k| matches!(k, GroupKind::Checkbox { .. } | GroupKind::CheckboxGroup))
+                .unwrap_or(false);
+
+            let is_radio_related = self.is_radio_related_group_or_descendant(doc, root_idx);
+
+            if is_checkbox_related || is_radio_related {
+                continue;
+            }
+
+            let is_inset =
+                bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
+
+            if is_inset {
+                continue;
+            }
+
+            // Decorative draw elements (empty-content Text/Draw nodes such as
+            // background rectangles, highlight boxes, or separator rules) carry
+            // no real content and must not block grouping. The visual boxes
+            // drawn behind checkbox option rows are a common example.
+            let nodes = doc.collect_nodes(root_idx);
+            let is_decorative_empty_draw = !nodes.is_empty()
+                && nodes.iter().all(|node| {
+                    matches!(
+                        &node.kind,
+                        FlattenedNodeKind::Text { content, .. } if content.trim().is_empty()
+                    )
+                });
+            if is_decorative_empty_draw {
+                continue;
+            }
+
+            // If the gap clearly contains conditional content for the upper
+            // checkbox (an inset field/radio group), treat full-width text
+            // drawings inside the gap as labels for that conditional content
+            // rather than as blocking elements. Such labels often span the
+            // full container width visually even though their text margin is
+            // inset.
+            if has_inset_conditional_content {
+                let is_text_only = group_kind
+                    .map(|k| {
+                        matches!(
+                            k,
+                            GroupKind::TextBlock
+                                | GroupKind::Paragraph
+                                | GroupKind::Heading { .. }
+                                | GroupKind::Leaf { .. }
+                        )
+                    })
+                    .unwrap_or(false);
+                if is_text_only {
+                    continue;
+                }
+            }
+
+            return true;
+        }
+
+        false
+    }
+
+    /// Detects whether the gap between two vertically aligned checkboxes
+    /// contains inset conditional content (e.g. a nested radio group or
+    /// other field whose left edge is inset relative to the checkbox column).
+    /// Used to allow a larger vertical gap when grouping checkboxes whose
+    /// own conditional content sits between them.
+    fn has_inset_content_between(
+        &self,
+        doc: &Document,
+        bounds1: &Bounds,
+        bounds2: &Bounds,
+        checkbox_indices: &HashSet<usize>,
+        inset_threshold: Decimal,
+    ) -> bool {
+        let region = bounds1.union(bounds2);
+        let cb_left = bounds1.left().min(bounds2.left());
+        let cb_right = bounds1.right().max(bounds2.right());
+
+        let mut checkbox_children: HashSet<usize> = HashSet::new();
+        for &cb_idx in checkbox_indices {
+            if let Some(group) = doc.get_group(cb_idx) {
+                for &child_idx in &group.children {
+                    checkbox_children.insert(child_idx);
+                }
+            }
+        }
+
+        for root_idx in doc.roots() {
+            if checkbox_indices.contains(&root_idx) {
+                continue;
+            }
+            if checkbox_children.contains(&root_idx) {
+                continue;
+            }
+            let Some(bounds) = doc.get_bounds(root_idx) else {
+                continue;
+            };
+            if bounds.width.is_zero() {
+                continue;
+            }
+            if !region.overlaps(&bounds) {
+                continue;
+            }
+            if let Some(group) = doc.get_group(root_idx) {
+                if self.is_radio_related_group_or_descendant(doc, root_idx) {
                     return true;
                 }
+
+                let is_inset =
+                    bounds.left() >= cb_left + inset_threshold || bounds.left() >= cb_right;
+                if !is_inset {
+                    continue;
+                }
+
+                if matches!(
+                    group.kind,
+                    GroupKind::RadioButtonGroup
+                        | GroupKind::RadioButton { .. }
+                        | GroupKind::ExclGroup { .. }
+                        | GroupKind::Field
+                        | GroupKind::LabeledField { .. }
+                        | GroupKind::InlineField { .. }
+                        | GroupKind::InlineDateField { .. }
+                        | GroupKind::DateField { .. }
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Returns true if a radio-related group (or descendant) overlaps the
+    /// region between two checkboxes, regardless of inset position.
+    fn has_radio_related_between(
+        &self,
+        doc: &Document,
+        bounds1: &Bounds,
+        bounds2: &Bounds,
+        checkbox_indices: &HashSet<usize>,
+    ) -> bool {
+        let region = bounds1.union(bounds2);
+
+        let mut checkbox_children: HashSet<usize> = HashSet::new();
+        for &cb_idx in checkbox_indices {
+            if let Some(group) = doc.get_group(cb_idx) {
+                for &child_idx in &group.children {
+                    checkbox_children.insert(child_idx);
+                }
+            }
+        }
+
+        for root_idx in doc.roots() {
+            if checkbox_indices.contains(&root_idx) || checkbox_children.contains(&root_idx) {
+                continue;
+            }
+            let Some(bounds) = doc.get_bounds(root_idx) else {
+                continue;
+            };
+            if !region.overlaps(&bounds) {
+                continue;
+            }
+            if self.is_radio_related_group_or_descendant(doc, root_idx) {
+                return true;
             }
         }
 
@@ -330,16 +545,41 @@ impl CheckboxGrouper {
                             inset_threshold,
                         );
 
+                        let has_inset_content = self.has_inset_content_between(
+                            doc,
+                            &last_field_bounds,
+                            &candidate_field_bounds,
+                            &checkbox_set,
+                            inset_threshold,
+                        );
+
+                        let has_radio_conditional_between = self.has_radio_related_between(
+                            doc,
+                            &last_field_bounds,
+                            &candidate_field_bounds,
+                            &checkbox_set,
+                        );
+
                         let should_group = if !has_blocking {
-                            // No blocking elements: group if within normal gap
+                            // No blocking elements: group within normal gap, or
+                            // within sibling distance if the gap is filled with
+                            // inset conditional content belonging to the upper
+                            // checkbox (e.g. a nested radio group).
                             distance <= self.max_vertical_gap
+                                || (has_inset_content
+                                    && distance <= self.max_sibling_gap)
                         } else {
                             // Blocking elements exist: only group if the
                             // checkboxes are siblings in the same form section
                             // (indicating the content between them is conditional)
-                            // and within sibling distance.
+                            // and within sibling distance. Also allow known
+                            // radio-conditional split regions between options.
                             distance <= self.max_sibling_gap
-                                && self.are_section_siblings(doc, *group.last().unwrap(), candidate_idx)
+                                && (self.are_section_siblings(
+                                    doc,
+                                    *group.last().unwrap(),
+                                    candidate_idx
+                                ) || has_radio_conditional_between)
                         };
 
                         if should_group {
@@ -380,17 +620,10 @@ impl AnalysisModule for CheckboxGrouper {
     }
 
     fn process(&self, doc: &mut Document) {
-        let roots = doc.roots();
-        let checkboxes: Vec<usize> = roots
-            .iter()
-            .filter(|&&idx| {
-                matches!(
-                    doc.get_group(idx).map(|g| &g.kind),
-                    Some(GroupKind::Checkbox { .. })
-                )
-            })
-            .copied()
-            .collect();
+        // Use all checkbox groups, not only roots. Conditional container
+        // wrappers can claim one checkbox while sibling options stay unclaimed;
+        // restricting to roots would then miss valid grouping candidates.
+        let checkboxes = doc.find_groups(|k| matches!(k, GroupKind::Checkbox { .. }));
 
         if checkboxes.is_empty() {
             return;
@@ -403,7 +636,9 @@ impl AnalysisModule for CheckboxGrouper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::modules::{CheckboxDetector, FieldGrouper, TextBlockGrouper};
+    use crate::document::modules::{
+        CheckboxDetector, FieldGrouper, RadioButtonDetector, RadioButtonGrouper, TextBlockGrouper,
+    };
     use crate::document::{Document, GroupKind};
     use crate::flattened::{Flattened, FlattenedNode, Hint, Page, WidgetKind};
     use crate::xfa::num;
@@ -419,6 +654,20 @@ mod tests {
             num(12.0),
         );
         node.add_hint(Hint::WidgetType(WidgetKind::Checkbox));
+        node
+    }
+
+    fn new_radio_node(name: &str, x: f64, y: f64) -> FlattenedNode {
+        let mut node = FlattenedNode::new_field(
+            name.to_string(),
+            "".to_string(),
+            "".to_string(),
+            num(x),
+            num(y),
+            num(12.0),
+            num(12.0),
+        );
+        node.add_hint(Hint::WidgetType(WidgetKind::Radio));
         node
     }
 
@@ -503,5 +752,89 @@ mod tests {
         assert_eq!(checkbox_groups.len(), 1);
         let group = doc.get_group(checkbox_groups[0]).unwrap();
         assert_eq!(group.children.len(), 2);
+    }
+
+    #[test]
+    fn test_checkbox_grouping_across_conditional_radio_content() {
+        let flattened = Flattened::from_nodes(
+            Page::new(num(595.0), num(842.0)),
+            vec![
+                new_checkbox_node("cb1", 50.0, 100.0),
+                FlattenedNode::new_text(
+                    "Option A".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(66.0),
+                    num(100.0),
+                    num(80.0),
+                    num(12.0),
+                ),
+                new_checkbox_node("cb2", 50.0, 122.0),
+                FlattenedNode::new_text(
+                    "Option B".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(66.0),
+                    num(122.0),
+                    num(80.0),
+                    num(12.0),
+                ),
+                // Full-width explanatory line inside the conditional block.
+                FlattenedNode::new_text(
+                    "Conditional details".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(40.0),
+                    num(142.0),
+                    num(220.0),
+                    num(12.0),
+                ),
+                // Nested radio controls in the conditional section.
+                new_radio_node("rb1", 50.0, 158.0),
+                FlattenedNode::new_text(
+                    "Single".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(66.0),
+                    num(158.0),
+                    num(50.0),
+                    num(12.0),
+                ),
+                new_radio_node("rb2", 50.0, 176.0),
+                FlattenedNode::new_text(
+                    "Joint".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(66.0),
+                    num(176.0),
+                    num(50.0),
+                    num(12.0),
+                ),
+                new_checkbox_node("cb3", 50.0, 198.0),
+                FlattenedNode::new_text(
+                    "Option C".to_string(),
+                    num(10.0),
+                    "Helvetica".to_string(),
+                    num(66.0),
+                    num(198.0),
+                    num(80.0),
+                    num(12.0),
+                ),
+            ],
+        );
+
+        let mut doc = Document::from_flattened(&flattened);
+
+        FieldGrouper::new().process(&mut doc);
+        TextBlockGrouper::new().process(&mut doc);
+        RadioButtonDetector::new().process(&mut doc);
+        CheckboxDetector::new().process(&mut doc);
+        RadioButtonGrouper::new().process(&mut doc);
+        CheckboxGrouper::new().process(&mut doc);
+
+        let checkbox_groups = doc.find_groups(|k| matches!(k, GroupKind::CheckboxGroup));
+        assert_eq!(checkbox_groups.len(), 1);
+        let group = doc.get_group(checkbox_groups[0]).unwrap();
+        assert_eq!(group.children.len(), 3);
     }
 }
