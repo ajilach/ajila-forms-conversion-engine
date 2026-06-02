@@ -31720,3 +31720,129 @@ fn test_aagj_client_type_repeatable_fields() {
         firma_sets
     );
 }
+
+/// A flattened typed entry used to assert element ordering for AACS.
+#[derive(Debug)]
+enum AacsEntry {
+    Paragraph(String),
+    Heading(String),
+    List(Vec<String>),
+}
+
+#[test]
+fn test_aacs_sp_multi_column_element_order() {
+    // AACS_019_SP is a multi-column glossary. The column layout detector must
+    // interleave the left/right columns so that the paragraphs, headings and
+    // lists end up in reading order. This test pins down that order.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AACS_019_SP.pdf"))
+        .expect("Failed to run exhaustive merge for AACS_019_SP");
+
+    // Flatten the structured tree into a typed sequence, preserving order.
+    fn flatten(nodes: &[crate::structured::StructuredNode], out: &mut Vec<AacsEntry>) {
+        for node in nodes {
+            match node {
+                crate::structured::StructuredNode::Paragraph(p) => {
+                    out.push(AacsEntry::Paragraph(p.content.as_plain_text()));
+                }
+                crate::structured::StructuredNode::Heading(h) => {
+                    out.push(AacsEntry::Heading(h.content.as_plain_text()));
+                }
+                crate::structured::StructuredNode::List(l) => {
+                    out.push(AacsEntry::List(
+                        l.items.iter().map(|it| it.as_plain_text()).collect(),
+                    ));
+                }
+                crate::structured::StructuredNode::Group(g) => flatten(&g.children, out),
+                crate::structured::StructuredNode::Conditional(c) => {
+                    flatten(std::slice::from_ref(&c.content), out)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut entries = Vec::new();
+    flatten(&structured, &mut entries);
+
+    // Expected ordered elements. Strings are matched as prefixes (after trimming)
+    // so the test is resilient to trailing column-merge artifacts.
+    enum Expect {
+        Paragraph(&'static str),
+        Heading(&'static str),
+        // A list whose items (in order) start with these prefixes.
+        List(&'static [&'static str]),
+    }
+
+    let expected = [
+        Expect::Paragraph(
+            "Tenga en cuenta que: estas definiciones se basan en las normas y definiciones",
+        ),
+        Expect::Heading("NFE activa – Otra /NFFE activa – Otra"),
+        Expect::Paragraph(
+            "Los términos NFE activa – Otra (según AEI) y NFFE activa – Otra (según",
+        ),
+        Expect::List(&[
+            "menos del 50% de los ingresos brutos de la NFE / NFFE en el",
+            "sustancialmente todas las actividades de la NFE / NFFE consisten",
+            "la NFFE es una NFFE exceptuada, según la descripción del término",
+        ]),
+        Expect::Heading("Empresa no financiera cotizada y Empresa relacionada"),
+        Expect::Paragraph("Los términos Empresa no financiera cotizada y Empresa relacionada"),
+        Expect::List(&[
+            "cuyas acciones se negocian regularmente en un mercado de",
+            "que es una Entidad relacionada de una Entidad cuyas acciones",
+        ]),
+        Expect::Paragraph("«Mercado de valores organizado» es un mercado de valores oficialmente"),
+        Expect::Heading("Entidad gubernamental / Gobierno extranjero"),
+        // ... middle of the glossary ...
+        Expect::Heading("Sucursal"),
+        Expect::Paragraph("El término Sucursal (según AEI y FATCA) se refiere a una unidad"),
+        Expect::Heading("Banco central / Banco central extranjero"),
+        Expect::Paragraph("Los términos Banco central (según AEI) o Banco central extranjero"),
+        Expect::Heading("FFI certificada considerada conforme"),
+    ];
+
+    // Helper: does an entry of the right kind start with the given prefix?
+    fn matches(entry: &AacsEntry, exp: &Expect) -> bool {
+        match (entry, exp) {
+            (AacsEntry::Paragraph(t), Expect::Paragraph(p)) => t.trim_start().starts_with(p),
+            (AacsEntry::Heading(t), Expect::Heading(p)) => t.trim_start().starts_with(p),
+            (AacsEntry::List(items), Expect::List(prefixes)) => {
+                // Every expected prefix must appear, in order, among the items.
+                let mut idx = 0usize;
+                for item in items {
+                    if idx < prefixes.len() && item.trim_start().starts_with(prefixes[idx]) {
+                        idx += 1;
+                    }
+                }
+                idx == prefixes.len()
+            }
+            _ => false,
+        }
+    }
+
+    fn label(exp: &Expect) -> String {
+        match exp {
+            Expect::Paragraph(p) => format!("Paragraph(\"{p}\")"),
+            Expect::Heading(p) => format!("Heading(\"{p}\")"),
+            Expect::List(items) => format!("List({items:?})"),
+        }
+    }
+
+    // Walk the entries once, matching each expected element in order.
+    let mut cursor = 0usize;
+    for exp in &expected {
+        let found = entries[cursor..].iter().position(|e| matches(e, exp));
+        match found {
+            Some(offset) => cursor += offset + 1,
+            None => panic!(
+                "Expected element {} not found in order after position {}. \
+                 The multi-column detector likely did not interleave columns correctly.",
+                label(exp),
+                cursor
+            ),
+        }
+    }
+}
