@@ -239,7 +239,7 @@ impl TableDetector {
     /// that should be included in the table rows (including unbordered ones).
     fn expand_rows_with_unbordered_blocks(
         &self,
-        _doc: &Document,
+        doc: &Document,
         bordered_rows: &[Vec<(usize, Bounds)>],
         region: &[usize],
         all_text_blocks: &[(usize, Bounds)],
@@ -249,14 +249,17 @@ impl TableDetector {
         }
 
         // Get the bordered blocks in this region
-        let _bordered_in_region: HashSet<usize> = region
+        let bordered_in_region: HashSet<usize> = region
             .iter()
             .flat_map(|&row_idx| bordered_rows[row_idx].iter().map(|(idx, _)| *idx))
             .collect();
 
         // Calculate the X-extent of the table (from leftmost to rightmost bordered block)
+        // and the widest bordered cell, used to spot section headings that should
+        // not be swept into the table.
         let mut min_x = Num::MAX;
         let mut max_x = Num::MIN;
+        let mut max_bordered_width = Num::ZERO;
         for &row_idx in region {
             for (_, bounds) in &bordered_rows[row_idx] {
                 if bounds.x < min_x {
@@ -265,8 +268,17 @@ impl TableDetector {
                 if bounds.right() > max_x {
                     max_x = bounds.right();
                 }
+                if bounds.width > max_bordered_width {
+                    max_bordered_width = bounds.width;
+                }
             }
         }
+
+        // A bold text block that is substantially wider than any bordered cell is a
+        // section heading (often belonging to a neighbouring column whose row happens
+        // to align vertically), not a table cell. Excluding it prevents the table from
+        // absorbing headings across column boundaries.
+        let heading_width_threshold = max_bordered_width * Decimal::new(15, 1); // 1.5x
 
         // Build expanded rows
         let mut expanded_rows: Vec<Vec<(usize, Bounds)>> = Vec::new();
@@ -284,14 +296,20 @@ impl TableDetector {
             // and within the table's X-extent
             let mut row_blocks: Vec<(usize, Bounds)> = all_text_blocks
                 .iter()
-                .filter(|(_idx, bounds)| {
+                .filter(|(idx, bounds)| {
                     // Within Y tolerance
                     let y_match = (bounds.y - row_y).abs() <= self.row_tolerance;
 
                     // Block overlaps with table X-extent (at least partially within it)
                     let x_overlap = bounds.x < max_x && bounds.right() > min_x;
 
-                    y_match && x_overlap
+                    // Exclude bold, full-width section headings that are not actual
+                    // bordered cells of this table (prevents cross-column absorption).
+                    let is_heading_like = !bordered_in_region.contains(idx)
+                        && bounds.width > heading_width_threshold
+                        && doc.is_bold_group(*idx);
+
+                    y_match && x_overlap && !is_heading_like
                 })
                 .cloned()
                 .collect();

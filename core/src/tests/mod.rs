@@ -31846,3 +31846,53 @@ fn test_aacs_sp_multi_column_element_order() {
         }
     }
 }
+
+#[test]
+fn test_aacw_en_heading_order() {
+    // AACW_019_EN lists the cost categories as headings. They must appear in the
+    // order in which they are read in the source document.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_headings;
+
+    let structured = run_exhaustive_to_merged(input_path("AACW_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge for AACW_019_EN");
+
+    let headings: Vec<String> = collect_headings(&structured)
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect();
+
+    let expected_order = [
+        "Explanation of the following cost information",
+        "Costs for secondary-market transactions",
+        "1. Equities",
+        "2. Bonds",
+        "3. Exchange Traded Funds (ETFs)",
+        "4. Exchange Traded Derivatives (ETDs)",
+    ];
+
+    let mut last_pos: Option<usize> = None;
+    let mut last_label = "";
+    for &label in &expected_order {
+        let pos = headings.iter().position(|h| h.trim().starts_with(label));
+        assert!(
+            pos.is_some(),
+            "Should find heading '{}' in output. Headings found: {:?}",
+            label,
+            headings
+        );
+        if let (Some(prev), Some(curr)) = (last_pos, pos) {
+            assert!(
+                prev < curr,
+                "Heading '{}' (pos {}) should come before '{}' (pos {}). Headings: {:?}",
+                last_label,
+                prev,
+                label,
+                curr,
+                headings
+            );
+        }
+        last_pos = pos;
+        last_label = label;
+    }
+}

@@ -200,13 +200,11 @@ pub fn convert_with_language(doc: &Document, language: &str) -> Vec<StructuredNo
         checkbox_condition_map: RefCell::new(HashMap::new()),
     };
 
-    // Get roots and sort by reading order (y first, then x)
-    let mut roots: Vec<usize> = doc.roots();
-    roots.sort_by(|&a, &b| {
-        let bounds_a = doc.get_bounds(a);
-        let bounds_b = doc.get_bounds(b);
-        compare_bounds_reading_order(bounds_a, bounds_b)
-    });
+    // Order roots in reading order. This is row-major (top-to-bottom,
+    // left-to-right) on ordinary pages, but switches to column-major
+    // (left column fully, then right column) on genuine multi-column
+    // ("newspaper") pages so the columns are not interleaved.
+    let roots: Vec<usize> = order_roots_reading_order(doc, doc.roots());
 
     let mut content: Vec<StructuredNode> = roots
         .into_iter()
@@ -517,6 +515,238 @@ fn compare_bounds_reading_order(a: Option<Bounds>, b: Option<Bounds>) -> std::cm
             ya.cmp(&yb).then_with(|| a.x.cmp(&b.x))
         }
     }
+}
+
+/// Order root groups in page-aware, column-aware reading order.
+///
+/// The default reading order is row-major (top-to-bottom, then left-to-right
+/// within a horizontal band). However, in genuine multi-column ("newspaper")
+/// layouts the left column must be read fully before the right column, even
+/// though right-column items can start higher on the page than later
+/// left-column items. A purely row-major sort would interleave the columns.
+///
+/// This function:
+///  1. Groups roots by page (using flattener page breaks, or multiples of the
+///     page height when no explicit breaks are present), so a later page's
+///     left column never precedes an earlier page's right column.
+///  2. Detects, per page, a clean vertical split that separates the page into
+///     a left and a right column. The split is only honoured when the two
+///     columns are *not* row-aligned (i.e. independent vertical flows, not the
+///     label/value pairs of a form).
+///  3. Reads detected newspaper pages left-column-then-right-column, with
+///     full-width elements (which straddle the split) acting as dividers that
+///     stay in their vertical position. All other pages stay row-major.
+///
+/// The result is produced as an explicit sequence (not a pairwise comparator),
+/// so it is always a well-defined total order.
+fn order_roots_reading_order(doc: &Document, roots: Vec<usize>) -> Vec<usize> {
+    use std::collections::BTreeMap;
+
+    // Partition into bounded / unbounded roots. Unbounded roots keep their
+    // original relative order and are appended last (matching the prior
+    // boundless-last behaviour).
+    let mut bounded: Vec<(usize, Bounds)> = Vec::new();
+    let mut unbounded: Vec<usize> = Vec::new();
+    for idx in roots {
+        match doc.get_bounds(idx) {
+            Some(b) => bounded.push((idx, b)),
+            None => unbounded.push(idx),
+        }
+    }
+
+    // Page boundaries in the cumulative Y space. Prefer explicit page breaks;
+    // fall back to multiples of the page height.
+    let page_height = doc.source.page.height;
+    let mut boundaries: Vec<Decimal> = doc.source.page.page_breaks.clone();
+    boundaries.retain(|y| *y > Decimal::ZERO);
+    boundaries.sort();
+    boundaries.dedup();
+    if boundaries.is_empty() && page_height > Decimal::ZERO {
+        let max_top = bounded
+            .iter()
+            .map(|(_, b)| b.top())
+            .max()
+            .unwrap_or(Decimal::ZERO);
+        let mut y = page_height;
+        while y <= max_top {
+            boundaries.push(y);
+            y += page_height;
+        }
+    }
+    let page_of = |y: Decimal| -> usize { boundaries.partition_point(|&b| b <= y) };
+
+    // Group bounded roots by page index, preserving page order.
+    let mut by_page: BTreeMap<usize, Vec<(usize, Bounds)>> = BTreeMap::new();
+    for (idx, b) in bounded {
+        by_page.entry(page_of(b.top())).or_default().push((idx, b));
+    }
+
+    let mut ordered: Vec<usize> = Vec::new();
+    for (_, items) in by_page {
+        ordered.extend(order_page_reading_order(items));
+    }
+    ordered.extend(unbounded);
+    ordered
+}
+
+/// Order the roots that belong to a single page.
+fn order_page_reading_order(mut items: Vec<(usize, Bounds)>) -> Vec<usize> {
+    if let Some(split) = detect_column_split(&items) {
+        return column_sweep(items, split);
+    }
+    items.sort_by(|a, b| compare_bounds_reading_order(Some(a.1), Some(b.1)));
+    items.into_iter().map(|(i, _)| i).collect()
+}
+
+/// Detect a genuine two-column (newspaper) split for the elements of one page.
+///
+/// Returns the split X coordinate when the page has two independent vertical
+/// columns, or `None` for ordinary (single-column or row-aligned form) pages.
+fn detect_column_split(items: &[(usize, Bounds)]) -> Option<Decimal> {
+    // Minimum horizontal gap (in points) between the two columns.
+    let min_gap = Decimal::new(20, 0);
+    // Vertical tolerance (in points) for considering two elements row-aligned.
+    let row_tol = Decimal::new(6, 0);
+
+    if items.len() < 6 {
+        return None;
+    }
+
+    // Page content extent.
+    let min_left = items.iter().map(|(_, b)| b.left()).min()?;
+    let max_right = items.iter().map(|(_, b)| b.right()).max()?;
+    let content_width = max_right - min_left;
+    if content_width <= Decimal::ZERO {
+        return None;
+    }
+    let page_center = min_left + content_width / Decimal::TWO;
+
+    // Column-body candidates: narrow elements only. Full-width elements (which
+    // straddle the split, e.g. page headers) are excluded from split-finding.
+    let narrow_threshold = content_width * Decimal::new(4, 1); // 0.4 * width
+    let candidates: Vec<&(usize, Bounds)> = items
+        .iter()
+        .filter(|(_, b)| b.width <= narrow_threshold)
+        .collect();
+    if candidates.len() < 6 {
+        return None;
+    }
+
+    let mut centers: Vec<Decimal> = candidates.iter().map(|(_, b)| b.center_x()).collect();
+    centers.sort();
+
+    // Consider every gap between consecutive candidate centers as a potential
+    // column boundary. A table laid out in two columns has large *intra*-column
+    // gaps (between a column's labels and its values) as well as the true
+    // *inter*-column gap, so the largest gap is not reliable. The inter-column
+    // boundary is the one nearest the page centre that cleanly separates the
+    // narrow candidates into two well-populated, non-straddling groups.
+    let mut best_split: Option<Decimal> = None;
+    let mut best_distance = Decimal::MAX;
+    for w in centers.windows(2) {
+        let gap = w[1] - w[0];
+        if gap < min_gap {
+            continue;
+        }
+        let split = (w[0] + w[1]) / Decimal::TWO;
+
+        // No narrow candidate may straddle the split.
+        if candidates
+            .iter()
+            .any(|(_, b)| b.left() < split && b.right() > split)
+        {
+            continue;
+        }
+
+        let left = candidates
+            .iter()
+            .filter(|(_, b)| b.center_x() < split)
+            .count();
+        let right = candidates.len() - left;
+        if left < 3 || right < 3 {
+            continue;
+        }
+        // Require reasonably balanced columns: the smaller side must hold at
+        // least 30% of the larger side. This rejects intra-column gaps, where
+        // one side is just a sparse value column.
+        let (small, large) = if left < right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        if Decimal::from(small) * Decimal::new(10, 0) < Decimal::from(large) * Decimal::new(3, 0) {
+            continue;
+        }
+
+        let distance = (split - page_center).abs();
+        if distance < best_distance {
+            best_distance = distance;
+            best_split = Some(split);
+        }
+    }
+
+    let split = best_split?;
+
+    // Row-alignment test: in a form the right column's rows line up with the
+    // left column's rows. If most right items share a top edge with some left
+    // item, treat the page as a form (row-major), not as newspaper columns.
+    let left_items: Vec<&(usize, Bounds)> = candidates
+        .iter()
+        .copied()
+        .filter(|(_, b)| b.center_x() < split)
+        .collect();
+    let right_items: Vec<&(usize, Bounds)> = candidates
+        .iter()
+        .copied()
+        .filter(|(_, b)| b.center_x() >= split)
+        .collect();
+    let paired = right_items
+        .iter()
+        .filter(|(_, rb)| {
+            left_items
+                .iter()
+                .any(|(_, lb)| (lb.top() - rb.top()).abs() <= row_tol)
+        })
+        .count();
+    let paired_fraction = Decimal::from(paired) / Decimal::from(right_items.len());
+    if paired_fraction >= Decimal::new(9, 1) {
+        return None;
+    }
+
+    Some(split)
+}
+
+/// Read a detected newspaper page left-column-then-right-column.
+///
+/// Full-width elements (those straddling the split) act as dividers: they keep
+/// their vertical position and flush the accumulated left/right columns, so a
+/// header spanning both columns is read between the bands it separates.
+fn column_sweep(mut items: Vec<(usize, Bounds)>, split: Decimal) -> Vec<usize> {
+    // Sort everything by reading order first so each band ends up ordered.
+    items.sort_by(|a, b| compare_bounds_reading_order(Some(a.1), Some(b.1)));
+
+    let mut ordered: Vec<usize> = Vec::new();
+    let mut left_run: Vec<usize> = Vec::new();
+    let mut right_run: Vec<usize> = Vec::new();
+
+    let flush = |ordered: &mut Vec<usize>, left: &mut Vec<usize>, right: &mut Vec<usize>| {
+        ordered.append(left);
+        ordered.append(right);
+    };
+
+    for (idx, b) in items {
+        let is_divider = b.left() < split && b.right() > split;
+        if is_divider {
+            flush(&mut ordered, &mut left_run, &mut right_run);
+            ordered.push(idx);
+        } else if b.center_x() < split {
+            left_run.push(idx);
+        } else {
+            right_run.push(idx);
+        }
+    }
+    flush(&mut ordered, &mut left_run, &mut right_run);
+    ordered
 }
 
 struct Converter<'a, 'b> {
