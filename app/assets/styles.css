@@ -427,7 +427,7 @@ body > div, #main {
 .upload-actions {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: var(--space-3);
     flex-wrap: wrap;
 }
@@ -440,7 +440,7 @@ body > div, #main {
     margin-bottom: var(--space-5);
     border-radius: var(--radius);
     background: var(--surface);
-    text-align: center;
+    text-align: left;
 }
 
 .upload-input-hidden {

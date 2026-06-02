@@ -67,7 +67,12 @@ pub fn FileUploadSection(
             }
 
             div { class: "upload-actions",
-                label { class: "btn btn-primary btn-sm", r#for: "file-input", "Choose Files" }
+                label {
+                    class: "btn btn-primary btn-sm",
+                    r#for: "file-input",
+                    onclick: move |_| sessions_open.set(false),
+                    "Choose Files"
+                }
                 if has_sessions {
                     button {
                         class: "btn btn-secondary btn-sm",
