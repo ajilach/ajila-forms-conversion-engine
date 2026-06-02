@@ -26,6 +26,7 @@ fn main() {
         let config = dioxus::desktop::Config::new().with_window(
             dioxus::desktop::WindowBuilder::new()
                 .with_always_on_top(saved.always_on_top)
+                .with_inner_size(dioxus::desktop::LogicalSize::new(1400.0, 960.0))
                 .with_title("Ajila Forms Conversion Engine"),
         );
         dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
