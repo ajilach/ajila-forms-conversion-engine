@@ -346,7 +346,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         }
     };
 
-    // Check if selected node can be indented/outdented
+    // Check if selected node(s) can be indented/outdented
     let (can_indent_node, can_outdent_node) = {
         let env = envelope.read();
         let sel = selection.read();
@@ -356,6 +356,42 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 can_indent(&env.content, path),
                 can_outdent(&env.content, path),
             )
+        } else if sel.selected.len() > 1 {
+            // Multi-select: all must be siblings (same parent, Child segments)
+            let paths: Vec<_> = sel.selected.iter().cloned().collect();
+            if let Some(parent_path) = get_shared_parent_path(&paths) {
+                let mut indices: Vec<usize> = paths
+                    .iter()
+                    .filter_map(|p| p.last().and_then(|s| s.as_child_index()))
+                    .collect();
+                indices.sort();
+                let min_idx = indices[0];
+
+                // Can indent if the sibling before the first selected is a container
+                let can_ind = if parent_path.is_empty() {
+                    min_idx > 0 && is_children_container_node(&env.content[min_idx - 1])
+                } else if let Some(parent) = get_node_at_path(&env.content, &parent_path) {
+                    let prev = match parent {
+                        StructuredNode::Group(g) => {
+                            if min_idx > 0 { g.children.get(min_idx - 1) } else { None }
+                        }
+                        StructuredNode::GridLayout(g) => {
+                            if min_idx > 0 { g.elements.get(min_idx - 1).map(|e| &e.node) } else { None }
+                        }
+                        _ => None,
+                    };
+                    prev.map_or(false, |n| is_children_container_node(n))
+                } else {
+                    false
+                };
+
+                // Can outdent if at depth >= 2 (all inside a container)
+                let can_out = paths.iter().all(|p| p.len() >= 2 && is_container_child_path(p));
+
+                (can_ind, can_out)
+            } else {
+                (false, false)
+            }
         } else {
             (false, false)
         }
@@ -700,6 +736,110 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             new_selection.selected.insert(new_path);
                         }
                     }
+                } else if paths.len() > 1 {
+                    // Multi-select indent: all must be siblings
+                    if let Some(parent_path) = get_shared_parent_path(&paths) {
+                        let mut indices: Vec<usize> = paths
+                            .iter()
+                            .filter_map(|p| p.last().and_then(|s| s.as_child_index()))
+                            .collect();
+                        indices.sort();
+                        let min_idx = indices[0];
+
+                        if min_idx == 0 {
+                            // Nothing to indent into
+                        } else if parent_path.is_empty() {
+                            // Root-level multi-indent
+                            let mut env = envelope.write();
+                            if is_children_container_node(&env.content[min_idx - 1]) {
+                                // Remove nodes from highest index first to preserve lower indices
+                                let mut nodes = Vec::new();
+                                for &idx in indices.iter().rev() {
+                                    nodes.push(env.content.remove(idx));
+                                }
+                                nodes.reverse(); // Restore original order
+                                // Append all to container
+                                let mut new_selection_paths = Vec::new();
+                                for node in nodes {
+                                    if let Some(segments) =
+                                        append_to_container_node(&mut env.content[min_idx - 1], node)
+                                    {
+                                        let mut new_path = vec![PathSegment::Child(min_idx - 1)];
+                                        new_path.extend(segments);
+                                        new_selection_paths.push(new_path);
+                                    }
+                                }
+                                drop(env);
+                                let mut new_selection = selection.write();
+                                new_selection.selected.clear();
+                                for p in new_selection_paths {
+                                    new_selection.selected.insert(p);
+                                }
+                            }
+                        } else {
+                            // Nested multi-indent
+                            let mut env = envelope.write();
+                            let parent = get_node_at_path_mut(&mut env.content, &parent_path);
+                            if let Some(parent) = parent {
+                                let (prev_is_container, children_len) = match parent {
+                                    StructuredNode::Group(g) => {
+                                        (min_idx > 0 && is_children_container_node(&g.children[min_idx - 1]), g.children.len())
+                                    }
+                                    StructuredNode::GridLayout(g) => {
+                                        (min_idx > 0 && is_children_container_node(&g.elements[min_idx - 1].node), g.elements.len())
+                                    }
+                                    _ => (false, 0),
+                                };
+                                let _ = children_len;
+                                if prev_is_container {
+                                    // Remove nodes from highest index first
+                                    let mut nodes = Vec::new();
+                                    for &idx in indices.iter().rev() {
+                                        let node = match parent {
+                                            StructuredNode::Group(g) => {
+                                                if idx < g.children.len() {
+                                                    Some(g.children.remove(idx))
+                                                } else { None }
+                                            }
+                                            StructuredNode::GridLayout(g) => {
+                                                if idx < g.elements.len() {
+                                                    Some(g.elements.remove(idx).node)
+                                                } else { None }
+                                            }
+                                            _ => None,
+                                        };
+                                        if let Some(n) = node {
+                                            nodes.push(n);
+                                        }
+                                    }
+                                    nodes.reverse();
+                                    // Append to container (which is now at min_idx - 1)
+                                    let container = match parent {
+                                        StructuredNode::Group(g) => Some(&mut g.children[min_idx - 1]),
+                                        StructuredNode::GridLayout(g) => Some(&mut g.elements[min_idx - 1].node),
+                                        _ => None,
+                                    };
+                                    if let Some(container) = container {
+                                        let mut new_selection_paths = Vec::new();
+                                        for node in nodes {
+                                            if let Some(segments) = append_to_container_node(container, node) {
+                                                let mut new_path = parent_path.clone();
+                                                new_path.push(PathSegment::Child(min_idx - 1));
+                                                new_path.extend(segments);
+                                                new_selection_paths.push(new_path);
+                                            }
+                                        }
+                                        drop(env);
+                                        let mut new_selection = selection.write();
+                                        new_selection.selected.clear();
+                                        for p in new_selection_paths {
+                                            new_selection.selected.insert(p);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             EditorAction::Outdent => {
@@ -793,6 +933,166 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 let mut new_selection = selection.write();
                                 new_selection.selected.clear();
                                 new_selection.selected.insert(new_path);
+                            }
+                        }
+                    }
+                } else if paths.len() > 1 {
+                    // Multi-select outdent: all must be siblings in a container
+                    if let Some(parent_path) = get_shared_parent_path(&paths) {
+                        let mut indices: Vec<usize> = paths
+                            .iter()
+                            .filter_map(|p| p.last().and_then(|s| s.as_child_index()))
+                            .collect();
+                        indices.sort();
+
+                        if parent_path.len() == 1 {
+                            // Parent is at root level
+                            if let Some(PathSegment::Child(parent_root_idx)) = parent_path.first() {
+                                let parent_root_idx = *parent_root_idx;
+                                let mut env = envelope.write();
+                                // Remove from highest index first
+                                let mut nodes = Vec::new();
+                                for &idx in indices.iter().rev() {
+                                    let parent_node = &mut env.content[parent_root_idx];
+                                    let extracted = match parent_node {
+                                        StructuredNode::Group(g) => {
+                                            if idx < g.children.len() {
+                                                Some(g.children.remove(idx))
+                                            } else { None }
+                                        }
+                                        StructuredNode::GridLayout(g) => {
+                                            if idx < g.elements.len() {
+                                                Some(g.elements.remove(idx).node)
+                                            } else { None }
+                                        }
+                                        _ => None,
+                                    };
+                                    if let Some(n) = extracted {
+                                        nodes.push(n);
+                                    }
+                                }
+                                nodes.reverse();
+                                // Insert after the parent in root
+                                let insert_start = parent_root_idx + 1;
+                                let mut new_selection_paths = Vec::new();
+                                for (i, node) in nodes.into_iter().enumerate() {
+                                    let insert_idx = insert_start + i;
+                                    env.content.insert(insert_idx, node);
+                                    new_selection_paths.push(vec![PathSegment::Child(insert_idx)]);
+                                }
+                                drop(env);
+                                let mut new_selection = selection.write();
+                                new_selection.selected.clear();
+                                for p in new_selection_paths {
+                                    new_selection.selected.insert(p);
+                                }
+                            }
+                        } else if paths.iter().all(|p| is_inside_root_repeatable(p, &envelope.read().content)) {
+                            // Inside a Repeatable at root level
+                            let rep_idx = match paths[0][0] {
+                                PathSegment::Child(i) => i,
+                                _ => unreachable!(),
+                            };
+                            let mut env = envelope.write();
+                            let mut nodes = Vec::new();
+                            let rep_node = &mut env.content[rep_idx];
+                            if let StructuredNode::Repeatable(r) = rep_node {
+                                for &idx in indices.iter().rev() {
+                                    let extracted = match r.item.as_mut() {
+                                        StructuredNode::Group(g) => {
+                                            if idx < g.children.len() {
+                                                Some(g.children.remove(idx))
+                                            } else { None }
+                                        }
+                                        StructuredNode::GridLayout(g) => {
+                                            if idx < g.elements.len() {
+                                                Some(g.elements.remove(idx).node)
+                                            } else { None }
+                                        }
+                                        _ => None,
+                                    };
+                                    if let Some(n) = extracted {
+                                        nodes.push(n);
+                                    }
+                                }
+                            }
+                            nodes.reverse();
+                            let insert_start = rep_idx + 1;
+                            let mut new_selection_paths = Vec::new();
+                            for (i, node) in nodes.into_iter().enumerate() {
+                                let insert_idx = insert_start + i;
+                                env.content.insert(insert_idx, node);
+                                new_selection_paths.push(vec![PathSegment::Child(insert_idx)]);
+                            }
+                            drop(env);
+                            let mut new_selection = selection.write();
+                            new_selection.selected.clear();
+                            for p in new_selection_paths {
+                                new_selection.selected.insert(p);
+                            }
+                        } else if parent_path.len() >= 2 {
+                            // Deeper nesting: outdent each node one by one (highest index first)
+                            // to place them after the parent container in the grandparent
+                            let (grandparent_path, parent_idx) = get_container_child_info(&parent_path).unwrap();
+                            let mut env = envelope.write();
+                            // Remove all from parent (highest first)
+                            let parent = get_node_at_path_mut(&mut env.content, &parent_path);
+                            let mut nodes = Vec::new();
+                            if let Some(parent) = parent {
+                                for &idx in indices.iter().rev() {
+                                    let extracted = match parent {
+                                        StructuredNode::Group(g) => {
+                                            if idx < g.children.len() {
+                                                Some(g.children.remove(idx))
+                                            } else { None }
+                                        }
+                                        StructuredNode::GridLayout(g) => {
+                                            if idx < g.elements.len() {
+                                                Some(g.elements.remove(idx).node)
+                                            } else { None }
+                                        }
+                                        _ => None,
+                                    };
+                                    if let Some(n) = extracted {
+                                        nodes.push(n);
+                                    }
+                                }
+                            }
+                            nodes.reverse();
+                            // Insert into grandparent after the parent
+                            let grandparent = get_node_at_path_mut(&mut env.content, &grandparent_path);
+                            let mut new_selection_paths = Vec::new();
+                            if let Some(grandparent) = grandparent {
+                                let insert_start = parent_idx + 1;
+                                match grandparent {
+                                    StructuredNode::Group(g) => {
+                                        for (i, node) in nodes.into_iter().enumerate() {
+                                            let insert_idx = insert_start + i;
+                                            g.children.insert(insert_idx, node);
+                                            let mut new_path = grandparent_path.clone();
+                                            new_path.push(PathSegment::Child(insert_idx));
+                                            new_selection_paths.push(new_path);
+                                        }
+                                    }
+                                    StructuredNode::GridLayout(g) => {
+                                        for (i, node) in nodes.into_iter().enumerate() {
+                                            let insert_idx = insert_start + i;
+                                            g.elements.insert(insert_idx, GridLayoutElement { span: 1, node });
+                                            let mut new_path = grandparent_path.clone();
+                                            new_path.push(PathSegment::Child(insert_idx));
+                                            new_selection_paths.push(new_path);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            drop(env);
+                            if !new_selection_paths.is_empty() {
+                                let mut new_selection = selection.write();
+                                new_selection.selected.clear();
+                                for p in new_selection_paths {
+                                    new_selection.selected.insert(p);
+                                }
                             }
                         }
                     }

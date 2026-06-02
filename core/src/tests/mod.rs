@@ -27861,8 +27861,9 @@ fn test_aaam_aem_footnote_structure_matches_aaep_reference() {
     }
 
     let (_, aaam_root, _) = build_aem_test_output(&[("AAAM_019_DE.pdf", "de")]);
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     let aaep_reference_xml = std::fs::read_to_string(
-        "/Users/fboesiger/Documents/blueprint/specs/migrated/reference/Germany_AAEP (1)/jcr_root/content/forms/af/afforms_germany_all/af_aa/AF_AAEP/.content.xml",
+        format!("{}/../specs/migrated/reference/Germany_AAEP (1)/jcr_root/content/forms/af/afforms_germany_all/af_aa/AF_AAEP/.content.xml", manifest_dir),
     )
     .expect("Failed to read AAEP reference AEM content.xml");
 
