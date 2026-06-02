@@ -31638,3 +31638,141 @@ fn test_bagq_currencies_checkbox_group() {
         );
     }
 }
+
+/// In AAGJ the "Formular Adressat" selection (`CL_ClientType`) switches the
+/// investor-information section between two layouts:
+///
+/// * When **"Private Person"** is selected, the personal details must be a
+///   single `Repeatable` containing the fields:
+///   Nachname, Vorname(n), Straße, Nr., PLZ, Stadt, Land, Geburtsdatum.
+/// * When **"Firma"** is selected, the section must contain a `Repeatable`
+///   with only the fields: Nachname, Vorname(n).
+#[test]
+fn test_aagj_client_type_repeatable_fields() {
+    use crate::structured::{InputValue, StructuredNode};
+
+    let merged = crate::run_exhaustive_to_merged(input_path("AAGJ_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AAGJ_019_DE.pdf");
+
+    // The "Formular Adressat" selection field that toggles between
+    // "Private Person" and "Firma".
+    let client_type = find_field_by_name(&merged, "CL_ClientType")
+        .expect("Expected to find the 'CL_ClientType' selection field");
+    let client_type_id = client_type.name.clone();
+
+    /// Collect the (trimmed) field-label sets of every `Repeatable` that is
+    /// reachable while a `Conditional` keyed on `CL_ClientType == value` is
+    /// active.
+    fn repeatable_label_sets_for_value(
+        nodes: &[StructuredNode],
+        field_id: &crate::structured::FieldId,
+        value: &str,
+        active: bool,
+        out: &mut Vec<Vec<String>>,
+    ) {
+        for node in nodes {
+            match node {
+                StructuredNode::Conditional(c) => {
+                    let matches = c.condition.field_name == *field_id
+                        && matches!(&c.condition.value, InputValue::Text(t) if t == value);
+                    repeatable_label_sets_for_value(
+                        std::slice::from_ref(c.content.as_ref()),
+                        field_id,
+                        value,
+                        active || matches,
+                        out,
+                    );
+                }
+                StructuredNode::Repeatable(r) => {
+                    if active {
+                        out.push(collect_field_labels_trimmed(std::slice::from_ref(
+                            r.item.as_ref(),
+                        )));
+                    }
+                    repeatable_label_sets_for_value(
+                        std::slice::from_ref(r.item.as_ref()),
+                        field_id,
+                        value,
+                        active,
+                        out,
+                    );
+                }
+                StructuredNode::Group(g) => {
+                    repeatable_label_sets_for_value(&g.children, field_id, value, active, out);
+                }
+                StructuredNode::GridLayout(gl) => {
+                    for e in &gl.elements {
+                        repeatable_label_sets_for_value(
+                            std::slice::from_ref(&e.node),
+                            field_id,
+                            value,
+                            active,
+                            out,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // "Private Person": a Repeatable with all eight personal-detail fields.
+    // ------------------------------------------------------------------
+    let mut private_sets = Vec::new();
+    repeatable_label_sets_for_value(
+        &merged,
+        &client_type_id,
+        "Private Person",
+        false,
+        &mut private_sets,
+    );
+
+    let private_expected = [
+        "Nachname",
+        "Vorname(n)",
+        "Straße",
+        "Nr.",
+        "PLZ",
+        "Stadt",
+        "Land",
+        "Geburtsdatum",
+    ];
+
+    let private_match = private_sets.iter().find(|labels| {
+        private_expected
+            .iter()
+            .all(|exp| labels.iter().any(|l| l == exp))
+    });
+
+    assert!(
+        private_match.is_some(),
+        "When 'Private Person' is selected, expected a Repeatable containing fields {:?}. \
+         Found these repeatable label sets: {:?}",
+        private_expected,
+        private_sets
+    );
+
+    // ------------------------------------------------------------------
+    // "Firma": a Repeatable with only Nachname and Vorname(n).
+    // ------------------------------------------------------------------
+    let mut firma_sets = Vec::new();
+    repeatable_label_sets_for_value(&merged, &client_type_id, "Firma", false, &mut firma_sets);
+
+    let firma_expected = ["Nachname", "Vorname(n)"];
+
+    let firma_match = firma_sets.iter().find(|labels| {
+        labels.len() == firma_expected.len()
+            && firma_expected
+                .iter()
+                .all(|exp| labels.iter().any(|l| l == exp))
+    });
+
+    assert!(
+        firma_match.is_some(),
+        "When 'Firma' is selected, expected a Repeatable containing only fields {:?}. \
+         Found these repeatable label sets: {:?}",
+        firma_expected,
+        firma_sets
+    );
+}

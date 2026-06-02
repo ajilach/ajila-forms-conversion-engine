@@ -199,8 +199,16 @@ impl RepeatableDetector {
             false
         }
 
-        /// Return true if any descendant group is itself a repeatable occurrence group
-        /// that contains interactive fields.
+        /// Return true if any descendant group is itself a *user-repeatable*
+        /// occurrence group, i.e. a repeatable occur group that contains
+        /// interactive fields **and** has its own add/remove buttons.
+        ///
+        /// This is used to skip an outer occur wrapper in favour of a genuine
+        /// inner repeater ("prefer innermost repeater"). Button-less occur
+        /// groups (e.g. fragment-library `Address`/`Company` subforms that carry
+        /// `occur max="-1"` purely as a layout/fragment artifact) must NOT count
+        /// here — otherwise they would shadow a real outer repeatable and the
+        /// section would end up with no repeatable at all.
         fn contains_nested_repeatable_group(children: &[crate::flattened::FlattenedKind]) -> bool {
             for child in children {
                 if let crate::flattened::FlattenedKind::Group {
@@ -218,7 +226,10 @@ impl RepeatableDetector {
 
                     if let Some((_min, max)) = occur_hint {
                         let is_repeatable = max.map(|m| m > 1).unwrap_or(true);
-                        if is_repeatable && group_contains_interactive_field(group_children) {
+                        if is_repeatable
+                            && group_contains_interactive_field(group_children)
+                            && group_contains_button(group_children)
+                        {
                             return true;
                         }
                     }
