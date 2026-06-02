@@ -10,8 +10,8 @@
 
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind};
-use crate::flattened::FlattenedNodeKind;
 use crate::flattened::Bounds;
+use crate::flattened::FlattenedNodeKind;
 use rust_decimal::prelude::*;
 
 /// Merges vertically adjacent TextBlocks that share the same font properties.
@@ -452,7 +452,8 @@ impl AnalysisModule for TextBlockMerger {
                     let multiline = Self::is_multiline_paragraph(doc, last_in_group)
                         || Self::is_multiline_paragraph(doc, idx_b);
                     if multiline {
-                        let parallel = match (doc.get_bounds(last_in_group), doc.get_bounds(idx_b)) {
+                        let parallel = match (doc.get_bounds(last_in_group), doc.get_bounds(idx_b))
+                        {
                             (Some(a), Some(b)) => Self::has_parallel_column(
                                 &block_bounds,
                                 &a,

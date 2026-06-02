@@ -6701,7 +6701,9 @@ fn test_aaev_content_order() {
             actual.push(Block::Heading(h.content.as_plain_text().trim().to_string()));
         }
         StructuredNode::Paragraph(p) => {
-            actual.push(Block::Paragraph(p.content.as_plain_text().trim().to_string()));
+            actual.push(Block::Paragraph(
+                p.content.as_plain_text().trim().to_string(),
+            ));
         }
         StructuredNode::List(l) => {
             let items = l
@@ -6755,7 +6757,9 @@ fn test_aaev_content_order() {
             "Under the Withholding Statement and Agreement, the partnership or trust must \
              make records available within 90 days upon request from",
         ),
-        Expected::Paragraph("QI or QI's auditor. If the partnership or trust fails to comply with the"),
+        Expected::Paragraph(
+            "QI or QI's auditor. If the partnership or trust fails to comply with the",
+        ),
     ];
 
     // Find the start of the expected sequence within the actual blocks, then
