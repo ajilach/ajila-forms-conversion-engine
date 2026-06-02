@@ -11,6 +11,7 @@
 use super::AnalysisModule;
 use crate::document::{Document, GroupKind};
 use crate::flattened::FlattenedNodeKind;
+use crate::flattened::Bounds;
 use rust_decimal::prelude::*;
 
 /// Merges vertically adjacent TextBlocks that share the same font properties.
@@ -300,6 +301,69 @@ impl TextBlockMerger {
         let overlap_right = bounds_a.right().min(bounds_b.right());
         overlap_right > overlap_left
     }
+
+    /// Returns true if blocks `idx_a` and `idx_b` sit in one column of a
+    /// side-by-side (newspaper) layout, i.e. another text block is clearly
+    /// separated horizontally and overlaps their combined vertical span.
+    ///
+    /// In that case the paragraph boundaries produced by the grouper must be
+    /// preserved (the blocks must not be merged) so a later
+    /// `ColumnLayoutDetector` can still see the per-column paragraphs and
+    /// order them left-before-right.
+    fn has_parallel_column(
+        block_bounds: &[(usize, Bounds)],
+        a: &Bounds,
+        b: &Bounds,
+        idx_a: usize,
+        idx_b: usize,
+    ) -> bool {
+        // Minimum clear horizontal gap that separates two columns. Column
+        // gutters are typically narrow (~15pt in AAEV); use a value small
+        // enough to catch them but large enough to ignore ordinary
+        // indentation of in-column content.
+        let gap_min = Decimal::from(10);
+        let span_top = a.y.min(b.y);
+        let span_bottom = a.bottom().max(b.bottom());
+        let left = a.x.min(b.x);
+        let right = a.right().max(b.right());
+
+        for (idx_c, c) in block_bounds {
+            if *idx_c == idx_a || *idx_c == idx_b {
+                continue;
+            }
+            // `block_bounds` is sorted by ascending y; once a block starts at or
+            // below the bottom of the A∪B span, no later block can overlap it.
+            if c.y >= span_bottom {
+                break;
+            }
+            // Must overlap the A∪B vertical span.
+            let v_overlap = c.bottom().min(span_bottom) - c.y.max(span_top);
+            if v_overlap <= Decimal::ZERO {
+                continue;
+            }
+            // Must be entirely to one side, separated by a clear gutter.
+            if c.right() + gap_min <= left || c.x >= right + gap_min {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns true if `idx` already spans more than one text line, i.e. the
+    /// grouper has formed a complete paragraph block rather than a single
+    /// dangling line. Used so the column-aware guard preserves
+    /// paragraph-to-paragraph boundaries without fragmenting the individual
+    /// lines of a single paragraph that happen to sit beside another column.
+    fn is_multiline_paragraph(doc: &Document, idx: usize) -> bool {
+        let bounds = match doc.get_bounds(idx) {
+            Some(b) => b,
+            None => return false,
+        };
+        match Self::dominant_font_size(doc, idx) {
+            Some(fs) if fs > Decimal::ZERO => bounds.height > fs * Decimal::from(3) / Decimal::TWO,
+            _ => false,
+        }
+    }
 }
 
 impl AnalysisModule for TextBlockMerger {
@@ -330,6 +394,14 @@ impl AnalysisModule for TextBlockMerger {
                 _ => std::cmp::Ordering::Equal,
             }
         });
+
+        // Snapshot the bounds of every candidate text block so we can detect
+        // side-by-side column layouts without re-querying the document on each
+        // merge decision.
+        let block_bounds: Vec<(usize, Bounds)> = text_blocks
+            .iter()
+            .filter_map(|(idx, _)| doc.get_bounds(*idx).map(|b| (*idx, b)))
+            .collect();
 
         // Greedy merge: only merge contiguous runs in reading order.
         // If a block with different properties or non-mergeable spacing appears
@@ -367,6 +439,33 @@ impl AnalysisModule for TextBlockMerger {
                 // Check spatial proximity against the last block in the group
                 let last_in_group = *group.last().unwrap();
                 if Self::should_merge(doc, last_in_group, idx_b) {
+                    // Do not merge across paragraph boundaries when the blocks
+                    // belong to one column of a side-by-side layout: keep the
+                    // per-column paragraphs intact for the ColumnLayoutDetector.
+                    // Only guard complete (multi-line) paragraphs so that the
+                    // individual lines of a single paragraph beside another
+                    // column still merge.
+                    // Check the cheap multi-line test first; only run the
+                    // O(n) parallel-column scan when a complete paragraph
+                    // boundary is actually at stake (the common single-line
+                    // merge therefore skips the scan entirely).
+                    let multiline = Self::is_multiline_paragraph(doc, last_in_group)
+                        || Self::is_multiline_paragraph(doc, idx_b);
+                    if multiline {
+                        let parallel = match (doc.get_bounds(last_in_group), doc.get_bounds(idx_b)) {
+                            (Some(a), Some(b)) => Self::has_parallel_column(
+                                &block_bounds,
+                                &a,
+                                &b,
+                                last_in_group,
+                                idx_b,
+                            ),
+                            _ => false,
+                        };
+                        if parallel {
+                            break;
+                        }
+                    }
                     group.push(idx_b);
                     used.insert(idx_b);
                 } else {

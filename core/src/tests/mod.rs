@@ -6677,6 +6677,139 @@ fn test_aaoe_has_one_ordered_list_with_three_items() {
 }
 
 #[test]
+fn test_aaev_content_order() {
+    // The AAEV form contains three sections ("Background", "Documentation
+    // Required", "Risk of Non-Compliance"), each with headings, paragraphs and
+    // bullet lists. This test asserts the exact document order of those blocks.
+    use crate::structured::StructuredNode;
+
+    // An ordered, flattened view of the content blocks we care about.
+    #[derive(Debug)]
+    enum Block {
+        Heading(String),
+        Paragraph(String),
+        List(Vec<String>),
+    }
+
+    let merged = crate::run_exhaustive_to_merged(input_path("AAEV_019_EN.pdf"))
+        .expect("Failed to run exhaustive merge on AAEV_019_EN.pdf");
+
+    // Collect headings, paragraphs and lists in document order.
+    let mut actual: Vec<Block> = Vec::new();
+    walk_structured_nodes(&merged, &mut |node| match node {
+        StructuredNode::Heading(h) => {
+            actual.push(Block::Heading(h.content.as_plain_text().trim().to_string()));
+        }
+        StructuredNode::Paragraph(p) => {
+            actual.push(Block::Paragraph(p.content.as_plain_text().trim().to_string()));
+        }
+        StructuredNode::List(l) => {
+            let items = l
+                .items
+                .iter()
+                .map(|it| it.as_plain_text().trim().to_string())
+                .collect();
+            actual.push(Block::List(items));
+        }
+        _ => {}
+    });
+
+    // Expected blocks, matched by prefix (the reference text is truncated).
+    enum Expected {
+        Heading(&'static str),
+        Paragraph(&'static str),
+        List(&'static [&'static str]),
+    }
+
+    let expected = [
+        Expected::Heading("Background"),
+        Expected::Paragraph(
+            "A partnership as well as 'grantor' or 'simple' trust will have to satisfy",
+        ),
+        Expected::List(&[
+            "The partnership or trust is a direct account holder of UBS;",
+            "The account holder is a certified deemed-compliant FFI",
+            "None of the partners, beneficiaries or owners is a US person;",
+            "None of the partners, beneficiaries or owners are flow-through",
+            "None of the partners, beneficiaries or owners is subject to",
+        ]),
+        Expected::Paragraph(
+            "The QI must withhold tax at the highest rate applicable to any partner,",
+        ),
+        Expected::Heading("Documentation Required"),
+        Expected::Paragraph(
+            "In order to comply with the above conditions, the following specific QI",
+        ),
+        Expected::List(&[
+            "Withholding Statement and Agreement; and",
+            "Substitute Form W-8IMY from the partnership or trust; and",
+            "Official Form W-8BEN from each of the partners, beneficiaries",
+            "Official Form W-8BEN-E from each of the partners, beneficiaries",
+        ]),
+        Expected::Paragraph("Please note that the above documents are kept within the bank"),
+        Expected::Heading("Risk of Non-Compliance"),
+        // The final left-column paragraph wraps into the right column. After the
+        // column reading-order fix it appears as two consecutive paragraphs: the
+        // left-column tail followed by the right-column continuation.
+        Expected::Paragraph(
+            "Under the Withholding Statement and Agreement, the partnership or trust must \
+             make records available within 90 days upon request from",
+        ),
+        Expected::Paragraph("QI or QI's auditor. If the partnership or trust fails to comply with the"),
+    ];
+
+    // Find the start of the expected sequence within the actual blocks, then
+    // assert the blocks match consecutively from there.
+    let matches_block = |actual: &Block, expected: &Expected| -> bool {
+        match (actual, expected) {
+            (Block::Heading(a), Expected::Heading(e)) => a.contains(e),
+            (Block::Paragraph(a), Expected::Paragraph(e)) => a.contains(e),
+            (Block::List(a), Expected::List(e)) => {
+                a.len() == e.len()
+                    && a.iter()
+                        .zip(e.iter())
+                        .all(|(actual_item, expected_item)| actual_item.contains(expected_item))
+            }
+            _ => false,
+        }
+    };
+
+    let describe_actual = || {
+        actual
+            .iter()
+            .map(|b| match b {
+                Block::Heading(t) => format!("Heading: {t:?}"),
+                Block::Paragraph(t) => format!("Paragraph: {t:?}"),
+                Block::List(items) => format!("List: {items:?}"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // Assert each expected block appears, in order, somewhere in the actual
+    // sequence (other unrelated blocks, e.g. boilerplate disclaimers, may be
+    // interspersed). Each expected block must come after the previous match.
+    let mut search_from = 0;
+    for exp in &expected {
+        let found = (search_from..actual.len()).find(|&i| matches_block(&actual[i], exp));
+        let label = match exp {
+            Expected::Heading(t) => format!("Heading containing {t:?}"),
+            Expected::Paragraph(t) => format!("Paragraph containing {t:?}"),
+            Expected::List(items) => format!("List with items {items:?}"),
+        };
+        match found {
+            Some(i) => search_from = i + 1,
+            None => panic!(
+                "Expected block not found in order: {label}\n\nActual blocks:\n{}",
+                describe_actual()
+            ),
+        }
+    }
+
+    println!("\n✓ AAEV content order matches the expected sequence");
+}
+
+#[test]
 fn test_aapr_has_decimal_and_dash_lists() {
     use crate::document::ListStyleType;
     use crate::structured::{ListNode, StructuredNode};
@@ -31780,9 +31913,7 @@ fn test_aacs_sp_multi_column_element_order() {
             "Tenga en cuenta que: estas definiciones se basan en las normas y definiciones",
         ),
         Expect::Heading("NFE activa – Otra /NFFE activa – Otra"),
-        Expect::Paragraph(
-            "Los términos NFE activa – Otra (según AEI) y NFFE activa – Otra (según",
-        ),
+        Expect::Paragraph("Los términos NFE activa – Otra (según AEI) y NFFE activa – Otra (según"),
         Expect::List(&[
             "menos del 50% de los ingresos brutos de la NFE / NFFE en el",
             "sustancialmente todas las actividades de la NFE / NFFE consisten",

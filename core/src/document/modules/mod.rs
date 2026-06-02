@@ -245,10 +245,11 @@ pub fn run_analysis_pipeline_with_context(
 
     RepeatableDetector::new().process_with_context(doc, ctx);
 
-    // ColumnLayoutDetector: Detect multi-column layouts and group elements
-    // by column so that left-column content precedes right-column content.
-    // Runs after all other analysis modules since text block merging,
-    // heading detection, and grid detection work correctly regardless of
-    // column ordering (they use spatial proximity, not document order).
+    // ColumnLayoutDetector: Detect multi-column (newspaper-style) layouts and
+    // group elements into a ColumnSection so left-column content precedes
+    // right-column content. Runs LAST so all other detection (headings,
+    // fields, labels, repeatables) operates on the natural flat node tree.
+    // TextBlockMerger is column-gap aware so it does not collapse a column's
+    // paragraphs below this detector's per-column element threshold.
     ColumnLayoutDetector::new().process_with_context(doc, ctx);
 }
