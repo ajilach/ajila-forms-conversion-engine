@@ -67,6 +67,16 @@ pub fn EditorToolbar(props: ToolbarProps) -> Element {
                 span { class: "toolbar-label", "Delete" }
             }
 
+            // Duplicate button
+            button {
+                class: "toolbar-btn",
+                disabled: !has_selection,
+                title: if has_selection { format!("Duplicate {} selected node(s)", selection_count) } else { "Select nodes to duplicate".to_string() },
+                onclick: move |_| props.on_action.call(EditorAction::DuplicateSelected),
+                span { class: "toolbar-icon", "⧉" }
+                span { class: "toolbar-label", "Duplicate" }
+            }
+
             // Separator
             div { class: "toolbar-separator" }
 

@@ -165,6 +165,8 @@ pub enum EditorAction {
         index: usize,
         node_type: NewNodeType,
     },
+    /// Duplicate selected nodes (insert copies below).
+    DuplicateSelected,
     /// Convert selected node(s) to a different type.
     ConvertSelected(ConvertTarget),
     /// Open the smart edit modal (AI-assisted editing via gh copilot).
@@ -690,6 +692,82 @@ fn segment_index(segment: Option<&PathSegment>) -> usize {
         Some(PathSegment::TableCell(idx)) => *idx,
         Some(PathSegment::TableHeader) => 0,
         None => 0,
+    }
+}
+
+/// Duplicate selected nodes, inserting copies immediately after the originals.
+///
+/// Processes paths from bottom to top (deepest first, highest index first) so that
+/// insertions don't shift the indices of earlier paths.
+pub fn duplicate_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>) {
+    // Sort paths: deepest first, then by last segment's index descending
+    let mut sorted_paths: Vec<_> = paths.iter().cloned().collect();
+    sorted_paths.sort_by(|a, b| {
+        let depth_cmp = b.len().cmp(&a.len());
+        if depth_cmp != std::cmp::Ordering::Equal {
+            return depth_cmp;
+        }
+        let a_idx = segment_index(a.last());
+        let b_idx = segment_index(b.last());
+        b_idx.cmp(&a_idx)
+    });
+
+    for path in sorted_paths {
+        if path.is_empty() {
+            continue;
+        }
+
+        let last_segment = path.last().unwrap();
+
+        if path.len() == 1 {
+            // Root level duplication
+            if let PathSegment::Child(idx) = last_segment
+                && *idx < content.len()
+            {
+                let clone = content[*idx].clone();
+                content.insert(*idx + 1, clone);
+            }
+        } else {
+            let parent_path: NodePath = path[..path.len() - 1].to_vec();
+
+            match last_segment {
+                PathSegment::Child(child_idx) => {
+                    if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
+                        match parent {
+                            StructuredNode::Group(g) if *child_idx < g.children.len() => {
+                                let clone = g.children[*child_idx].clone();
+                                g.children.insert(*child_idx + 1, clone);
+                            }
+                            StructuredNode::GridLayout(g) if *child_idx < g.elements.len() => {
+                                let clone = g.elements[*child_idx].clone();
+                                g.elements.insert(*child_idx + 1, clone);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                PathSegment::ListItem(item_idx) => {
+                    if let Some(list) = get_list_at_path_mut(content, &parent_path)
+                        && *item_idx < list.items.len()
+                    {
+                        let clone = list.items[*item_idx].clone();
+                        list.items.insert(*item_idx + 1, clone);
+                    }
+                }
+                PathSegment::TableRow(row_idx) => {
+                    if let Some(StructuredNode::Table(t)) =
+                        get_node_at_path_mut(content, &parent_path)
+                        && *row_idx < t.rows.len()
+                    {
+                        let clone = t.rows[*row_idx].clone();
+                        t.rows.insert(*row_idx + 1, clone);
+                    }
+                }
+                PathSegment::TableHeader | PathSegment::TableCell(_) => {
+                    // Duplicating headers or individual cells doesn't make structural sense
+                }
+            }
+        }
     }
 }
 

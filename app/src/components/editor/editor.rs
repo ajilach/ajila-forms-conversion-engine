@@ -19,12 +19,13 @@ use super::smart_edit;
 use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_indent, can_merge_selected, can_outdent,
-    collect_selectable_paths, compute_add_options, delete_nodes, get_container_child_info,
-    get_container_children_count, get_list_at_path, get_list_at_path_mut, get_list_item_text_mut,
-    get_node_at_path, get_node_at_path_mut, get_shared_parent_path, get_table_column_count,
-    indent_node, is_container_child_path, is_list_item_path, is_table_row_path,
-    move_container_child_down, move_container_child_up, move_list_item_down, move_list_item_up,
-    move_table_row_down, move_table_row_up, outdent_node, search_nodes,
+    collect_selectable_paths, compute_add_options, delete_nodes, duplicate_nodes,
+    get_container_child_info, get_container_children_count, get_list_at_path,
+    get_list_at_path_mut, get_list_item_text_mut, get_node_at_path, get_node_at_path_mut,
+    get_shared_parent_path, get_table_column_count, indent_node, is_container_child_path,
+    is_list_item_path, is_table_row_path, move_container_child_down, move_container_child_up,
+    move_list_item_down, move_list_item_up, move_table_row_down, move_table_row_up, outdent_node,
+    search_nodes,
 };
 use super::toolbar::EditorToolbar;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
@@ -387,6 +388,15 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 envelope.write().content = {
                     let mut content = envelope.read().content.clone();
                     delete_nodes(&mut content, &paths);
+                    content
+                };
+                selection.write().clear();
+            }
+            EditorAction::DuplicateSelected => {
+                let paths = selection.read().selected.clone();
+                envelope.write().content = {
+                    let mut content = envelope.read().content.clone();
+                    duplicate_nodes(&mut content, &paths);
                     content
                 };
                 selection.write().clear();
