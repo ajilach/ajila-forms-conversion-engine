@@ -695,76 +695,127 @@ fn segment_index(segment: Option<&PathSegment>) -> usize {
     }
 }
 
-/// Duplicate selected nodes, inserting copies immediately after the originals.
+/// Duplicate selected nodes, inserting all copies after the last selected element.
 ///
-/// Processes paths from bottom to top (deepest first, highest index first) so that
-/// insertions don't shift the indices of earlier paths.
+/// Groups sibling paths by their parent container, clones them in order, and inserts
+/// the entire batch after the highest-indexed selected sibling within that container.
 pub fn duplicate_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePath>) {
-    // Sort paths: deepest first, then by last segment's index descending
-    let mut sorted_paths: Vec<_> = paths.iter().cloned().collect();
-    sorted_paths.sort_by(|a, b| {
-        let depth_cmp = b.len().cmp(&a.len());
-        if depth_cmp != std::cmp::Ordering::Equal {
-            return depth_cmp;
-        }
-        let a_idx = segment_index(a.last());
-        let b_idx = segment_index(b.last());
-        b_idx.cmp(&a_idx)
-    });
+    // Group paths by (parent_path, segment_type) so siblings are handled together.
+    // Within each group, clones are inserted as a batch after the last selected element.
+    use std::collections::BTreeMap;
 
-    for path in sorted_paths {
+    // Categorize paths by parent
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum SegmentKind {
+        Child,
+        ListItem,
+        TableRow,
+    }
+
+    // Group: (parent_path, kind) -> sorted list of indices
+    let mut groups: BTreeMap<(NodePath, SegmentKind), Vec<usize>> = BTreeMap::new();
+
+    for path in paths {
         if path.is_empty() {
             continue;
         }
-
         let last_segment = path.last().unwrap();
+        let parent_path: NodePath = path[..path.len() - 1].to_vec();
 
-        if path.len() == 1 {
+        let (kind, idx) = match last_segment {
+            PathSegment::Child(idx) => (SegmentKind::Child, *idx),
+            PathSegment::ListItem(idx) => (SegmentKind::ListItem, *idx),
+            PathSegment::TableRow(idx) => (SegmentKind::TableRow, *idx),
+            PathSegment::TableHeader | PathSegment::TableCell(_) => continue,
+        };
+
+        groups
+            .entry((parent_path, kind))
+            .or_default()
+            .push(idx);
+    }
+
+    // Process groups from deepest/highest-index first so insertions don't invalidate
+    // other groups' indices.
+    let mut group_list: Vec<_> = groups.into_iter().collect();
+    group_list.sort_by(|a, b| {
+        let depth_cmp = b.0 .0.len().cmp(&a.0 .0.len());
+        if depth_cmp != std::cmp::Ordering::Equal {
+            return depth_cmp;
+        }
+        // For same depth, process higher parent indices first
+        b.0 .0.cmp(&a.0 .0)
+    });
+
+    for ((parent_path, kind), mut indices) in group_list {
+        indices.sort();
+        let max_idx = *indices.last().unwrap();
+
+        if parent_path.is_empty() && kind == SegmentKind::Child {
             // Root level duplication
-            if let PathSegment::Child(idx) = last_segment
-                && *idx < content.len()
-            {
-                let clone = content[*idx].clone();
-                content.insert(*idx + 1, clone);
+            let clones: Vec<_> = indices
+                .iter()
+                .filter_map(|&idx| content.get(idx).cloned())
+                .collect();
+            // Insert all clones after the last selected element
+            let insert_pos = (max_idx + 1).min(content.len());
+            for (i, clone) in clones.into_iter().enumerate() {
+                content.insert(insert_pos + i, clone);
             }
         } else {
-            let parent_path: NodePath = path[..path.len() - 1].to_vec();
-
-            match last_segment {
-                PathSegment::Child(child_idx) => {
+            match kind {
+                SegmentKind::Child => {
                     if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
                         match parent {
-                            StructuredNode::Group(g) if *child_idx < g.children.len() => {
-                                let clone = g.children[*child_idx].clone();
-                                g.children.insert(*child_idx + 1, clone);
+                            StructuredNode::Group(g) => {
+                                let clones: Vec<_> = indices
+                                    .iter()
+                                    .filter_map(|&idx| g.children.get(idx).cloned())
+                                    .collect();
+                                let insert_pos = (max_idx + 1).min(g.children.len());
+                                for (i, clone) in clones.into_iter().enumerate() {
+                                    g.children.insert(insert_pos + i, clone);
+                                }
                             }
-                            StructuredNode::GridLayout(g) if *child_idx < g.elements.len() => {
-                                let clone = g.elements[*child_idx].clone();
-                                g.elements.insert(*child_idx + 1, clone);
+                            StructuredNode::GridLayout(g) => {
+                                let clones: Vec<_> = indices
+                                    .iter()
+                                    .filter_map(|&idx| g.elements.get(idx).cloned())
+                                    .collect();
+                                let insert_pos = (max_idx + 1).min(g.elements.len());
+                                for (i, clone) in clones.into_iter().enumerate() {
+                                    g.elements.insert(insert_pos + i, clone);
+                                }
                             }
                             _ => {}
                         }
                     }
                 }
-                PathSegment::ListItem(item_idx) => {
-                    if let Some(list) = get_list_at_path_mut(content, &parent_path)
-                        && *item_idx < list.items.len()
-                    {
-                        let clone = list.items[*item_idx].clone();
-                        list.items.insert(*item_idx + 1, clone);
+                SegmentKind::ListItem => {
+                    if let Some(list) = get_list_at_path_mut(content, &parent_path) {
+                        let clones: Vec<_> = indices
+                            .iter()
+                            .filter_map(|&idx| list.items.get(idx).cloned())
+                            .collect();
+                        let insert_pos = (max_idx + 1).min(list.items.len());
+                        for (i, clone) in clones.into_iter().enumerate() {
+                            list.items.insert(insert_pos + i, clone);
+                        }
                     }
                 }
-                PathSegment::TableRow(row_idx) => {
+                SegmentKind::TableRow => {
                     if let Some(StructuredNode::Table(t)) =
                         get_node_at_path_mut(content, &parent_path)
-                        && *row_idx < t.rows.len()
                     {
-                        let clone = t.rows[*row_idx].clone();
-                        t.rows.insert(*row_idx + 1, clone);
+                        let clones: Vec<_> = indices
+                            .iter()
+                            .filter_map(|&idx| t.rows.get(idx).cloned())
+                            .collect();
+                        let insert_pos = (max_idx + 1).min(t.rows.len());
+                        for (i, clone) in clones.into_iter().enumerate() {
+                            t.rows.insert(insert_pos + i, clone);
+                        }
                     }
-                }
-                PathSegment::TableHeader | PathSegment::TableCell(_) => {
-                    // Duplicating headers or individual cells doesn't make structural sense
                 }
             }
         }
