@@ -2,15 +2,6 @@ use dioxus::prelude::*;
 
 use crate::db::{self, SessionInfo};
 
-/// Format an RFC3339 timestamp into a compact `YYYY-MM-DD HH:MM` form.
-fn format_timestamp(ts: &str) -> String {
-    if ts.len() >= 16 {
-        ts[..16].replace('T', " ")
-    } else {
-        ts.to_string()
-    }
-}
-
 #[component]
 pub fn FileUploadSection(
     is_processing: bool,
@@ -123,7 +114,7 @@ pub fn FileUploadSection(
                         for session in previous_sessions.read().iter() {
                             li { class: "session-item",
                                 div { class: "session-meta",
-                                    span { class: "session-time", "{format_timestamp(&session.created_at)}" }
+                                    span { class: "session-time", "{db::format_timestamp(&session.created_at)}" }
                                     span { class: "session-count", "{session.edit_count} edit(s)" }
                                     if let Some(profile) = session.profile.as_ref() {
                                         span { class: "session-profile", "{profile}" }

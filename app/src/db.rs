@@ -35,6 +35,15 @@ pub struct EditInfo {
     pub action_label: String,
 }
 
+/// Format an RFC3339 timestamp into a compact `YYYY-MM-DD HH:MM` form.
+pub fn format_timestamp(ts: &str) -> String {
+    if ts.len() >= 16 {
+        ts[..16].replace('T', " ")
+    } else {
+        ts.to_string()
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::{EditInfo, SessionInfo};
@@ -158,6 +167,20 @@ mod imp {
         )
         .ok()?;
         Some(session_id)
+    }
+
+    /// Look up the conversion profile stored for a session, if any.
+    pub fn session_profile(session_id: &str) -> Option<String> {
+        let conn = open().ok()?;
+        conn.query_row(
+            "SELECT profile FROM sessions WHERE session_id = ?1",
+            [session_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .flatten()
     }
 
     pub fn list_sessions(doc_hash: &str) -> Vec<SessionInfo> {
@@ -431,6 +454,9 @@ mod stub {
     }
     pub fn list_sessions(_doc_hash: &str) -> Vec<SessionInfo> {
         Vec::new()
+    }
+    pub fn session_profile(_session_id: &str) -> Option<String> {
+        None
     }
     pub fn insert_edit(
         _session_id: &str,

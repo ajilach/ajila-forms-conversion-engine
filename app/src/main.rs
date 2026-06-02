@@ -40,7 +40,7 @@ fn App() -> Element {
     let mut processing_state = use_signal(ProcessingState::new);
     let mut is_processing = use_signal(|| false);
     let mut enlarged_image = use_signal(|| None::<(String, String)>);
-    let selected_profile = use_signal(|| None::<String>);
+    let mut selected_profile = use_signal(|| None::<String>);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut settings_open = use_signal(|| false);
     let mut app_settings = use_signal(AppSettings::load);
@@ -78,6 +78,12 @@ fn App() -> Element {
         let Ok(envelope) = serde_json::from_str::<DocumentEnvelope>(&json) else {
             return;
         };
+
+        // Restore the profile the session was created with so outputs are
+        // regenerated with the matching capabilities.
+        if let Some(profile) = db::session_profile(&session_id) {
+            selected_profile.set(Some(profile));
+        }
 
         let profile = selected_profile.read().clone();
         let mut state = processing_state.write();

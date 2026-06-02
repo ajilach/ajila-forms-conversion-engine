@@ -1631,13 +1631,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         }
     };
 
-    let mut do_undo = move |_| {
+    let do_undo = move |_| {
         let cur = *undo_seq.read();
         if cur > 0 {
             load_snapshot(cur - 1);
         }
     };
-    let mut do_redo = move |_| {
+    let do_redo = move |_| {
         let cur = *undo_seq.read();
         load_snapshot(cur + 1);
     };
@@ -1695,14 +1695,14 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 class: "editor-btn editor-btn-secondary",
                                 title: "Undo",
                                 disabled: !can_undo,
-                                onclick: move |evt| do_undo(evt),
+                                onclick: do_undo,
                                 "↶ Undo"
                             }
                             button {
                                 class: "editor-btn editor-btn-secondary",
                                 title: "Redo",
                                 disabled: !can_redo,
-                                onclick: move |evt| do_redo(evt),
+                                onclick: do_redo,
                                 "↷ Redo"
                             }
                         }
@@ -1927,6 +1927,23 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                     }
                                                     drop(env);
 
+                                                    // Record the Smart Edit in the persisted history so
+                                                    // undo/redo and the sidebar stay in sync.
+                                                    if let Some(sid) = session_id.read().clone() {
+                                                        let after_seq = *undo_seq.read();
+                                                        if let Ok(json) = serde_json::to_string(&*envelope.read())
+                                                            && let Some(seq) = db::record_edit(
+                                                                &sid,
+                                                                after_seq,
+                                                                "Smart Edit",
+                                                                &json,
+                                                            )
+                                                        {
+                                                            undo_seq.set(seq);
+                                                            history_version += 1;
+                                                        }
+                                                    }
+
                                                     selection.write().clear();
                                                     smart_edit_state.set(SmartEditState::Idle);
 
@@ -2123,7 +2140,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         class: "{item_class}",
                                         onclick: move |_| load_snapshot(seq),
                                         div { class: "history-item-label", "{entry.action_label}" }
-                                        div { class: "history-item-time", "{format_history_time(&entry.created_at)}" }
+                                        div { class: "history-item-time", "{db::format_timestamp(&entry.created_at)}" }
                                     }
                                 }
                             }
@@ -2133,16 +2150,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             }
         }
 
-    }
-}
-
-/// Format an RFC3339 timestamp into a compact `YYYY-MM-DD HH:MM` form for the
-/// history sidebar.
-fn format_history_time(ts: &str) -> String {
-    if ts.len() >= 16 {
-        ts[..16].replace('T', " ")
-    } else {
-        ts.to_string()
     }
 }
 
