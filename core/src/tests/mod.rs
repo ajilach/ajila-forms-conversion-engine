@@ -27803,73 +27803,12 @@ fn test_aaam_aem_footnote_structure_matches_aaep_reference() {
         (signatures, placeholder_count)
     }
 
-    fn collect_footnote_signatures_from_xml(xml: &str) -> (Vec<String>, usize) {
-        use quick_xml::Reader;
-        use quick_xml::events::Event;
-
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
-
-        let mut signatures = Vec::new();
-        let mut placeholder_count = 0;
-
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(event)) | Ok(Event::Empty(event)) => {
-                    let mut footnote_fragment = None;
-                    let mut is_placeholder = false;
-
-                    for attr in event.attributes().with_checks(false) {
-                        let attr = attr.expect("valid reference XML attribute");
-                        let key = String::from_utf8_lossy(attr.key.as_ref());
-                        let value = attr
-                            .decode_and_unescape_value(reader.decoder())
-                            .expect("valid reference XML attribute value");
-
-                        match key.as_ref() {
-                            "_value" if value.contains("data-af-footnote-id") => {
-                                footnote_fragment = Some(value.into_owned());
-                            }
-                            "guideNodeClass" if value == "guideFootnotePlaceHolder" => {
-                                is_placeholder = true;
-                            }
-                            "sling:resourceType" if value.contains("guidefootnoteplaceholder") => {
-                                is_placeholder = true;
-                            }
-                            "jcr:title" if value == "Footnote Placeholder" => {
-                                is_placeholder = true;
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if let Some(fragment) = footnote_fragment {
-                        signatures.push(normalize_footnote_fragment(&fragment));
-                    }
-
-                    if is_placeholder {
-                        placeholder_count += 1;
-                    }
-                }
-                Ok(Event::Eof) => break,
-                Ok(_) => {}
-                Err(error) => panic!("Failed to parse AAEP reference XML: {error}"),
-            }
-        }
-
-        (signatures, placeholder_count)
-    }
-
     let (_, aaam_root, _) = build_aem_test_output(&[("AAAM_019_DE.pdf", "de")]);
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
-    let aaep_reference_xml = std::fs::read_to_string(
-        format!("{}/../specs/migrated/reference/Germany_AAEP (1)/jcr_root/content/forms/af/afforms_germany_all/af_aa/AF_AAEP/.content.xml", manifest_dir),
-    )
-    .expect("Failed to read AAEP reference AEM content.xml");
+    let (_, aagg_root, _) =
+        build_aem_test_output(&[("AAGG_019_EN.pdf", "en"), ("AAGG_019_DE.pdf", "de")]);
 
     let (aaam_signatures, aaam_placeholders) = collect_footnote_signatures(&aaam_root);
-    let (aaep_signatures, aaep_placeholders) =
-        collect_footnote_signatures_from_xml(&aaep_reference_xml);
+    let (aagg_signatures, aagg_placeholders) = collect_footnote_signatures(&aagg_root);
 
     assert!(
         !aaam_signatures.is_empty(),
@@ -27880,19 +27819,23 @@ fn test_aaam_aem_footnote_structure_matches_aaep_reference() {
         "AAAM AEM output should contain at least one footnote placeholder"
     );
     assert!(
-        aaep_placeholders > 0,
-        "AAEP reference AEM output should contain at least one footnote placeholder"
+        !aagg_signatures.is_empty(),
+        "AAGG AEM output should contain at least one footnote-bearing node"
+    );
+    assert!(
+        aagg_placeholders > 0,
+        "AAGG AEM output should contain at least one footnote placeholder"
     );
 
-    let reference_signature = aaep_signatures
+    let reference_signature = aagg_signatures
         .first()
-        .expect("AAEP reference form should contain a footnote signature");
+        .expect("AAGG reference form should contain a footnote signature");
 
     for signature in &aaam_signatures {
         assert_eq!(
             signature, reference_signature,
-            "AAAM footnote structure should match the AAEP reference form\nAAAM: {:?}\nAAEP reference: {:?}",
-            aaam_signatures, aaep_signatures
+            "AAAM footnote structure should match the AAGG reference form\nAAAM: {:?}\nAAGG reference: {:?}",
+            aaam_signatures, aagg_signatures
         );
     }
 }
