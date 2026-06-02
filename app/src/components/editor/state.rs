@@ -175,6 +175,35 @@ pub enum EditorAction {
     SelectAll,
 }
 
+/// Produce a human-readable label for a content-mutating action, for the edit
+/// history. Returns `None` for actions that do not change document content
+/// (selection changes, edit-mode toggles, and the async Smart Edit trigger).
+pub fn describe_action(action: &EditorAction) -> Option<String> {
+    let label = match action {
+        EditorAction::DeleteSelected => "Deleted node(s)",
+        EditorAction::MergeSelected => "Merged nodes",
+        EditorAction::MoveUp => "Moved up",
+        EditorAction::MoveDown => "Moved down",
+        EditorAction::Indent => "Indented",
+        EditorAction::Outdent => "Outdented",
+        EditorAction::DuplicateSelected => "Duplicated node(s)",
+        EditorAction::UpdateText { .. } => "Edited text",
+        EditorAction::UpdateMetadata { .. } => "Updated properties",
+        EditorAction::AddNode { .. } => "Added node",
+        EditorAction::ConvertSelected(_) => "Converted node(s)",
+        // Non-mutating or deferred actions.
+        EditorAction::ToggleSelection(_)
+        | EditorAction::SelectSingle(_)
+        | EditorAction::ClearSelection
+        | EditorAction::StartEditing(_)
+        | EditorAction::StopEditing
+        | EditorAction::StartEditingMetadata(_)
+        | EditorAction::SelectAll
+        | EditorAction::SmartEdit => return None,
+    };
+    Some(label.to_string())
+}
+
 /// Target type for conversion operations.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConvertTarget {

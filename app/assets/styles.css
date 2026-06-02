@@ -563,9 +563,121 @@ body > div, #main {
     background: var(--light);
     flex: 1;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: stretch;
     overflow: hidden;
     min-height: 0;
+}
+
+/* ---- Edit history sidebar ---- */
+
+.history-sidebar {
+    flex: 0 0 260px;
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-left: 1px solid var(--color-border);
+    background: var(--light);
+}
+
+.history-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.history-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.history-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.history-item {
+    text-align: left;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.history-item:hover {
+    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+}
+
+.history-item-current {
+    border-color: var(--primary);
+    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+}
+
+.history-item-future {
+    opacity: 0.5;
+}
+
+.history-item-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.history-item-time {
+    font-size: 0.72rem;
+    color: var(--color-text-muted, #888);
+    margin-top: 0.15rem;
+}
+
+/* ---- Continue editing (previous sessions) ---- */
+
+.continue-editing {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.session-list {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.session-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.session-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.session-time {
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.session-count,
+.session-profile {
+    font-size: 0.75rem;
+    color: var(--color-text-muted, #888);
 }
 
 .editor-scrollable {

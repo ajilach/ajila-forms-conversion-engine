@@ -1,12 +1,15 @@
-//! Persistent application settings stored as TOML.
+//! Persistent application settings stored in the local SQLite database.
 //!
-//! Settings file location:
-//! - macOS: ~/Library/Application Support/blueprint/settings.toml
-//! - Linux: ~/.config/blueprint/settings.toml
-//! - Windows: %APPDATA%/blueprint/settings.toml
-//! - WASM: not persisted (defaults only)
+//! Settings are serialized as JSON and stored under the `app` key in the
+//! `settings` table of `<config_dir>/blueprint/history.db`. On first run the
+//! legacy `settings.toml` file (if present) is imported once.
+//!
+//! On WASM the database is unavailable, so settings fall back to defaults.
 
 use serde::{Deserialize, Serialize};
+
+/// Key under which the serialized settings are stored.
+const SETTINGS_KEY: &str = "app";
 
 /// Application settings.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,38 +35,44 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    /// Load settings from disk, falling back to defaults on any error.
+    /// Load settings from the database, falling back to defaults on any error.
     pub fn load() -> Self {
+        if let Some(json) = crate::db::get_setting(SETTINGS_KEY)
+            && let Ok(settings) = serde_json::from_str::<AppSettings>(&json)
+        {
+            return settings;
+        }
+
+        // No settings in the database yet: try a one-time import from the
+        // legacy TOML file, then persist it into the database.
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let path = Self::settings_path();
-            match std::fs::read_to_string(&path) {
-                Ok(contents) => toml::from_str(&contents).unwrap_or_default(),
-                Err(_) => Self::default(),
+            if let Some(imported) = Self::load_legacy_toml() {
+                imported.save();
+                return imported;
             }
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            Self::default()
+
+        Self::default()
+    }
+
+    /// Save settings to the database.
+    pub fn save(&self) {
+        if let Ok(json) = serde_json::to_string(self) {
+            crate::db::set_setting(SETTINGS_KEY, &json);
         }
     }
 
-    /// Save settings to disk.
-    pub fn save(&self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let path = Self::settings_path();
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Ok(contents) = toml::to_string_pretty(self) {
-                let _ = std::fs::write(&path, contents);
-            }
-        }
+    /// One-time import of the legacy `settings.toml` file, if it exists.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_legacy_toml() -> Option<Self> {
+        let path = Self::legacy_settings_path();
+        let contents = std::fs::read_to_string(path).ok()?;
+        toml::from_str(&contents).ok()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn settings_path() -> std::path::PathBuf {
+    fn legacy_settings_path() -> std::path::PathBuf {
         let base = dirs::config_dir().unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))

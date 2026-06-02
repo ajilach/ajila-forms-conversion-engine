@@ -19,7 +19,7 @@ use super::smart_edit;
 use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_indent, can_merge_selected, can_outdent,
-    collect_selectable_paths, compute_add_options, delete_nodes, duplicate_nodes,
+    collect_selectable_paths, compute_add_options, delete_nodes, describe_action, duplicate_nodes,
     get_container_child_info, get_container_children_count, get_list_at_path,
     get_list_at_path_mut, get_list_item_text_mut, get_node_at_path, get_node_at_path_mut,
     get_shared_parent_path, get_table_column_count, indent_node, is_container_child_path,
@@ -28,6 +28,7 @@ use super::state::{
     search_nodes,
 };
 use super::toolbar::EditorToolbar;
+use crate::db::{self, EditInfo};
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
 use crate::platform::show_html_preview;
 
@@ -80,6 +81,8 @@ pub struct StructuredEditorProps {
     pub openai_api_key: String,
     /// OpenAI model for Smart Edit (e.g. "gpt-4o").
     pub openai_model: String,
+    /// Edit-history session id for this document (desktop only; `None` on web).
+    pub session_id: Option<String>,
     /// Callback when editing is complete (with the modified envelope).
     pub on_apply: EventHandler<DocumentEnvelope>,
     /// Callback when editing is cancelled.
@@ -122,6 +125,19 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             false
         }
     });
+
+    // Edit-history state (desktop only; signals are inert when there is no session).
+    let session_id = use_signal(|| props.session_id.clone());
+    // Current position in the session's edit chronology.
+    let mut undo_seq = use_signal(|| {
+        session_id
+            .read()
+            .as_ref()
+            .and_then(|sid| db::latest_seq(sid))
+            .unwrap_or(0)
+    });
+    // Bumped whenever the history changes, to refresh the sidebar.
+    let mut history_version = use_signal(|| 0u64);
 
     // Collect all languages from the document
     let languages: Vec<String> = {
@@ -400,6 +416,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     // Handle editor actions
     let languages_for_rsx = languages.clone();
     let handle_action = move |action: EditorAction| {
+        // Determine whether this action mutates content (for history recording).
+        let history_label = describe_action(&action);
         match action {
             EditorAction::ToggleSelection(path) => {
                 selection.write().toggle(path);
@@ -1548,6 +1566,19 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             }
         }
 
+        // Record a history snapshot for content-mutating actions (desktop only).
+        if let Some(label) = history_label
+            && let Some(sid) = session_id.read().clone()
+        {
+            let after_seq = *undo_seq.read();
+            if let Ok(json) = serde_json::to_string(&*envelope.read())
+                && let Some(seq) = db::record_edit(&sid, after_seq, &label, &json)
+            {
+                undo_seq.set(seq);
+                history_version += 1;
+            }
+        }
+
         // Push live preview update if active (no-op if content unchanged)
         #[cfg(not(target_arch = "wasm32"))]
         if *live_preview.read() {
@@ -1559,6 +1590,57 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
     let on_apply = props.on_apply;
     let on_cancel = props.on_cancel;
+
+    // ── Edit history (desktop only) ───────────────────────────────────────────
+    let has_session = session_id.read().is_some();
+    // Re-read history whenever it changes (history_version is the dependency).
+    let _history_version = *history_version.read();
+    let max_seq = session_id
+        .read()
+        .as_ref()
+        .and_then(|sid| db::latest_seq(sid))
+        .unwrap_or(0);
+    let current_seq = *undo_seq.read();
+    let can_undo = has_session && current_seq > 0;
+    let can_redo = has_session && current_seq < max_seq;
+    let history_entries: Vec<EditInfo> = session_id
+        .read()
+        .as_ref()
+        .map(|sid| db::list_edits(sid))
+        .unwrap_or_default();
+
+    // Load a specific snapshot into the editor (used by undo/redo and history clicks).
+    let mut load_snapshot = move |target_seq: usize| {
+        let Some(sid) = session_id.read().clone() else {
+            return;
+        };
+        let Some(json) = db::snapshot_at(&sid, target_seq) else {
+            return;
+        };
+        if let Ok(env) = serde_json::from_str::<DocumentEnvelope>(&json) {
+            envelope.set(env);
+            undo_seq.set(target_seq);
+            selection.write().clear();
+            history_version += 1;
+            #[cfg(not(target_arch = "wasm32"))]
+            if *live_preview.read() {
+                let html =
+                    blueprint::to_html(&envelope.read().content, &blueprint::HtmlConfig::default());
+                crate::preview_server::update_preview(html);
+            }
+        }
+    };
+
+    let mut do_undo = move |_| {
+        let cur = *undo_seq.read();
+        if cur > 0 {
+            load_snapshot(cur - 1);
+        }
+    };
+    let mut do_redo = move |_| {
+        let cur = *undo_seq.read();
+        load_snapshot(cur + 1);
+    };
 
     // Compute search results once per render for both the search bar and the highlight set
     let search_results = search_nodes(&envelope.read().content, &search_query.read());
@@ -1606,6 +1688,22 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 "⏹ Stop Live Preview"
                             } else {
                                 "▶ Open Live Preview"
+                            }
+                        }
+                        if has_session {
+                            button {
+                                class: "editor-btn editor-btn-secondary",
+                                title: "Undo",
+                                disabled: !can_undo,
+                                onclick: move |evt| do_undo(evt),
+                                "↶ Undo"
+                            }
+                            button {
+                                class: "editor-btn editor-btn-secondary",
+                                title: "Redo",
+                                disabled: !can_redo,
+                                onclick: move |evt| do_redo(evt),
+                                "↷ Redo"
                             }
                         }
                         button {
@@ -1999,8 +2097,52 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                     }
                 }
             } // end editor-main
+
+            // ── Right column: edit history sidebar (desktop only) ─────────
+            if has_session {
+                aside { class: "history-sidebar",
+                    div { class: "history-header",
+                        h3 { "History" }
+                    }
+                    div { class: "history-list",
+                        for entry in history_entries.iter().rev() {
+                            {
+                                let seq = entry.seq;
+                                let is_current = seq == current_seq;
+                                let is_future = seq > current_seq;
+                                let mut item_class = String::from("history-item");
+                                if is_current {
+                                    item_class.push_str(" history-item-current");
+                                }
+                                if is_future {
+                                    item_class.push_str(" history-item-future");
+                                }
+                                rsx! {
+                                    button {
+                                        key: "{seq}",
+                                        class: "{item_class}",
+                                        onclick: move |_| load_snapshot(seq),
+                                        div { class: "history-item-label", "{entry.action_label}" }
+                                        div { class: "history-item-time", "{format_history_time(&entry.created_at)}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
+    }
+}
+
+/// Format an RFC3339 timestamp into a compact `YYYY-MM-DD HH:MM` form for the
+/// history sidebar.
+fn format_history_time(ts: &str) -> String {
+    if ts.len() >= 16 {
+        ts[..16].replace('T', " ")
+    } else {
+        ts.to_string()
     }
 }
 

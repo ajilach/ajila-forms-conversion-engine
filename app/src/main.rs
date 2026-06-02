@@ -1,4 +1,5 @@
 mod components;
+mod db;
 mod markdown;
 mod models;
 mod pipeline;
@@ -44,12 +45,15 @@ fn App() -> Element {
     let mut settings_open = use_signal(|| false);
     let mut app_settings = use_signal(AppSettings::load);
     let mut aem_preview_envelope = use_signal(|| None::<DocumentEnvelope>);
+    // Edit-history session id for the currently loaded document (desktop only).
+    let mut current_session = use_signal(|| None::<String>);
 
     let profiles = blueprint::list_profiles();
 
     // ── Pipeline ──────────────────────────────────────────────────────────────
     let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
         is_processing.set(true);
+        current_session.set(None);
         processing_state.set(ProcessingState {
             step: ProcessingStep::Parsing,
             ..ProcessingState::new()
@@ -57,57 +61,42 @@ fn App() -> Element {
 
         let profile = selected_profile.read().clone();
         spawn(async move {
-            run_and_track(file_data, profile, processing_state).await;
+            run_and_track(file_data, profile, processing_state, current_session).await;
             is_processing.set(false);
         });
     };
 
+    // Continue a previous editing session: load its latest snapshot and
+    // regenerate all derived outputs, then mark the document as complete.
+    let mut on_continue_session = move |session_id: String| {
+        let Some(seq) = db::latest_seq(&session_id) else {
+            return;
+        };
+        let Some(json) = db::snapshot_at(&session_id, seq) else {
+            return;
+        };
+        let Ok(envelope) = serde_json::from_str::<DocumentEnvelope>(&json) else {
+            return;
+        };
+
+        let profile = selected_profile.read().clone();
+        let mut state = processing_state.write();
+        state.step = ProcessingStep::Complete;
+        state.error = None;
+        processing::regenerate_outputs(&mut state, &envelope, profile.as_deref());
+        drop(state);
+
+        current_session.set(Some(session_id));
+        editor_envelope.set(Some(envelope));
+    };
+
     // Handle applying changes from the editor
     let handle_editor_apply = move |envelope: DocumentEnvelope| {
-        // Update the processing state with the edited envelope
-        let mut state = processing_state.write();
-        state.envelope = Some(envelope.clone());
-
-        // Regenerate JSON
-        if let Ok(json) = serde_json::to_string_pretty(&envelope) {
-            state.merged_json = Some(json);
-        }
-
-        // Regenerate HTML preview if profile supports it
+        // Update the processing state with the edited envelope and regenerate
+        // all derived outputs for the active profile.
         let profile = selected_profile.read().clone();
-        if let Some(ref profile_name) = profile
-            && blueprint::has_html_config(profile_name)
-            && let Ok(styles) = blueprint::load_html_custom_styles(profile_name)
-        {
-            let html_config = blueprint::HtmlConfig {
-                custom_styles: Some(styles),
-                ..blueprint::HtmlConfig::default()
-            };
-            let html = blueprint::to_html(&envelope.content, &html_config);
-            state.html_preview = Some(html);
-        }
-
-        // Regenerate AEM package if profile supports it
-        if let Some(ref profile_name) = profile
-            && blueprint::has_aem_config(profile_name)
-            && let Ok(aem_config) = blueprint::load_aem_config(profile_name, &envelope.context)
-        {
-            let aem_zip = blueprint::to_aem_package(&envelope.content, &aem_config);
-            state.form_code = Some(aem_config.form_code.clone());
-            state.aem_package = Some(aem_zip);
-        }
-
-        // Regenerate XSD if profile supports it
-        if let Some(ref profile_name) = profile
-            && blueprint::has_xsd_config(profile_name)
-            && let Ok(mut xsd_config) = blueprint::load_xsd_config(profile_name)
-        {
-            if let Some(ref fc) = state.form_code {
-                xsd_config.form_code = Some(fc.clone());
-            }
-            state.xsd_schema = Some(blueprint::to_xsd(&envelope.content, &xsd_config));
-        }
-
+        let mut state = processing_state.write();
+        processing::regenerate_outputs(&mut state, &envelope, profile.as_deref());
         drop(state);
 
         // Close the editor
@@ -159,6 +148,7 @@ fn App() -> Element {
                     plain_images: processing_state.read().plain_images.clone(),
                     openai_api_key: app_settings.read().openai_api_key.clone(),
                     openai_model: app_settings.read().openai_model.clone(),
+                    session_id: current_session.read().clone(),
                     on_apply: handle_editor_apply,
                     on_cancel: move |_| editor_envelope.set(None),
                 }
@@ -182,6 +172,9 @@ fn App() -> Element {
                         selected_profile,
                         on_process: move |files: Vec<(String, Vec<u8>)>| {
                             on_process(files);
+                        },
+                        on_continue: move |session_id: String| {
+                            on_continue_session(session_id);
                         },
                     }
 

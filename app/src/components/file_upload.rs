@@ -1,13 +1,27 @@
 use dioxus::prelude::*;
 
+use crate::db::{self, SessionInfo};
+
+/// Format an RFC3339 timestamp into a compact `YYYY-MM-DD HH:MM` form.
+fn format_timestamp(ts: &str) -> String {
+    if ts.len() >= 16 {
+        ts[..16].replace('T', " ")
+    } else {
+        ts.to_string()
+    }
+}
+
 #[component]
 pub fn FileUploadSection(
     is_processing: bool,
     profiles: Vec<String>,
     selected_profile: Signal<Option<String>>,
     on_process: EventHandler<Vec<(String, Vec<u8>)>>,
+    on_continue: EventHandler<String>,
 ) -> Element {
     let mut uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
+    // Previous editing sessions for the currently selected document set.
+    let mut previous_sessions = use_signal(Vec::<SessionInfo>::new);
 
     // Auto-select the first profile if none is selected yet
     if selected_profile.read().is_none()
@@ -60,6 +74,14 @@ pub fn FileUploadSection(
                                 files_data.push((file.name(), bytes.to_vec()));
                             }
                         }
+                        // Look up any previous editing sessions for this document set.
+                        let sessions = if files_data.is_empty() {
+                            Vec::new()
+                        } else {
+                            let hash = db::document_hash(&files_data);
+                            db::list_sessions(&hash)
+                        };
+                        previous_sessions.set(sessions);
                         uploaded_files.set(files_data);
                     }
                 },
@@ -87,6 +109,36 @@ pub fn FileUploadSection(
                             "Processing..."
                         } else {
                             "Start Processing"
+                        }
+                    }
+                }
+            }
+
+            // Previously edited document: offer to continue an earlier session.
+            if !previous_sessions.read().is_empty() {
+                div { class: "continue-editing",
+                    h3 { "Continue Editing" }
+                    p { class: "upload-hint", "This document was edited before. Resume a previous session:" }
+                    ul { class: "session-list",
+                        for session in previous_sessions.read().iter() {
+                            li { class: "session-item",
+                                div { class: "session-meta",
+                                    span { class: "session-time", "{format_timestamp(&session.created_at)}" }
+                                    span { class: "session-count", "{session.edit_count} edit(s)" }
+                                    if let Some(profile) = session.profile.as_ref() {
+                                        span { class: "session-profile", "{profile}" }
+                                    }
+                                }
+                                button {
+                                    class: "btn btn-secondary btn-sm",
+                                    disabled: is_processing,
+                                    onclick: {
+                                        let session_id = session.session_id.clone();
+                                        move |_| on_continue.call(session_id.clone())
+                                    },
+                                    "Continue"
+                                }
+                            }
                         }
                     }
                 }
