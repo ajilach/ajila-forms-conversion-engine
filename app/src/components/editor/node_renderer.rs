@@ -160,6 +160,7 @@ pub fn ListItemsRenderer(props: ListItemsRendererProps) -> Element {
         div { class: "list-items list-depth-{props.list_depth}",
             for (i , item) in props.list.0.items.iter().enumerate() {
                 {
+                    let item_count = props.list.0.items.len();
                     let item_path = {
                         let mut p = props.base_path.clone();
                         p.push(PathSegment::ListItem(i));
@@ -235,6 +236,36 @@ pub fn ListItemsRenderer(props: ListItemsRendererProps) -> Element {
                                             }
                                         },
                                         "✎"
+                                    }
+                                    button {
+                                        class: "node-move-btn",
+                                        disabled: i == 0,
+                                        title: "Move up",
+                                        onclick: {
+                                            let path = item_path.clone();
+                                            let on_action = props.on_action;
+                                            move |evt: Event<MouseData>| {
+                                                evt.stop_propagation();
+                                                on_action.call(EditorAction::SelectSingle(path.clone()));
+                                                on_action.call(EditorAction::MoveUp);
+                                            }
+                                        },
+                                        "↑"
+                                    }
+                                    button {
+                                        class: "node-move-btn",
+                                        disabled: i + 1 == item_count,
+                                        title: "Move down",
+                                        onclick: {
+                                            let path = item_path.clone();
+                                            let on_action = props.on_action;
+                                            move |evt: Event<MouseData>| {
+                                                evt.stop_propagation();
+                                                on_action.call(EditorAction::SelectSingle(path.clone()));
+                                                on_action.call(EditorAction::MoveDown);
+                                            }
+                                        },
+                                        "↓"
                                     }
                                 }
                             }

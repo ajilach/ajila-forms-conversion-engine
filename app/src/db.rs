@@ -118,11 +118,9 @@ mod imp {
 
     pub fn get_setting(key: &str) -> Option<String> {
         let conn = open().ok()?;
-        conn.query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [key],
-            |row| row.get::<_, String>(0),
-        )
+        conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get::<_, String>(0)
+        })
         .optional()
         .ok()
         .flatten()
@@ -240,6 +238,15 @@ mod imp {
         }
     }
 
+    /// Permanently delete an editing session and all of its edits.
+    pub fn delete_session(session_id: &str) {
+        let Ok(conn) = open() else {
+            return;
+        };
+        let _ = conn.execute("DELETE FROM edits WHERE session_id = ?1", [session_id]);
+        let _ = conn.execute("DELETE FROM sessions WHERE session_id = ?1", [session_id]);
+    }
+
     // ── Edits ───────────────────────────────────────────────────────────────
 
     fn next_seq(conn: &Connection, session_id: &str) -> usize {
@@ -328,7 +335,11 @@ mod imp {
     }
 
     /// Append a snapshot at the next sequence number. Returns the new seq.
-    pub fn insert_edit(session_id: &str, action_label: &str, structure_json: &str) -> Option<usize> {
+    pub fn insert_edit(
+        session_id: &str,
+        action_label: &str,
+        structure_json: &str,
+    ) -> Option<usize> {
         let conn = open().ok()?;
         insert_edit_conn(&conn, session_id, action_label, structure_json)
     }
@@ -401,8 +412,14 @@ mod imp {
             let conn = mem();
             insert_edit_conn(&conn, "s", "first", "{\"v\":1}");
             insert_edit_conn(&conn, "s", "second", "{\"v\":2}");
-            assert_eq!(snapshot_at_conn(&conn, "s", 0).as_deref(), Some("{\"v\":1}"));
-            assert_eq!(snapshot_at_conn(&conn, "s", 1).as_deref(), Some("{\"v\":2}"));
+            assert_eq!(
+                snapshot_at_conn(&conn, "s", 0).as_deref(),
+                Some("{\"v\":1}")
+            );
+            assert_eq!(
+                snapshot_at_conn(&conn, "s", 1).as_deref(),
+                Some("{\"v\":2}")
+            );
         }
 
         #[test]
@@ -474,11 +491,7 @@ mod stub {
         String::new()
     }
     pub fn upsert_document(_doc_hash: &str, _label: &str) {}
-    pub fn create_session(
-        _doc_hash: &str,
-        _profile: Option<&str>,
-        _label: &str,
-    ) -> Option<String> {
+    pub fn create_session(_doc_hash: &str, _profile: Option<&str>, _label: &str) -> Option<String> {
         None
     }
     pub fn list_sessions(_doc_hash: &str) -> Vec<SessionInfo> {
@@ -487,6 +500,7 @@ mod stub {
     pub fn list_all_sessions() -> Vec<SessionInfo> {
         Vec::new()
     }
+    pub fn delete_session(_session_id: &str) {}
     pub fn session_profile(_session_id: &str) -> Option<String> {
         None
     }

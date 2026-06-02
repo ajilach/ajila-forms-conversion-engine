@@ -105,16 +105,15 @@ pub fn SettingsPanel(
                                     move |e: Event<FormData>| {
                                         if let Ok(port) = e.value().parse::<u16>()
                                             && port >= 1024 {
-                                                let mut new_s = s.clone();
-                                                new_s.live_preview_port = port;
-                                                on_changed.call(new_s);
-                                            }
+                                            let mut new_s = s.clone();
+                                            new_s.live_preview_port = port;
+                                            on_changed.call(new_s);
+                                        }
                                     }
                                 },
                             }
                         }
                         div { class: "settings-section",
-                            h3 { class: "settings-section-title", "AI (Smart Edit)" }
                             div { class: "settings-row",
                                 div { class: "settings-row-info",
                                     span { class: "settings-row-label", "OpenAI API Key" }

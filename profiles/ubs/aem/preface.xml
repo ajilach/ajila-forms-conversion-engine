@@ -23,5 +23,5 @@
         jcr:primaryType="nt:unstructured"
         sling:resourceType="{{ variables.default_layout }}"/>
     <fd:rules jcr:primaryType="nt:unstructured"/>
-    <fd:scripts jcr:primaryType="nt:unstructured"/>
+    <fd:scripts jcr:primaryType="nt:unstructured"/>imp
 </{{ element_name }}>

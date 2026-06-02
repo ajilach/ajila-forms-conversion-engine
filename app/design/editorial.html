@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blueprint UI — Editorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+    /* ============ EDITORIAL · flat, minimal, print-inspired ============ */
+    :root {
+        --font: "Inter", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+        --bg: #fbfaf7;
+        --surface: #ffffff;
+        --surface-2: #f4f2ec;
+        --text: #161512;
+        --muted: #74716a;
+
+        --border: #e6e3da;
+        --border-strong: #cfcabd;
+
+        --accent: #d6453b;
+        --accent-grad: #d6453b;          /* flat, no gradient */
+        --accent-soft: rgba(214, 69, 59, 0.08);
+        --accent-ring: rgba(214, 69, 59, 0.18);
+        --on-accent: #ffffff;
+
+        --success: #2f7d4f;
+        --success-soft: rgba(47, 125, 79, 0.10);
+        --warn: #b07407;
+        --warn-soft: rgba(176, 116, 7, 0.10);
+
+        --radius: 8px;
+        --radius-sm: 6px;
+        --radius-pill: 999px;
+        --shadow: none;                  /* flat — structure via hairlines */
+
+        --shell-max: 860px;
+        --header-h: 64px;
+        --header-bg: #ffffff;
+        --header-border: #e6e3da;
+        --header-text: #161512;
+        --header-blur: none;
+
+        --chip-bg: #f4f2ec;
+        --mark-shadow: none;
+        --btn-shadow: none;
+    }
+    /* editorial signature: serif display headings, hairline rules, squared accent */
+    .brand-text,
+    .panel-title,
+    .kpi-num,
+    .dropzone-title { font-family: "Newsreader", Georgia, serif; font-weight: 600; letter-spacing: 0; }
+    .brand-mark { border-radius: 4px; }
+    .panel { border-radius: var(--radius); }
+    .panel-title .dot { border-radius: 0; width: 4px; height: 16px; }
+    .panel-head { padding-bottom: var(--space-4); border-bottom: 1px solid var(--border); }
+    .topbar { border-bottom-width: 2px; border-bottom-color: var(--text); }
+    .label { letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">A</div>
+            <span class="brand-text">Forms Conversion Engine</span>
+        </div>
+        <span class="ver">v0.9.0</span>
+        <div class="topbar-spacer"></div>
+        <span class="chip">Editorial</span>
+        <button class="icon-btn" title="Settings">⚙</button>
+    </header>
+
+    <div class="shell">
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot"></span>Convert a form</h2>
+                    <p class="panel-sub">Upload an XFA, XDP or PDF form, then choose a target profile.</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Target profile</label>
+                <select class="select">
+                    <option>UBS · Adaptive Forms</option>
+                    <option>Generic AEM</option>
+                    <option>HTML preview only</option>
+                </select>
+            </div>
+
+            <div class="dropzone">
+                <div class="dropzone-icon">↑</div>
+                <div class="dropzone-title">Drop your form here, or click to browse</div>
+                <div class="dropzone-hint">XML · XDP · PDF — up to 25 MB</div>
+            </div>
+
+            <div class="file-list">
+                <div class="file-row">
+                    <span class="file-icon">▣</span>
+                    <span>AAHA_019_DE.xml</span>
+                    <span class="file-size">248 KB</span>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top: var(--space-5);">
+                <button class="btn btn-primary btn-lg">Start conversion</button>
+                <button class="btn btn-ghost btn-lg">Clear</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="spinner"></span>Processing</h2>
+                    <p class="panel-sub">3 of 6 stages complete</p>
+                </div>
+            </div>
+            <div class="steps">
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Parse XFA template</span><span class="step-meta">0.4s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Extract structure</span><span class="step-meta">1.1s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Build semantic model</span><span class="step-meta">0.9s</span></div>
+                <div class="step is-active"><span class="step-dot">●</span><span class="step-label">Map to AEM components</span><span class="step-meta">running…</span></div>
+                <div class="step is-pending"><span class="step-dot">4</span><span class="step-label">Generate HTML</span></div>
+                <div class="step is-pending"><span class="step-dot">5</span><span class="step-label">Package output</span></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot" style="background: var(--success);"></span>Conversion complete</h2>
+                    <p class="panel-sub">AAHA_019_DE.xml → Adaptive Forms</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary">Open editor</button>
+                    <button class="btn btn-ghost">AEM preview</button>
+                    <button class="btn btn-ghost">Download</button>
+                </div>
+            </div>
+
+            <div class="banner success" style="margin-bottom: var(--space-5);">Converted successfully with 2 warnings.</div>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="kpi-num">42</div><div class="kpi-label">Fields</div></div>
+                <div class="kpi"><div class="kpi-num">8</div><div class="kpi-label">Sections</div></div>
+                <div class="kpi"><div class="kpi-num accent">96%</div><div class="kpi-label">Confidence</div></div>
+            </div>
+
+            <div class="chips" style="margin-top: var(--space-4);">
+                <span class="chip ok">✓ XFA parsed</span>
+                <span class="chip ok">✓ Structure valid</span>
+                <span class="chip warn">! 2 unmapped widgets</span>
+            </div>
+
+            <label class="label" style="display:block; margin: var(--space-5) 0 var(--space-3);">Rendered pages</label>
+            <div class="thumbs">
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 1</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 2</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 3</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 4</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 5</div></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<nav class="theme-switch">
+    <a href="aurora.html">Aurora</a>
+    <a href="aurora-ajila.html">Ajila</a>
+    <a href="graphite.html">Graphite</a>
+    <a href="editorial.html" class="active">Editorial</a>
+    <a href="swiss.html">Swiss</a>
+    <a href="mono.html">Mono</a>
+</nav>
+</body>
+</html>

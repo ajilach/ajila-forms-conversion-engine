@@ -14,8 +14,10 @@ pub fn FileUploadSection(
     // Previous editing sessions for the currently selected document set.
     let mut previous_sessions = use_signal(Vec::<SessionInfo>::new);
     // All sessions across documents, for the "load previous session" browser.
-    let all_sessions = use_signal(db::list_all_sessions);
+    let mut all_sessions = use_signal(db::list_all_sessions);
     let mut session_query = use_signal(String::new);
+    // Whether the previous-session browser is shown inside the upload container.
+    let mut sessions_open = use_signal(|| false);
 
     // Auto-select the first profile if none is selected yet
     if selected_profile.read().is_none()
@@ -33,51 +35,9 @@ pub fn FileUploadSection(
         .cloned()
         .collect();
 
-    rsx! {
-        // Load a previous editing session from any document, with search.
-        if !all_sessions.read().is_empty() {
-            div { class: "load-session",
-                h2 { "Load Previous Session" }
-                p { class: "upload-hint", "Resume editing a document you worked on before." }
-                input {
-                    class: "session-search",
-                    r#type: "text",
-                    placeholder: "Search by file name...",
-                    value: "{session_query}",
-                    oninput: move |evt| session_query.set(evt.value()),
-                }
-                if filtered_sessions.is_empty() {
-                    p { class: "upload-hint", "No sessions match your search." }
-                } else {
-                    ul { class: "session-list",
-                        for session in filtered_sessions.iter() {
-                            li { class: "session-item",
-                                div { class: "session-meta",
-                                    span { class: "session-label", "{session.label}" }
-                                    div { class: "session-submeta",
-                                        span { class: "session-time", "{db::format_timestamp(&session.created_at)}" }
-                                        span { class: "session-count", "{session.edit_count} edit(s)" }
-                                        if let Some(profile) = session.profile.as_ref() {
-                                            span { class: "session-profile", "{profile}" }
-                                        }
-                                    }
-                                }
-                                button {
-                                    class: "btn btn-secondary btn-sm",
-                                    disabled: is_processing,
-                                    onclick: {
-                                        let session_id = session.session_id.clone();
-                                        move |_| on_continue.call(session_id.clone())
-                                    },
-                                    "Load"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    let has_sessions = !all_sessions.read().is_empty();
 
+    rsx! {
         // Profile selector (outside upload area)
         if !profiles.is_empty() {
             div { class: "profile-selector",
@@ -102,9 +62,24 @@ pub fn FileUploadSection(
         div { class: "upload-dropzone",
 
             h2 { "Upload Files" }
-            p { class: "upload-hint", "Select PDF files in different languages or an AEM content package ZIP" }
+            p { class: "upload-hint",
+                "Select PDF files in different languages or an AEM content package ZIP"
+            }
 
-            label { class: "btn btn-primary btn-sm", r#for: "file-input", "Choose Files" }
+            div { class: "upload-actions",
+                label { class: "btn btn-primary btn-sm", r#for: "file-input", "Choose Files" }
+                if has_sessions {
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        disabled: is_processing,
+                        onclick: move |_| {
+                            let open = *sessions_open.read();
+                            sessions_open.set(!open);
+                        },
+                        "Load Previous Session"
+                    }
+                }
+            }
 
             input {
                 id: "file-input",
@@ -132,6 +107,68 @@ pub fn FileUploadSection(
                         uploaded_files.set(files_data);
                     }
                 },
+            }
+
+            // Previous-session browser, toggled by "Load Previous Session".
+            if *sessions_open.read() {
+                div { class: "continue-editing",
+                    p { class: "upload-hint", "Resume editing a document you worked on before." }
+                    input {
+                        class: "session-search",
+                        r#type: "text",
+                        placeholder: "Search by file name...",
+                        value: "{session_query}",
+                        oninput: move |evt| session_query.set(evt.value()),
+                    }
+                    if filtered_sessions.is_empty() {
+                        p { class: "upload-hint", "No sessions match your search." }
+                    } else {
+                        ul { class: "session-list session-list-scroll",
+                            for session in filtered_sessions.iter() {
+                                li { class: "session-item",
+                                    div { class: "session-meta",
+                                        span { class: "session-label", "{session.label}" }
+                                        div { class: "session-submeta",
+                                            span { class: "session-time",
+                                                "{db::format_timestamp(&session.created_at)}"
+                                            }
+                                            span { class: "session-count",
+                                                "{session.edit_count} edit(s)"
+                                            }
+                                            if let Some(profile) = session.profile.as_ref() {
+                                                span { class: "session-profile", "{profile}" }
+                                            }
+                                        }
+                                    }
+                                    div { class: "session-actions",
+                                        button {
+                                            class: "btn btn-secondary btn-sm",
+                                            disabled: is_processing,
+                                            onclick: {
+                                                let session_id = session.session_id.clone();
+                                                move |_| on_continue.call(session_id.clone())
+                                            },
+                                            "Load"
+                                        }
+                                        button {
+                                            class: "btn btn-danger btn-sm",
+                                            disabled: is_processing,
+                                            title: "Delete this session",
+                                            onclick: {
+                                                let session_id = session.session_id.clone();
+                                                move |_| {
+                                                    db::delete_session(&session_id);
+                                                    all_sessions.set(db::list_all_sessions());
+                                                }
+                                            },
+                                            "Delete"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if !uploaded_files.read().is_empty() {
@@ -165,14 +202,18 @@ pub fn FileUploadSection(
             if !previous_sessions.read().is_empty() {
                 div { class: "continue-editing",
                     h3 { "Continue Editing" }
-                    p { class: "upload-hint", "This document was edited before. Resume a previous session:" }
+                    p { class: "upload-hint",
+                        "This document was edited before. Resume a previous session:"
+                    }
                     ul { class: "session-list",
                         for session in previous_sessions.read().iter() {
                             li { class: "session-item",
                                 div { class: "session-meta",
                                     span { class: "session-label", "{session.label}" }
                                     div { class: "session-submeta",
-                                        span { class: "session-time", "{db::format_timestamp(&session.created_at)}" }
+                                        span { class: "session-time",
+                                            "{db::format_timestamp(&session.created_at)}"
+                                        }
                                         span { class: "session-count", "{session.edit_count} edit(s)" }
                                         if let Some(profile) = session.profile.as_ref() {
                                             span { class: "session-profile", "{profile}" }

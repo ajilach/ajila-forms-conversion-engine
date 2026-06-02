@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blueprint UI — Aurora</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+    /* ============ AURORA · soft glassmorphism, light ============ */
+    :root {
+        --font: "Inter", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+        --bg: #eef1fb;
+        --surface: rgba(255, 255, 255, 0.66);
+        --surface-2: rgba(255, 255, 255, 0.5);
+        --text: #1d2138;
+        --muted: #62688a;
+
+        --border: rgba(120, 120, 170, 0.18);
+        --border-strong: rgba(120, 120, 170, 0.34);
+
+        --accent: #7c6cff;
+        --accent-grad: linear-gradient(135deg, #7c6cff 0%, #c167ff 100%);
+        --accent-soft: rgba(124, 108, 255, 0.12);
+        --accent-ring: rgba(124, 108, 255, 0.28);
+        --on-accent: #ffffff;
+
+        --success: #16a34a;
+        --success-soft: rgba(22, 163, 74, 0.12);
+        --warn: #d97706;
+        --warn-soft: rgba(217, 119, 6, 0.12);
+
+        --radius: 16px;
+        --radius-sm: 10px;
+        --radius-pill: 999px;
+        --shadow: 0 10px 34px rgba(60, 60, 130, 0.14);
+
+        --shell-max: 920px;
+        --header-h: 64px;
+        --header-bg: rgba(255, 255, 255, 0.55);
+        --header-border: rgba(120, 120, 170, 0.18);
+        --header-text: #1d2138;
+        --header-blur: saturate(180%) blur(18px);
+
+        --panel-blur: saturate(160%) blur(20px);
+        --chip-bg: rgba(255, 255, 255, 0.5);
+        --mark-shadow: 0 6px 16px rgba(124, 108, 255, 0.45);
+        --btn-shadow: 0 6px 16px rgba(124, 108, 255, 0.35);
+    }
+    /* aurora ambience */
+    body {
+        background:
+            radial-gradient(60% 50% at 12% 0%, rgba(124, 108, 255, 0.22), transparent 70%),
+            radial-gradient(50% 50% at 100% 10%, rgba(193, 103, 255, 0.18), transparent 70%),
+            radial-gradient(60% 60% at 50% 100%, rgba(96, 165, 250, 0.16), transparent 70%),
+            var(--bg);
+        background-attachment: fixed;
+    }
+</style>
+</head>
+<body>
+<div class="app">
+    <!-- ===== Top bar ===== -->
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">A</div>
+            <span class="brand-text">Forms Conversion Engine</span>
+        </div>
+        <span class="ver">v0.9.0</span>
+        <div class="topbar-spacer"></div>
+        <span class="chip">Aurora</span>
+        <button class="icon-btn" title="Settings">⚙</button>
+    </header>
+
+    <div class="shell">
+        <!-- ===== Convert ===== -->
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot"></span>Convert a form</h2>
+                    <p class="panel-sub">Upload an XFA, XDP or PDF form, then choose a target profile.</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Target profile</label>
+                <select class="select">
+                    <option>UBS · Adaptive Forms</option>
+                    <option>Generic AEM</option>
+                    <option>HTML preview only</option>
+                </select>
+            </div>
+
+            <div class="dropzone">
+                <div class="dropzone-icon">↑</div>
+                <div class="dropzone-title">Drop your form here, or click to browse</div>
+                <div class="dropzone-hint">XML · XDP · PDF — up to 25 MB</div>
+            </div>
+
+            <div class="file-list">
+                <div class="file-row">
+                    <span class="file-icon">▣</span>
+                    <span>AAHA_019_DE.xml</span>
+                    <span class="file-size">248 KB</span>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top: var(--space-5);">
+                <button class="btn btn-primary btn-lg">Start conversion</button>
+                <button class="btn btn-ghost btn-lg">Clear</button>
+            </div>
+        </section>
+
+        <!-- ===== Progress ===== -->
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="spinner"></span>Processing</h2>
+                    <p class="panel-sub">3 of 6 stages complete</p>
+                </div>
+            </div>
+            <div class="steps">
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Parse XFA template</span><span class="step-meta">0.4s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Extract structure</span><span class="step-meta">1.1s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Build semantic model</span><span class="step-meta">0.9s</span></div>
+                <div class="step is-active"><span class="step-dot">●</span><span class="step-label">Map to AEM components</span><span class="step-meta">running…</span></div>
+                <div class="step is-pending"><span class="step-dot">4</span><span class="step-label">Generate HTML</span></div>
+                <div class="step is-pending"><span class="step-dot">5</span><span class="step-label">Package output</span></div>
+            </div>
+        </section>
+
+        <!-- ===== Results ===== -->
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot" style="background: var(--success);"></span>Conversion complete</h2>
+                    <p class="panel-sub">AAHA_019_DE.xml → Adaptive Forms</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary">Open editor</button>
+                    <button class="btn btn-ghost">AEM preview</button>
+                    <button class="btn btn-ghost">Download</button>
+                </div>
+            </div>
+
+            <div class="banner success" style="margin-bottom: var(--space-5);">Converted successfully with 2 warnings.</div>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="kpi-num">42</div><div class="kpi-label">Fields</div></div>
+                <div class="kpi"><div class="kpi-num">8</div><div class="kpi-label">Sections</div></div>
+                <div class="kpi"><div class="kpi-num accent">96%</div><div class="kpi-label">Confidence</div></div>
+            </div>
+
+            <div class="chips" style="margin-top: var(--space-4);">
+                <span class="chip ok">✓ XFA parsed</span>
+                <span class="chip ok">✓ Structure valid</span>
+                <span class="chip warn">! 2 unmapped widgets</span>
+            </div>
+
+            <label class="label" style="display:block; margin: var(--space-5) 0 var(--space-3);">Rendered pages</label>
+            <div class="thumbs">
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 1</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 2</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 3</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 4</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 5</div></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- preview-only theme switcher -->
+<nav class="theme-switch">
+    <a href="aurora.html" class="active">Aurora</a>
+    <a href="aurora-ajila.html">Ajila</a>
+    <a href="graphite.html">Graphite</a>
+    <a href="editorial.html">Editorial</a>
+    <a href="swiss.html">Swiss</a>
+    <a href="mono.html">Mono</a>
+</nav>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blueprint UI — Mono</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+    /* ============ MONO · paper & graphite, monospace micro-type ============ */
+    /* Inspired by the Stargate "mono" theme: hairlines, tabular numerals,
+       uppercase mono labels, underline buttons, monochrome with dot states. */
+    :root {
+        --font: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+        --bg: #fafafa;
+        --surface: #ffffff;
+        --surface-2: #f4f4f4;
+        --text: #2b2b2b;
+        --muted: #8a8a8a;
+
+        --border: #e8e8e8;
+        --border-strong: #171717;
+
+        --accent: #171717;            /* monochrome graphite */
+        --accent-grad: #171717;
+        --accent-soft: rgba(23, 23, 23, 0.05);
+        --accent-ring: rgba(23, 23, 23, 0.12);
+        --on-accent: #ffffff;
+
+        --success: #171717;           /* state by weight + dots, not colour */
+        --success-soft: #f4f4f4;
+        --warn: #d97706;              /* amber dot accent */
+        --warn-soft: rgba(217, 119, 6, 0.08);
+
+        --radius: 0px;
+        --radius-sm: 0px;
+        --radius-pill: 999px;
+        --shadow: none;
+
+        --shell-max: 940px;
+        --header-h: 72px;
+        --header-bg: #fafafa;
+        --header-border: #e8e8e8;
+        --header-text: #171717;
+        --header-blur: none;
+
+        --chip-bg: transparent;
+        --mark-shadow: none;
+        --btn-shadow: none;
+    }
+
+    /* ---- mono signatures ---- */
+    .brand-mark { border-radius: 50%; background: #171717; font-weight: 700; }
+    .brand-text { font-weight: 600; letter-spacing: -0.01em; }
+    .ver { font-family: var(--font-mono); background: transparent; border: none; color: var(--muted); padding: 0; }
+    .topbar { border-bottom: 1px solid var(--border); }
+
+    /* uppercase mono micro-labels everywhere */
+    .label, .kpi-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--muted);
+    }
+    .panel-sub, .step-meta, .file-size, .ver { font-family: var(--font-mono); }
+    .panel-sub { font-size: 11.5px; }
+
+    /* panels: no card — separated by a single hairline rule */
+    .panel { border: none; border-top: 1px solid var(--border); padding: var(--space-5) 0; }
+    .panel-title { font-weight: 600; letter-spacing: -0.01em; }
+    .panel-title .dot { background: #171717; }
+
+    /* big light tabular numerals */
+    .kpi { border: none; border-left: 1px solid var(--border); background: transparent; padding: var(--space-3) var(--space-4); }
+    .kpi-num { font-weight: 300; font-size: 40px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .kpi-num.accent { color: var(--text); }
+
+    /* inputs as bottom-ruled fields */
+    .select, .input {
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        padding-left: 0;
+    }
+    .select { background-position: right 2px center; }
+    .select:focus, .input:focus { border-bottom-color: var(--border-strong); box-shadow: none; }
+
+    /* dropzone: thin dashed hairline */
+    .dropzone { border: 1px dashed var(--border-strong); }
+    .dropzone:hover { background: var(--accent-soft); }
+    .dropzone-icon { background: var(--surface-2); color: var(--text); border-radius: 50%; }
+
+    /* file rows + steps as ruled list items */
+    .file-row { background: transparent; border: none; border-bottom: 1px solid var(--border); }
+    .step { border-radius: 0; border-bottom: 1px solid var(--border); }
+    .step.is-done, .step.is-active, .step.is-pending { background: transparent; border-color: transparent; border-bottom: 1px solid var(--border); box-shadow: none; }
+    .step.is-done .step-dot { background: #171717; border-color: #171717; }
+    .step.is-active { box-shadow: none; }
+    .step.is-active .step-dot { border-color: #171717; color: #171717; }
+    .step.is-active .step-label { font-weight: 700; }
+
+    /* underline text buttons; primary stays solid graphite */
+    .btn-ghost {
+        height: auto;
+        padding: 0 0 3px;
+        border: none;
+        border-bottom: 1px solid var(--text);
+        border-radius: 0;
+        background: transparent;
+        font-weight: 500;
+    }
+    .btn-ghost:hover { color: var(--muted); border-bottom-color: var(--muted); background: transparent; }
+    .btn-primary { background: #171717; color: #fff; }
+    .btn-row { align-items: flex-end; gap: var(--space-5); }
+
+    /* chips: mono caps with a dot, no fill */
+    .chip { border: none; background: transparent; padding: 0; font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+    .chip.ok { color: var(--text); }
+    .chip.warn { color: var(--warn); }
+
+    /* thumbnails as hairline frames */
+    .thumb { border: 1px solid var(--border); }
+    .thumb-cap { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+    /* banner: minimal, left rule */
+    .banner.success { background: transparent; color: var(--text); border: none; border-left: 2px solid #171717; border-radius: 0; }
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">A</div>
+            <span class="brand-text">Forms Conversion Engine</span>
+        </div>
+        <span class="ver">v0.9.0</span>
+        <div class="topbar-spacer"></div>
+        <span class="chip">Mono</span>
+        <button class="icon-btn" title="Settings">⚙</button>
+    </header>
+
+    <div class="shell">
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot"></span>Convert a form</h2>
+                    <p class="panel-sub">Upload an XFA, XDP or PDF form, then choose a target profile.</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Target profile</label>
+                <select class="select">
+                    <option>UBS · Adaptive Forms</option>
+                    <option>Generic AEM</option>
+                    <option>HTML preview only</option>
+                </select>
+            </div>
+
+            <div class="dropzone">
+                <div class="dropzone-icon">↑</div>
+                <div class="dropzone-title">Drop your form here, or click to browse</div>
+                <div class="dropzone-hint">XML · XDP · PDF — up to 25 MB</div>
+            </div>
+
+            <div class="file-list">
+                <div class="file-row">
+                    <span class="file-icon">▣</span>
+                    <span>AAHA_019_DE.xml</span>
+                    <span class="file-size">248 KB</span>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top: var(--space-5);">
+                <button class="btn btn-primary btn-lg">Start conversion</button>
+                <button class="btn btn-ghost btn-lg">Clear</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="spinner"></span>Processing</h2>
+                    <p class="panel-sub">3 of 6 stages complete</p>
+                </div>
+            </div>
+            <div class="steps">
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Parse XFA template</span><span class="step-meta">0.4s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Extract structure</span><span class="step-meta">1.1s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Build semantic model</span><span class="step-meta">0.9s</span></div>
+                <div class="step is-active"><span class="step-dot">●</span><span class="step-label">Map to AEM components</span><span class="step-meta">running…</span></div>
+                <div class="step is-pending"><span class="step-dot">4</span><span class="step-label">Generate HTML</span></div>
+                <div class="step is-pending"><span class="step-dot">5</span><span class="step-label">Package output</span></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot"></span>Conversion complete</h2>
+                    <p class="panel-sub">AAHA_019_DE.xml → Adaptive Forms</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary">Open editor</button>
+                    <button class="btn btn-ghost">AEM preview</button>
+                    <button class="btn btn-ghost">Download</button>
+                </div>
+            </div>
+
+            <div class="banner success" style="margin-bottom: var(--space-5);">Converted successfully with 2 warnings.</div>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="kpi-num">42</div><div class="kpi-label">Fields</div></div>
+                <div class="kpi"><div class="kpi-num">08</div><div class="kpi-label">Sections</div></div>
+                <div class="kpi"><div class="kpi-num accent">96%</div><div class="kpi-label">Confidence</div></div>
+            </div>
+
+            <div class="chips" style="margin-top: var(--space-4);">
+                <span class="chip ok">✓ XFA parsed</span>
+                <span class="chip ok">✓ Structure valid</span>
+                <span class="chip warn">! 2 unmapped widgets</span>
+            </div>
+
+            <label class="label" style="display:block; margin: var(--space-5) 0 var(--space-3);">Rendered pages</label>
+            <div class="thumbs">
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 1</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 2</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 3</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 4</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 5</div></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<nav class="theme-switch">
+    <a href="aurora.html">Aurora</a>
+    <a href="aurora-ajila.html">Ajila</a>
+    <a href="graphite.html">Graphite</a>
+    <a href="editorial.html">Editorial</a>
+    <a href="swiss.html">Swiss</a>
+    <a href="mono.html" class="active">Mono</a>
+</nav>
+</body>
+</html>

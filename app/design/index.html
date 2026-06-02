@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blueprint UI — Design Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet" />
+<style>
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 56px 24px 80px;
+        font-family: "Inter", system-ui, sans-serif;
+        color: #1d2138;
+        background:
+            radial-gradient(60% 50% at 12% 0%, rgba(124,108,255,.18), transparent 70%),
+            radial-gradient(50% 50% at 100% 10%, rgba(193,103,255,.14), transparent 70%),
+            #eef1fb;
+        min-height: 100vh;
+    }
+    .wrap { max-width: 1040px; margin: 0 auto; }
+    .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #7c6cff; }
+    h1 { font-family: "Newsreader", serif; font-weight: 600; font-size: 40px; margin: 8px 0 10px; letter-spacing: -0.01em; }
+    .lead { font-size: 16px; color: #4d5274; max-width: 680px; line-height: 1.6; }
+    .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-top: 40px; }
+    @media (max-width: 1180px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+        display: flex; flex-direction: column;
+        text-decoration: none; color: inherit;
+        background: rgba(255,255,255,.7);
+        backdrop-filter: saturate(160%) blur(16px);
+        border: 1px solid rgba(120,120,170,.18);
+        border-radius: 18px; overflow: hidden;
+        box-shadow: 0 10px 34px rgba(60,60,130,.12);
+        transition: transform .18s, box-shadow .18s;
+    }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 18px 44px rgba(60,60,130,.2); }
+    .swatch { height: 120px; display: flex; align-items: flex-end; padding: 16px; }
+    .s-aurora { background: linear-gradient(135deg, #7c6cff, #c167ff); }
+    .s-ajila { background: linear-gradient(135deg, #062544, #dc9e26); }
+    .s-graphite { background: linear-gradient(135deg, #14161c 40%, #34d399); }
+    .s-editorial { background: #fbfaf7; border-bottom: 2px solid #161512; }
+    .s-swiss { background: #ffffff; border-bottom: 3px solid #0c0c0c; }
+    .s-mono { background: #fafafa; border-bottom: 1px solid #e8e8e8; }
+    .swatch .pill { font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 999px; background: rgba(255,255,255,.85); color: #1d2138; }
+    .s-editorial .pill { background: #d6453b; color: #fff; }
+    .s-swiss .pill { background: #e30613; color: #fff; border-radius: 0; }
+    .s-mono .pill { background: #171717; color: #fff; font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: .1em; }
+    .s-ajila .pill { background: #062544; color: #fff; }
+    .s-ajila-graphite { background: linear-gradient(135deg, #062544 40%, #dc9e26); }
+    .s-ajila-editorial { background: #f7f7f5; border-bottom: 2px solid #062544; }
+    .s-ajila-swiss { background: #ffffff; border-bottom: 3px solid #062544; }
+    .s-ajila-mono { background: #fafafa; border-bottom: 1px solid #e8e8e8; }
+    .s-ajila-graphite .pill,
+    .s-ajila-swiss .pill,
+    .s-ajila-editorial .pill { background: #062544; color: #fff; }
+    .s-ajila-swiss .pill { border-radius: 0; }
+    .s-ajila-mono .pill { background: #062544; color: #fff; font-family: "JetBrains Mono", monospace; font-weight: 500; letter-spacing: .1em; }
+    .section-label { margin-top: 52px; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #062544; }
+    .section-label + p { margin: 6px 0 0; font-size: 14px; color: #5b6184; max-width: 680px; line-height: 1.6; }
+    .body { padding: 18px 20px 22px; }
+    .body h3 { margin: 0 0 6px; font-size: 18px; font-family: "Newsreader", serif; font-weight: 600; }
+    .body p { margin: 0 0 14px; font-size: 13.5px; color: #5b6184; line-height: 1.55; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag { font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px; background: rgba(124,108,255,.1); color: #5a4ed1; }
+    .note { margin-top: 44px; font-size: 13px; color: #6a6f8c; border-top: 1px solid rgba(120,120,170,.22); padding-top: 18px; line-height: 1.6; }
+    code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; background: rgba(120,120,170,.14); padding: 1px 6px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="eyebrow">Forms Conversion Engine · UI Refresh</div>
+    <h1>Six modern design directions</h1>
+    <p class="lead">
+        Each direction is a complete, concise redesign of the same screens (convert, progress, results).
+        All three share one token-driven component library — <code>shared.css</code> — so only the
+        design tokens change between them. Open each preview and compare.
+    </p>
+
+    <div class="grid">
+        <a class="card" href="aurora.html">
+            <div class="swatch s-aurora"><span class="pill">Aurora</span></div>
+            <div class="body">
+                <h3>Aurora</h3>
+                <p>Soft glassmorphism. Frosted translucent panels, an ambient gradient backdrop and a violet→magenta accent. Light, premium, calm.</p>
+                <div class="tags"><span class="tag">light</span><span class="tag">glass / blur</span><span class="tag">rounded 16px</span><span class="tag">gradient accent</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="aurora-ajila.html">
+            <div class="swatch s-ajila"><span class="pill">Ajila</span></div>
+            <div class="body">
+                <h3>Ajila</h3>
+                <p>The Aurora glass look recoloured in the ajila.com brand palette — navy primary with gold highlights. Same components, on-brand.</p>
+                <div class="tags"><span class="tag">brand</span><span class="tag">navy #062544</span><span class="tag">gold #dc9e26</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="graphite.html">
+            <div class="swatch s-graphite"><span class="pill">Graphite</span></div>
+            <div class="body">
+                <h3>Graphite</h3>
+                <p>Dark, compact developer-tool feel. Near-black surfaces, hairline borders, mono metadata and an emerald→cyan accent that glows on active states.</p>
+                <div class="tags"><span class="tag">dark</span><span class="tag">compact</span><span class="tag">mono</span><span class="tag">neon accent</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="editorial.html">
+            <div class="swatch s-editorial"><span class="pill">Editorial</span></div>
+            <div class="body">
+                <h3>Editorial</h3>
+                <p>Flat, print-inspired minimalism. No shadows — structure comes from hairlines and a serif display face. Squared accents and a single signal red.</p>
+                <div class="tags"><span class="tag">light</span><span class="tag">flat</span><span class="tag">serif headings</span><span class="tag">hairlines</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="swiss.html">
+            <div class="swatch s-swiss"><span class="pill">Swiss</span></div>
+            <div class="body">
+                <h3>Swiss</h3>
+                <p>International Typographic Style. A hard grid, heavy black rules, sharp corners and bold grotesk caps. Monochrome with a single Swiss-red accent.</p>
+                <div class="tags"><span class="tag">light</span><span class="tag">grid</span><span class="tag">grotesk caps</span><span class="tag">0px radius</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="mono.html">
+            <div class="swatch s-mono"><span class="pill">Mono</span></div>
+            <div class="body">
+                <h3>Mono</h3>
+                <p>Paper &amp; graphite restraint. Monospace uppercase micro-labels, hairline rules, light tabular numerals and underline buttons. State shown with small dots.</p>
+                <div class="tags"><span class="tag">light</span><span class="tag">monospace labels</span><span class="tag">hairlines</span><span class="tag">tabular nums</span></div>
+            </div>
+        </a>
+    </div>
+
+    <div class="section-label">Ajila brand palette</div>
+    <p>The same five directions recoloured to the ajila.com brand — navy <code>#062544</code> primary, gold <code>#dc9e26</code> highlight. Each keeps its own typography and layout signature; only the tokens change.</p>
+
+    <div class="grid">
+        <a class="card" href="aurora-ajila.html">
+            <div class="swatch s-ajila"><span class="pill">Aurora</span></div>
+            <div class="body">
+                <h3>Aurora · Ajila</h3>
+                <p>Glassmorphism in brand colours — frosted panels over a navy + gold ambient wash.</p>
+                <div class="tags"><span class="tag">glass / blur</span><span class="tag">rounded 16px</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="graphite-ajila.html">
+            <div class="swatch s-ajila-graphite"><span class="pill">Graphite</span></div>
+            <div class="body">
+                <h3>Graphite · Ajila</h3>
+                <p>Compact developer-tool layout with a soft navy glow on the active stage and gold metadata.</p>
+                <div class="tags"><span class="tag">compact</span><span class="tag">mono</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="editorial-ajila.html">
+            <div class="swatch s-ajila-editorial"><span class="pill">Editorial</span></div>
+            <div class="body">
+                <h3>Editorial · Ajila</h3>
+                <p>Flat, print-inspired serif headings with hairline rules and squared navy accents.</p>
+                <div class="tags"><span class="tag">flat</span><span class="tag">serif headings</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="swiss-ajila.html">
+            <div class="swatch s-ajila-swiss"><span class="pill">Swiss</span></div>
+            <div class="body">
+                <h3>Swiss · Ajila</h3>
+                <p>Hard grid and heavy navy rules, grotesk caps and sharp corners with a gold active marker.</p>
+                <div class="tags"><span class="tag">grid</span><span class="tag">0px radius</span></div>
+            </div>
+        </a>
+
+        <a class="card" href="mono-ajila.html">
+            <div class="swatch s-ajila-mono"><span class="pill">Mono</span></div>
+            <div class="body">
+                <h3>Mono · Ajila</h3>
+                <p>Monospace micro-labels and light tabular numerals; navy ink with a gold dot accent.</p>
+                <div class="tags"><span class="tag">monospace labels</span><span class="tag">tabular nums</span></div>
+            </div>
+        </a>
+    </div>
+
+    <p class="note">
+        <strong>How reuse works:</strong> the markup and component classes
+        (<code>.panel</code>, <code>.btn</code>, <code>.steps</code>, <code>.thumbs</code>, <code>.chip</code> …)
+        are identical in every preview. A theme is just a redefinition of CSS custom properties
+        (<code>--accent</code>, <code>--surface</code>, <code>--radius</code>, <code>--shadow</code> …)
+        plus a few signature overrides. Picking a winner means porting these tokens into the app's
+        <code>app/assets/styles.css</code> token block.
+    </p>
+</div>
+</body>
+</html>

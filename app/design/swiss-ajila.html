@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blueprint UI — Swiss · Ajila</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+    /* ============ SWISS · AJILA — International Typographic Style in brand colours ============ */
+    /* navy #062544 (primary) · gold #dc9e26 (highlight) */
+    :root {
+        --font: "Helvetica Neue", "Inter", Arial, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+        --bg: #ffffff;
+        --surface: #ffffff;
+        --surface-2: #f2f2f2;
+        --text: #111111;
+        --muted: #5b6168;
+
+        --border: #e2e2de;
+        --border-strong: #062544;
+
+        --accent: #062544;            /* ajila navy */
+        --accent-grad: #062544;       /* flat */
+        --accent-soft: rgba(6, 37, 68, 0.07);
+        --accent-ring: rgba(6, 37, 68, 0.18);
+        --on-accent: #ffffff;
+
+        --success: #062544;           /* state via weight + navy */
+        --success-soft: #f2f2f2;
+        --warn: #dc9e26;              /* ajila gold */
+        --warn-soft: rgba(220, 158, 38, 0.14);
+
+        --radius: 0px;                /* sharp corners */
+        --radius-sm: 0px;
+        --radius-pill: 0px;
+        --shadow: none;
+
+        --shell-max: 880px;
+        --header-h: 66px;
+        --header-bg: #ffffff;
+        --header-border: #062544;
+        --header-text: #062544;
+        --header-blur: none;
+
+        --chip-bg: #f2f2f2;
+        --mark-shadow: none;
+        --btn-shadow: none;
+
+        --gold: #dc9e26;
+    }
+    /* swiss signature: hard grid, heavy navy rules, tight uppercase type */
+    .topbar { border-bottom-width: 3px; border-bottom-color: #062544; }
+    .brand-mark { background: #062544; border-radius: 0; font-weight: 900; }
+    .brand-text { font-weight: 800; letter-spacing: -0.02em; text-transform: uppercase; font-size: 14px; }
+    .panel { border: none; border-top: 2px solid #062544; padding-left: 0; padding-right: 0; }
+    .panel-head { padding-bottom: var(--space-4); border-bottom: 1px solid var(--border); }
+    .panel-title { text-transform: uppercase; letter-spacing: -0.01em; font-weight: 800; }
+    .panel-title .dot { width: 14px; height: 14px; border-radius: 0; }
+    .label { letter-spacing: 0.14em; font-weight: 800; }
+    .kpi { border: none; border-left: 2px solid #062544; background: transparent; padding-left: var(--space-4); }
+    .kpi-num { font-size: 34px; font-weight: 900; letter-spacing: -0.03em; }
+    .kpi-num.accent { color: var(--gold); }
+    .chip { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; font-size: 11px; }
+    .step.is-active { box-shadow: inset 3px 0 0 var(--gold); }
+    .ver { font-weight: 700; color: var(--gold); }
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">A</div>
+            <span class="brand-text">Forms Conversion Engine</span>
+        </div>
+        <span class="ver">v0.9.0</span>
+        <div class="topbar-spacer"></div>
+        <span class="chip">Swiss · Ajila</span>
+        <button class="icon-btn" title="Settings">⚙</button>
+    </header>
+
+    <div class="shell">
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot"></span>Convert a form</h2>
+                    <p class="panel-sub">Upload an XFA, XDP or PDF form, then choose a target profile.</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Target profile</label>
+                <select class="select">
+                    <option>UBS · Adaptive Forms</option>
+                    <option>Generic AEM</option>
+                    <option>HTML preview only</option>
+                </select>
+            </div>
+
+            <div class="dropzone">
+                <div class="dropzone-icon">↑</div>
+                <div class="dropzone-title">Drop your form here, or click to browse</div>
+                <div class="dropzone-hint">XML · XDP · PDF — up to 25 MB</div>
+            </div>
+
+            <div class="file-list">
+                <div class="file-row">
+                    <span class="file-icon">▣</span>
+                    <span>AAHA_019_DE.xml</span>
+                    <span class="file-size">248 KB</span>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top: var(--space-5);">
+                <button class="btn btn-primary btn-lg">Start conversion</button>
+                <button class="btn btn-ghost btn-lg">Clear</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="spinner"></span>Processing</h2>
+                    <p class="panel-sub">3 of 6 stages complete</p>
+                </div>
+            </div>
+            <div class="steps">
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Parse XFA template</span><span class="step-meta">0.4s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Extract structure</span><span class="step-meta">1.1s</span></div>
+                <div class="step is-done"><span class="step-dot">✓</span><span class="step-label">Build semantic model</span><span class="step-meta">0.9s</span></div>
+                <div class="step is-active"><span class="step-dot">●</span><span class="step-label">Map to AEM components</span><span class="step-meta">running…</span></div>
+                <div class="step is-pending"><span class="step-dot">4</span><span class="step-label">Generate HTML</span></div>
+                <div class="step is-pending"><span class="step-dot">5</span><span class="step-label">Package output</span></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div class="grow">
+                    <h2 class="panel-title"><span class="dot" style="background: var(--success);"></span>Conversion complete</h2>
+                    <p class="panel-sub">AAHA_019_DE.xml → Adaptive Forms</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary">Open editor</button>
+                    <button class="btn btn-ghost">AEM preview</button>
+                    <button class="btn btn-ghost">Download</button>
+                </div>
+            </div>
+
+            <div class="banner success" style="margin-bottom: var(--space-5);">Converted successfully with 2 warnings.</div>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="kpi-num">42</div><div class="kpi-label">Fields</div></div>
+                <div class="kpi"><div class="kpi-num">8</div><div class="kpi-label">Sections</div></div>
+                <div class="kpi"><div class="kpi-num accent">96%</div><div class="kpi-label">Confidence</div></div>
+            </div>
+
+            <div class="chips" style="margin-top: var(--space-4);">
+                <span class="chip ok">✓ XFA parsed</span>
+                <span class="chip ok">✓ Structure valid</span>
+                <span class="chip warn">! 2 unmapped widgets</span>
+            </div>
+
+            <label class="label" style="display:block; margin: var(--space-5) 0 var(--space-3);">Rendered pages</label>
+            <div class="thumbs">
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 1</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 2</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 3</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 4</div></div>
+                <div class="thumb"><div class="thumb-img">▤</div><div class="thumb-cap">Page 5</div></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<nav class="theme-switch">
+    <a href="aurora-ajila.html">Aurora</a>
+    <a href="graphite-ajila.html">Graphite</a>
+    <a href="editorial-ajila.html">Editorial</a>
+    <a href="swiss-ajila.html" class="active">Swiss</a>
+    <a href="mono-ajila.html">Mono</a>
+    <a href="index.html">Gallery</a>
+</nav>
+</body>
+</html>
