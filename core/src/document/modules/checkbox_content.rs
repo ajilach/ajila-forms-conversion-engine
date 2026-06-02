@@ -164,17 +164,16 @@ impl AnalysisModule for CheckboxContentDetector {
                 continue;
             }
 
-            // Be conservative: only wrap checkbox content blocks that include
-            // nested radio-group controls. This covers known conditional
-            // checkbox sections (e.g. AAGZ authorization details) without
-            // swallowing larger non-conditional layout regions.
-            let has_nested_radio_group = collected.iter().any(|&root_idx| {
-                doc.get_group(root_idx)
-                    .map(|group| matches!(group.kind, GroupKind::RadioButtonGroup))
-                    .unwrap_or(false)
+            // Only wrap content that contains interactive controls (fields,
+            // radio groups, checkbox groups) — this signals genuinely conditional
+            // content rather than layout-indented text.
+            let has_interactive_content = collected.iter().any(|&root_idx| {
+                doc.contains_field(root_idx)
+                    || doc.is_radio_or_excl_group(root_idx)
+                    || doc.is_checkbox_group(root_idx)
             });
 
-            if !has_nested_radio_group {
+            if !has_interactive_content {
                 continue;
             }
 
