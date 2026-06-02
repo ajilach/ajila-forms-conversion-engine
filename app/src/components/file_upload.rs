@@ -13,6 +13,9 @@ pub fn FileUploadSection(
     let mut uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
     // Previous editing sessions for the currently selected document set.
     let mut previous_sessions = use_signal(Vec::<SessionInfo>::new);
+    // All sessions across documents, for the "load previous session" browser.
+    let all_sessions = use_signal(db::list_all_sessions);
+    let mut session_query = use_signal(String::new);
 
     // Auto-select the first profile if none is selected yet
     if selected_profile.read().is_none()
@@ -21,7 +24,60 @@ pub fn FileUploadSection(
         selected_profile.set(Some(first.clone()));
     }
 
+    // Filter the global session list by the search query (matches file names).
+    let query = session_query.read().to_lowercase();
+    let filtered_sessions: Vec<SessionInfo> = all_sessions
+        .read()
+        .iter()
+        .filter(|s| query.is_empty() || s.label.to_lowercase().contains(&query))
+        .cloned()
+        .collect();
+
     rsx! {
+        // Load a previous editing session from any document, with search.
+        if !all_sessions.read().is_empty() {
+            div { class: "load-session",
+                h2 { "Load Previous Session" }
+                p { class: "upload-hint", "Resume editing a document you worked on before." }
+                input {
+                    class: "session-search",
+                    r#type: "text",
+                    placeholder: "Search by file name...",
+                    value: "{session_query}",
+                    oninput: move |evt| session_query.set(evt.value()),
+                }
+                if filtered_sessions.is_empty() {
+                    p { class: "upload-hint", "No sessions match your search." }
+                } else {
+                    ul { class: "session-list",
+                        for session in filtered_sessions.iter() {
+                            li { class: "session-item",
+                                div { class: "session-meta",
+                                    span { class: "session-label", "{session.label}" }
+                                    div { class: "session-submeta",
+                                        span { class: "session-time", "{db::format_timestamp(&session.created_at)}" }
+                                        span { class: "session-count", "{session.edit_count} edit(s)" }
+                                        if let Some(profile) = session.profile.as_ref() {
+                                            span { class: "session-profile", "{profile}" }
+                                        }
+                                    }
+                                }
+                                button {
+                                    class: "btn btn-secondary btn-sm",
+                                    disabled: is_processing,
+                                    onclick: {
+                                        let session_id = session.session_id.clone();
+                                        move |_| on_continue.call(session_id.clone())
+                                    },
+                                    "Load"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Profile selector (outside upload area)
         if !profiles.is_empty() {
             div { class: "profile-selector",
@@ -114,10 +170,13 @@ pub fn FileUploadSection(
                         for session in previous_sessions.read().iter() {
                             li { class: "session-item",
                                 div { class: "session-meta",
-                                    span { class: "session-time", "{db::format_timestamp(&session.created_at)}" }
-                                    span { class: "session-count", "{session.edit_count} edit(s)" }
-                                    if let Some(profile) = session.profile.as_ref() {
-                                        span { class: "session-profile", "{profile}" }
+                                    span { class: "session-label", "{session.label}" }
+                                    div { class: "session-submeta",
+                                        span { class: "session-time", "{db::format_timestamp(&session.created_at)}" }
+                                        span { class: "session-count", "{session.edit_count} edit(s)" }
+                                        if let Some(profile) = session.profile.as_ref() {
+                                            span { class: "session-profile", "{profile}" }
+                                        }
                                     }
                                 }
                                 button {

@@ -211,6 +211,35 @@ mod imp {
         }
     }
 
+    /// List every editing session across all documents, newest first. Used by
+    /// the "load previous session" browser shown before an upload.
+    pub fn list_all_sessions() -> Vec<SessionInfo> {
+        let Ok(conn) = open() else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT s.session_id, s.label, s.profile, s.created_at,
+                    (SELECT COUNT(*) FROM edits e WHERE e.session_id = s.session_id)
+             FROM sessions s
+             ORDER BY s.created_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map([], |row| {
+            Ok(SessionInfo {
+                session_id: row.get(0)?,
+                label: row.get(1)?,
+                profile: row.get(2)?,
+                created_at: row.get(3)?,
+                edit_count: row.get::<_, i64>(4)? as usize,
+            })
+        });
+        match rows {
+            Ok(iter) => iter.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     // ── Edits ───────────────────────────────────────────────────────────────
 
     fn next_seq(conn: &Connection, session_id: &str) -> usize {
@@ -453,6 +482,9 @@ mod stub {
         None
     }
     pub fn list_sessions(_doc_hash: &str) -> Vec<SessionInfo> {
+        Vec::new()
+    }
+    pub fn list_all_sessions() -> Vec<SessionInfo> {
         Vec::new()
     }
     pub fn session_profile(_session_id: &str) -> Option<String> {
