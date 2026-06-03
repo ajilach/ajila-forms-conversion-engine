@@ -650,6 +650,12 @@ fn discover_matching_templates_recursive(
 /// Iteratively prune rules whose declared dependencies are not satisfied by
 /// any other rule that also matches. Returns the set of template names that
 /// should actually be applied.
+///
+/// Circular dependencies are allowed: the loop converges to the greatest set
+/// of templates closed under `depends_on`, so a cycle is kept in full only
+/// when every one of its members matches the form (and any external
+/// dependencies are satisfied) — otherwise the whole cycle is dropped. In
+/// other words, for a circular dependency we add either all or none of it.
 fn resolve_enabled_templates(
     rules: &[ResolvedCustomElement],
     matching: &std::collections::HashSet<String>,
@@ -3905,6 +3911,52 @@ mod tests {
         // anything in the form, so b must also be dropped.
         let rules = vec![mk_rule("a", &[]), mk_rule("b", &["a"])];
         let matching = matched_set(&["b"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert!(enabled.is_empty());
+    }
+
+    #[test]
+    fn resolve_enabled_templates_keeps_full_cycle_when_all_match() {
+        // a ↔ b form a circular dependency. When both match, the whole cycle
+        // must be kept (all of the dependencies are added).
+        let rules = vec![mk_rule("a", &["b"]), mk_rule("b", &["a"])];
+        let matching = matched_set(&["a", "b"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a", "b"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_drops_full_cycle_when_one_member_missing() {
+        // a ↔ b form a circular dependency but only a matches the form. Since
+        // the cycle cannot be satisfied in full, none of it is added.
+        let rules = vec![mk_rule("a", &["b"]), mk_rule("b", &["a"])];
+        let matching = matched_set(&["a"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert!(enabled.is_empty());
+    }
+
+    #[test]
+    fn resolve_enabled_templates_keeps_longer_cycle_when_all_match() {
+        // a → b → c → a (3-element cycle). All match → all kept.
+        let rules = vec![
+            mk_rule("a", &["b"]),
+            mk_rule("b", &["c"]),
+            mk_rule("c", &["a"]),
+        ];
+        let matching = matched_set(&["a", "b", "c"]);
+        let enabled = resolve_enabled_templates(&rules, &matching);
+        assert_eq!(enabled, matched_set(&["a", "b", "c"]));
+    }
+
+    #[test]
+    fn resolve_enabled_templates_drops_longer_cycle_when_member_missing() {
+        // a → b → c → a, but c never matches → the entire cycle collapses.
+        let rules = vec![
+            mk_rule("a", &["b"]),
+            mk_rule("b", &["c"]),
+            mk_rule("c", &["a"]),
+        ];
+        let matching = matched_set(&["a", "b"]);
         let enabled = resolve_enabled_templates(&rules, &matching);
         assert!(enabled.is_empty());
     }

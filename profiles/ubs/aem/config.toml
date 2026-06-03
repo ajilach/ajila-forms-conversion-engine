@@ -96,10 +96,12 @@ sp = ["es"]
 [[custom_elements]]
 field_name = "(?i)^Tipo$"
 template = "tipo_radio"
+depends_on = ["account_holder_it", "signatures_it"]
 
 [[custom_elements]]
 field_name = "^(Formular Adressat|Form addressee)$"
 template = "formular_adressat_radio"
+depends_on = ["account_holder", "signatures"]
 
 # account_holder cross-references panels produced by `signatures` (BT_Add /
 # BT_AddLR / BT_RemoveLR scripts call into PN_SignatureIndividual and
@@ -120,7 +122,7 @@ depends_on = ["signatures", "formular_adressat_radio"]
 field_name = '^(Signature\(s\)|Unterschrift\(en\))$'
 template = "signatures"
 page = -1
-depends_on = ["formular_adressat_radio"]
+depends_on = ["formular_adressat_radio", "account_holder"]
 
 # Italian variant of account_holder: visibility/scripts reference
 # `RB_GroupTipo` (Individual=1, Legal entity=2) and cross-reference
@@ -137,4 +139,4 @@ depends_on = ["signatures_it", "tipo_radio"]
 field_name = '^Firma/e$'
 template = "signatures_it"
 page = -1
-depends_on = ["tipo_radio"]
+depends_on = ["tipo_radio", "account_holder_it"]

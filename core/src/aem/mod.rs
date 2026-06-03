@@ -64,7 +64,9 @@ pub struct ResolvedCustomElement {
     /// Optional target page index for moving the element.
     pub page: Option<i32>,
     /// Templates this rule depends on; the rule is skipped unless every
-    /// listed template is also matched somewhere in the form.
+    /// listed template is also matched somewhere in the form. Dependencies
+    /// may be circular — in that case the whole cycle is added only when all
+    /// of its members match, otherwise none of them are added.
     pub depends_on: Vec<String>,
 }
 

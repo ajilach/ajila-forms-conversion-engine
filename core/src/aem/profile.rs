@@ -40,6 +40,10 @@ pub struct CustomElementRule {
     /// also matched somewhere in the form. This prevents scripts/visibility
     /// rules in one template from referencing element names that another,
     /// missing template would have produced.
+    ///
+    /// Dependencies may be circular. A cycle is treated as all-or-nothing:
+    /// every member of the cycle is applied only when all of them match the
+    /// form, otherwise none of them are applied.
     #[serde(default)]
     pub depends_on: Vec<String>,
 }
