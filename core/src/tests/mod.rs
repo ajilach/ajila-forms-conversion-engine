@@ -32200,3 +32200,99 @@ fn test_aace_de_heading_order() {
         last_label = label;
     }
 }
+
+#[test]
+fn test_aael_tabular_radio_buttons() {
+    // AAEL has a tabular ("field column") layout of radio groups in the
+    // "Unterlagen über den Broker" section: a left column of row labels and a
+    // right column of radio options. Five rows use the options
+    // "erhalten" / "geprüft" / "nicht vorhanden" and two rows use
+    // "bestätigt" / "nicht bestätigt". Some row labels are short and sit far to
+    // the left of the option column, so the generic directional label attacher
+    // cannot pair them. The aligned-radio-column handling in the label attacher
+    // associates each row label with its radio.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAEL_019_DE.pdf"))
+        .expect("Failed to process AAEL PDF");
+
+    let radios = collect_radio_fields(&structured);
+
+    let assert_radio = |som_fragment: &str, expected_label: &str, expected_options: &[&str]| {
+        let field = radios
+            .iter()
+            .find(|f| f.som_path_str().contains(som_fragment))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Expected to find radio group with SOM fragment '{}'. Found: {:?}",
+                    som_fragment,
+                    radios.iter().map(|f| f.som_path_str()).collect::<Vec<_>>()
+                )
+            });
+
+        let label = field
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default();
+        assert_eq!(
+            label.trim(),
+            expected_label,
+            "Radio '{}' should have label '{}', got: '{}'",
+            som_fragment,
+            expected_label,
+            label
+        );
+
+        let options = match &field.input_type {
+            FieldType::Radio { options } => options,
+            _ => panic!("Field '{}' should be a Radio", som_fragment),
+        };
+        let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+        assert_eq!(
+            option_names, expected_options,
+            "Radio '{}' should have options {:?}, got: {:?}",
+            som_fragment, expected_options, option_names
+        );
+    };
+
+    let erhalten_options = ["erhalten", "geprüft", "nicht vorhanden"];
+    assert_radio(
+        "RB_Group_Gültige_Brokerlizenz",
+        "gültige Brokerlizenz",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Negative_Cosima",
+        "negative Cosima Prüfung",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Kontaktpersonen_Ansprechpartner",
+        "Liste der Kontaktpersonen/Ansprechpartner Handel und Back Office",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Aktuellster_Jahresbericht",
+        "aktuellster Jahresbericht",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Lieferinstruktionen",
+        "Lieferinstruktionen (Standing Settlement Instructions)",
+        &erhalten_options,
+    );
+
+    let bestaetigt_options = ["bestätigt", "nicht bestätigt"];
+    assert_radio(
+        "RB_Group_Einhaltung_Trading",
+        "Einhaltung Trading Obligation gemäß MiFIR Artikel 23",
+        &bestaetigt_options,
+    );
+    assert_radio(
+        "RB_Group_Asset_Klasse",
+        "Übernahme der Post Trade Transparency Verpflichtung für die Asset Klasse «Fixed Income» gemäß MiFIR Artikel 21",
+        &bestaetigt_options,
+    );
+}

@@ -73,6 +73,23 @@ pub fn TextEditor(props: TextEditorProps) -> Element {
     // It is NOT read in the RSX template, so setting it won't trigger re-renders.
     let mut local_text = use_signal(|| initial_text.clone());
 
+    // Keep local_text in sync with the active language tab. Without this, switching
+    // tabs (or simply opening the editor and clicking Done) would commit the stale
+    // text of the previously-active language into the newly-active language,
+    // overwriting the other translations.
+    {
+        let content = props.content.0.clone();
+        use_effect(move || {
+            let lang = active_lang.read().clone();
+            let text = if lang == "default" {
+                inline_text_to_markdown(&content, None)
+            } else {
+                inline_text_to_markdown(&content, Some(&lang))
+            };
+            local_text.set(text);
+        });
+    }
+
     let active_is_missing = missing_langs.contains(&*active_lang.read());
 
     let path = props.path.clone();
