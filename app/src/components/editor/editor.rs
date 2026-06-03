@@ -20,12 +20,11 @@ use super::state::{
     ConvertTarget, EditorAction, FieldInputKind, NewNodeType, NodeMetadata, PathSegment,
     SelectionState, available_conversions, can_indent, can_merge_selected, can_outdent,
     collect_selectable_paths, compute_add_options, delete_nodes, describe_action, duplicate_nodes,
-    get_container_child_info, get_container_children_count, get_list_at_path,
-    get_list_at_path_mut, get_list_item_text_mut, get_node_at_path, get_node_at_path_mut,
-    get_shared_parent_path, get_table_column_count, indent_node, is_container_child_path,
-    is_list_item_path, is_table_row_path, move_container_child_down, move_container_child_up,
-    move_list_item_down, move_list_item_up, move_table_row_down, move_table_row_up, outdent_node,
-    search_nodes,
+    get_container_child_info, get_container_children_count, get_list_at_path, get_list_at_path_mut,
+    get_list_item_text_mut, get_node_at_path, get_node_at_path_mut, get_shared_parent_path,
+    get_table_column_count, indent_node, is_container_child_path, is_list_item_path,
+    is_table_row_path, move_container_child_down, move_container_child_up, move_list_item_down,
+    move_list_item_up, move_table_row_down, move_table_row_up, outdent_node, search_nodes,
 };
 use super::toolbar::EditorToolbar;
 use crate::db::{self, EditInfo};
@@ -389,10 +388,18 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 } else if let Some(parent) = get_node_at_path(&env.content, &parent_path) {
                     let prev = match parent {
                         StructuredNode::Group(g) => {
-                            if min_idx > 0 { g.children.get(min_idx - 1) } else { None }
+                            if min_idx > 0 {
+                                g.children.get(min_idx - 1)
+                            } else {
+                                None
+                            }
                         }
                         StructuredNode::GridLayout(g) => {
-                            if min_idx > 0 { g.elements.get(min_idx - 1).map(|e| &e.node) } else { None }
+                            if min_idx > 0 {
+                                g.elements.get(min_idx - 1).map(|e| &e.node)
+                            } else {
+                                None
+                            }
                         }
                         _ => None,
                     };
@@ -402,7 +409,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 };
 
                 // Can outdent if at depth >= 2 (all inside a container)
-                let can_out = paths.iter().all(|p| p.len() >= 2 && is_container_child_path(p));
+                let can_out = paths
+                    .iter()
+                    .all(|p| p.len() >= 2 && is_container_child_path(p));
 
                 (can_ind, can_out)
             } else {
@@ -779,9 +788,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 // Append all to container
                                 let mut new_selection_paths = Vec::new();
                                 for node in nodes {
-                                    if let Some(segments) =
-                                        append_to_container_node(&mut env.content[min_idx - 1], node)
-                                    {
+                                    if let Some(segments) = append_to_container_node(
+                                        &mut env.content[min_idx - 1],
+                                        node,
+                                    ) {
                                         let mut new_path = vec![PathSegment::Child(min_idx - 1)];
                                         new_path.extend(segments);
                                         new_selection_paths.push(new_path);
@@ -800,12 +810,18 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let parent = get_node_at_path_mut(&mut env.content, &parent_path);
                             if let Some(parent) = parent {
                                 let (prev_is_container, children_len) = match parent {
-                                    StructuredNode::Group(g) => {
-                                        (min_idx > 0 && is_children_container_node(&g.children[min_idx - 1]), g.children.len())
-                                    }
-                                    StructuredNode::GridLayout(g) => {
-                                        (min_idx > 0 && is_children_container_node(&g.elements[min_idx - 1].node), g.elements.len())
-                                    }
+                                    StructuredNode::Group(g) => (
+                                        min_idx > 0
+                                            && is_children_container_node(&g.children[min_idx - 1]),
+                                        g.children.len(),
+                                    ),
+                                    StructuredNode::GridLayout(g) => (
+                                        min_idx > 0
+                                            && is_children_container_node(
+                                                &g.elements[min_idx - 1].node,
+                                            ),
+                                        g.elements.len(),
+                                    ),
                                     _ => (false, 0),
                                 };
                                 let _ = children_len;
@@ -817,12 +833,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                             StructuredNode::Group(g) => {
                                                 if idx < g.children.len() {
                                                     Some(g.children.remove(idx))
-                                                } else { None }
+                                                } else {
+                                                    None
+                                                }
                                             }
                                             StructuredNode::GridLayout(g) => {
                                                 if idx < g.elements.len() {
                                                     Some(g.elements.remove(idx).node)
-                                                } else { None }
+                                                } else {
+                                                    None
+                                                }
                                             }
                                             _ => None,
                                         };
@@ -833,14 +853,20 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     nodes.reverse();
                                     // Append to container (which is now at min_idx - 1)
                                     let container = match parent {
-                                        StructuredNode::Group(g) => Some(&mut g.children[min_idx - 1]),
-                                        StructuredNode::GridLayout(g) => Some(&mut g.elements[min_idx - 1].node),
+                                        StructuredNode::Group(g) => {
+                                            Some(&mut g.children[min_idx - 1])
+                                        }
+                                        StructuredNode::GridLayout(g) => {
+                                            Some(&mut g.elements[min_idx - 1].node)
+                                        }
                                         _ => None,
                                     };
                                     if let Some(container) = container {
                                         let mut new_selection_paths = Vec::new();
                                         for node in nodes {
-                                            if let Some(segments) = append_to_container_node(container, node) {
+                                            if let Some(segments) =
+                                                append_to_container_node(container, node)
+                                            {
                                                 let mut new_path = parent_path.clone();
                                                 new_path.push(PathSegment::Child(min_idx - 1));
                                                 new_path.extend(segments);
@@ -976,12 +1002,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         StructuredNode::Group(g) => {
                                             if idx < g.children.len() {
                                                 Some(g.children.remove(idx))
-                                            } else { None }
+                                            } else {
+                                                None
+                                            }
                                         }
                                         StructuredNode::GridLayout(g) => {
                                             if idx < g.elements.len() {
                                                 Some(g.elements.remove(idx).node)
-                                            } else { None }
+                                            } else {
+                                                None
+                                            }
                                         }
                                         _ => None,
                                     };
@@ -1005,7 +1035,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     new_selection.selected.insert(p);
                                 }
                             }
-                        } else if paths.iter().all(|p| is_inside_root_repeatable(p, &envelope.read().content)) {
+                        } else if paths
+                            .iter()
+                            .all(|p| is_inside_root_repeatable(p, &envelope.read().content))
+                        {
                             // Inside a Repeatable at root level
                             let rep_idx = match paths[0][0] {
                                 PathSegment::Child(i) => i,
@@ -1020,12 +1053,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         StructuredNode::Group(g) => {
                                             if idx < g.children.len() {
                                                 Some(g.children.remove(idx))
-                                            } else { None }
+                                            } else {
+                                                None
+                                            }
                                         }
                                         StructuredNode::GridLayout(g) => {
                                             if idx < g.elements.len() {
                                                 Some(g.elements.remove(idx).node)
-                                            } else { None }
+                                            } else {
+                                                None
+                                            }
                                         }
                                         _ => None,
                                     };
@@ -1051,7 +1088,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         } else if parent_path.len() >= 2 {
                             // Deeper nesting: outdent each node one by one (highest index first)
                             // to place them after the parent container in the grandparent
-                            let (grandparent_path, parent_idx) = get_container_child_info(&parent_path).unwrap();
+                            let (grandparent_path, parent_idx) =
+                                get_container_child_info(&parent_path).unwrap();
                             let mut env = envelope.write();
                             // Remove all from parent (highest first)
                             let parent = get_node_at_path_mut(&mut env.content, &parent_path);
@@ -1062,12 +1100,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         StructuredNode::Group(g) => {
                                             if idx < g.children.len() {
                                                 Some(g.children.remove(idx))
-                                            } else { None }
+                                            } else {
+                                                None
+                                            }
                                         }
                                         StructuredNode::GridLayout(g) => {
                                             if idx < g.elements.len() {
                                                 Some(g.elements.remove(idx).node)
-                                            } else { None }
+                                            } else {
+                                                None
+                                            }
                                         }
                                         _ => None,
                                     };
@@ -1078,7 +1120,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             }
                             nodes.reverse();
                             // Insert into grandparent after the parent
-                            let grandparent = get_node_at_path_mut(&mut env.content, &grandparent_path);
+                            let grandparent =
+                                get_node_at_path_mut(&mut env.content, &grandparent_path);
                             let mut new_selection_paths = Vec::new();
                             if let Some(grandparent) = grandparent {
                                 let insert_start = parent_idx + 1;
@@ -1095,7 +1138,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                     StructuredNode::GridLayout(g) => {
                                         for (i, node) in nodes.into_iter().enumerate() {
                                             let insert_idx = insert_start + i;
-                                            g.elements.insert(insert_idx, GridLayoutElement { span: 1, node });
+                                            g.elements.insert(
+                                                insert_idx,
+                                                GridLayoutElement { span: 1, node },
+                                            );
                                             let mut new_path = grandparent_path.clone();
                                             new_path.push(PathSegment::Child(insert_idx));
                                             new_selection_paths.push(new_path);
@@ -1883,12 +1929,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                     if let Some(sid) = session_id.read().clone() {
                                                         let after_seq = *undo_seq.read();
                                                         if let Ok(json) = serde_json::to_string(&*envelope.read())
-                                                            && let Some(seq) = db::record_edit(
-                                                                &sid,
-                                                                after_seq,
-                                                                "Smart Edit",
-                                                                &json,
-                                                            )
+                                                            && let Some(seq) = db::record_edit(&sid, after_seq, "Smart Edit", &json)
                                                         {
                                                             undo_seq.set(seq);
                                                             history_version += 1;
