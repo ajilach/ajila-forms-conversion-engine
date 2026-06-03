@@ -1148,56 +1148,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             EditorAction::UpdateMetadata { path, metadata } => {
                 let mut env = envelope.write();
                 if let Some(node) = get_node_at_path_mut(&mut env.content, &path) {
-                    match metadata {
-                        NodeMetadata::HeadingLevel(level) => {
-                            if let StructuredNode::Heading(h) = node {
-                                h.level = HeadingLevel::from_u8(level);
-                            }
-                        }
-                        NodeMetadata::Repeatable { min, max } => {
-                            if let StructuredNode::Repeatable(r) = node {
-                                r.min_occurrences = min;
-                                r.max_occurrences = max;
-                            }
-                        }
-                        NodeMetadata::GridColumns(cols) => {
-                            if let StructuredNode::GridLayout(g) = node {
-                                g.columns = cols;
-                            }
-                        }
-                        NodeMetadata::GridElementSpan(span) => {
-                            // For grid element span, we need parent context
-                            // This is more complex and would need different handling
-                            let _ = span;
-                        }
-                        NodeMetadata::FieldInputType(kind) => {
-                            if let StructuredNode::Field(f) = node {
-                                // Convert to new field type, preserving options if switching between Radio/Dropdown
-                                let existing_options = match &f.input_type {
-                                    FieldType::Radio { options }
-                                    | FieldType::Select { options } => options.clone(),
-                                    _ => vec![],
-                                };
-                                f.input_type = field_type_from_input_kind(kind, existing_options);
-                            }
-                        }
-                        NodeMetadata::FieldOptions(options) => {
-                            if let StructuredNode::Field(f) = node {
-                                match &mut f.input_type {
-                                    FieldType::Radio { options: opts }
-                                    | FieldType::Select { options: opts } => {
-                                        *opts = options;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        NodeMetadata::FieldRequired(required) => {
-                            if let StructuredNode::Field(f) = node {
-                                f.required = required;
-                            }
-                        }
-                    }
+                    apply_node_metadata(node, metadata);
                 }
             }
             EditorAction::AddNode {
@@ -2324,6 +2275,63 @@ fn convert_nodes(nodes: &[&StructuredNode], target: ConvertTarget) -> Vec<Struct
     }
 }
 
+/// Apply a metadata change to a single node in place.
+fn apply_node_metadata(node: &mut StructuredNode, metadata: NodeMetadata) {
+    match metadata {
+        NodeMetadata::HeadingLevel(level) => {
+            if let StructuredNode::Heading(h) = node {
+                h.level = HeadingLevel::from_u8(level);
+            }
+        }
+        NodeMetadata::Repeatable { min, max } => {
+            if let StructuredNode::Repeatable(r) = node {
+                r.min_occurrences = min;
+                r.max_occurrences = max;
+            }
+        }
+        NodeMetadata::GridColumns(cols) => {
+            if let StructuredNode::GridLayout(g) = node {
+                g.columns = cols;
+            }
+        }
+        NodeMetadata::GridElementSpan(span) => {
+            // For grid element span, we need parent context
+            // This is more complex and would need different handling
+            let _ = span;
+        }
+        NodeMetadata::FieldInputType(kind) => {
+            if let StructuredNode::Field(f) = node {
+                // Preserve options when switching between option-bearing field types
+                // (Radio / Dropdown / CheckboxGroup).
+                let existing_options = match &f.input_type {
+                    FieldType::Radio { options }
+                    | FieldType::Select { options }
+                    | FieldType::CheckboxGroup { options } => options.clone(),
+                    _ => vec![],
+                };
+                f.input_type = field_type_from_input_kind(kind, existing_options);
+            }
+        }
+        NodeMetadata::FieldOptions(options) => {
+            if let StructuredNode::Field(f) = node {
+                match &mut f.input_type {
+                    FieldType::Radio { options: opts }
+                    | FieldType::Select { options: opts }
+                    | FieldType::CheckboxGroup { options: opts } => {
+                        *opts = options;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        NodeMetadata::FieldRequired(required) => {
+            if let StructuredNode::Field(f) = node {
+                f.required = required;
+            }
+        }
+    }
+}
+
 fn field_type_from_input_kind(kind: FieldInputKind, existing_options: Vec<NameValue>) -> FieldType {
     match kind {
         FieldInputKind::Text => FieldType::Text {
@@ -2435,5 +2443,69 @@ mod tests {
             radio,
             FieldType::Radio { options } if options == existing_options
         ));
+    }
+
+    fn checkbox_group_field() -> StructuredNode {
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from("cb_group"),
+            som_path: None,
+            label: None,
+            input_type: FieldType::CheckboxGroup { options: vec![] },
+            value: None,
+            placeholder: None,
+            required: false,
+        })
+    }
+
+    #[test]
+    fn checkbox_group_options_with_translations_are_saved() {
+        let mut node = checkbox_group_field();
+
+        let mut translated = HashMap::new();
+        translated.insert("en".to_string(), Some("Email".to_string()));
+        translated.insert("de".to_string(), Some("E-Mail".to_string()));
+        let options = vec![NameValue {
+            name: TranslatableString::Translated(translated.clone()),
+            value: InputValue::Text("email".to_string()),
+        }];
+
+        apply_node_metadata(&mut node, NodeMetadata::FieldOptions(options.clone()));
+
+        let StructuredNode::Field(f) = &node else {
+            panic!("expected field");
+        };
+        let FieldType::CheckboxGroup { options: saved } = &f.input_type else {
+            panic!("expected checkbox group");
+        };
+        assert_eq!(saved, &options);
+        let TranslatableString::Translated(map) = &saved[0].name else {
+            panic!("expected translated option name");
+        };
+        assert_eq!(map.get("de").unwrap().as_deref(), Some("E-Mail"));
+        assert_eq!(map.get("en").unwrap().as_deref(), Some("Email"));
+    }
+
+    #[test]
+    fn switching_field_input_type_preserves_checkbox_group_options() {
+        let mut node = checkbox_group_field();
+        let options = vec![NameValue {
+            name: TranslatableString::Plain("Option".to_string()),
+            value: InputValue::Text("value".to_string()),
+        }];
+        apply_node_metadata(&mut node, NodeMetadata::FieldOptions(options.clone()));
+
+        // Switch CheckboxGroup -> Radio: options must survive.
+        apply_node_metadata(
+            &mut node,
+            NodeMetadata::FieldInputType(FieldInputKind::Radio),
+        );
+
+        let StructuredNode::Field(f) = &node else {
+            panic!("expected field");
+        };
+        let FieldType::Radio { options: saved } = &f.input_type else {
+            panic!("expected radio");
+        };
+        assert_eq!(saved, &options);
     }
 }

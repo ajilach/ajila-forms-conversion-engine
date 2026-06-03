@@ -211,7 +211,7 @@ pub fn convert_with_language(doc: &Document, language: &str) -> Vec<StructuredNo
         .filter_map(|idx| converter.convert_group(idx))
         .collect();
 
-    inherit_heading_labels_for_radios(&mut content);
+    inherit_heading_labels_for_choice_fields(&mut content);
     move_number_prefixes_to_headings(&mut content);
 
     content
@@ -232,19 +232,23 @@ pub fn convert_with_context(
     }
 }
 
-/// If a radio button field has no label and the immediately preceding sibling
-/// is a heading, copy the heading text as the radio field's label.
+/// If a radio button or checkbox group field has no label and the immediately
+/// preceding sibling is a heading, copy the heading text as the field's label.
 /// The heading stays in place — only the text is copied.
 /// Recurses into Groups, Repeatables, Conditionals, GridLayouts, and Tables.
-fn inherit_heading_labels_for_radios(nodes: &mut [StructuredNode]) {
-    // First pass: copy heading text into immediately following unlabeled radios
+fn inherit_heading_labels_for_choice_fields(nodes: &mut [StructuredNode]) {
+    // First pass: copy heading text into immediately following unlabeled fields
     for i in 1..nodes.len() {
-        let is_unlabeled_radio = matches!(
+        let is_unlabeled_choice = matches!(
             &nodes[i],
             StructuredNode::Field(f)
-                if f.label.is_none() && matches!(f.input_type, FieldType::Radio { .. })
+                if f.label.is_none()
+                    && matches!(
+                        f.input_type,
+                        FieldType::Radio { .. } | FieldType::CheckboxGroup { .. }
+                    )
         );
-        if !is_unlabeled_radio {
+        if !is_unlabeled_choice {
             continue;
         }
         let is_heading = matches!(&nodes[i - 1], StructuredNode::Heading(_));
@@ -265,16 +269,16 @@ fn inherit_heading_labels_for_radios(nodes: &mut [StructuredNode]) {
     for node in nodes.iter_mut() {
         match node {
             StructuredNode::Group(g) => {
-                inherit_heading_labels_for_radios(&mut g.children);
+                inherit_heading_labels_for_choice_fields(&mut g.children);
             }
             StructuredNode::Repeatable(r) => {
                 if let StructuredNode::Group(g) = r.item.as_mut() {
-                    inherit_heading_labels_for_radios(&mut g.children);
+                    inherit_heading_labels_for_choice_fields(&mut g.children);
                 }
             }
             StructuredNode::Conditional(c) => {
                 if let StructuredNode::Group(g) = c.content.as_mut() {
-                    inherit_heading_labels_for_radios(&mut g.children);
+                    inherit_heading_labels_for_choice_fields(&mut g.children);
                 }
             }
             StructuredNode::GridLayout(gl) => {
@@ -285,13 +289,16 @@ fn inherit_heading_labels_for_radios(nodes: &mut [StructuredNode]) {
                     let (left, right) = children.split_at_mut(i);
                     let prev = left.last_mut().unwrap();
                     let curr = right.first_mut().unwrap();
-                    let is_unlabeled_radio = matches!(
+                    let is_unlabeled_choice = matches!(
                         curr,
                         StructuredNode::Field(f)
                             if f.label.is_none()
-                                && matches!(f.input_type, FieldType::Radio { .. })
+                                && matches!(
+                                    f.input_type,
+                                    FieldType::Radio { .. } | FieldType::CheckboxGroup { .. }
+                                )
                     );
-                    if is_unlabeled_radio {
+                    if is_unlabeled_choice {
                         if let StructuredNode::Heading(h) = &**prev {
                             let label = h.content.to_plain();
                             if let StructuredNode::Field(f) = &mut **curr {
@@ -303,16 +310,16 @@ fn inherit_heading_labels_for_radios(nodes: &mut [StructuredNode]) {
                 // Recurse into each grid element
                 for elem in &mut gl.elements {
                     if let StructuredNode::Group(g) = &mut elem.node {
-                        inherit_heading_labels_for_radios(&mut g.children);
+                        inherit_heading_labels_for_choice_fields(&mut g.children);
                     }
                 }
             }
             StructuredNode::Table(t) => {
                 for row in &mut t.rows {
-                    inherit_heading_labels_for_radios(&mut row.cells);
+                    inherit_heading_labels_for_choice_fields(&mut row.cells);
                 }
                 if let Some(header) = &mut t.header {
-                    inherit_heading_labels_for_radios(&mut header.cells);
+                    inherit_heading_labels_for_choice_fields(&mut header.cells);
                 }
             }
             _ => {}
@@ -1407,7 +1414,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             .collect();
 
         self.normalize_split_checkbox_groups(&mut result);
-        inherit_heading_labels_for_radios(&mut result);
+        inherit_heading_labels_for_choice_fields(&mut result);
 
         result
     }
@@ -2562,5 +2569,71 @@ impl<'a, 'b> Converter<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    // TODO: Add tests when we have test fixtures
+    use super::*;
+
+    fn heading(text: &str) -> StructuredNode {
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::from_u8(2),
+            content: TranslatedText::plain(text),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    fn unlabeled_choice_field(name: &str, input_type: FieldType) -> StructuredNode {
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from(name),
+            som_path: None,
+            label: None,
+            input_type,
+            value: None,
+            placeholder: None,
+            required: false,
+        })
+    }
+
+    #[test]
+    fn checkbox_group_inherits_heading_label_when_directly_above() {
+        let mut nodes = vec![
+            heading("Preferred contact method"),
+            unlabeled_choice_field("cb_group", FieldType::CheckboxGroup { options: vec![] }),
+        ];
+
+        inherit_heading_labels_for_choice_fields(&mut nodes);
+
+        // The heading must still be present.
+        assert!(matches!(&nodes[0], StructuredNode::Heading(_)));
+
+        // The checkbox group should have inherited the heading text as its label.
+        let StructuredNode::Field(field) = &nodes[1] else {
+            panic!("expected a field node");
+        };
+        let label = field
+            .label
+            .as_ref()
+            .expect("checkbox group should inherit heading label");
+        assert_eq!(label.as_plain_text(), "Preferred contact method");
+    }
+
+    #[test]
+    fn radio_field_still_inherits_heading_label() {
+        let mut nodes = vec![
+            heading("Choose one"),
+            unlabeled_choice_field("rb_group", FieldType::Radio { options: vec![] }),
+        ];
+
+        inherit_heading_labels_for_choice_fields(&mut nodes);
+
+        let StructuredNode::Field(field) = &nodes[1] else {
+            panic!("expected a field node");
+        };
+        assert_eq!(
+            field
+                .label
+                .as_ref()
+                .expect("radio should inherit heading label")
+                .as_plain_text(),
+            "Choose one"
+        );
+    }
 }

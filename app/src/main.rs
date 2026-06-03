@@ -22,18 +22,59 @@ use settings::AppSettings;
 fn main() {
     #[cfg(feature = "desktop")]
     {
+        #[cfg(target_os = "macos")]
+        set_macos_dock_icon();
+
         let saved = AppSettings::load();
-        let config = dioxus::desktop::Config::new().with_window(
+        let mut config = dioxus::desktop::Config::new().with_window(
             dioxus::desktop::WindowBuilder::new()
                 .with_always_on_top(saved.always_on_top)
                 .with_inner_size(dioxus::desktop::LogicalSize::new(1400.0, 960.0))
                 .with_title("Ajila Forms Conversion Engine"),
         );
+
+        // Window/taskbar icon (no-op on macOS, used on Windows/Linux).
+        if let Some(icon) = load_window_icon() {
+            config = config.with_icon(icon);
+        }
+
         dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
     }
 
     #[cfg(not(feature = "desktop"))]
     dioxus::launch(App);
+}
+
+/// Decode the bundled PNG into a `tao` window icon.
+#[cfg(feature = "desktop")]
+fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
+    let rgba = image::load_from_memory(include_bytes!("../icons/icon.png"))
+        .ok()?
+        .into_rgba8();
+    let (width, height) = rgba.dimensions();
+    dioxus::desktop::tao::window::Icon::from_rgba(rgba.into_raw(), width, height).ok()
+}
+
+/// Set the macOS dock icon at runtime.
+///
+/// The `[bundle] icon` in `Dioxus.toml` only applies to a fully bundled `.app`,
+/// so when running unbundled (e.g. `dx run`) the dock shows a generic icon.
+/// AppKit's `setApplicationIconImage` overrides it for the running process.
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+fn set_macos_dock_icon() {
+    use objc2::AllocAnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    let icon_bytes = include_bytes!("../icons/icon.png");
+    unsafe {
+        let mtm = objc2::MainThreadMarker::new_unchecked();
+        let data = NSData::with_bytes(icon_bytes);
+        if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+            let app = NSApplication::sharedApplication(mtm);
+            app.setApplicationIconImage(Some(&image));
+        }
+    }
 }
 
 #[component]
@@ -119,7 +160,7 @@ fn App() -> Element {
             img {
                 class: "app-header-logo",
                 src: asset!("/assets/company-logo.webp"),
-                alt: "Company Logo",
+                alt: "Ajila Company Logo",
             }
             div { class: "app-header-right",
                 h1 { class: "app-header-title", "Forms Conversion Engine" }
