@@ -1747,8 +1747,9 @@ fn collect_variable_scripts_recursive(nodes: &[XfaNode], scripts: &mut Vec<(Stri
     }
 }
 
-/// Extract the document language from the root subform's `locale` attribute,
-/// cross-checked against actual text content using `whatlang`.
+/// Extract the document language from explicit XFA language variables or the
+/// root subform's `locale` attribute, cross-checked against actual text content
+/// using `whatlang`.
 ///
 /// Per XFA 3.3 §17: the `locale` attribute on a `<subform>` specifies the
 /// prevailing locale using `language[_country]` format (e.g. `"de_DE"`, `"en_US"`).
@@ -1759,10 +1760,16 @@ fn collect_variable_scripts_recursive(nodes: &[XfaNode], scripts: &mut Vec<(Stri
 /// the detected language is used instead. This fixes cases where the locale
 /// attribute is incorrect (e.g. an English document with `locale="de_DE"`).
 pub fn extract_language_from_nodes(nodes: &[XfaNode]) -> String {
+    let variables = collect_text_variables(nodes);
+    for name in ["formrange_language", "Footer_Line_txtlanguage"] {
+        if let Some(lang) = variables.get(name).and_then(|value| normalize_language_code(value)) {
+            return lang;
+        }
+    }
+
     let locale_lang = if let Some(root) = find_root_subform(nodes) {
         if let Some(locale) = root.attributes.get("locale") {
-            let lang = locale.split('_').next().unwrap_or("en");
-            lang.to_lowercase()
+            normalize_language_code(locale).unwrap_or_else(|| "en".to_string())
         } else {
             "en".to_string()
         }
@@ -1788,6 +1795,21 @@ pub fn extract_language_from_nodes(nodes: &[XfaNode]) -> String {
     }
 
     locale_lang
+}
+
+fn normalize_language_code(value: &str) -> Option<String> {
+    let lang = value
+        .trim()
+        .split(|c| c == '_' || c == '-')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if lang.is_empty() {
+        return None;
+    }
+
+    Some(lang)
 }
 
 /// Collect visible text content from XFA nodes for language detection.
@@ -1892,9 +1914,9 @@ fn whatlang_to_iso(lang: whatlang::Lang) -> String {
 /// Extract both the document language and all `<variables><text>` values from
 /// the XFA node tree.
 ///
-/// Returns `(language, variables)` where language comes from the root subform's
-/// `locale` attribute (spec-compliant) and variables contains all text variable
-/// name-value pairs.
+/// Returns `(language, variables)` where language comes from explicit form
+/// language variables or the root subform's `locale` attribute, and variables
+/// contains all text variable name-value pairs.
 pub fn extract_context_from_nodes(nodes: &[XfaNode]) -> (String, HashMap<String, String>) {
     let language = extract_language_from_nodes(nodes);
     let variables = collect_text_variables(nodes);
@@ -2027,6 +2049,17 @@ mod context_extraction_tests {
         assert_eq!(vars.len(), 2);
         assert_eq!(vars.get("formrange_language").unwrap(), "FR");
         assert_eq!(vars.get("formrange_entity").unwrap(), "019");
+    }
+
+    #[test]
+    fn test_extract_language_prefers_form_language_variable_over_locale() {
+        let nodes = make_tree(Some("de_DE"), &[("formrange_language", "EN")]);
+
+        assert_eq!(extract_language_from_nodes(&nodes), "en");
+
+        let (lang, vars) = extract_context_from_nodes(&nodes);
+        assert_eq!(lang, "en");
+        assert_eq!(vars.get("formrange_language").map(String::as_str), Some("EN"));
     }
 
     #[test]

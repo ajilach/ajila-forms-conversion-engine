@@ -17,8 +17,8 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Context {
-    /// Document language (e.g., "de", "en", "fr"), extracted from the root
-    /// subform's `locale` attribute per XFA 3.3 spec.
+    /// Document language (e.g., "de", "en", "fr"), extracted from explicit
+    /// XFA language metadata or the root subform's `locale` attribute.
     language: String,
 
     /// All `<variables><text>` values from the XFA template, keyed by name.

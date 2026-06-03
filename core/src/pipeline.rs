@@ -302,12 +302,22 @@ where
     let mut blueprints: Vec<(String, String, Blueprint)> = Vec::new();
     for (filename, bytes) in files {
         // Auto-detect AEM ZIP vs PDF
-        let bp = if crate::aem::detect_aem_zip(bytes) {
+        let is_aem_zip = crate::aem::detect_aem_zip(bytes);
+        let mut bp = if is_aem_zip {
             Blueprint::from_aem_zip(bytes)?
         } else {
             Blueprint::from_pdf_bytes(bytes)?
         };
-        let language = bp.language().to_string();
+        let language = if is_aem_zip {
+            bp.language().to_string()
+        } else if has_explicit_form_language(&bp) {
+            bp.language().to_string()
+        } else {
+            infer_language_from_filename(filename).unwrap_or_else(|| bp.language().to_string())
+        };
+        if language != bp.language() {
+            bp.set_language(language.clone());
+        }
         blueprints.push((filename.clone(), language, bp));
         yield_fn().await;
     }
@@ -673,4 +683,80 @@ fn selections_exact_match(a: &[Selection], b: &[Selection]) -> bool {
         && a.iter()
             .zip(b.iter())
             .all(|(left, right)| left.kind == right.kind && left.option_index == right.option_index)
+}
+
+fn infer_language_from_filename(filename: &str) -> Option<String> {
+    let stem = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(filename);
+
+    let suffix = stem
+        .rsplit(|c| c == '_' || c == '-')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let is_supported = matches!(
+        suffix.as_str(),
+        "de" | "en" | "fr" | "it" | "es" | "sp" | "pt" | "nl" | "pl" | "tr" | "ru"
+            | "ja"
+            | "zh"
+            | "ko"
+            | "ar"
+    );
+
+    if is_supported { Some(suffix) } else { None }
+}
+
+fn has_explicit_form_language(bp: &Blueprint) -> bool {
+    let context = bp.context();
+    has_explicit_form_language_variable(&context.variables)
+}
+
+fn has_explicit_form_language_variable(variables: &HashMap<String, String>) -> bool {
+    ["formrange_language", "Footer_Line_txtlanguage"]
+        .iter()
+        .any(|name| {
+            variables
+                .get(*name)
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{has_explicit_form_language_variable, infer_language_from_filename};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_infer_language_from_filename_suffix() {
+        assert_eq!(
+            infer_language_from_filename("AABC_019_EN.pdf").as_deref(),
+            Some("en")
+        );
+        assert_eq!(
+            infer_language_from_filename("AABC_019_DE").as_deref(),
+            Some("de")
+        );
+        assert_eq!(
+            infer_language_from_filename("AABC-019-SP.pdf").as_deref(),
+            Some("sp")
+        );
+    }
+
+    #[test]
+    fn test_infer_language_from_filename_ignores_non_language_suffix() {
+        assert_eq!(infer_language_from_filename("document.pdf"), None);
+        assert_eq!(infer_language_from_filename("AABC_019_DEMO.pdf"), None);
+    }
+
+    #[test]
+    fn test_has_explicit_form_language_detects_xfa_variable() {
+        let mut variables = HashMap::new();
+        variables.insert("formrange_language".to_string(), "EN".to_string());
+
+        assert!(has_explicit_form_language_variable(&variables));
+    }
 }

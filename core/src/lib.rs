@@ -550,6 +550,11 @@ impl Blueprint {
         &self.language
     }
 
+    /// Override the document language after construction.
+    pub fn set_language(&mut self, language: impl Into<String>) {
+        self.language = language.into();
+    }
+
     /// Build a [`Context`] seeded with the document language and XFA variables.
     pub fn context(&self) -> Context {
         Context::new(self.language.clone(), self.variables.clone())
