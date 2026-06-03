@@ -13875,9 +13875,9 @@ fn test_aann_kundendaten_is_h2() {
     );
 
     // The number-only footer id must never appear as a heading.
-    let numeric_heading = headings
-        .iter()
-        .find(|(_, text)| text.chars().any(|c| c.is_ascii_digit()) && !text.chars().any(|c| c.is_alphabetic()));
+    let numeric_heading = headings.iter().find(|(_, text)| {
+        text.chars().any(|c| c.is_ascii_digit()) && !text.chars().any(|c| c.is_alphabetic())
+    });
     assert!(
         numeric_heading.is_none(),
         "Number-only text should not be a heading, found: {:?}",
