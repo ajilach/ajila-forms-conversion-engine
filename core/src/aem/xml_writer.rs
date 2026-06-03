@@ -1518,7 +1518,7 @@ mod tests {
             "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &lt; 5) {",
-            "\\RCP_Test.BT_Add.visible = true;",
+            "\\Test.BT_Add.visible = true;",
             "\\}",
             "&quot;\\,&quot;event&quot;:&quot;Click&quot;\\,&quot;field&quot;:&quot;BT_Remove&quot;}",
             "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
