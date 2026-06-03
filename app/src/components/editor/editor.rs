@@ -403,7 +403,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         }
                         _ => None,
                     };
-                    prev.map_or(false, |n| is_children_container_node(n))
+                    prev.is_some_and(is_children_container_node)
                 } else {
                     false
                 };

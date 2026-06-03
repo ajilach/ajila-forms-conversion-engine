@@ -49,9 +49,9 @@ pub fn FileUploadSection(
     on_process: EventHandler<Vec<(String, Vec<u8>)>>,
     on_continue: EventHandler<String>,
 ) -> Element {
-    let mut uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
+    let uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
     // Previous editing sessions for the currently selected document set.
-    let mut previous_sessions = use_signal(Vec::<SessionInfo>::new);
+    let previous_sessions = use_signal(Vec::<SessionInfo>::new);
     // All sessions across documents, for the "load previous session" browser.
     let mut all_sessions = use_signal(db::list_all_sessions);
     let mut session_query = use_signal(String::new);
