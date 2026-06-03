@@ -370,7 +370,11 @@
                                             </HeaderInfo>
                                             <Adressblock jcr:primaryType="nt:unstructured">
                                                 <items jcr:primaryType="nt:unstructured">
-                                                    <senderAddressTitle jcr:primaryType="nt:unstructured" resourceType="granite/ui/components/coral/foundation/form/textarea" valueFrom="template"/>
+                                                    <senderAddressTitle
+                                                        jcr:primaryType="nt:unstructured"
+                                                        resourceType="granite/ui/components/coral/foundation/form/textarea"
+                                                        value="Banking Relationship"
+                                                        valueFrom="     "/>
                                                 </items>
                                             </Adressblock>
                                         </items>
