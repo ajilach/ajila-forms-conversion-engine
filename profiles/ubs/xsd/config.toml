@@ -29,7 +29,7 @@ rootElementName = "UBSAF_{{ form_code }}"
 # Fragments use a generic prefix so they can be reused across forms.
 # May contain {{ form_code }} for expansion.  When omitted, fragments
 # use the same root element name as the form.
-fragmentBindRefPrefix = "UBSAF"
+fragmentBindRefPrefix = "UBSAF_{{ form_code }}"
 
 masterLanguage = "en"
 
