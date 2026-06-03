@@ -144,6 +144,12 @@ impl GlobalFontStats {
                         continue;
                     }
 
+                    // Number-only text (e.g. footer form-ids like "0319-00") is
+                    // never a heading. Require at least one alphabetic letter.
+                    if !text.chars().any(|c| c.is_alphabetic()) {
+                        continue;
+                    }
+
                     let size = font_size.to_f32().unwrap_or(10.0);
                     let rounded = (size * 2.0).round() / 2.0;
                     let size_bits = rounded.to_bits();
@@ -498,6 +504,12 @@ impl HeadingDetector {
 
         // Empty or very short text is not a heading
         if text_len < 2 {
+            return None;
+        }
+
+        // Number-only text (e.g. footer form-ids like "0319-00") is never a
+        // heading. Require at least one alphabetic letter.
+        if !text_content.chars().any(|c| c.is_alphabetic()) {
             return None;
         }
 

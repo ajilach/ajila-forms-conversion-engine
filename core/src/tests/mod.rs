@@ -13850,6 +13850,42 @@ fn test_aahq_h1_heading() {
 }
 
 #[test]
+fn test_aann_kundendaten_is_h2() {
+    // "Kundendaten" must be an H2 (Panel-level) heading so that the
+    // account_holder custom element (which only matches Panel titles) can
+    // insert. The footer form-id "0319-00" (number-only, size 10) must not be
+    // treated as a heading and must not push the bold section headers down.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AANN_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AANN");
+
+    let headings = collect_headings(&structured);
+
+    let kundendaten_level = headings
+        .iter()
+        .find(|(_, text)| text.contains("Kundendaten"))
+        .map(|(level, _)| *level);
+
+    assert_eq!(
+        kundendaten_level,
+        Some(2),
+        "Expected 'Kundendaten' to be H2. All headings: {:?}",
+        headings
+    );
+
+    // The number-only footer id must never appear as a heading.
+    let numeric_heading = headings
+        .iter()
+        .find(|(_, text)| text.chars().any(|c| c.is_ascii_digit()) && !text.chars().any(|c| c.is_alphabetic()));
+    assert!(
+        numeric_heading.is_none(),
+        "Number-only text should not be a heading, found: {:?}",
+        numeric_heading
+    );
+}
+
+#[test]
 fn test_aahq_h2_headings() {
     // Test that the expected H2 headings are present:
     // - "Kundendaten"
