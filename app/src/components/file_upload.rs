@@ -377,7 +377,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_upload_files_collects_dropped_file_bytes() {
+    async fn read_upload_files_collects_supported_file_bytes() {
         let files = vec![
             FileData::new(TestFileData {
                 name: "form.pdf".to_string(),
