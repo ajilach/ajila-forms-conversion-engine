@@ -575,6 +575,7 @@ impl HeadingDetector {
         let mut top_border_count = 0;
         let mut bottom_border_count = 0;
         let mut font_underline_count = 0;
+        let mut min_node_x: Option<f32> = None;
 
         for node in nodes {
             if let FlattenedNodeKind::Text {
@@ -585,6 +586,17 @@ impl HeadingDetector {
                 count += 1;
                 text_content.push_str(content);
                 text_content.push(' ');
+
+                // Track the leftmost text-node x. This is the same coordinate
+                // source used when computing the global x-alignment clusters
+                // (`GlobalFontStats::compute_heading_buckets` reads `node.x`),
+                // so heading candidates must be filtered against it too. Using
+                // the group's layout bounds here instead would mismatch the
+                // clusters and drop legitimate headings whose bounds differ
+                // from their text-node position (e.g. indented/2nd-column
+                // sections).
+                let node_x = node.x.to_f32().unwrap_or(0.0);
+                min_node_x = Some(min_node_x.map_or(node_x, |m| m.min(node_x)));
 
                 // Count bold/total characters (non-whitespace only)
                 let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
@@ -643,6 +655,7 @@ impl HeadingDetector {
             has_top_border,
             has_bottom_border,
             has_font_underline,
+            min_node_x: min_node_x.unwrap_or(0.0),
         })
     }
 
@@ -775,6 +788,11 @@ struct TextProperties {
     has_top_border: bool,
     has_bottom_border: bool,
     has_font_underline: bool,
+    /// Leftmost x-coordinate among the group's text nodes.
+    ///
+    /// Matches the coordinate source used to build the global x-alignment
+    /// clusters, ensuring consistent heading filtering.
+    min_node_x: f32,
 }
 
 /// A unique combination of font properties that defines a heading style level.
@@ -955,7 +973,12 @@ impl HeadingDetector {
             {
                 if let Some(bounds) = doc.get_bounds(group_idx) {
                     let y_coord = bounds.y.to_f32().unwrap_or(0.0);
-                    let x_coord = bounds.x.to_f32().unwrap_or(0.0);
+                    // Use the leftmost text-node x rather than the group's
+                    // layout bounds. The x-alignment clusters are built from
+                    // text-node positions, so candidates must be filtered
+                    // against the same coordinate to avoid dropping headings
+                    // whose bounds differ from their text position.
+                    let x_coord = props.min_node_x;
 
                     candidates.push(CandidateInfo {
                         group_idx,

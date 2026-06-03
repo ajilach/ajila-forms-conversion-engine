@@ -112,6 +112,16 @@ impl TextBlockMerger {
             .max()
     }
 
+    /// Returns true if the text is a bare section number such as "9." or "10.".
+    ///
+    /// These appear when a numbered heading places its number on its own line
+    /// above the (possibly multi-line) title. The number is digits optionally
+    /// followed by a single dot, with no other content.
+    fn is_numbering_prefix(text: &str) -> bool {
+        let core = text.strip_suffix('.').unwrap_or(text);
+        !core.is_empty() && core.len() <= 3 && core.chars().all(|c| c.is_ascii_digit())
+    }
+
     /// Check whether two TextBlocks are close enough to merge.
     /// Returns true if the vertical gap between them is less than 0.5 × line height.
     fn should_merge(doc: &Document, idx_a: usize, idx_b: usize) -> bool {
@@ -144,6 +154,14 @@ impl TextBlockMerger {
         if trimmed.ends_with(':') || trimmed.ends_with("：") {
             return false;
         }
+
+        // A short numeric prefix (e.g. "9." or "10.") that sits on its own line
+        // directly above a heading is the section number for that heading. Such
+        // a prefix is a single short line while the heading below it may wrap
+        // over several lines, so the generic gap and height guards reject it.
+        // Recognise this case and merge it with the line below as long as the
+        // two share a left margin (same column) and a reasonable vertical gap.
+        let top_is_numbering = Self::is_numbering_prefix(trimmed);
         // Calculate vertical gap (bottom of top block to top of bottom block)
         let gap = bottom.y - top.bottom();
 
@@ -166,10 +184,30 @@ impl TextBlockMerger {
             (None, Some(b)) => b,
             (None, None) => bounds_a.height.min(bounds_b.height),
         };
-        let threshold = line_height / Decimal::TWO;
+        // A numeric prefix is allowed a larger vertical gap because the heading
+        // it belongs to may start on the following line.
+        let threshold = if top_is_numbering {
+            line_height * Decimal::from(3) / Decimal::TWO
+        } else {
+            line_height / Decimal::TWO
+        };
 
         if gap > threshold {
             return false;
+        }
+
+        // For a numeric prefix we only require that it sits in the same column
+        // as the heading below: either sharing its left margin or hanging in the
+        // margin with the title indented to its right. The generic height/width
+        // guards below would otherwise reject a single-line number against a
+        // multi-line heading.
+        if top_is_numbering {
+            // `top` is the numeric prefix (smaller y); `bottom` is the heading.
+            // The indent is how far the heading text starts to the right of the
+            // number. Allow a hanging indent up to 40pt and a small negative
+            // tolerance for shared left margins.
+            let indent = bottom.x - top.x;
+            return indent >= Decimal::from(-5) && indent <= Decimal::from(40);
         }
 
         // Also check using allocated bounds (node dimensions from the layout
@@ -451,7 +489,13 @@ impl AnalysisModule for TextBlockMerger {
                     // merge therefore skips the scan entirely).
                     let multiline = Self::is_multiline_paragraph(doc, last_in_group)
                         || Self::is_multiline_paragraph(doc, idx_b);
-                    if multiline {
+                    // A numeric section prefix is always merged with the
+                    // heading line below it, even across a side-by-side column
+                    // layout: the number belongs to that heading and must not
+                    // be split off by the parallel-column guard.
+                    let top_is_numbering =
+                        Self::is_numbering_prefix(doc.get_text_content(last_in_group).trim());
+                    if multiline && !top_is_numbering {
                         let parallel = match (doc.get_bounds(last_in_group), doc.get_bounds(idx_b))
                         {
                             (Some(a), Some(b)) => Self::has_parallel_column(

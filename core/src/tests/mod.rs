@@ -32031,3 +32031,63 @@ fn test_aacw_en_heading_order() {
         last_label = label;
     }
 }
+
+#[test]
+fn test_aace_de_heading_order() {
+    // AACE_019_DE describes the order-execution principles as a numbered list of
+    // section headings. They must appear in the order in which they are read in
+    // the source document.
+    use crate::run_exhaustive_to_merged;
+    use helpers::collect_headings;
+
+    let structured = run_exhaustive_to_merged(input_path("AACE_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AACE_019_DE");
+
+    let headings: Vec<String> = collect_headings(&structured)
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect();
+
+    // Distinguishing prefixes for each numbered section heading. Some headings
+    // wrap across multiple lines in the source, so we only match on the part up
+    // to the first line break.
+    let expected_order = [
+        "1. Zweck",
+        "2. Anwendungsbereich und Grundsätze der",
+        "3. Ausführung von Aufträgen - Erzielung des",
+        "4. Ausführungsplätze",
+        "5. Auswahl eines Ausführungsplatzes",
+        "6. Ausführungsmethoden",
+        "7. Vorrang von Kundenweisungen",
+        "8. Entgegennahme und Weiterleitung von Aufträgen",
+        "9. Grundsätze der Auftragsausführung im Rahmen der",
+        "10. Auftragsbearbeitung",
+    ];
+
+    let mut last_pos: Option<usize> = None;
+    let mut last_label = "";
+    for &label in &expected_order {
+        let pos = headings
+            .iter()
+            .position(|h| h.split('\n').next().unwrap_or(h).trim().starts_with(label));
+        assert!(
+            pos.is_some(),
+            "Should find heading '{}' in output. Headings found: {:?}",
+            label,
+            headings
+        );
+        if let (Some(prev), Some(curr)) = (last_pos, pos) {
+            assert!(
+                prev < curr,
+                "Heading '{}' (pos {}) should come before '{}' (pos {}). Headings: {:?}",
+                last_label,
+                prev,
+                label,
+                curr,
+                headings
+            );
+        }
+        last_pos = pos;
+        last_label = label;
+    }
+}
