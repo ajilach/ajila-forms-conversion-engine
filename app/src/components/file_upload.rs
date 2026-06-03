@@ -1,6 +1,43 @@
 use dioxus::prelude::*;
+use dioxus::html::{FileData, HasFileData};
 
 use crate::db::{self, SessionInfo};
+
+fn is_supported_upload_file(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with(".pdf") || name.ends_with(".zip")
+}
+
+async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
+    let mut files_data = Vec::new();
+    for file in files {
+        let name = file.name();
+        if !is_supported_upload_file(&name) {
+            continue;
+        }
+
+        if let Ok(bytes) = file.read_bytes().await {
+            files_data.push((name, bytes.to_vec()));
+        }
+    }
+    files_data
+}
+
+async fn set_uploaded_files(
+    files: Vec<FileData>,
+    mut uploaded_files: Signal<Vec<(String, Vec<u8>)>>,
+    mut previous_sessions: Signal<Vec<SessionInfo>>,
+) {
+    let files_data = read_upload_files(files).await;
+    if files_data.is_empty() {
+        return;
+    }
+
+    let hash = db::document_hash(&files_data);
+    let sessions = db::list_sessions(&hash);
+    previous_sessions.set(sessions);
+    uploaded_files.set(files_data);
+}
 
 #[component]
 pub fn FileUploadSection(
@@ -18,6 +55,8 @@ pub fn FileUploadSection(
     let mut session_query = use_signal(String::new);
     // Whether the previous-session browser is shown inside the upload container.
     let mut sessions_open = use_signal(|| false);
+    let mut is_dragging = use_signal(|| false);
+    let mut drag_depth = use_signal(|| 0usize);
 
     // Auto-select the first profile if none is selected yet
     if selected_profile.read().is_none()
@@ -59,11 +98,50 @@ pub fn FileUploadSection(
             }
         }
 
-        div { class: "upload-dropzone",
+        div {
+            class: if !is_processing && *is_dragging.read() {
+                "upload-dropzone upload-dropzone-dragging"
+            } else {
+                "upload-dropzone"
+            },
+            ondragenter: move |evt: Event<DragData>| {
+                evt.prevent_default();
+                if !is_processing {
+                    let next_depth = *drag_depth.read() + 1;
+                    drag_depth.set(next_depth);
+                    is_dragging.set(true);
+                }
+            },
+            ondragover: move |evt: Event<DragData>| {
+                evt.prevent_default();
+                if !is_processing {
+                    is_dragging.set(true);
+                }
+            },
+            ondragleave: move |evt: Event<DragData>| {
+                evt.prevent_default();
+                let next_depth = (*drag_depth.read()).saturating_sub(1);
+                drag_depth.set(next_depth);
+                if next_depth == 0 {
+                    is_dragging.set(false);
+                }
+            },
+            ondrop: move |evt: Event<DragData>| {
+                evt.prevent_default();
+                drag_depth.set(0);
+                is_dragging.set(false);
+                let files = if is_processing { Vec::new() } else { evt.files() };
+                async move {
+                    if !files.is_empty() {
+                        sessions_open.set(false);
+                        set_uploaded_files(files, uploaded_files, previous_sessions).await;
+                    }
+                }
+            },
 
             h2 { "Upload Files" }
             p { class: "upload-hint",
-                "Select PDF files in different languages or an AEM content package ZIP"
+                "Select or drop PDF files in different languages or an AEM content package ZIP"
             }
 
             div { class: "upload-actions",
@@ -94,22 +172,9 @@ pub fn FileUploadSection(
                 accept: ".pdf,.zip",
                 disabled: is_processing,
                 onchange: move |evt: Event<FormData>| {
+                    let files = evt.files();
                     async move {
-                        let mut files_data = Vec::new();
-                        for file in evt.files() {
-                            if let Ok(bytes) = file.read_bytes().await {
-                                files_data.push((file.name(), bytes.to_vec()));
-                            }
-                        }
-                        // Look up any previous editing sessions for this document set.
-                        let sessions = if files_data.is_empty() {
-                            Vec::new()
-                        } else {
-                            let hash = db::document_hash(&files_data);
-                            db::list_sessions(&hash)
-                        };
-                        previous_sessions.set(sessions);
-                        uploaded_files.set(files_data);
+                        set_uploaded_files(files, uploaded_files, previous_sessions).await;
                     }
                 },
             }
@@ -240,5 +305,90 @@ pub fn FileUploadSection(
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use dioxus::html::{bytes::Bytes, NativeFileData};
+    use std::{future::Future, path::PathBuf, pin::Pin};
+
+    struct TestFileData {
+        name: String,
+        bytes: Vec<u8>,
+    }
+
+    impl NativeFileData for TestFileData {
+        fn name(&self) -> String {
+            self.name.clone()
+        }
+
+        fn size(&self) -> u64 {
+            self.bytes.len() as u64
+        }
+
+        fn last_modified(&self) -> u64 {
+            0
+        }
+
+        fn path(&self) -> PathBuf {
+            PathBuf::from(&self.name)
+        }
+
+        fn content_type(&self) -> Option<String> {
+            Some("application/pdf".to_string())
+        }
+
+        fn read_bytes(
+            &self,
+        ) -> Pin<Box<dyn Future<Output = Result<Bytes, dioxus::CapturedError>> + 'static>> {
+            let bytes = self.bytes.clone();
+            Box::pin(async move { Ok(Bytes::from(bytes)) })
+        }
+
+        fn byte_stream(
+            &self,
+        ) -> Pin<
+            Box<
+                dyn futures_util::Stream<Item = Result<Bytes, dioxus::CapturedError>>
+                    + 'static
+                    + Send,
+            >,
+        > {
+            let bytes = self.bytes.clone();
+            Box::pin(futures_util::stream::once(async move {
+                Ok(Bytes::from(bytes))
+            }))
+        }
+
+        fn read_string(
+            &self,
+        ) -> Pin<Box<dyn Future<Output = Result<String, dioxus::CapturedError>> + 'static>> {
+            let bytes = self.bytes.clone();
+            Box::pin(async move { Ok(String::from_utf8(bytes)?) })
+        }
+
+        fn inner(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn read_upload_files_collects_dropped_file_bytes() {
+        let files = vec![
+            FileData::new(TestFileData {
+                name: "form.pdf".to_string(),
+                bytes: vec![1, 2, 3],
+            }),
+            FileData::new(TestFileData {
+                name: "notes.txt".to_string(),
+                bytes: vec![4, 5, 6],
+            }),
+        ];
+
+        let files_data = read_upload_files(files).await;
+
+        assert_eq!(files_data, vec![("form.pdf".to_string(), vec![1, 2, 3])]);
     }
 }
