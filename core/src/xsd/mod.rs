@@ -484,27 +484,31 @@ impl XsdConfig {
         self
     }
 
-    /// Compute the root element name by expanding `{{ form_code }}` in the
-    /// profile's `root_element_name` template.
+    /// Render a profile template string, exposing `form_code` to Tera.
+    ///
+    /// When no form code is set, `form_code` is bound to an empty string so
+    /// `{{ form_code }}` renders as empty. If the template has a syntax error,
+    /// the raw template is returned unchanged.
+    fn render_template(&self, template: &str) -> String {
+        let mut ctx = tera::Context::new();
+        ctx.insert("form_code", self.form_code.as_deref().unwrap_or(""));
+        tera::Tera::one_off(template, &ctx, false).unwrap_or_else(|_| template.to_string())
+    }
+
+    /// Compute the root element name by rendering the profile's
+    /// `root_element_name` template (e.g. `UBSAF_{{ form_code }}`).
     pub fn root_element_name(&self) -> String {
-        let template = &self.profile.root_element_name;
-        match &self.form_code {
-            Some(code) => template.replace("{{ form_code }}", code),
-            None => template.replace("{{ form_code }}", ""),
-        }
+        self.render_template(&self.profile.root_element_name)
     }
 
     /// Compute the fragment bind-ref prefix.
     ///
-    /// If the profile specifies `fragmentBindRefPrefix`, expand
-    /// `{{ form_code }}` in it.  Otherwise fall back to the root element
-    /// name (so fragments use the same root as the form by default).
+    /// If the profile specifies `fragmentBindRefPrefix`, render it as a Tera
+    /// template. Otherwise fall back to the root element name (so fragments
+    /// use the same root as the form by default).
     pub fn fragment_bind_ref_prefix(&self) -> String {
         match &self.profile.fragment_bind_ref_prefix {
-            Some(template) => match &self.form_code {
-                Some(code) => template.replace("{{ form_code }}", code),
-                None => template.clone(),
-            },
+            Some(template) => self.render_template(template),
             None => self.root_element_name(),
         }
     }
