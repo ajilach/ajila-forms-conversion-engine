@@ -2,7 +2,71 @@
 
 use dioxus::prelude::*;
 
-use crate::models::{DocumentEnvelope, ProcessingState};
+use crate::models::{DocumentEnvelope, ProcessingState, ProcessingStep};
+
+/// Returns `true` if the upload consists of a single JSON file that should be
+/// loaded directly as a structured [`DocumentEnvelope`] instead of running the
+/// PDF pipeline.
+pub fn is_json_upload(files: &[(String, Vec<u8>)]) -> bool {
+    files.len() == 1
+        && files[0]
+            .0
+            .rsplit('.')
+            .next()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+}
+
+/// Load a [`DocumentEnvelope`] directly from an uploaded JSON file, bypassing
+/// the PDF pipeline.
+///
+/// The JSON is parsed into a `DocumentEnvelope`, all derived outputs are
+/// regenerated for the active profile, and an initial editing session is
+/// recorded (desktop only). Returns the parsed envelope on success.
+pub fn load_envelope_from_json(
+    files: &[(String, Vec<u8>)],
+    profile: Option<String>,
+    mut processing_state: Signal<ProcessingState>,
+    mut current_session: Signal<Option<String>>,
+) {
+    let Some((name, bytes)) = files.first() else {
+        return;
+    };
+
+    let envelope: DocumentEnvelope = match serde_json::from_slice(bytes) {
+        Ok(env) => env,
+        Err(e) => {
+            processing_state.set(ProcessingState {
+                step: ProcessingStep::Idle,
+                error: Some(format!("Failed to parse JSON as structured document: {e}")),
+                ..ProcessingState::new()
+            });
+            return;
+        }
+    };
+
+    // Load profile fonts so derived outputs render with the right typefaces.
+    if let Some(ref profile_name) = profile {
+        let _ = blueprint::load_profile_fonts(profile_name);
+    }
+
+    let mut state = ProcessingState {
+        step: ProcessingStep::Complete,
+        ..ProcessingState::new()
+    };
+    regenerate_outputs(&mut state, &envelope, profile.as_deref());
+    processing_state.set(state);
+
+    // Record the initial snapshot as a new editing session (desktop only).
+    if let Ok(json) = serde_json::to_string(&envelope) {
+        let label = name.clone();
+        let doc_hash = crate::db::document_hash(files);
+        crate::db::upsert_document(&doc_hash, &label);
+        if let Some(session_id) = crate::db::create_session(&doc_hash, profile.as_deref(), &label) {
+            crate::db::insert_edit(&session_id, "Imported from JSON", &json);
+            current_session.set(Some(session_id));
+        }
+    }
+}
 
 /// Run the blueprint pipeline and stream progress updates into the signal.
 ///

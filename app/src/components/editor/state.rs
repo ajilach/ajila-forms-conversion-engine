@@ -3,9 +3,9 @@
 //! This module provides the state types and operations for the structured
 //! document editor.
 
-use blueprint::structured::{GridLayoutElement, NameValue};
-use blueprint::{ListItem, ListNode, StructuredNode, TableNode, TranslatedText};
-use std::collections::{BTreeSet, HashSet};
+use blueprint::structured::{FieldCondition, GridLayoutElement, NameValue};
+use blueprint::{FieldId, ListItem, ListNode, StructuredNode, TableNode, TranslatedText};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// A segment of a path to a node in the document tree.
 ///
@@ -724,6 +724,93 @@ fn segment_index(segment: Option<&PathSegment>) -> usize {
     }
 }
 
+/// Assign fresh [`FieldId`]s to every field within a (duplicated) subtree so the
+/// copy does not collide with the original. Conditional references to fields that
+/// live inside the same subtree are remapped to the new ids, so internal
+/// dependencies stay intact.
+fn reassign_field_ids(node: &mut StructuredNode) {
+    let mut remap: HashMap<FieldId, FieldId> = HashMap::new();
+    replace_field_ids(node, &mut remap);
+    if !remap.is_empty() {
+        remap_field_conditions(node, &remap);
+    }
+}
+
+/// First pass: give every [`FieldNode`] a new random id, recording old -> new.
+fn replace_field_ids(node: &mut StructuredNode, remap: &mut HashMap<FieldId, FieldId>) {
+    match node {
+        StructuredNode::Field(f) => {
+            let new_id = FieldId::random();
+            remap.insert(f.name.clone(), new_id.clone());
+            f.name = new_id;
+        }
+        StructuredNode::Group(g) => {
+            for child in &mut g.children {
+                replace_field_ids(child, remap);
+            }
+        }
+        StructuredNode::GridLayout(g) => {
+            for el in &mut g.elements {
+                replace_field_ids(&mut el.node, remap);
+            }
+        }
+        StructuredNode::Repeatable(r) => replace_field_ids(&mut r.item, remap),
+        StructuredNode::Conditional(c) => replace_field_ids(&mut c.content, remap),
+        StructuredNode::Table(t) => {
+            if let Some(header) = &mut t.header {
+                for cell in &mut header.cells {
+                    replace_field_ids(cell, remap);
+                }
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    replace_field_ids(cell, remap);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Second pass: rewrite conditional references to fields that were re-keyed.
+fn remap_field_conditions(node: &mut StructuredNode, remap: &HashMap<FieldId, FieldId>) {
+    match node {
+        StructuredNode::Conditional(c) => {
+            if let Some(new_id) = remap.get(&c.condition.field_name) {
+                c.condition = FieldCondition {
+                    field_name: new_id.clone(),
+                    value: c.condition.value.clone(),
+                };
+            }
+            remap_field_conditions(&mut c.content, remap);
+        }
+        StructuredNode::Group(g) => {
+            for child in &mut g.children {
+                remap_field_conditions(child, remap);
+            }
+        }
+        StructuredNode::GridLayout(g) => {
+            for el in &mut g.elements {
+                remap_field_conditions(&mut el.node, remap);
+            }
+        }
+        StructuredNode::Repeatable(r) => remap_field_conditions(&mut r.item, remap),
+        StructuredNode::Table(t) => {
+            if let Some(header) = &mut t.header {
+                for cell in &mut header.cells {
+                    remap_field_conditions(cell, remap);
+                }
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    remap_field_conditions(cell, remap);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Duplicate selected nodes, inserting all copies after the last selected element.
 ///
 /// Groups sibling paths by their parent container, clones them in order, and inserts
@@ -758,22 +845,19 @@ pub fn duplicate_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePa
             PathSegment::TableHeader | PathSegment::TableCell(_) => continue,
         };
 
-        groups
-            .entry((parent_path, kind))
-            .or_default()
-            .push(idx);
+        groups.entry((parent_path, kind)).or_default().push(idx);
     }
 
     // Process groups from deepest/highest-index first so insertions don't invalidate
     // other groups' indices.
     let mut group_list: Vec<_> = groups.into_iter().collect();
     group_list.sort_by(|a, b| {
-        let depth_cmp = b.0 .0.len().cmp(&a.0 .0.len());
+        let depth_cmp = b.0.0.len().cmp(&a.0.0.len());
         if depth_cmp != std::cmp::Ordering::Equal {
             return depth_cmp;
         }
         // For same depth, process higher parent indices first
-        b.0 .0.cmp(&a.0 .0)
+        b.0.0.cmp(&a.0.0)
     });
 
     for ((parent_path, kind), mut indices) in group_list {
@@ -782,10 +866,13 @@ pub fn duplicate_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePa
 
         if parent_path.is_empty() && kind == SegmentKind::Child {
             // Root level duplication
-            let clones: Vec<_> = indices
+            let mut clones: Vec<_> = indices
                 .iter()
                 .filter_map(|&idx| content.get(idx).cloned())
                 .collect();
+            for clone in &mut clones {
+                reassign_field_ids(clone);
+            }
             // Insert all clones after the last selected element
             let insert_pos = (max_idx + 1).min(content.len());
             for (i, clone) in clones.into_iter().enumerate() {
@@ -797,20 +884,26 @@ pub fn duplicate_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePa
                     if let Some(parent) = get_node_at_path_mut(content, &parent_path) {
                         match parent {
                             StructuredNode::Group(g) => {
-                                let clones: Vec<_> = indices
+                                let mut clones: Vec<_> = indices
                                     .iter()
                                     .filter_map(|&idx| g.children.get(idx).cloned())
                                     .collect();
+                                for clone in &mut clones {
+                                    reassign_field_ids(clone);
+                                }
                                 let insert_pos = (max_idx + 1).min(g.children.len());
                                 for (i, clone) in clones.into_iter().enumerate() {
                                     g.children.insert(insert_pos + i, clone);
                                 }
                             }
                             StructuredNode::GridLayout(g) => {
-                                let clones: Vec<_> = indices
+                                let mut clones: Vec<_> = indices
                                     .iter()
                                     .filter_map(|&idx| g.elements.get(idx).cloned())
                                     .collect();
+                                for clone in &mut clones {
+                                    reassign_field_ids(&mut clone.node);
+                                }
                                 let insert_pos = (max_idx + 1).min(g.elements.len());
                                 for (i, clone) in clones.into_iter().enumerate() {
                                     g.elements.insert(insert_pos + i, clone);
@@ -836,10 +929,15 @@ pub fn duplicate_nodes(content: &mut Vec<StructuredNode>, paths: &HashSet<NodePa
                     if let Some(StructuredNode::Table(t)) =
                         get_node_at_path_mut(content, &parent_path)
                     {
-                        let clones: Vec<_> = indices
+                        let mut clones: Vec<_> = indices
                             .iter()
                             .filter_map(|&idx| t.rows.get(idx).cloned())
                             .collect();
+                        for row in &mut clones {
+                            for cell in &mut row.cells {
+                                reassign_field_ids(cell);
+                            }
+                        }
                         let insert_pos = (max_idx + 1).min(t.rows.len());
                         for (i, clone) in clones.into_iter().enumerate() {
                             t.rows.insert(insert_pos + i, clone);
@@ -2176,5 +2274,106 @@ mod tests {
             PathSegment::Child(0),
             PathSegment::ListItem(0)
         ]));
+    }
+
+    fn make_field(id: &str, label: &str) -> StructuredNode {
+        use blueprint::{FieldNode, FieldType};
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from(id),
+            som_path: None,
+            label: Some(TranslatedText::plain(label)),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+            required: false,
+        })
+    }
+
+    fn field_id_of(node: &StructuredNode) -> FieldId {
+        match node {
+            StructuredNode::Field(f) => f.name.clone(),
+            _ => panic!("expected a field node"),
+        }
+    }
+
+    #[test]
+    fn duplicate_nodes_assigns_unique_field_ids() {
+        let mut content = vec![make_field("form.field1", "Label")];
+
+        let mut paths = HashSet::new();
+        paths.insert(vec![PathSegment::Child(0)]);
+        duplicate_nodes(&mut content, &paths);
+
+        assert_eq!(content.len(), 2);
+        let original_id = field_id_of(&content[0]);
+        let copy_id = field_id_of(&content[1]);
+        assert_eq!(
+            original_id,
+            FieldId::from("form.field1"),
+            "original field id must be unchanged"
+        );
+        assert_ne!(
+            original_id, copy_id,
+            "duplicated field must receive a fresh unique id"
+        );
+        // The label (and its translations) should still be copied verbatim.
+        match &content[1] {
+            StructuredNode::Field(f) => {
+                assert_eq!(
+                    f.label.as_ref().map(|l| l.as_plain_text()),
+                    Some("Label".to_string())
+                );
+            }
+            _ => panic!("expected a field node"),
+        }
+    }
+
+    #[test]
+    fn duplicate_nodes_remaps_conditional_references_within_subtree() {
+        use blueprint::structured::FieldCondition;
+        use blueprint::{ConditionalNode, GroupNode, InputValue};
+
+        // A group containing a field plus a conditional that references that field.
+        let group = StructuredNode::Group(GroupNode {
+            children: vec![
+                make_field("form.trigger", "Trigger"),
+                StructuredNode::Conditional(ConditionalNode {
+                    condition: FieldCondition {
+                        field_name: FieldId::from("form.trigger"),
+                        value: InputValue::Bool(true),
+                    },
+                    content: Box::new(make_field("form.dependent", "Dependent")),
+                }),
+            ],
+        });
+        let mut content = vec![group];
+
+        let mut paths = HashSet::new();
+        paths.insert(vec![PathSegment::Child(0)]);
+        duplicate_nodes(&mut content, &paths);
+
+        assert_eq!(content.len(), 2);
+
+        let copy_children = match &content[1] {
+            StructuredNode::Group(g) => &g.children,
+            _ => panic!("expected a group node"),
+        };
+        let copied_trigger_id = field_id_of(&copy_children[0]);
+        let copied_condition_id = match &copy_children[1] {
+            StructuredNode::Conditional(c) => c.condition.field_name.clone(),
+            _ => panic!("expected a conditional node"),
+        };
+
+        // The conditional in the copy must point at the copy's trigger field,
+        // not the original one.
+        assert_ne!(copied_trigger_id, FieldId::from("form.trigger"));
+        assert_eq!(
+            copied_trigger_id, copied_condition_id,
+            "conditional reference must be remapped to the duplicated field"
+        );
     }
 }

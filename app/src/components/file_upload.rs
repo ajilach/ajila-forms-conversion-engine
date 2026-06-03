@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use dioxus::html::{FileData, HasFileData};
+use dioxus::prelude::*;
 
 use crate::db::{self, SessionInfo};
 
@@ -101,11 +101,7 @@ pub fn FileUploadSection(
         }
 
         div {
-            class: if !is_processing && *is_dragging.read() {
-                "upload-dropzone upload-dropzone-dragging"
-            } else {
-                "upload-dropzone"
-            },
+            class: if !is_processing && *is_dragging.read() { "upload-dropzone upload-dropzone-dragging" } else { "upload-dropzone" },
             ondragenter: move |evt: Event<DragData>| {
                 evt.prevent_default();
                 if !is_processing {
@@ -143,7 +139,7 @@ pub fn FileUploadSection(
 
             h2 { "Upload Files" }
             p { class: "upload-hint",
-                "Select or drop PDF files in different languages or an AEM content package ZIP"
+                "Select or drop PDF files in different languages, an AEM content package ZIP, or a structured document JSON"
             }
 
             div { class: "upload-actions",
@@ -171,7 +167,7 @@ pub fn FileUploadSection(
                 class: "upload-input-hidden",
                 r#type: "file",
                 multiple: true,
-                accept: ".pdf,.zip",
+                accept: ".pdf,.zip,.json",
                 disabled: is_processing,
                 onchange: move |evt: Event<FormData>| {
                     let files = evt.files();
@@ -313,7 +309,7 @@ pub fn FileUploadSection(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use dioxus::html::{bytes::Bytes, NativeFileData};
+    use dioxus::html::{NativeFileData, bytes::Bytes};
     use std::{future::Future, path::PathBuf, pin::Pin};
 
     struct TestFileData {
@@ -359,14 +355,15 @@ mod tests {
             >,
         > {
             let bytes = self.bytes.clone();
-            Box::pin(futures_util::stream::once(async move {
-                Ok(Bytes::from(bytes))
-            }))
+            Box::pin(futures_util::stream::once(
+                async move { Ok(Bytes::from(bytes)) },
+            ))
         }
 
         fn read_string(
             &self,
-        ) -> Pin<Box<dyn Future<Output = Result<String, dioxus::CapturedError>> + 'static>> {
+        ) -> Pin<Box<dyn Future<Output = Result<String, dioxus::CapturedError>> + 'static>>
+        {
             let bytes = self.bytes.clone();
             Box::pin(async move { Ok(String::from_utf8(bytes)?) })
         }

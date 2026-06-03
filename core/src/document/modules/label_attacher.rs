@@ -381,6 +381,13 @@ impl LabelAttacher {
             LabelPosition::Below,
         ];
 
+        // Radios that form an aligned vertical column (a tabular radio layout).
+        // For these, the label is the row text in the left column, even when the
+        // horizontal gap is large (short row labels sit far from the option
+        // column). This must take priority over the generic `Above` match, which
+        // would otherwise grab an introductory paragraph above the table.
+        let column_radios = self.radios_in_aligned_column(doc, &radio_groups);
+
         for &radio_idx in &radio_groups {
             let available: Vec<_> = remaining_text_groups
                 .iter()
@@ -389,10 +396,17 @@ impl LabelAttacher {
                 .collect();
 
             let mut matched = None;
-            for &dir in &directions {
-                if let Some(result) = self.find_label_at_position(doc, radio_idx, &available, dir) {
-                    matched = Some(result);
-                    break;
+            if column_radios.contains(&radio_idx) {
+                matched = self.find_row_label_left(doc, radio_idx, &available);
+            }
+            if matched.is_none() {
+                for &dir in &directions {
+                    if let Some(result) =
+                        self.find_label_at_position(doc, radio_idx, &available, dir)
+                    {
+                        matched = Some(result);
+                        break;
+                    }
                 }
             }
 
@@ -409,6 +423,86 @@ impl LabelAttacher {
                 self.name(),
             );
         }
+    }
+
+    /// Identify radio/excl groups that form an aligned vertical column.
+    ///
+    /// A tabular radio layout has multiple radio groups stacked vertically and
+    /// left-aligned at the same X (the "option column"), each with its row label
+    /// in a separate left column. Returns the set of radio group indices that
+    /// belong to such a column (at least 3 left-aligned members).
+    fn radios_in_aligned_column(
+        &self,
+        doc: &Document,
+        radio_groups: &[usize],
+    ) -> std::collections::HashSet<usize> {
+        let x_tolerance = Decimal::from_str("6.0").unwrap();
+        let mut clusters: Vec<Vec<usize>> = Vec::new();
+
+        for &idx in radio_groups {
+            let Some(bounds) = doc.get_bounds(idx) else {
+                continue;
+            };
+            let cluster = clusters.iter_mut().find(|c| {
+                doc.get_bounds(c[0])
+                    .map(|cb| (cb.x - bounds.x).abs() <= x_tolerance)
+                    .unwrap_or(false)
+            });
+            match cluster {
+                Some(c) => c.push(idx),
+                None => clusters.push(vec![idx]),
+            }
+        }
+
+        let mut result = std::collections::HashSet::new();
+        for cluster in clusters {
+            if cluster.len() >= 3 {
+                result.extend(cluster);
+            }
+        }
+        result
+    }
+
+    /// Find the row label for a radio group in a tabular column: the closest
+    /// text block on the same line that lies entirely to the left of the radio.
+    ///
+    /// Unlike `find_label_at_position(Left)`, this does not apply the normal
+    /// horizontal threshold, so short row labels far from the option column are
+    /// still matched. Text that overlaps or sits to the right of the radio is
+    /// ignored.
+    fn find_row_label_left(
+        &self,
+        doc: &Document,
+        radio_idx: usize,
+        text_candidates: &[usize],
+    ) -> Option<(usize, Decimal)> {
+        let field_bounds = doc.get_bounds(radio_idx)?;
+        // Cap the search to a generous distance to avoid matching unrelated text
+        // far across the page.
+        let max_gap = Decimal::from_str("400.0").unwrap();
+
+        let mut best: Option<(usize, Decimal)> = None;
+        for &text_idx in text_candidates {
+            let Some(text_bounds) = doc.get_bounds(text_idx) else {
+                continue;
+            };
+            if !text_bounds.is_on_same_line(&field_bounds, self.line_tolerance) {
+                continue;
+            }
+            // Must lie entirely to the left of the radio's option column.
+            if text_bounds.right() > field_bounds.x {
+                continue;
+            }
+            let gap = field_bounds.x - text_bounds.right();
+            if gap > max_gap {
+                continue;
+            }
+            // Prefer the text closest to the radio (rightmost left-column text).
+            if best.map(|(_, g)| gap < g).unwrap_or(true) {
+                best = Some((text_idx, gap));
+            }
+        }
+        best
     }
 
     /// Attach labels to checkbox groups.

@@ -743,7 +743,11 @@ pub fn compute_bind_refs(nodes: &[StructuredNode], config: &super::XsdConfig) ->
         fields: std::collections::HashMap::new(),
         sections: std::collections::HashMap::new(),
     };
-    let root_path = format!("/{}", config.root_element_name());
+    // Root all bind-ref paths at the fragment bind-ref prefix so the actual
+    // field/section bindRefs share the same root as fragment bindRefs.
+    // When `fragmentBindRefPrefix` is unset it falls back to the XSD root
+    // element name, so the paths still line up with the generated schema.
+    let root_path = format!("/{}", config.fragment_bind_ref_prefix());
     let sections = build_heading_hierarchy(nodes);
     for section in &sections {
         collect_section_bind_refs(section, &root_path, config, &mut maps);

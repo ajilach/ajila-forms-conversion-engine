@@ -1,6 +1,6 @@
 [package]
 name = "blueprint-app"
-version = "0.1.31"
+version = "0.1.32"
 edition = "2024"
 
 [features]
@@ -14,13 +14,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures-util = "0.3"
 base64 = "0.22"
-blueprint = { path = "../core" }
 image = { version = "0.25", features = ["png"] }
 pulldown-cmark = "0.10"
 uuid = { version = "1", features = ["v4"] }
 
 # Server/Desktop-only deps (not available in WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+blueprint = { path = "../core" }
 tokio = { version = "1", features = ["full"] }
 dirs = "5.0"
 toml = "0.8"
@@ -37,6 +37,7 @@ objc2-foundation = { version = "0.3", features = ["NSData"] }
 
 # WASM-only deps (browser downloads)
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+blueprint = { path = "../core", default-features = false }
 web-sys = { version = "0.3", features = ["Blob", "BlobPropertyBag", "Url", "HtmlAnchorElement", "Document", "Window"] }
 wasm-bindgen = "0.2"
 js-sys = "0.3"

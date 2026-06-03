@@ -252,15 +252,6 @@
                     guideNodeClass="guideToolbar"
                     name="toolbar">
                     <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/toolbar/defaultToolbarLayout">
-                        <previtemnav
-                            fd:targetVersion="1.1"
-                            jcr:primaryType="nt:unstructured"
-                            jcr:title="Back"
-                            sling:resourceType="fd/af/components/actions/previtemnav"
-                            dorExclusion="true"
-                            guideNodeClass="guideButton"
-                            name="previtemnav"
-                            type="movePrev"/>
                         <nextitemnav
                             fd:targetVersion="1.1"
                             jcr:primaryType="nt:unstructured"
@@ -290,6 +281,15 @@
                                 fd:navigationChange="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.submit&quot;\,&quot;event&quot;:&quot;Navigation&quot;\,&quot;content&quot;:&quot;this.visible=(!this.panel.navigationContext.hasNextItem);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </submit>
+                        <previtemnav
+                            fd:targetVersion="1.1"
+                            jcr:primaryType="nt:unstructured"
+                            jcr:title="Back"
+                            sling:resourceType="fd/af/components/actions/previtemnav"
+                            dorExclusion="true"
+                            guideNodeClass="guideButton"
+                            name="previtemnav"
+                            type="movePrev"/>
                         <preview
                             jcr:primaryType="nt:unstructured"
                             jcr:title="Preview"

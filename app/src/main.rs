@@ -96,12 +96,27 @@ fn App() -> Element {
     let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
         is_processing.set(true);
         current_session.set(None);
+
+        let profile = selected_profile.read().clone();
+
+        // A single JSON file is loaded directly as a structured document,
+        // bypassing the PDF pipeline.
+        if processing::is_json_upload(&file_data) {
+            processing::load_envelope_from_json(
+                &file_data,
+                profile,
+                processing_state,
+                current_session,
+            );
+            is_processing.set(false);
+            return;
+        }
+
         processing_state.set(ProcessingState {
             step: ProcessingStep::Parsing,
             ..ProcessingState::new()
         });
 
-        let profile = selected_profile.read().clone();
         spawn(async move {
             run_and_track(file_data, profile, processing_state, current_session).await;
             is_processing.set(false);

@@ -13850,6 +13850,42 @@ fn test_aahq_h1_heading() {
 }
 
 #[test]
+fn test_aann_kundendaten_is_h2() {
+    // "Kundendaten" must be an H2 (Panel-level) heading so that the
+    // account_holder custom element (which only matches Panel titles) can
+    // insert. The footer form-id "0319-00" (number-only, size 10) must not be
+    // treated as a heading and must not push the bold section headers down.
+    use crate::run_exhaustive_to_merged;
+
+    let structured = run_exhaustive_to_merged(input_path("AANN_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge for AANN");
+
+    let headings = collect_headings(&structured);
+
+    let kundendaten_level = headings
+        .iter()
+        .find(|(_, text)| text.contains("Kundendaten"))
+        .map(|(level, _)| *level);
+
+    assert_eq!(
+        kundendaten_level,
+        Some(2),
+        "Expected 'Kundendaten' to be H2. All headings: {:?}",
+        headings
+    );
+
+    // The number-only footer id must never appear as a heading.
+    let numeric_heading = headings.iter().find(|(_, text)| {
+        text.chars().any(|c| c.is_ascii_digit()) && !text.chars().any(|c| c.is_alphabetic())
+    });
+    assert!(
+        numeric_heading.is_none(),
+        "Number-only text should not be a heading, found: {:?}",
+        numeric_heading
+    );
+}
+
+#[test]
 fn test_aahq_h2_headings() {
     // Test that the expected H2 headings are present:
     // - "Kundendaten"
@@ -19082,6 +19118,120 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
         "Multi-type section AuthRep should have wrapper paths. Got: {:?}",
         auth_rep_fields
     );
+}
+
+#[test]
+fn test_created_form_aem_bind_refs_match_xsd() {
+    // End-to-end check: build a form, generate both the AEM XML and the XSD,
+    // then verify every `bindRef` emitted into the AEM points at an element
+    // path that actually exists in the generated XSD schema.
+    use crate::Context;
+    use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
+    use crate::structured::*;
+    use crate::xsd::{XsdConfig, XsdNode, XsdProfile, generate_xsd, generate_xsd_schema};
+    use std::collections::HashSet;
+
+    // 1) Create a form: two sections, each with a couple of fields.
+    let nodes = vec![
+        StructuredNode::Heading(make_heading(2, "Personal Data")),
+        StructuredNode::Field(make_field("f.first", "First Name")),
+        StructuredNode::Field(make_field("f.last", "Last Name")),
+        StructuredNode::Heading(make_heading(2, "Address")),
+        StructuredNode::Field(make_field("f.street", "Street")),
+        StructuredNode::Field(make_field("f.city", "City")),
+    ];
+
+    // 2) XSD configuration (default profile: root element "form", no
+    //    externally registered types, so every field becomes an inline
+    //    nested element).
+    let xsd_config = XsdConfig::from_profile(XsdProfile::default());
+
+    // 3) Build an AEM config from the real UBS profile (so the templates
+    //    actually emit `bindRef` attributes), with XSD binding enabled.
+    let (profile, templates, custom_templates) = helpers::load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".to_string(), "TEST".to_string());
+    vars.insert("formrange_entity".to_string(), "019".to_string());
+    let ctx = Context::new("en".to_string(), vars);
+    let mut aem_config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to build AEM config");
+    aem_config.bind_to_xsd = true;
+    // Disable fragment replacement so that all bindRefs are derived from the
+    // generated XSD (fragment bindRefs point into separate fragment types).
+    aem_config.use_fragments = false;
+    aem_config.xsd_config = Some(xsd_config.clone());
+
+    // 4) Generate the AEM XML and the XSD from the same form.
+    let root = convert_to_aem(&nodes, &aem_config);
+    let aem_xml = generate_aem_xml(&root, &aem_config);
+    let xsd_string = generate_xsd(&nodes, &xsd_config);
+    let schema = generate_xsd_schema(&nodes, &xsd_config);
+
+    // Sanity: the XSD really contains the expected section/field elements.
+    assert!(xsd_string.contains("name=\"PersonalData\""));
+    assert!(xsd_string.contains("name=\"FirstName\""));
+
+    // 5) Collect every element path that exists in the XSD tree.
+    fn collect_xsd_paths(node: &XsdNode, parent: &str, paths: &mut HashSet<String>) {
+        match node {
+            XsdNode::Element { name, content, .. } => {
+                let path = format!("{}/{}", parent, name);
+                paths.insert(path.clone());
+                if let Some(child) = content {
+                    collect_xsd_paths(child, &path, paths);
+                }
+            }
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    collect_xsd_paths(child, parent, paths);
+                }
+            }
+            XsdNode::Choice { options } => {
+                for branch in options {
+                    for child in branch {
+                        collect_xsd_paths(child, parent, paths);
+                    }
+                }
+            }
+            XsdNode::Ref { ref_name, .. } => {
+                paths.insert(format!("{}/{}", parent, ref_name));
+            }
+            XsdNode::SimpleType { .. } => {}
+        }
+    }
+    let mut xsd_paths = HashSet::new();
+    collect_xsd_paths(&schema.root, "", &mut xsd_paths);
+
+    // 6) Extract every `bindRef="..."` value emitted into the AEM XML.
+    let mut bind_refs = Vec::new();
+    let needle = "bindRef=\"";
+    let mut cursor = aem_xml.as_str();
+    while let Some(pos) = cursor.find(needle) {
+        let after = &cursor[pos + needle.len()..];
+        if let Some(end) = after.find('"') {
+            bind_refs.push(after[..end].to_string());
+            cursor = &after[end + 1..];
+        } else {
+            break;
+        }
+    }
+
+    assert!(
+        !bind_refs.is_empty(),
+        "Generated AEM XML should contain bindRef attributes when bind_to_xsd=true"
+    );
+
+    // 7) Every bindRef must resolve to an element present in the XSD.
+    let mut sorted_xsd: Vec<_> = xsd_paths.iter().cloned().collect();
+    sorted_xsd.sort();
+    for bind_ref in &bind_refs {
+        assert!(
+            xsd_paths.contains(bind_ref),
+            "AEM bindRef {} has no matching element in the generated XSD.\nXSD element paths: {:?}",
+            bind_ref,
+            sorted_xsd
+        );
+    }
 }
 
 #[test]
@@ -26520,9 +26670,10 @@ fn test_aato_radio_options_with_commas_escaped_in_aem() {
 
 #[test]
 fn test_fragment_bind_refs_use_configured_prefix() {
-    // Fragment bindRef paths should use the configured fragmentBindRefPrefix
-    // (e.g. "/UBSAF/...") rather than the form-specific root element name
-    // (e.g. "/UBSAF_AAAI/...").
+    // Fragment bindRef paths should use the configured fragmentBindRefPrefix.
+    // The profile sets `fragmentBindRefPrefix = "UBSAF_{{ form_code }}"`, which
+    // expands to the form-specific root (e.g. "/UBSAF_AAAI/...") so fragment
+    // bindRefs stay consistent with the generated XSD root element.
     use crate::Blueprint;
     use crate::aem::{AemConfig, convert_to_aem};
 
@@ -26536,9 +26687,9 @@ fn test_fragment_bind_refs_use_configured_prefix() {
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
         .expect("AemConfig from profile");
 
-    // Configure with a form-specific root and a different fragment prefix.
-    // The profile has rootElementName = "UBSAF_{{ form_code }}" and
-    // fragmentBindRefPrefix = "UBSAF" from the TOML.
+    // Configure with a form-specific root and a fragment prefix that expands
+    // to the same root. The profile has rootElementName = "UBSAF_{{ form_code }}"
+    // and fragmentBindRefPrefix = "UBSAF_{{ form_code }}" from the TOML.
     let mut xsd_config = helpers::load_ubs_xsd_config().with_master_language("en");
     xsd_config.form_code = Some("AAAI".to_string());
 
@@ -26553,8 +26704,8 @@ fn test_fragment_bind_refs_use_configured_prefix() {
     let config = crate::resolve_aem_languages(&content, &config);
     let root = convert_to_aem(&content, &config);
 
-    // All fragment bindRefs should start with "/UBSAF/" (the fragment prefix),
-    // NOT with "/UBSAF_AAAI/" (the form root).
+    // All fragment bindRefs should start with the form-specific root
+    // "/UBSAF_AAAI/" so they match the generated XSD root element.
     let fragment_refs = helpers::collect_aem_fragment_refs(&root);
     assert!(
         !fragment_refs.is_empty(),
@@ -26565,20 +26716,14 @@ fn test_fragment_bind_refs_use_configured_prefix() {
             .as_deref()
             .unwrap_or_else(|| panic!("Fragment '{}' should have a bind_ref", frag_ref));
         assert!(
-            br.starts_with("/UBSAF/"),
-            "Fragment '{}' bindRef should start with '/UBSAF/' (fragment prefix), got: {}",
-            frag_ref,
-            br
-        );
-        assert!(
-            !br.starts_with("/UBSAF_AAAI/"),
-            "Fragment '{}' bindRef must NOT use form-specific root '/UBSAF_AAAI/'. Got: {}",
+            br.starts_with("/UBSAF_AAAI/"),
+            "Fragment '{}' bindRef should start with the form root '/UBSAF_AAAI/', got: {}",
             frag_ref,
             br
         );
     }
 
-    // Non-fragment panels with bind_to_xsd=true should still use the form root.
+    // Non-fragment panels with bind_to_xsd=true should also use the form root.
     let mut found_form_root = false;
     helpers::walk_aem_nodes(&root, &mut |node| {
         if let crate::aem::AemNode::Panel {
@@ -32090,4 +32235,100 @@ fn test_aace_de_heading_order() {
         last_pos = pos;
         last_label = label;
     }
+}
+
+#[test]
+fn test_aael_tabular_radio_buttons() {
+    // AAEL has a tabular ("field column") layout of radio groups in the
+    // "Unterlagen über den Broker" section: a left column of row labels and a
+    // right column of radio options. Five rows use the options
+    // "erhalten" / "geprüft" / "nicht vorhanden" and two rows use
+    // "bestätigt" / "nicht bestätigt". Some row labels are short and sit far to
+    // the left of the option column, so the generic directional label attacher
+    // cannot pair them. The aligned-radio-column handling in the label attacher
+    // associates each row label with its radio.
+    use crate::run_exhaustive_to_merged;
+    use crate::structured::FieldType;
+
+    let structured = run_exhaustive_to_merged(input_path("AAEL_019_DE.pdf"))
+        .expect("Failed to process AAEL PDF");
+
+    let radios = collect_radio_fields(&structured);
+
+    let assert_radio = |som_fragment: &str, expected_label: &str, expected_options: &[&str]| {
+        let field = radios
+            .iter()
+            .find(|f| f.som_path_str().contains(som_fragment))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Expected to find radio group with SOM fragment '{}'. Found: {:?}",
+                    som_fragment,
+                    radios.iter().map(|f| f.som_path_str()).collect::<Vec<_>>()
+                )
+            });
+
+        let label = field
+            .label
+            .as_ref()
+            .map(|l| l.as_plain_text())
+            .unwrap_or_default();
+        assert_eq!(
+            label.trim(),
+            expected_label,
+            "Radio '{}' should have label '{}', got: '{}'",
+            som_fragment,
+            expected_label,
+            label
+        );
+
+        let options = match &field.input_type {
+            FieldType::Radio { options } => options,
+            _ => panic!("Field '{}' should be a Radio", som_fragment),
+        };
+        let option_names: Vec<String> = options.iter().map(|o| o.name.to_string()).collect();
+        assert_eq!(
+            option_names, expected_options,
+            "Radio '{}' should have options {:?}, got: {:?}",
+            som_fragment, expected_options, option_names
+        );
+    };
+
+    let erhalten_options = ["erhalten", "geprüft", "nicht vorhanden"];
+    assert_radio(
+        "RB_Group_Gültige_Brokerlizenz",
+        "gültige Brokerlizenz",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Negative_Cosima",
+        "negative Cosima Prüfung",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Kontaktpersonen_Ansprechpartner",
+        "Liste der Kontaktpersonen/Ansprechpartner Handel und Back Office",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Aktuellster_Jahresbericht",
+        "aktuellster Jahresbericht",
+        &erhalten_options,
+    );
+    assert_radio(
+        "RB_Group_Lieferinstruktionen",
+        "Lieferinstruktionen (Standing Settlement Instructions)",
+        &erhalten_options,
+    );
+
+    let bestaetigt_options = ["bestätigt", "nicht bestätigt"];
+    assert_radio(
+        "RB_Group_Einhaltung_Trading",
+        "Einhaltung Trading Obligation gemäß MiFIR Artikel 23",
+        &bestaetigt_options,
+    );
+    assert_radio(
+        "RB_Group_Asset_Klasse",
+        "Übernahme der Post Trade Transparency Verpflichtung für die Asset Klasse «Fixed Income» gemäß MiFIR Artikel 21",
+        &bestaetigt_options,
+    );
 }
