@@ -120,7 +120,7 @@
                     fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_LegalGuardianSignature1"
                     guideNodeClass="guidePanel"
                     maxOccur="4"
-                    minOccur="1"
+                    minOccur="2"
                     name="PN_SignatureIndividual"
                     textIsRich="true"
                     validateOnStepCompletion="{Boolean}false">

@@ -6,6 +6,8 @@
     jcr:primaryType="nt:unstructured"
     {% if not is_page and title and title != "" %}jcr:title="{{ title }}"{% endif %}
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+    {% if name is starting_with("PN_FormConfigurator") %}css="stepTitle ubs-margin-10"{% endif %}
+    {% if name is starting_with("PN_FormConfigurator") %}dorExclusion="true"{% endif %}
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
     {% if is_page %}dorExcludeTitle="true"{% endif %}
