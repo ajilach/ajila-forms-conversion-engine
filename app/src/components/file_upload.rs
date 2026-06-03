@@ -30,6 +30,8 @@ async fn set_uploaded_files(
 ) {
     let files_data = read_upload_files(files).await;
     if files_data.is_empty() {
+        previous_sessions.set(Vec::new());
+        uploaded_files.set(Vec::new());
         return;
     }
 
