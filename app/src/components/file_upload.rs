@@ -63,7 +63,7 @@ pub fn FileUploadSection(
 
             h2 { "Upload Files" }
             p { class: "upload-hint",
-                "Select PDF files in different languages or an AEM content package ZIP"
+                "Select PDF files in different languages, an AEM content package ZIP, or a structured document JSON"
             }
 
             div { class: "upload-actions",
@@ -91,7 +91,7 @@ pub fn FileUploadSection(
                 class: "upload-input-hidden",
                 r#type: "file",
                 multiple: true,
-                accept: ".pdf,.zip",
+                accept: ".pdf,.zip,.json",
                 disabled: is_processing,
                 onchange: move |evt: Event<FormData>| {
                     async move {
