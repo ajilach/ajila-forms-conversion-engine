@@ -1498,39 +1498,49 @@ fn generate_scripts(form_id: &str) -> String {
     }};
   }}
 
-  function getFieldValue(fieldName) {{
-    // Escape special CSS selector characters in field name
-    const escapedName = CSS.escape(fieldName);
-    
-    // Try to find the field by name
-    const field = form.querySelector(`[name="${{escapedName}}"]`);
-    if (!field) {{
-      // Try radio buttons
-      const radios = form.querySelectorAll(`[name="${{escapedName}}"]`);
-      if (radios.length > 0) {{
-        const checked = Array.from(radios).find(r => r.checked);
-        return checked ? {{ type: 'radio', value: checked.value }} : null;
-      }}
-      return null;
+    function isFieldVisible(field) {{
+        if (!field) return false;
+        // Exclude controls inside hidden conditional branches.
+        if (field.closest('[hidden]')) return false;
+        return field.offsetParent !== null || field.getClientRects().length > 0;
     }}
 
-    if (field.type === 'checkbox') {{
-      return {{ type: 'checkbox', value: field.checked.toString() }};
+    function pickField(candidates, fieldName, preferredField) {{
+        if (preferredField && preferredField.name === fieldName) {{
+            return preferredField;
+        }}
+
+        const visibleCandidate = candidates.find(isFieldVisible);
+        return visibleCandidate || candidates[0] || null;
     }}
 
-    if (field.type === 'radio') {{
-      const radios = form.querySelectorAll(`[name="${{escapedName}}"]`);
-      const checked = Array.from(radios).find(r => r.checked);
-      return checked ? {{ type: 'radio', value: checked.value }} : null;
-    }}
+    function getFieldValue(fieldName, preferredField = null) {{
+        const escapedName = CSS.escape(fieldName);
+        const candidates = Array.from(form.querySelectorAll(`[name="${{escapedName}}"]`));
+        if (candidates.length === 0) return null;
 
-    if (field.tagName === 'SELECT') {{
-      const selectedOption = field.options[field.selectedIndex];
-      return {{ type: 'select', value: field.value, text: selectedOption ? selectedOption.textContent.trim() : '' }};
-    }}
+        // Radio groups can have many inputs with the same name; prefer checked visible one.
+        if (candidates[0].type === 'radio') {{
+            const visibleRadios = candidates.filter(isFieldVisible);
+            const radioPool = visibleRadios.length > 0 ? visibleRadios : candidates;
+            const checked = radioPool.find(r => r.checked);
+            return checked ? {{ type: 'radio', value: checked.value }} : null;
+        }}
 
-    return {{ type: 'text', value: field.value }};
-  }}
+        const field = pickField(candidates, fieldName, preferredField);
+        if (!field) return null;
+
+        if (field.type === 'checkbox') {{
+            return {{ type: 'checkbox', value: field.checked.toString() }};
+        }}
+
+        if (field.tagName === 'SELECT') {{
+            const selectedOption = field.options[field.selectedIndex];
+            return {{ type: 'select', value: field.value, text: selectedOption ? selectedOption.textContent.trim() : '' }};
+        }}
+
+        return {{ type: 'text', value: field.value }};
+    }}
 
   function conditionMatches(condition, fieldValue) {{
     if (!fieldValue) return false;
@@ -1540,14 +1550,14 @@ fn generate_scripts(form_id: &str) -> String {
     return false;
   }}
 
-  function evaluateConditional(el) {{
+    function evaluateConditional(el, preferredField = null) {{
     const condStr = el.dataset.condition;
     if (!condStr) return;
 
     const condition = parseCondition(condStr);
     if (!condition) return;
 
-    const fieldValue = getFieldValue(condition.fieldName);
+    const fieldValue = getFieldValue(condition.fieldName, preferredField);
     const matches = conditionMatches(condition, fieldValue);
 
     if (matches) {{
@@ -1559,9 +1569,9 @@ fn generate_scripts(form_id: &str) -> String {
     }}
   }}
 
-  function updateConditionals() {{
+    function updateConditionals(preferredField = null) {{
     const conditionals = form.querySelectorAll('.conditional');
-    conditionals.forEach(evaluateConditional);
+        conditionals.forEach(el => evaluateConditional(el, preferredField));
   }}
 
   function initConditionals() {{
@@ -1569,8 +1579,12 @@ fn generate_scripts(form_id: &str) -> String {
     updateConditionals();
 
     // Listen for changes on all form fields
-    form.addEventListener('change', updateConditionals);
-    form.addEventListener('input', updateConditionals);
+        form.addEventListener('change', function(event) {{
+            updateConditionals(event.target);
+        }});
+        form.addEventListener('input', function(event) {{
+            updateConditionals(event.target);
+        }});
   }}
 
   // =====================
@@ -1940,6 +1954,28 @@ mod tests {
         assert!(
             custom_start > default_end,
             "Custom CSS should appear after default styles"
+        );
+    }
+
+    #[test]
+    fn test_scripts_use_visible_or_event_target_for_duplicate_field_names() {
+        let scripts = generate_scripts("test_form");
+
+        assert!(
+            scripts.contains("function isFieldVisible(field)"),
+            "Generated script should include visibility-aware field filtering"
+        );
+        assert!(
+            scripts.contains("function getFieldValue(fieldName, preferredField = null)"),
+            "Generated script should accept a preferred event target field"
+        );
+        assert!(
+            scripts.contains("const visibleCandidate = candidates.find(isFieldVisible);"),
+            "Generated script should prefer visible fields when names are duplicated"
+        );
+        assert!(
+            scripts.contains("updateConditionals(event.target);"),
+            "Generated script should pass the changed field to conditional updates"
         );
     }
 
