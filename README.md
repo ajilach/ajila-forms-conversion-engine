@@ -20,35 +20,13 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 | `core` | Core library — PDF parsing, XFA processing, analysis pipeline, and all output renderers. |
 | `cli` | Command-line interface for processing PDFs. |
 | `app` | Dioxus web/desktop application with drag-and-drop upload and live preview. |
+| `judge` | Evaluates translation quality of multi-language PDF forms and writes scores to CSV. |
+| `teacher` | Runs the pipeline and an LLM smart-edit pass, then prints suggested changes. |
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the web app
-- [GitHub CLI](https://cli.github.com/) with [GitHub Copilot in the CLI](https://docs.github.com/copilot/github-copilot-in-the-cli)
-
-Install GitHub CLI and Copilot extension:
-
-```sh
-# macOS (Homebrew)
-brew install gh
-gh extension install github/gh-copilot
-```
-
-Login and enable Copilot access for the CLI:
-
-```sh
-gh auth login
-gh auth refresh -h github.com -s copilot
-```
-
-Then, you can check if the copilot CLI works by typing:
-
-```sh
-gh copilot -p "hello there!"
-```
-
-If copilot answers, you're set.
 
 Dioxus can easily be installed using cargo-binstall:
 
@@ -181,4 +159,17 @@ cp results.csv results-baseline.csv
 # ... make changes ...
 cargo run --release -p judge
 python3 compare.py
+```
+
+## Teacher
+
+The teacher runs the pipeline on a PDF and then performs an LLM smart-edit pass, printing the suggested changes. It requires an OpenAI API key.
+
+```sh
+# Run the teacher on a PDF (uses the OPENAI_API_KEY environment variable)
+export OPENAI_API_KEY=sk-...
+cargo run --release -p teacher -- path/to/form.pdf
+
+# Use a specific model and profile
+cargo run --release -p teacher -- path/to/form.pdf --model gpt-4o --profile ubs
 ```
