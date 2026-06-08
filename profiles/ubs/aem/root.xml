@@ -350,8 +350,7 @@
                     metaTemplateRef="{{ variables.meta_template_ref }}"
                     optionSeparator=", "
                     optionsNumberInHorizontalAlign="4"
-                    showSelectedOptions="false"
-                    excludeFromDoRIfHidden="true">
+                    showSelectedOptions="false">
                     <branding jcr:primaryType="nt:unstructured">
                         <items jcr:primaryType="nt:unstructured">
                             <masterpage0 jcr:primaryType="nt:unstructured">
