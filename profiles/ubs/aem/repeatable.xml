@@ -67,7 +67,7 @@
                     type="Button"
                     visible="{Boolean}false">
                     <fd:rules jcr:primaryType="nt:unstructured"/>
-                    <fd:scripts fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;{{ panel_name }}.instanceManager.removeInstance(this.parent.index);\var len = {{ panel_name }}.instanceManager.instances.length;\for (var i = 0; i &lt; len; i++) {\{{ panel_name }}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;\}\if (len &lt; {{ max_occur }}) {\{{ panel_name }}.BT_Add.visible = true;\}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured"/>
+                    <fd:scripts fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;{{ panel_name }}.instanceManager.removeInstance(this.parent.index);\var len = {{ panel_name }}.instanceManager.instances.length;\for (var i = 0; i &lt; len; i++) {\{{ panel_name }}.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;\}\if (len &lt; {{ max_occur }}) {\{{ name }}.BT_Add.visible = true;\}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured"/>
                 </removebutton>
             </items>
         </repeatableInner>
