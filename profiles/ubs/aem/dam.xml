@@ -31,6 +31,7 @@
             {% if variables.use_summary == "true" %}redactoSummary="true"{% endif %}
             {% if variables.theme_ref is defined and variables.theme_ref != "" %}themeRef="{{ variables.theme_ref }}"{% endif %}
             availableStylings="[ajila-forms-ubs-ebanking-styling]"
+            menuOptions="[ajila-forms-ubs-menu-option-save]"
             title="{{ form_code }}"/>
     </jcr:content>
 </jcr:root>

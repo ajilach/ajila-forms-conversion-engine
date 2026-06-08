@@ -308,25 +308,6 @@
                                 fd:navigationChange="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.visible=(!this.panel.navigationContext.hasNextItem);&quot;\,&quot;event&quot;:&quot;Navigation&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.preview&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </preview>
-                        <guidebutton
-                            jcr:created="{Date}2026-03-04T18:06:45.006+01:00"
-                            jcr:createdBy="admin"
-                            jcr:lastModified="{Date}2026-03-04T18:17:51.105+01:00"
-                            jcr:lastModifiedBy="admin"
-                            jcr:primaryType="nt:unstructured"
-                            jcr:title="Save Progress"
-                            sling:resourceType="fd/af/components/guidebutton"
-                            dorExclusion="true"
-                            dorFieldStyling="Default"
-                            guideNodeClass="guideButton"
-                            name="fwbSaveProgress"
-                            textIsRich="[true,true,true]"
-                            type="Button">
-                            <fd:rules jcr:primaryType="nt:unstructured"/>
-                            <fd:scripts
-                                fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.fwbSaveProgress&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.fwb.saveFormData();&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
-                                jcr:primaryType="nt:unstructured"/>
-                        </guidebutton>
                     </items>
                     <layout jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/toolbar/defaultToolbarLayout"/>
                 </toolbar>
