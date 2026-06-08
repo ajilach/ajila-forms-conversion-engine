@@ -218,6 +218,87 @@ fn detect_numeric_marker(text: &str) -> Option<usize> {
     Some(i + ws_after)
 }
 
+/// Detect a multi-level (hierarchical) numeric section marker like "1.1",
+/// "1.2", "2.1.3" — optionally with a trailing dot ("1.1.") — at the start of
+/// the text.  Requires at least two numeric components.  Returns the byte
+/// length of the marker + trailing whitespace.
+///
+/// These markers are deliberately **not** recognised by [`detect_marker`]
+/// (which drives list formation): treating numbered section paragraphs as list
+/// items would both spuriously listify them and, via cross-column marker
+/// detection, break unrelated lists.  They are recognised only by
+/// [`is_standalone_marker`] so the [`StandaloneMarkerMerger`] still joins a
+/// lone "1.1" draw with its adjacent paragraph.
+///
+/// To avoid mistaking dates ("31.12.2020") for section numbers, each numeric
+/// component is limited to two digits and the nesting depth is capped.
+fn detect_multilevel_numeric_marker(text: &str) -> Option<usize> {
+    /// Maximum digits per component (guards against a four-digit year).
+    const MAX_COMPONENT_DIGITS: usize = 2;
+    /// Maximum nesting depth (e.g. "1.2.3.4").
+    const MAX_LEVELS: usize = 4;
+
+    let bytes = text.as_bytes();
+    let mut i = 0;
+
+    // First numeric component.
+    if i >= bytes.len() || !bytes[i].is_ascii_digit() {
+        return None;
+    }
+    let first_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i - first_start > MAX_COMPONENT_DIGITS {
+        return None;
+    }
+
+    // One or more additional ".<digits>" components.
+    let mut levels = 1usize;
+    loop {
+        if i < bytes.len()
+            && bytes[i] == b'.'
+            && i + 1 < bytes.len()
+            && bytes[i + 1].is_ascii_digit()
+        {
+            i += 1; // consume '.'
+            let comp_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i - comp_start > MAX_COMPONENT_DIGITS {
+                return None;
+            }
+            levels += 1;
+            if levels > MAX_LEVELS {
+                return None;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Require at least two components — single-level markers are handled by
+    // detect_numeric_marker.
+    if levels < 2 {
+        return None;
+    }
+
+    // Optional trailing '.'.
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+    }
+
+    // Must be followed by whitespace or end of string.
+    let after = &text[i..];
+    if !after.is_empty() && !after.starts_with(char::is_whitespace) {
+        return None;
+    }
+
+    let ws_after = after.len() - after.trim_start().len();
+    Some(i + ws_after)
+}
+
 /// Detect a letter marker like "a.", "b)", "A." at the start of text.
 /// Single letter only (not multi-letter like "aa.").
 /// Returns the byte length of the marker + trailing whitespace, and whether uppercase.
@@ -372,13 +453,33 @@ fn detect_parenthesized_marker(text: &str) -> Option<(usize, ListStyleType)> {
 /// Check if a text block contains *only* a list marker (with optional whitespace).
 /// Returns the marker kind if so.
 fn is_standalone_marker(text: &str) -> Option<ListStyleType> {
-    let marker = detect_marker(text)?;
-    // After stripping the marker prefix the remaining text must be empty.
-    let remaining = text[marker.prefix_len..].trim();
-    if remaining.is_empty() {
-        Some(marker.kind)
-    } else {
-        None
+    if let Some(marker) = detect_marker(text) {
+        // After stripping the marker prefix the remaining text must be empty.
+        let remaining = text[marker.prefix_len..].trim();
+        if remaining.is_empty() {
+            return Some(marker.kind);
+        }
+    }
+
+    // Also treat a lone multi-level section number ("1.1", "2.3.1") as a
+    // standalone marker so the StandaloneMarkerMerger joins it with its
+    // adjacent paragraph.  These are not list markers (see
+    // detect_multilevel_numeric_marker), hence handled separately here.
+    if is_standalone_multilevel_marker(text) {
+        return Some(ListStyleType::Decimal);
+    }
+
+    None
+}
+
+/// Whether `text` consists solely of a multi-level section number ("1.1",
+/// "2.3.1"), ignoring surrounding whitespace.
+fn is_standalone_multilevel_marker(text: &str) -> bool {
+    let trimmed_start = text.trim_start();
+    let leading_ws = text.len() - trimmed_start.len();
+    match detect_multilevel_numeric_marker(trimmed_start) {
+        Some(len) => text[leading_ws + len..].trim().is_empty(),
+        None => false,
     }
 }
 
@@ -421,6 +522,15 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
         if is_standalone_marker(&text).is_none() {
             continue;
         }
+        // Multi-level section numbers ("1.1") are only merged with content in
+        // the *same* column (same left edge).  Single-level markers ("1.") may
+        // additionally pair with a title set off to the right (a different
+        // column), but a lone hierarchical number is reliably the prefix of the
+        // paragraph it shares a left edge with.  Documents that lay numbered
+        // headings out as "<number gutter> <indented title>" already have those
+        // pairs combined by the downstream heading detector; restricting to the
+        // same column keeps this merger from stealing the wrong block there.
+        let marker_is_multilevel = is_standalone_multilevel_marker(&text);
 
         // Find the closest non-marker TextBlock on the same line.
         // Prefer: (1) wider content blocks (they likely contain the marker spatially),
@@ -462,7 +572,42 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 && content_bounds.y <= marker_center
                 && marker_center <= content_bottom
                 && marker_bottom + y_tol <= content_bottom;
-            if !same_y && !marker_above && !contained {
+            // Content-above: the marker sits ~one line *below* the content's
+            // top, at the same left edge.  Some forms position the section
+            // number low within (or just below) its first text line, so the
+            // marker's top is offset down from the content top while still
+            // belonging to the content above it.  Two flavours, with very
+            // different confidence:
+            //
+            // * `content_above_heading` — the content is a *single line* and
+            //   the marker has dropped into the empty gap just below it (it does
+            //   not overlap the content).  A strong signal that the number
+            //   labels that heading, e.g. a "3." sitting under a lone
+            //   "Inkrafttreten; Sonstiges".  Outranks `marker_above`.
+            // * `content_above_overlap` — the marker overlaps the lower edge of
+            //   a *multi-line* paragraph that begins one line above it.  This is
+            //   the ambiguous case `contained` deliberately excludes (marker on
+            //   the paragraph's last line), so it is only used as a last resort,
+            //   *below* `marker_above`: when the marker genuinely leads a block
+            //   below it, that wins (e.g. an "b)" whose item text is the
+            //   paragraph beneath it, not the preceding paragraph above).
+            let line_offset = marker_bounds.y - content_bounds.y;
+            let max_line_offset = marker_bounds.height * Decimal::TWO;
+            let content_above_heading = same_column
+                && line_offset > y_tol
+                && line_offset <= max_line_offset
+                && content_bounds.height <= marker_bounds.height + y_tol
+                && content_bottom <= marker_bounds.y + y_tol;
+            let content_above_overlap = same_column
+                && line_offset > y_tol
+                && line_offset <= max_line_offset
+                && marker_bounds.y <= content_bottom + y_tol;
+            let content_above = content_above_heading || content_above_overlap;
+            // A multi-level section number only attaches to same-column content.
+            if marker_is_multilevel && !same_column {
+                continue;
+            }
+            if !same_y && !marker_above && !contained && !content_above {
                 continue;
             }
 
@@ -498,18 +643,25 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 continue;
             }
 
-            // Score: prefer same_y, then a containing (hanging-indent) block,
-            // then a block directly below the marker; then wider blocks, then
-            // closest by x-distance.  Containment outranks `marker_above` so a
-            // marker sitting inside its own multi-line paragraph is not stolen
-            // by the next item whose top happens to align with the marker
-            // bottom.
+            // Score (lower = preferred): same line, then a single-line heading
+            // the number dropped just below, then a containing (hanging-indent)
+            // block, then a block directly below the marker, and finally — only
+            // as a last resort — a multi-line paragraph the marker overlaps from
+            // above.  `content_above_heading` outranks `marker_above` so a
+            // number under a lone heading binds upward; `content_above_overlap`
+            // ranks *below* `marker_above` so a marker that genuinely leads the
+            // block beneath it still binds downward.
             let priority = if same_y {
                 0i32
-            } else if contained {
+            } else if content_above_heading {
                 1i32
-            } else {
+            } else if contained {
                 2i32
+            } else if marker_above {
+                3i32
+            } else {
+                // content_above_overlap fallback
+                4i32
             };
             let dist = (content_bounds.x - marker_bounds.x).abs();
             let neg_width = -content_bounds.width;
@@ -2140,6 +2292,35 @@ mod tests {
     fn test_detect_no_marker_dash_no_space() {
         // "-word" without space should not match
         assert!(detect_marker("-word").is_none());
+    }
+
+    #[test]
+    fn test_multilevel_numeric_marker() {
+        // Hierarchical section numbers, with and without a trailing dot.
+        assert_eq!(detect_multilevel_numeric_marker("1.1 UBS wird"), Some(4));
+        assert_eq!(detect_multilevel_numeric_marker("1.2 Falls"), Some(4));
+        assert_eq!(detect_multilevel_numeric_marker("2.1.3 text"), Some(6));
+        assert_eq!(detect_multilevel_numeric_marker("1.1."), Some(4));
+        assert_eq!(detect_multilevel_numeric_marker("10.2 x"), Some(5));
+
+        // Single-level numbers are not multi-level markers (handled elsewhere).
+        assert!(detect_multilevel_numeric_marker("1. text").is_none());
+        assert!(detect_multilevel_numeric_marker("1").is_none());
+        // Dates must not be mistaken for section numbers (4-digit year).
+        assert!(detect_multilevel_numeric_marker("31.12.2020").is_none());
+        assert!(detect_multilevel_numeric_marker("31.12.2020 war").is_none());
+        // No space / glued text is not a marker.
+        assert!(detect_multilevel_numeric_marker("1.1Text").is_none());
+
+        // Multi-level numbers are NOT general list markers (no listification).
+        assert!(detect_marker("1.1 UBS wird").is_none());
+
+        // But a lone multi-level number is a standalone marker for merging.
+        assert_eq!(is_standalone_marker("1.1"), Some(ListStyleType::Decimal));
+        assert_eq!(is_standalone_marker("3.3"), Some(ListStyleType::Decimal));
+        assert!(is_standalone_marker("1.1 UBS wird").is_none());
+        // Single-level standalone markers still work.
+        assert_eq!(is_standalone_marker("1."), Some(ListStyleType::Decimal));
     }
 
     #[test]
