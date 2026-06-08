@@ -13,6 +13,7 @@
     {% if is_page %}dorExcludeTitle="true"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
+    {% if is_page %}jumpToFieldButtonVisible="true"{% endif %}
     name="{{ name }}"
     {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     textIsRich="true"
