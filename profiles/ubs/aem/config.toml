@@ -57,7 +57,7 @@ template_path = "/conf/ajila-forms-ubs/settings/wcm/templates/basic"
 page_resource_type = "/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage"
 theme_ref = "/content/dam/formsanddocuments-themes/ajila-forms-ubs/standard-theme"
 redirect_url = "/content/forms/af/afforms_global_common/confirm-successful-submission"
-meta_template_ref = "/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/UBS_Blank_DoR.xdp"
+meta_template_ref = """/content/dam/formsanddocuments/reference-dor-templates/ajila-forms-ubs/02_forms/{% if xfa.formrange_entity == "019" %}UBS_General_Germany_DOR.xdp{% elif xfa.formrange_entity == "033" %}UBS_General_Italy_DOR.xdp{% else %}UBS_Blank_DoR.xdp{% endif %}"""
 dor_template_ref = "/content/dam/formsanddocuments/{{ variables.entity_dir }}/{{ variables.prefix_dir }}/AF_{{ xfa.formrange_code }}/jcr:content/renditions/dorTemplate"
 
 # Component resource types
