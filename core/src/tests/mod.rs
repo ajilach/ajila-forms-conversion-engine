@@ -23931,10 +23931,14 @@ fn test_aari_has_list_with_expected_items() {
 
     let target_list = target_list.unwrap();
 
+    // The source list has four sequential letter markers a) b) c) d).  The
+    // d) marker is a hanging-indent bullet (offset onto the second line of its
+    // multi-line paragraph), so it is merged by the standalone marker merger's
+    // containment rule alongside the same-line a)/b)/c) markers.
     assert_eq!(
         target_list.items.len(),
-        3,
-        "Expected 3 items in the list, got {}.\nItems: {:?}",
+        4,
+        "Expected 4 items in the list, got {}.\nItems: {:?}",
         target_list.items.len(),
         target_list
             .items
@@ -23968,6 +23972,13 @@ fn test_aari_has_list_with_expected_items() {
             .any(|t| t.contains("rapporti da cui deriva il diritto o l")
                 && t.contains("obbligo di cedere o acquistare a termine strumenti finanziari")),
         "List should contain item about 'rapporti da cui deriva il diritto o l'obbligo'.\nItems: {:?}",
+        texts
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi")),
+        "List should contain the d) item about 'chiusura di rapporti produttivi'.\nItems: {:?}",
         texts
     );
 }
@@ -32331,4 +32342,86 @@ fn test_aael_tabular_radio_buttons() {
         "Übernahme der Post Trade Transparency Verpflichtung für die Asset Klasse «Fixed Income» gemäß MiFIR Artikel 21",
         &bestaetigt_options,
     );
+}
+
+
+#[test]
+fn test_aahx_has_unordered_list_with_four_field_items() {
+    // The AAHX form lists special FIM reporting fields (57, 58, 62, 64) as
+    // hanging-indent bullets: each "–" en-dash marker is a standalone draw
+    // sitting at the same left edge as its multi-line paragraph, a few points
+    // below the paragraph top.  The standalone marker merger must pair each
+    // dash with the paragraph whose vertical span contains it (rather than the
+    // next paragraph below), so the list detector groups all four into a
+    // single unordered list.
+    use crate::structured::{ListNode, StructuredNode};
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAHX_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AAHX_019_DE.pdf");
+
+    fn collect_lists(nodes: &[StructuredNode]) -> Vec<ListNode> {
+        let mut lists = Vec::new();
+        for node in nodes {
+            match node {
+                StructuredNode::List(l) => lists.push(l.clone()),
+                StructuredNode::Group(g) => lists.extend(collect_lists(&g.children)),
+                StructuredNode::Repeatable(r) => {
+                    lists.extend(collect_lists(&[(*r.item).clone()]));
+                }
+                StructuredNode::Conditional(c) => {
+                    lists.extend(collect_lists(&[(*c.content).clone()]));
+                }
+                StructuredNode::GridLayout(gl) => {
+                    let child_nodes: Vec<_> = gl.elements.iter().map(|e| e.node.clone()).collect();
+                    lists.extend(collect_lists(&child_nodes));
+                }
+                _ => {}
+            }
+        }
+        lists
+    }
+
+    let lists = collect_lists(&structured_nodes);
+
+    // Find the unordered list whose items are the four "Feld N:" entries.
+    let field_list = lists
+        .iter()
+        .find(|l| {
+            !l.list_style.is_ordered()
+                && l.items.len() == 4
+                && l.items[0].as_plain_text().starts_with("Feld 57:")
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "AAHX should have a 4-item unordered Feld list; found lists: {:?}",
+                lists
+                    .iter()
+                    .map(|l| (
+                        l.list_style.is_ordered(),
+                        l.items.len(),
+                        l.items.first().map(|i| i.as_plain_text())
+                    ))
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    let expected_prefixes = ["Feld 57:", "Feld 58:", "Feld 62:", "Feld 64:"];
+    for (i, prefix) in expected_prefixes.iter().enumerate() {
+        let text = field_list.items[i].as_plain_text();
+        assert!(
+            text.starts_with(prefix),
+            "Item {} should start with '{}', got: {}",
+            i,
+            prefix,
+            text
+        );
+        assert!(
+            !text.starts_with('\u{2013}'),
+            "Item {} should have its '–' marker stripped, got: {}",
+            i,
+            text
+        );
+    }
+
+    println!("\n✓ AAHX has one unordered list with 4 Feld items");
 }

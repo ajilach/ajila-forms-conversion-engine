@@ -392,6 +392,7 @@ fn is_standalone_marker(text: &str) -> Option<ListStyleType> {
 fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
     let roots = doc.roots();
     let y_tol = Decimal::from_f64(Y_SAME_LINE_TOLERANCE).unwrap_or(Decimal::TWO);
+    let x_tol = Decimal::from_f64(X_TOLERANCE).unwrap_or(Decimal::from(5));
 
     let mut merges: Vec<(usize, usize)> = Vec::new(); // (marker_idx, content_idx)
     let mut used: HashSet<usize> = HashSet::new();
@@ -440,7 +441,28 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
             let same_y = (content_bounds.y - marker_bounds.y).abs() <= y_tol;
             let marker_bottom = marker_bounds.y + marker_bounds.height;
             let marker_above = (content_bounds.y - marker_bottom).abs() <= y_tol;
-            if !same_y && !marker_above {
+            // Hanging-indent bullet: the marker shares the content's left edge
+            // (same column) and its vertical centre falls within the content
+            // block's span.  This catches lists where the dash sits in the
+            // hanging indent of a multi-line paragraph rather than on the
+            // paragraph's first baseline, so neither `same_y` nor
+            // `marker_above` holds (the marker is offset a few points below the
+            // paragraph top).  Requiring the same left edge keeps this distinct
+            // from genuine left-gutter markers (which start further left).
+            let marker_center = marker_bounds.y + marker_bounds.height / Decimal::TWO;
+            let content_bottom = content_bounds.y + content_bounds.height;
+            let same_column = (content_bounds.x - marker_bounds.x).abs() <= x_tol;
+            // The paragraph must continue below the marker for it to be a
+            // hanging-indent bullet.  When the marker sits on the content's
+            // *last* line (its bottom aligns with the content bottom), the
+            // content is a preceding item or continuation line and the marker
+            // actually leads the next block below it — that case is left to
+            // `marker_above`.
+            let contained = same_column
+                && content_bounds.y <= marker_center
+                && marker_center <= content_bottom
+                && marker_bottom + y_tol <= content_bottom;
+            if !same_y && !marker_above && !contained {
                 continue;
             }
 
@@ -476,9 +498,19 @@ fn merge_standalone_markers(doc: &mut Document, module_name: &str) {
                 continue;
             }
 
-            // Score: prefer same_y over marker_above, then wider blocks,
-            // then closest by x-distance.
-            let priority = if same_y { 0i32 } else { 1i32 };
+            // Score: prefer same_y, then a containing (hanging-indent) block,
+            // then a block directly below the marker; then wider blocks, then
+            // closest by x-distance.  Containment outranks `marker_above` so a
+            // marker sitting inside its own multi-line paragraph is not stolen
+            // by the next item whose top happens to align with the marker
+            // bottom.
+            let priority = if same_y {
+                0i32
+            } else if contained {
+                1i32
+            } else {
+                2i32
+            };
             let dist = (content_bounds.x - marker_bounds.x).abs();
             let neg_width = -content_bounds.width;
             let is_better = match best {
