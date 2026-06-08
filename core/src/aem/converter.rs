@@ -389,10 +389,8 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     let mut panel_alt_titles: HashMap<String, Vec<String>> = HashMap::new();
 
     for ((title, section_nodes), all_titles) in sections.iter().zip(section_all_titles.iter()) {
-        let converted: Vec<AemNode> = section_nodes
-            .iter()
-            .filter_map(|n| convert_node(n, config, &mut ctx, config.grid_columns, None))
-            .collect();
+        let converted: Vec<AemNode> =
+            convert_children(section_nodes, config, &mut ctx, config.grid_columns, None);
 
         if let Some(title) = title {
             // H2 section → wrap in a Panel; look up XSD bindRef if enabled.
@@ -1213,6 +1211,224 @@ fn convert_list(
     }
 }
 
+// ============================================================================
+// Rich-text block merging
+//
+// When two source languages have a different number of paragraphs/list items
+// (e.g. EN has one paragraph, DE has two), the translation merger leaves
+// consecutive rich-text nodes where one is an *orphan* with an empty (missing)
+// translation. Rather than emit two static-text elements — one with a missing
+// translation — we merge an orphan with its nearest rich-text neighbour into a
+// single static-text element that keeps separate `<p>`/`<ul>` blocks. Per
+// language we emit only the blocks that have content in that language, so no
+// language is left with a missing translation.
+//
+// The grouping view is borrow-only and shared with the package writer's
+// translation extraction so both make identical decisions and render identically
+// (the dictionary key must be byte-identical to the converter's `_value`).
+// ============================================================================
+
+/// A view over a sibling list: either a node converted on its own, or a run of
+/// rich-text nodes merged into a single static-text element.
+pub(crate) enum RichGroup<'a> {
+    Single(&'a StructuredNode),
+    Merged(Vec<&'a StructuredNode>),
+}
+
+/// Whether a node participates in rich-text merging (paragraphs and lists only).
+pub(crate) fn is_rich_text(node: &StructuredNode) -> bool {
+    matches!(node, StructuredNode::Paragraph(_) | StructuredNode::List(_))
+}
+
+/// Whether `node` has any content in `lang` (used to decide which blocks to emit
+/// per language inside a merged element).
+pub(crate) fn rich_text_nonempty_in(node: &StructuredNode, lang: &str) -> bool {
+    match node {
+        StructuredNode::Paragraph(p) => p.content.get(lang).is_some_and(|t| !t.is_empty()),
+        StructuredNode::List(l) => list_nonempty_in(l, lang),
+        _ => false,
+    }
+}
+
+/// Whether at least one item (or sub-item) of `list` has content in `lang`.
+fn list_nonempty_in(list: &ListNode, lang: &str) -> bool {
+    list.items.iter().any(|item| {
+        item.content.get(lang).is_some_and(|t| !t.is_empty())
+            || item
+                .sublist
+                .as_ref()
+                .is_some_and(|sub| list_nonempty_in(sub, lang))
+    })
+}
+
+/// Whether a rich-text node has a missing translation: it carries ≥2 languages
+/// but is entirely empty in at least one of them.
+pub(crate) fn rich_text_has_gap(node: &StructuredNode) -> bool {
+    match node {
+        StructuredNode::Paragraph(p) => {
+            p.content.languages().count() >= 2 && !p.content.missing_translation_languages().is_empty()
+        }
+        StructuredNode::List(l) => list_has_gap(l),
+        _ => false,
+    }
+}
+
+/// Collect every language that appears anywhere in `list` (items and sub-items).
+pub(crate) fn list_languages(list: &ListNode, langs: &mut std::collections::BTreeSet<String>) {
+    for item in &list.items {
+        item.content.collect_languages(langs);
+        if let Some(sub) = &item.sublist {
+            list_languages(sub, langs);
+        }
+    }
+}
+
+/// A list "has a gap" if it spans ≥2 languages but renders empty (no items with
+/// content) in at least one of them — i.e. the list is effectively absent there.
+fn list_has_gap(list: &ListNode) -> bool {
+    let mut langs = std::collections::BTreeSet::new();
+    list_languages(list, &mut langs);
+    if langs.len() < 2 {
+        return false;
+    }
+    langs.iter().any(|lang| !list_nonempty_in(list, lang))
+}
+
+/// Group a sibling list into a minimal set of `RichGroup`s. An orphan rich-text
+/// node (one with a missing translation) is paired with exactly one neighbour:
+/// preferably a preceding translated node, otherwise the following rich-text
+/// node. Merged groups always have size 2; everything else stays `Single`.
+pub(crate) fn group_rich_text<'a>(nodes: &[&'a StructuredNode]) -> Vec<RichGroup<'a>> {
+    let mut groups = Vec::new();
+    let n = nodes.len();
+    let mut i = 0;
+    while i < n {
+        let node = nodes[i];
+        if !is_rich_text(node) {
+            groups.push(RichGroup::Single(node));
+            i += 1;
+            continue;
+        }
+        if !rich_text_has_gap(node) {
+            // A translated node pulls a following orphan into a merged element.
+            if i + 1 < n && is_rich_text(nodes[i + 1]) && rich_text_has_gap(nodes[i + 1]) {
+                groups.push(RichGroup::Merged(vec![node, nodes[i + 1]]));
+                i += 2;
+                continue;
+            }
+            groups.push(RichGroup::Single(node));
+            i += 1;
+            continue;
+        }
+        // `node` is an orphan not consumed by a preceding translated node; pair
+        // it with the following rich-text node if one is available.
+        if i + 1 < n && is_rich_text(nodes[i + 1]) {
+            groups.push(RichGroup::Merged(vec![node, nodes[i + 1]]));
+            i += 2;
+            continue;
+        }
+        // No neighbour available — leave it as-is (today's behaviour).
+        groups.push(RichGroup::Single(node));
+        i += 1;
+    }
+    groups
+}
+
+/// Render the HTML body of a merged rich-text block for a single `lang`. Only
+/// items with content in `lang` contribute a `<p>`/`<ul>` block, so a language
+/// with fewer paragraphs simply emits fewer blocks. Shared by the converter
+/// (master language → `_value`) and the package writer (each language → dict).
+pub(crate) fn render_rich_text_block_html(items: &[&StructuredNode], lang: &str) -> String {
+    let mut out = String::new();
+    for item in items {
+        if !rich_text_nonempty_in(item, lang) {
+            continue;
+        }
+        match item {
+            StructuredNode::Paragraph(p) => {
+                let html = inline_text_to_html(&p.content, lang);
+                out.push_str("<p>");
+                out.push_str(&html);
+                out.push_str("</p>");
+            }
+            StructuredNode::List(l) => {
+                out.push_str(&render_list_html(l, lang));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Build a single `TextDraw` from a merged rich-text block, using the master
+/// language for the `_value`. Footnotes are embedded once over the whole block.
+fn build_merged_textdraw(
+    items: &[&StructuredNode],
+    ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
+) -> AemNode {
+    let mut content = render_rich_text_block_html(items, &ctx.language);
+    if !ctx.footnote_embeds.is_empty() {
+        content = embed_footnotes_in_value(&content, &ctx.footnote_embeds, &ctx.language);
+    }
+    // Name from the first item's master-language plain text.
+    let source_text = match items.first() {
+        Some(StructuredNode::Paragraph(p)) => p.content.plain_text_in(&ctx.language),
+        Some(StructuredNode::List(l)) => l
+            .items
+            .first()
+            .map(|i| i.content.plain_text_in(&ctx.language))
+            .unwrap_or_default(),
+        _ => String::new(),
+    };
+    let name = ctx.make_name("ST", &source_text);
+    let uuid = ctx.uuid(&name);
+    AemNode::TextDraw {
+        uuid,
+        name,
+        content,
+        dor_exclude: false,
+        colspan,
+        dor_colspan,
+    }
+}
+
+/// Convert a sibling list, merging orphan rich-text nodes with a neighbour.
+fn convert_children(
+    nodes: &[&StructuredNode],
+    config: &AemConfig,
+    ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
+) -> Vec<AemNode> {
+    let mut out = Vec::new();
+    for group in group_rich_text(nodes) {
+        match group {
+            RichGroup::Single(node) => {
+                if let Some(aem) = convert_node(node, config, ctx, colspan, dor_colspan) {
+                    out.push(aem);
+                }
+            }
+            RichGroup::Merged(items) => {
+                // Degenerate case: nothing renders in the master language (e.g.
+                // two orphans neither of which has master-language content). Fall
+                // back to converting each node individually.
+                if render_rich_text_block_html(&items, &ctx.language).is_empty() {
+                    for node in items {
+                        if let Some(aem) = convert_node(node, config, ctx, colspan, dor_colspan) {
+                            out.push(aem);
+                        }
+                    }
+                } else {
+                    out.push(build_merged_textdraw(&items, ctx, colspan, dor_colspan));
+                }
+            }
+        }
+    }
+    out
+}
+
 fn convert_image(
     img: &ImageNode,
     _config: &AemConfig,
@@ -1542,11 +1758,9 @@ fn convert_group(
 ) -> AemNode {
     let name = ctx.make_name("PN", "");
     let uuid = ctx.uuid(&name);
-    let children: Vec<AemNode> = g
-        .children
-        .iter()
-        .filter_map(|n| convert_node(n, config, ctx, config.grid_columns, None))
-        .collect();
+    let child_refs: Vec<&StructuredNode> = g.children.iter().collect();
+    let children: Vec<AemNode> =
+        convert_children(&child_refs, config, ctx, config.grid_columns, None);
     AemNode::Panel {
         uuid,
         name,
@@ -2767,6 +2981,185 @@ mod tests {
             }
             other => panic!("Expected TextDraw, got {:?}", other),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Rich-text block merging
+    // ------------------------------------------------------------------
+
+    /// Build a multilingual paragraph; an empty `&str` means a missing
+    /// translation (empty `InlineText`) for that language.
+    fn ml_para(langs: &[(&str, &str)]) -> StructuredNode {
+        let mut t = TranslatedText::empty();
+        for (lang, text) in langs {
+            if text.is_empty() {
+                t.insert(*lang, InlineText::empty());
+            } else {
+                t.insert(*lang, InlineText::plain(*text));
+            }
+        }
+        StructuredNode::Paragraph(ParagraphNode {
+            content: t,
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    fn ml_list(items: &[&[(&str, &str)]]) -> StructuredNode {
+        let items = items
+            .iter()
+            .map(|langs| {
+                let mut t = TranslatedText::empty();
+                for (lang, text) in *langs {
+                    if text.is_empty() {
+                        t.insert(*lang, InlineText::empty());
+                    } else {
+                        t.insert(*lang, InlineText::plain(*text));
+                    }
+                }
+                ListItem::simple(t)
+            })
+            .collect();
+        StructuredNode::List(ListNode {
+            list_style: crate::document::ListStyleType::Disc,
+            items,
+        })
+    }
+
+    fn group_kinds(nodes: &[StructuredNode]) -> Vec<usize> {
+        let refs: Vec<&StructuredNode> = nodes.iter().collect();
+        group_rich_text(&refs)
+            .into_iter()
+            .map(|g| match g {
+                RichGroup::Single(_) => 1,
+                RichGroup::Merged(items) => items.len(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn group_rich_text_no_op_for_single_language() {
+        // Single-language paragraphs have no missing translations → all Single.
+        let nodes = vec![
+            StructuredNode::Paragraph(ParagraphNode {
+                content: TranslatedText::plain("A"),
+                som_path: None,
+                source_name: None,
+            }),
+            StructuredNode::Paragraph(ParagraphNode {
+                content: TranslatedText::plain("B"),
+                som_path: None,
+                source_name: None,
+            }),
+        ];
+        assert_eq!(group_kinds(&nodes), vec![1, 1]);
+    }
+
+    #[test]
+    fn group_rich_text_pairs_orphan_with_neighbour() {
+        // [full, gap] → one merged pair.
+        let nodes = vec![
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+            ml_para(&[("en", ""), ("de", "B-de")]),
+        ];
+        assert_eq!(group_kinds(&nodes), vec![2]);
+
+        // [gap, full] → one merged pair.
+        let nodes = vec![
+            ml_para(&[("en", ""), ("de", "B-de")]),
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+        ];
+        assert_eq!(group_kinds(&nodes), vec![2]);
+
+        // [full, full] (no gap) → two singles.
+        let nodes = vec![
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+            ml_para(&[("en", "B"), ("de", "B-de")]),
+        ];
+        assert_eq!(group_kinds(&nodes), vec![1, 1]);
+    }
+
+    #[test]
+    fn group_rich_text_split_by_non_rich_node() {
+        // A heading between two paragraphs breaks the run.
+        let nodes = vec![
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+            StructuredNode::Heading(HeadingNode {
+                level: HeadingLevel::H3,
+                content: TranslatedText::plain("Title"),
+                som_path: None,
+                source_name: None,
+            }),
+            ml_para(&[("en", ""), ("de", "B-de")]),
+        ];
+        // full(single), heading(single), orphan(single — no rich neighbour).
+        assert_eq!(group_kinds(&nodes), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn merged_block_renders_per_language_blocks() {
+        // EN has one paragraph, DE has two → one TextDraw, EN shows one <p>.
+        let nodes = vec![
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+            ml_para(&[("en", ""), ("de", "B-de")]),
+        ];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1, "orphan should be merged into one element");
+        match &children[0] {
+            AemNode::TextDraw { content, name, .. } => {
+                // Master language is "en" → only the translated paragraph renders.
+                assert_eq!(content, "<p>A</p>");
+                assert!(name.starts_with("ST_"));
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn merged_block_allows_mixed_paragraph_and_list() {
+        // A translated paragraph followed by an orphan list (EN missing) merges
+        // into a single element; the master (EN) render contains both blocks
+        // only where EN has content.
+        let nodes = vec![
+            ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
+            ml_list(&[&[("en", "x"), ("de", "y")], &[("en", ""), ("de", "z")]]),
+        ];
+        let refs: Vec<&StructuredNode> = nodes.iter().collect();
+        // The list has a partial gap on item 2 but is non-empty in EN, so it is
+        // NOT itself an orphan; the run is fully translated → no merge.
+        assert_eq!(group_rich_text(&refs).len(), 2);
+
+        // Now make the whole list EN-empty (a real orphan list).
+        let nodes = vec![
+            ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
+            ml_list(&[&[("en", ""), ("de", "y")], &[("en", ""), ("de", "z")]]),
+        ];
+        let root = convert_to_aem(&nodes, &default_config());
+        let children = unwrap_preamble(&root);
+        assert_eq!(children.len(), 1);
+        match &children[0] {
+            AemNode::TextDraw { content, .. } => {
+                // EN: paragraph renders, list is empty → skipped.
+                assert_eq!(content, "<p>Intro</p>");
+            }
+            other => panic!("Expected TextDraw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn merged_block_value_matches_shared_renderer() {
+        // The TextDraw _value is exactly what the shared renderer produces for
+        // the master language — the same fn the dictionary extraction uses.
+        let nodes = vec![
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+            ml_para(&[("en", ""), ("de", "B-de")]),
+        ];
+        let refs: Vec<&StructuredNode> = nodes.iter().collect();
+        let expected = render_rich_text_block_html(&refs, "en");
+        assert_eq!(expected, "<p>A</p>");
+        let de = render_rich_text_block_html(&refs, "de");
+        assert_eq!(de, "<p>A-de</p><p>B-de</p>");
     }
 
     #[test]

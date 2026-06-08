@@ -629,10 +629,85 @@ type I18nDictionary = HashMap<String, HashMap<String, String>>;
 fn extract_translations(nodes: &[StructuredNode], master_lang: &str) -> I18nDictionary {
     let mut map = I18nDictionary::new();
     let footnote_embeds = crate::aem::converter::build_footnote_embeds(nodes);
-    for node in nodes {
-        extract_from_node(node, master_lang, &mut map, &footnote_embeds);
-    }
+    extract_from_children(nodes, master_lang, &mut map, &footnote_embeds);
     map
+}
+
+/// Walk a sibling list, mirroring the converter's rich-text merging so the
+/// dictionary keys stay byte-identical to the form `_value` attributes.
+fn extract_from_children(
+    nodes: &[StructuredNode],
+    master_lang: &str,
+    map: &mut I18nDictionary,
+    footnote_embeds: &[crate::aem::converter::FootnoteEmbed],
+) {
+    use crate::aem::converter::{RichGroup, group_rich_text, render_rich_text_block_html};
+    let refs: Vec<&StructuredNode> = nodes.iter().collect();
+    for group in group_rich_text(&refs) {
+        match group {
+            RichGroup::Single(node) => {
+                extract_from_node(node, master_lang, map, footnote_embeds);
+            }
+            RichGroup::Merged(items) => {
+                // Mirror the converter's degenerate fallback: when nothing renders
+                // in the master language, the converter emits each node on its own,
+                // so we extract each node individually too.
+                if render_rich_text_block_html(&items, master_lang).is_empty() {
+                    for node in items {
+                        extract_from_node(node, master_lang, map, footnote_embeds);
+                    }
+                } else {
+                    extract_merged_block(&items, master_lang, map, footnote_embeds);
+                }
+            }
+        }
+    }
+}
+
+/// Emit one dictionary entry for a merged rich-text block, keyed by the
+/// master-language rendering (with footnotes embedded once over the whole block,
+/// matching `build_merged_textdraw`).
+fn extract_merged_block(
+    items: &[&StructuredNode],
+    master_lang: &str,
+    map: &mut I18nDictionary,
+    footnote_embeds: &[crate::aem::converter::FootnoteEmbed],
+) {
+    use crate::aem::converter::{
+        embed_footnotes_in_value, list_languages, render_rich_text_block_html,
+    };
+    let mut langs = BTreeSet::new();
+    for item in items {
+        match item {
+            StructuredNode::Paragraph(p) => p.content.collect_languages(&mut langs),
+            StructuredNode::List(l) => list_languages(l, &mut langs),
+            _ => {}
+        }
+    }
+    for footnote in footnote_embeds {
+        footnote.content.collect_languages(&mut langs);
+    }
+    if langs.len() <= 1 {
+        return;
+    }
+
+    let master_html = render_rich_text_block_html(items, master_lang);
+    let master_html = embed_footnotes_in_value(&master_html, footnote_embeds, master_lang);
+    if master_html.is_empty() {
+        return;
+    }
+    let others: HashMap<String, String> = langs
+        .iter()
+        .filter(|l| l.as_str() != master_lang)
+        .map(|l| {
+            let html = render_rich_text_block_html(items, l);
+            let html = embed_footnotes_in_value(&html, footnote_embeds, l);
+            (l.clone(), html)
+        })
+        .collect();
+    if !others.is_empty() {
+        map.insert(master_html, others);
+    }
 }
 
 fn extract_from_node(
@@ -738,9 +813,7 @@ fn extract_from_node(
             }
         }
         StructuredNode::Group(g) => {
-            for child in &g.children {
-                extract_from_node(child, master_lang, map, footnote_embeds);
-            }
+            extract_from_children(&g.children, master_lang, map, footnote_embeds);
         }
         StructuredNode::Repeatable(r) => {
             extract_from_node(&r.item, master_lang, map, footnote_embeds);
@@ -1393,6 +1466,73 @@ mod tests {
             sling_key, "fd_<p>Authorized representative(s)</p>",
             "sling:key must be fd_ prefixed _value content"
         );
+    }
+
+    #[test]
+    fn merged_orphan_paragraphs_produce_single_translation_entry() {
+        // EN has one paragraph, DE has two. The orphan DE paragraph (EN missing)
+        // merges with its neighbour into a single static-text element, and the
+        // dictionary key is the master (EN) _value while the DE value carries
+        // both paragraphs as separate <p> blocks — no missing-translation entry.
+        use crate::aem::convert_to_aem;
+        use crate::structured::{InlineText, ParagraphNode, StructuredNode, TranslatedText};
+
+        let p1 = {
+            let mut t = TranslatedText::empty();
+            t.insert("en", InlineText::plain("A"));
+            t.insert("de", InlineText::plain("A-de"));
+            StructuredNode::Paragraph(ParagraphNode {
+                content: t,
+                som_path: None,
+                source_name: None,
+            })
+        };
+        let orphan = {
+            let mut t = TranslatedText::empty();
+            t.insert("en", InlineText::empty());
+            t.insert("de", InlineText::plain("B-de"));
+            StructuredNode::Paragraph(ParagraphNode {
+                content: t,
+                som_path: None,
+                source_name: None,
+            })
+        };
+        let nodes = vec![p1, orphan];
+
+        let translations = extract_translations(&nodes, "en");
+
+        // Exactly one merged entry, keyed by the EN _value.
+        let expected_key = "<p>A</p>";
+        assert!(
+            translations.contains_key(expected_key),
+            "expected merged key {:?}, got {:?}",
+            expected_key,
+            translations.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(translations[expected_key]["de"], "<p>A-de</p><p>B-de</p>");
+
+        // The dictionary key must be byte-identical to the converter's _value.
+        let mut config = AemConfig::test_default("TEST");
+        config.deterministic_uuids = true;
+        let root = convert_to_aem(&nodes, &config);
+        let value = find_first_textdraw_value(&root).expect("a TextDraw should exist");
+        assert_eq!(
+            value, expected_key,
+            "dictionary key must equal the form _value byte-for-byte"
+        );
+    }
+
+    /// Find the `_value` of the first `TextDraw` in the tree (depth-first).
+    fn find_first_textdraw_value(node: &AemNode) -> Option<String> {
+        match node {
+            AemNode::TextDraw { content, .. } => Some(content.clone()),
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                children.iter().find_map(find_first_textdraw_value)
+            }
+            _ => None,
+        }
     }
 
     #[test]
