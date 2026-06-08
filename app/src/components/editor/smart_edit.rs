@@ -298,7 +298,7 @@ fn build_smart_edit_prompt(
          - {{ Superscript: InlineNode }}\n\
          - {{ Link: {{ href: \"...\", content: InlineText }} }}\n\
          \n\
-         FieldType variants: Text {{ regex, max_length, min_length }}, Number {{ min, max, step }}, Date, Email, Tel, Bool, Radio {{ options }}, Select {{ options }}\n\
+         FieldType variants: Text {{ regex, max_length, min_length }}, Textarea {{ max_length }}, Number {{ min, max, step }}, Date, Email, Tel, Bool, Radio {{ options }}, Select {{ options }}, CheckboxGroup {{ options }}\n\
          InputValue variants: {{ Text: \"...\" }}, {{ Number: \"...\" }}, {{ Bool: true/false }}\n\
          TranslatableString: {{ Plain: \"...\" }} or {{ Translated: {{ \"en\": \"...\", ... }} }}\n\
          \n\
