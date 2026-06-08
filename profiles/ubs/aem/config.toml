@@ -128,7 +128,7 @@ depends_on = ["formular_adressat_radio", "account_holder"]
 # `RB_GroupTipo` (Individual=1, Legal entity=2) and cross-reference
 # `PN_SignatureIndividual` / `PN_LRP_Sign` from `signatures_it`.
 [[custom_elements]]
-field_name = '^Dati del/i cliente/i(?: \(di seguito il «Cliente»\))?$'
+field_name = '(?i)^\s*Dati\s+del/i\s+cliente/i\s*(?:\(.*\))?\s*$'
 template = "account_holder_it"
 page = 0
 depends_on = ["signatures_it", "tipo_radio"]

@@ -493,7 +493,10 @@ impl HeadingDetector {
         stats: &FontStats,
     ) -> Option<(HeadingStyleBucket, bool)> {
         let size = props.avg_font_size;
-        let is_bold = props.is_bold;
+        // Treat a block that opens with a substantial bold run as bold, so a
+        // "**Title** (explanation)" line is bucketed and levelled like a fully
+        // bold heading rather than falling through to body text.
+        let is_bold = props.is_bold || props.starts_with_bold_run;
         let text_len = props.text_length;
         let text_content = &props.text_content;
 
@@ -582,6 +585,12 @@ impl HeadingDetector {
         let mut total_size = 0.0f32;
         let mut bold_char_count: usize = 0;
         let mut total_char_count: usize = 0;
+        // Non-whitespace characters in the maximal run of bold nodes at the
+        // start of the block. Used to recognise "**Title** (explanation)"
+        // headings whose non-bold parenthetical outweighs the bold title in
+        // the overall character count.
+        let mut leading_bold_char_count: usize = 0;
+        let mut leading_run_open = true;
         let mut text_content = String::new();
         let mut count = 0;
         let mut top_border_count = 0;
@@ -615,6 +624,37 @@ impl HeadingDetector {
                 total_char_count += char_count;
                 if node.is_bold() {
                     bold_char_count += char_count;
+                }
+
+                // Track the leading bold run. Prefer per-run weights from rich
+                // text: a same-line title and its parenthetical collapse into a
+                // single node whose node-level weight follows the dominant
+                // (non-bold) run, hiding a bold prefix like
+                // "**Dati del/i cliente/i** (di seguito il «Cliente»)". The rich
+                // runs still carry the per-span bold flag that renders the
+                // `<b>` tag. Fall back to the node weight when no rich text.
+                if leading_run_open {
+                    if let Some(rt) = node.rich_text() {
+                        'runs: for run in rt.paragraphs.iter().flat_map(|p| &p.runs) {
+                            let run_chars =
+                                run.text.chars().filter(|c| !c.is_whitespace()).count();
+                            if run_chars == 0 {
+                                continue;
+                            }
+                            if run.bold {
+                                leading_bold_char_count += run_chars;
+                            } else {
+                                leading_run_open = false;
+                                break 'runs;
+                            }
+                        }
+                    } else if node.is_bold() {
+                        leading_bold_char_count += char_count;
+                    } else if char_count > 0 {
+                        // A non-bold node with visible content ends the leading
+                        // bold run. Whitespace-only nodes don't break the run.
+                        leading_run_open = false;
+                    }
                 }
                 // Check font underline property
                 if node.is_underline() {
@@ -651,6 +691,16 @@ impl HeadingDetector {
         // text — the group is still effectively bold.
         let is_bold = total_char_count > 0 && bold_char_count * 2 >= total_char_count;
 
+        // The block opens with a substantial bold run. This catches
+        // "**Title** (explanation)" headings — e.g. "Dati del/i cliente/i
+        // (di seguito il «Cliente»)" — where the non-bold parenthetical
+        // outweighs the bold title, so the majority test above reports
+        // non-bold. Require both an absolute floor (so a lone bold "1." or
+        // "A" prefix doesn't qualify) and a meaningful share of the block.
+        let starts_with_bold_run = leading_bold_char_count >= 4
+            && total_char_count > 0
+            && leading_bold_char_count * 4 >= total_char_count;
+
         // Consider border/underline present if ANY node has it
         let has_top_border = top_border_count > 0;
         let has_bottom_border = bottom_border_count > 0;
@@ -662,6 +712,7 @@ impl HeadingDetector {
         Some(TextProperties {
             avg_font_size: avg_size,
             is_bold,
+            starts_with_bold_run,
             text_length: text_len,
             text_content: text_content.trim().to_string(),
             has_top_border,
@@ -795,6 +846,10 @@ struct FontStats {
 struct TextProperties {
     avg_font_size: f32,
     is_bold: bool,
+    /// The block opens with a substantial bold run (e.g. a bold title followed
+    /// by a non-bold parenthetical), even when bold characters are a minority
+    /// of the whole block and `is_bold` is therefore false.
+    starts_with_bold_run: bool,
     text_length: usize,
     text_content: String,
     has_top_border: bool,
