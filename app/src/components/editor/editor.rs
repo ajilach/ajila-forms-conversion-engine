@@ -1183,9 +1183,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             update_inline_text(&mut h.content, &content, language.as_deref());
                         }
                         StructuredNode::Field(f) => {
-                            if let Some(label) = &mut f.label {
-                                update_inline_text(label, &content, language.as_deref());
-                            }
+                            // Create the label on demand so fields imported
+                            // without one can have a label added.
+                            let label = f.label.get_or_insert_with(TranslatedText::empty);
+                            update_inline_text(label, &content, language.as_deref());
                         }
                         _ => {}
                     }

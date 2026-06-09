@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use blueprint::document::ListStyleType;
-use blueprint::{FieldId, ListNode, StructuredNode};
+use blueprint::{FieldId, ListNode, StructuredNode, TranslatedText};
 
 use super::metadata_editor::{MetadataEditor, MetadataNodeWrapper, has_editable_metadata};
 use super::state::{
@@ -409,7 +409,9 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
     // Check if this node type supports text editing
     let can_edit_text = match &props.node.0 {
         StructuredNode::Paragraph(_) | StructuredNode::Heading(_) => true,
-        StructuredNode::Field(f) => f.label.is_some(),
+        // Fields are always label-editable: a field imported without a label
+        // (`label: None`) should still allow the user to add one.
+        StructuredNode::Field(_) => true,
         _ => false,
     };
 
@@ -540,17 +542,16 @@ pub fn NodeItem(props: NodeItemProps) -> Element {
                         }
                     }
                     StructuredNode::Field(f) => {
-                        if let Some(label) = &f.label {
-                            rsx! {
-                                TextEditor {
-                                    content: InlineTextWrapper(label.clone()),
-                                    path: props.path.clone(),
-                                    languages: props.languages.clone(),
-                                    on_action: props.on_action,
-                                }
+                        // Fall back to an empty label so fields imported without
+                        // one can still have a label added in the editor.
+                        let label = f.label.clone().unwrap_or_else(TranslatedText::empty);
+                        rsx! {
+                            TextEditor {
+                                content: InlineTextWrapper(label),
+                                path: props.path.clone(),
+                                languages: props.languages.clone(),
+                                on_action: props.on_action,
                             }
-                        } else {
-                            rsx! {}
                         }
                     }
                     _ => rsx! {},
