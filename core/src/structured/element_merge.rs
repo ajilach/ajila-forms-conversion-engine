@@ -4,7 +4,7 @@
 //! nodes in the editor UI. Different node type combinations have different
 //! merge behaviors.
 
-use super::{HeadingLevel, ListItem, ParagraphNode, StructuredNode};
+use super::{FieldNode, FieldType, HeadingLevel, ListItem, ParagraphNode, StructuredNode};
 
 /// Errors that can occur during element merging.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +60,17 @@ fn node_type_name(node: &StructuredNode) -> &'static str {
     }
 }
 
+/// Check whether two fields are option groups of the same kind (both radio
+/// groups or both checkbox groups), which makes them mergeable by combining
+/// their options into a single group.
+fn fields_are_mergeable_option_groups(a: &FieldNode, b: &FieldNode) -> bool {
+    matches!(
+        (&a.input_type, &b.input_type),
+        (FieldType::Radio { .. }, FieldType::Radio { .. })
+            | (FieldType::CheckboxGroup { .. }, FieldType::CheckboxGroup { .. })
+    )
+}
+
 /// Check if two node types can be merged together.
 ///
 /// Returns `Ok(())` if the nodes can be merged, or an error explaining why not.
@@ -67,7 +78,11 @@ pub fn can_merge(source: &StructuredNode, target: &StructuredNode) -> Result<(),
     use StructuredNode::*;
 
     match (source, target) {
-        // Fields cannot be merged
+        // Radio groups and checkbox groups of the same kind can be merged by
+        // combining their options into a single group.
+        (Field(a), Field(b)) if fields_are_mergeable_option_groups(a, b) => Ok(()),
+
+        // Other fields cannot be merged
         (Field(_), _) | (_, Field(_)) => Err(MergeError::CannotMergeFields),
 
         // Structural nodes (Conditional, Repeatable) cannot be merged
@@ -136,6 +151,25 @@ pub fn merge_two(
     Ok(match (source, target) {
         // Empty nodes disappear
         (Empty, other) | (other, Empty) => other,
+
+        // Radio + Radio / CheckboxGroup + CheckboxGroup: combine their options
+        // into the target field, preserving target metadata (name, label, ...).
+        (Field(src), Field(mut tgt))
+            if fields_are_mergeable_option_groups(&src, &tgt) =>
+        {
+            let src_options = match src.input_type {
+                FieldType::Radio { options } | FieldType::CheckboxGroup { options } => options,
+                // Unreachable: guard guarantees an option-group field type.
+                _ => Vec::new(),
+            };
+            match &mut tgt.input_type {
+                FieldType::Radio { options } | FieldType::CheckboxGroup { options } => {
+                    options.extend(src_options);
+                }
+                _ => {}
+            }
+            Field(tgt)
+        }
 
         // Paragraph + Paragraph: join text content
         (Paragraph(src), Paragraph(mut tgt)) => {
@@ -356,6 +390,110 @@ mod tests {
 
         assert!(matches!(
             can_merge(&f, &p),
+            Err(MergeError::CannotMergeFields)
+        ));
+    }
+
+    fn option(name: &str, value: &str) -> crate::structured::NameValue {
+        use crate::structured::{InputValue, NameValue, TranslatableString};
+        NameValue {
+            name: TranslatableString::Plain(name.to_string()),
+            value: InputValue::Text(value.to_string()),
+        }
+    }
+
+    fn option_field(name: &str, input_type: FieldType) -> StructuredNode {
+        use crate::structured::{FieldId, FieldNode};
+        use crate::xfa::scripting::SomPath;
+        StructuredNode::Field(FieldNode {
+            name: FieldId::from_som_path(&SomPath::new(name)),
+            som_path: None,
+            label: None,
+            input_type,
+            value: None,
+            placeholder: None,
+            required: false,
+        })
+    }
+
+    #[test]
+    fn test_merge_radio_groups_combines_options() {
+        let r1 = option_field(
+            "r1",
+            FieldType::Radio {
+                options: vec![option("Yes", "y")],
+            },
+        );
+        let r2 = option_field(
+            "r2",
+            FieldType::Radio {
+                options: vec![option("No", "n")],
+            },
+        );
+
+        let merged = merge_two(r2, r1).unwrap();
+        if let StructuredNode::Field(f) = merged {
+            match f.input_type {
+                FieldType::Radio { options } => {
+                    assert_eq!(options.len(), 2);
+                    assert_eq!(options[0].name.as_str(), "Yes");
+                    assert_eq!(options[1].name.as_str(), "No");
+                }
+                _ => panic!("Expected Radio"),
+            }
+        } else {
+            panic!("Expected Field");
+        }
+    }
+
+    #[test]
+    fn test_merge_checkbox_groups_combines_options() {
+        let c1 = option_field(
+            "c1",
+            FieldType::CheckboxGroup {
+                options: vec![option("A", "a")],
+            },
+        );
+        let c2 = option_field(
+            "c2",
+            FieldType::CheckboxGroup {
+                options: vec![option("B", "b"), option("C", "c")],
+            },
+        );
+
+        let merged = merge_nodes(vec![c1, c2]).unwrap();
+        if let StructuredNode::Field(f) = merged {
+            match f.input_type {
+                FieldType::CheckboxGroup { options } => {
+                    assert_eq!(options.len(), 3);
+                    assert_eq!(options[0].name.as_str(), "A");
+                    assert_eq!(options[1].name.as_str(), "B");
+                    assert_eq!(options[2].name.as_str(), "C");
+                }
+                _ => panic!("Expected CheckboxGroup"),
+            }
+        } else {
+            panic!("Expected Field");
+        }
+    }
+
+    #[test]
+    fn test_cannot_merge_radio_with_checkbox() {
+        let r = option_field(
+            "r",
+            FieldType::Radio {
+                options: vec![option("Yes", "y")],
+            },
+        );
+        let c = option_field(
+            "c",
+            FieldType::CheckboxGroup {
+                options: vec![option("A", "a")],
+            },
+        );
+
+        assert!(matches!(
+            can_merge(&r, &c),
             Err(MergeError::CannotMergeFields)
         ));
     }
