@@ -9,8 +9,13 @@ title = "Ajila Forms Conversion Engine"
 title = "Ajila Forms Conversion Engine"
 
 [bundle]
+short_description = "Ajila Forms Conversion Engine"
 identifier = "com.ajila.forms-conversion-engine"
+publisher = "ajila"
+homepage = "https://www.ajila.com"
+copyright = "Copyright © 2026 Ajila"
 icon = ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"]
+
 
 [web.watcher]
 reload_html = true
