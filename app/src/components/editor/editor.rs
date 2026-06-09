@@ -1187,6 +1187,12 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             // without one can have a label added.
                             let label = f.label.get_or_insert_with(TranslatedText::empty);
                             update_inline_text(label, &content, language.as_deref());
+                            // Don't materialize an empty label: a field opened and
+                            // closed without typing should stay label-less rather
+                            // than gain a spurious "missing translation" warning.
+                            if label.is_empty() {
+                                f.label = None;
+                            }
                         }
                         _ => {}
                     }
