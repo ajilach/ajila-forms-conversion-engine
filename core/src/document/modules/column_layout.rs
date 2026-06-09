@@ -269,23 +269,67 @@ impl ColumnLayoutDetector {
         // For each section range, collect left/right elements
         let mut sections: Vec<ColumnSection> = Vec::new();
 
+        // Vertical slack (points) when aligning the two columns' starting edges.
+        let band_tolerance = Decimal::from_str("6.0").unwrap();
+
         for (start_y, end_y) in &section_bounds {
-            let mut section_left: Vec<usize> = left_elements
+            let left_in_section: Vec<(usize, Decimal)> = left_elements
                 .iter()
                 .filter(|(_, y)| y >= start_y && y < end_y)
+                .copied()
+                .collect();
+
+            let right_in_section: Vec<(usize, Decimal)> = right_elements
+                .iter()
+                .filter(|(_, y)| y >= start_y && y < end_y)
+                .copied()
+                .collect();
+
+            // A genuine two-column band has both columns starting at roughly the
+            // same height. Content sitting above the point where the *second*
+            // column begins is single-column intro material (e.g. a sub-title
+            // field or an address block) that merely happens to be left-aligned
+            // and narrow. Sweeping it into the column section would drag it — and
+            // everything below it — ahead of intervening single-column content in
+            // reading order. Trim that overhang by aligning both columns to the
+            // lower of their two starting edges.
+            //
+            // The band is anchored on *document* content only. Master-page
+            // furniture (a centred watermark, etc.) is decorative page chrome
+            // whose position is meaningless for reading order; letting it anchor
+            // the band would defeat the trim. It is otherwise kept (it may be the
+            // element that lets a sparse column clear the detection threshold) and
+            // simply swept along if it falls inside the band.
+            let real_top = |items: &[(usize, Decimal)]| {
+                items
+                    .iter()
+                    .filter(|(idx, _)| doc.master_page_region(*idx).is_none())
+                    .map(|(_, y)| *y)
+                    .min()
+            };
+            let band_top = match (real_top(&left_in_section), real_top(&right_in_section)) {
+                (Some(left_min), Some(right_min)) => left_min.max(right_min) - band_tolerance,
+                // If a column has no document content here, fall back to no trimming.
+                _ => Decimal::MIN,
+            };
+
+            let mut section_left: Vec<usize> = left_in_section
+                .iter()
+                .filter(|(_, y)| *y >= band_top)
                 .map(|(idx, _)| *idx)
                 .collect();
 
-            let mut section_right: Vec<usize> = right_elements
+            let mut section_right: Vec<usize> = right_in_section
                 .iter()
-                .filter(|(_, y)| y >= start_y && y < end_y)
+                .filter(|(_, y)| *y >= band_top)
                 .map(|(idx, _)| *idx)
                 .collect();
 
-            // Inject narrow items (section numbers, etc.) into the correct column side
+            // Inject narrow items (section numbers, etc.) into the correct column
+            // side, restricted to the same aligned band.
             for (idx, bounds) in &narrow_items {
                 let y = bounds.top();
-                if y < *start_y || y >= *end_y {
+                if y < *start_y || y >= *end_y || y < band_top {
                     continue;
                 }
                 if bounds.center_x() < split_x {

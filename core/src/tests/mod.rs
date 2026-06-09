@@ -32346,6 +32346,112 @@ fn test_aael_tabular_radio_buttons() {
 
 
 #[test]
+fn test_aahx_zwischen_section_precedes_vereinbarung_with_party_fields() {
+    // AAHX opens with a single-column "Zwischen" block (the contracting parties
+    // and the asset manager's address) followed by a two-column "Vereinbarung"
+    // body. A centred master-page watermark sits at the same height as the
+    // asset-manager address fields; it has a column-like width and used to be
+    // misread as a lone right-column element by the ColumnLayoutDetector. That
+    // pulled the whole two-column body — plus the LEI field and the asset
+    // manager paragraph — into a ColumnSection whose bounding box started above
+    // the "Zwischen" heading, so the agreement was emitted *before* "Zwischen"
+    // and the "Vereinbarung" heading came out empty.
+    //
+    // The fix excludes master-page furniture from column detection and aligns
+    // the two columns to their common starting edge, so the single-column intro
+    // stays in reading order. This test pins the resulting order: "Zwischen"
+    // first, holding the party fields Name → Straße → Nr. → PLZ → Stadt → Land
+    // → LEI, then "Vereinbarung".
+    use crate::structured::StructuredNode;
+
+    let structured_nodes = crate::run_exhaustive_to_merged(input_path("AAHX_019_DE.pdf"))
+        .expect("Failed to run exhaustive merge on AAHX_019_DE.pdf");
+
+    // Heading text by level-2 position, in document order.
+    fn h2_texts(nodes: &[StructuredNode]) -> Vec<String> {
+        nodes
+            .iter()
+            .filter_map(|n| match n {
+                StructuredNode::Heading(h)
+                    if matches!(h.level, crate::structured::HeadingLevel::H2) =>
+                {
+                    Some(h.content.as_plain_text())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    let h2s = h2_texts(&structured_nodes);
+    let zwischen_pos = h2s.iter().position(|t| t.trim() == "Zwischen");
+    let vereinbarung_pos = h2s.iter().position(|t| t.trim() == "Vereinbarung");
+    let (Some(zwischen_pos), Some(vereinbarung_pos)) = (zwischen_pos, vereinbarung_pos) else {
+        panic!("Expected both 'Zwischen' and 'Vereinbarung' H2 headings; got: {h2s:?}");
+    };
+    assert!(
+        zwischen_pos < vereinbarung_pos,
+        "'Zwischen' must be the first section, before 'Vereinbarung'; got H2 order: {h2s:?}"
+    );
+
+    // Collect field labels at the top level (descending into grids, which hold
+    // the address rows) between the "Zwischen" and "Vereinbarung" headings.
+    fn grid_field_labels(node: &StructuredNode, out: &mut Vec<String>) {
+        match node {
+            StructuredNode::Field(f) => {
+                if let Some(label) = &f.label {
+                    out.push(label.as_plain_text());
+                }
+            }
+            StructuredNode::GridLayout(gl) => {
+                for e in &gl.elements {
+                    grid_field_labels(&e.node, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut in_zwischen = false;
+    let mut zwischen_field_labels: Vec<String> = Vec::new();
+    for node in &structured_nodes {
+        if let StructuredNode::Heading(h) = node
+            && matches!(h.level, crate::structured::HeadingLevel::H2)
+        {
+            match h.content.as_plain_text().trim() {
+                "Zwischen" => {
+                    in_zwischen = true;
+                    continue;
+                }
+                _ => {
+                    if in_zwischen {
+                        break;
+                    }
+                }
+            }
+        }
+        if in_zwischen {
+            grid_field_labels(node, &mut zwischen_field_labels);
+        }
+    }
+
+    let expected = [
+        "Name",
+        "Straße",
+        "Nr.",
+        "PLZ",
+        "Stadt",
+        "Land",
+        "Legal Entity Identifier (LEI) – 20 stellig",
+    ];
+    assert_eq!(
+        zwischen_field_labels, expected,
+        "'Zwischen' section field order mismatch"
+    );
+
+    println!("\n✓ AAHX 'Zwischen' precedes 'Vereinbarung' with party fields in order");
+}
+
+#[test]
 fn test_aahx_has_unordered_list_with_four_field_items() {
     // The AAHX form lists special FIM reporting fields (57, 58, 62, 64) as
     // hanging-indent bullets: each "–" en-dash marker is a standalone draw
