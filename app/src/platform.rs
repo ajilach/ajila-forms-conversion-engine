@@ -1,5 +1,7 @@
 //! Platform-aware helpers: async sleep, file download, HTML preview, file explorer.
 
+use crate::settings::LlmProvider;
+
 /// Platform-agnostic async sleep.
 #[allow(dead_code)]
 pub async fn async_sleep_ms(ms: u32) {
@@ -123,7 +125,37 @@ pub fn show_html_preview(html: String, filename: &str) {
     }
 }
 
-// ── Smart edit (OpenAI API) ───────────────────────────────────────────
+// ── Smart edit (LLM chat) ─────────────────────────────────────────────
+
+/// Send one turn of a multi-turn chat to the configured LLM provider and
+/// return the assistant's reply.
+///
+/// Dispatches to the OpenAI or Anthropic implementation based on `provider`.
+/// Because a single smart-edit session always uses one provider, `history`
+/// only ever holds messages in that provider's wire format.
+pub async fn chat_turn(
+    provider: LlmProvider,
+    history: &mut Vec<serde_json::Value>,
+    user_text: &str,
+    images: &[(String, String)],
+    api_key: &str,
+    model: &str,
+) -> Result<String, String> {
+    match provider {
+        LlmProvider::OpenAi => openai_chat_turn(history, user_text, images, api_key, model).await,
+        LlmProvider::Anthropic => {
+            anthropic_chat_turn(history, user_text, images, api_key, model).await
+        }
+    }
+}
+
+/// List the available model identifiers for the given provider.
+pub async fn list_models(provider: LlmProvider, api_key: &str) -> Result<Vec<String>, String> {
+    match provider {
+        LlmProvider::OpenAi => openai_list_models(api_key).await,
+        LlmProvider::Anthropic => anthropic_list_models(api_key).await,
+    }
+}
 
 /// Send one turn of a multi-turn chat to the OpenAI API and return the assistant's reply.
 ///
@@ -260,6 +292,159 @@ fn is_chat_model(id: &str) -> bool {
 
 #[cfg(target_arch = "wasm32")]
 pub async fn openai_list_models(_api_key: &str) -> Result<Vec<String>, String> {
+    Err("Listing models is only supported in the desktop app.".to_string())
+}
+
+// ── Smart edit (Anthropic API) ───────────────────────────────────────
+
+/// Send one turn of a multi-turn chat to the Anthropic Messages API and return
+/// the assistant's reply.
+///
+/// Mirrors [`openai_chat_turn`] but builds Anthropic-shaped content blocks and
+/// appends them to `history`, so the same conversation thread continues across
+/// repair and follow-up calls within a smart-edit session.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn anthropic_chat_turn(
+    history: &mut Vec<serde_json::Value>,
+    user_text: &str,
+    images: &[(String, String)],
+    api_key: &str,
+    model: &str,
+) -> Result<String, String> {
+    if api_key.is_empty() {
+        return Err(
+            "Anthropic API key is not configured. Open Settings and paste your API key."
+                .to_string(),
+        );
+    }
+
+    let mut content: Vec<serde_json::Value> =
+        vec![serde_json::json!({"type": "text", "text": user_text})];
+
+    for (_label, b64) in images {
+        content.push(serde_json::json!({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": b64
+            }
+        }));
+    }
+
+    history.push(serde_json::json!({"role": "user", "content": content}));
+
+    // Non-streaming request. 16k output tokens stays under the Anthropic SDK's
+    // streaming-required threshold and comfortably below every model's cap.
+    let request = serde_json::json!({
+        "model": model,
+        "max_tokens": 16000,
+        "messages": history,
+    });
+
+    let response = reqwest::Client::new()
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| format!("Anthropic API error: {e}"))?;
+
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Anthropic API error: {e}"))?;
+
+    if !status.is_success() {
+        let msg = body["error"]["message"]
+            .as_str()
+            .unwrap_or("unknown error");
+        return Err(format!("Anthropic API error ({status}): {msg}"));
+    }
+
+    // Concatenate all text blocks from the response content array.
+    let response_text = body["content"]
+        .as_array()
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|b| {
+                    if b["type"] == "text" {
+                        b["text"].as_str()
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("Unexpected Anthropic response structure: {body}"))?;
+
+    history.push(serde_json::json!({"role": "assistant", "content": response_text}));
+
+    Ok(response_text)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn anthropic_chat_turn(
+    _history: &mut Vec<serde_json::Value>,
+    _user_text: &str,
+    _images: &[(String, String)],
+    _api_key: &str,
+    _model: &str,
+) -> Result<String, String> {
+    Err("Smart Edit is only supported in the desktop app. The web version cannot call the Anthropic API directly.".to_string())
+}
+
+/// Fetch the list of available model IDs from the Anthropic API, sorted
+/// alphabetically. All Claude models support the chat + vision endpoint, so no
+/// filtering is applied.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String> {
+    if api_key.is_empty() {
+        return Err("Anthropic API key is not configured.".to_string());
+    }
+
+    let response = reqwest::Client::new()
+        .get("https://api.anthropic.com/v1/models?limit=1000")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to list models: {e}"))?;
+
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to list models: {e}"))?;
+
+    if !status.is_success() {
+        let msg = body["error"]["message"]
+            .as_str()
+            .unwrap_or("unknown error");
+        return Err(format!("Failed to list models ({status}): {msg}"));
+    }
+
+    let mut ids: Vec<String> = body["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m["id"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    ids.sort();
+    Ok(ids)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn anthropic_list_models(_api_key: &str) -> Result<Vec<String>, String> {
     Err("Listing models is only supported in the desktop app.".to_string())
 }
 

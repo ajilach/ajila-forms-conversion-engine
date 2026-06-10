@@ -14,9 +14,10 @@ use blueprint::StructuredNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::platform::openai_chat_turn;
+use crate::platform::chat_turn;
+use crate::settings::LlmProvider;
 
-/// Ordered list of OpenAI chat messages for a single smart-edit session.
+/// Ordered list of LLM chat messages for a single smart-edit session.
 pub type ChatHistory = Vec<serde_json::Value>;
 
 /// A single proposed change returned by Copilot alongside the new nodes.
@@ -62,8 +63,9 @@ pub fn serialize_selected_nodes(
 /// * `content` – full document content.
 /// * `selected_indices` – root-level indices of selected nodes (empty = all).
 /// * `plain_images` – label→base64-PNG map from the plain render stage.
-/// * `api_key` – OpenAI API key.
-/// * `model` – OpenAI model identifier (e.g. "gpt-4o").
+/// * `provider` – which LLM provider to call.
+/// * `api_key` – API key for the provider.
+/// * `model` – model identifier (e.g. "gpt-4o" or "claude-opus-4-8").
 ///
 /// Returns a [`SmartEditResult`] containing the suggested nodes and the
 /// structured change list.
@@ -71,6 +73,7 @@ pub async fn run_smart_edit(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
+    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<SmartEditResult, String> {
@@ -83,13 +86,14 @@ pub async fn run_smart_edit(
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let mut history: ChatHistory = Vec::new();
-    let raw = openai_chat_turn(&mut history, &user_text, &images, api_key, model).await?;
-    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
+    let raw = chat_turn(provider, &mut history, &user_text, &images, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
     ensure_change_list(
         content,
         selected_indices,
         &mut history,
         &mut result,
+        provider,
         api_key,
         model,
     )
@@ -104,6 +108,7 @@ pub async fn run_smart_edit_with_feedback(
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
     rejected_changes: &[ChangeItem],
+    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<SmartEditResult, String> {
@@ -116,13 +121,14 @@ pub async fn run_smart_edit_with_feedback(
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let mut history: ChatHistory = Vec::new();
-    let raw = openai_chat_turn(&mut history, &user_text, &images, api_key, model).await?;
-    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
+    let raw = chat_turn(provider, &mut history, &user_text, &images, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
     ensure_change_list(
         content,
         selected_indices,
         &mut history,
         &mut result,
+        provider,
         api_key,
         model,
     )
@@ -133,6 +139,7 @@ pub async fn run_smart_edit_with_feedback(
 async fn parse_with_repair(
     raw: &str,
     history: &mut ChatHistory,
+    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<SmartEditResult, String> {
@@ -152,7 +159,7 @@ async fn parse_with_repair(
             );
 
             if let Ok(repaired_raw) =
-                openai_chat_turn(history, &repair_prompt, &[], api_key, model).await
+                chat_turn(provider, history, &repair_prompt, &[], api_key, model).await
                 && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
             {
                 return Ok(parsed);
@@ -168,6 +175,7 @@ async fn ensure_change_list(
     selected_indices: &[usize],
     history: &mut ChatHistory,
     result: &mut SmartEditResult,
+    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) {
@@ -202,7 +210,7 @@ async fn ensure_change_list(
          No surrounding prose, no markdown fences, no backticks."
     );
 
-    if let Ok(raw) = openai_chat_turn(history, &followup_prompt, &[], api_key, model).await
+    if let Ok(raw) = chat_turn(provider, history, &followup_prompt, &[], api_key, model).await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {

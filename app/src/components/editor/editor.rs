@@ -28,6 +28,7 @@ use super::state::{
 };
 use super::toolbar::EditorToolbar;
 use crate::db::{self, EditInfo};
+use crate::settings::LlmProvider;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
 use crate::platform::show_html_preview;
 
@@ -76,10 +77,12 @@ pub struct StructuredEditorProps {
     pub envelope: EnvelopeWrapper,
     /// Plain rendered page images (label → base64 PNG) for Smart Edit.
     pub plain_images: HashMap<String, String>,
-    /// OpenAI API key for Smart Edit.
-    pub openai_api_key: String,
-    /// OpenAI model for Smart Edit (e.g. "gpt-4o").
-    pub openai_model: String,
+    /// LLM provider for Smart Edit.
+    pub provider: LlmProvider,
+    /// API key for Smart Edit (for the selected provider).
+    pub api_key: String,
+    /// Model identifier for Smart Edit (e.g. "gpt-4o" or "claude-opus-4-8").
+    pub model: String,
     /// Edit-history session id for this document (desktop only; `None` on web).
     pub session_id: Option<String>,
     /// Callback when editing is complete (with the modified envelope).
@@ -102,8 +105,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let smart_edit_images = props.plain_images.clone();
     let smart_edit_images_for_action = smart_edit_images.clone();
     let has_images = !smart_edit_images.is_empty();
-    let openai_api_key = use_signal(|| props.openai_api_key.clone());
-    let openai_model = use_signal(|| props.openai_model.clone());
+    let provider = use_signal(|| props.provider);
+    let api_key = use_signal(|| props.api_key.clone());
+    let model = use_signal(|| props.model.clone());
 
     // Which change IDs the user has rejected in the current Preview round.
     // Reset to empty whenever a new smart-edit run starts.
@@ -1524,8 +1528,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let selected_indices: Vec<usize> = Vec::new();
                 let content = envelope.read().content.clone();
                 let plain_images = smart_edit_images_for_action.clone();
-                let api_key = openai_api_key.read().clone();
-                let model = openai_model.read().clone();
+                let provider = *provider.read();
+                let api_key = api_key.read().clone();
+                let model = model.read().clone();
                 let started_at = std::time::Instant::now();
 
                 smart_edit_state.set(SmartEditState::Loading);
@@ -1536,6 +1541,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         &content,
                         &selected_indices,
                         &plain_images,
+                        provider,
                         &api_key,
                         &model,
                     )
@@ -1752,8 +1758,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let selected_indices_for_retry = selected_indices.clone();
                             let content_for_retry = envelope.read().content.clone();
                             let plain_images_for_retry = smart_edit_images.clone();
-                            let api_key_for_retry = openai_api_key.read().clone();
-                            let model_for_retry = openai_model.read().clone();
+                            let provider_for_retry = *provider.read();
+                            let api_key_for_retry = api_key.read().clone();
+                            let model_for_retry = model.read().clone();
                             let nodes_for_apply = result.nodes.clone();
                             let original_nodes_for_preview: Vec<StructuredNode> = if selected_indices
                                 .is_empty()
@@ -1855,6 +1862,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 let content = content_for_retry.clone();
                                                 let plain_images = plain_images_for_retry.clone();
                                                 let selected_indices = selected_indices_for_retry.clone();
+                                                let provider = provider_for_retry;
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
 
@@ -1877,6 +1885,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         &selected_indices,
                                                                         &plain_images,
                                                                         &rejected,
+                                                                        provider,
                                                                         &api_key,
                                                                         &model,
                                                                     )
@@ -1958,8 +1967,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let selected_indices_for_retry = selected_indices.clone();
                             let content_for_retry = envelope.read().content.clone();
                             let plain_images_for_retry = smart_edit_images.clone();
-                            let api_key_for_retry = openai_api_key.read().clone();
-                            let model_for_retry = openai_model.read().clone();
+                            let provider_for_retry = *provider.read();
+                            let api_key_for_retry = api_key.read().clone();
+                            let model_for_retry = model.read().clone();
                             rsx! {
                                 div { class: "smart-edit-inline-panel",
                                     p { class: "smart-edit-hint smart-edit-error", "Smart Edit failed: {message}" }
@@ -1978,6 +1988,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 let content = content_for_retry.clone();
                                                 let plain_images = plain_images_for_retry.clone();
                                                 let selected_indices = selected_indices_for_retry.clone();
+                                                let provider = provider_for_retry;
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
                                                 let started_at = std::time::Instant::now();
@@ -1988,6 +1999,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             &content,
                                                             &selected_indices,
                                                             &plain_images,
+                                                            provider,
                                                             &api_key,
                                                             &model,
                                                         )

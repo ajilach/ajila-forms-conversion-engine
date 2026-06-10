@@ -11,16 +11,39 @@ use serde::{Deserialize, Serialize};
 /// Key under which the serialized settings are stored.
 const SETTINGS_KEY: &str = "app";
 
+/// LLM provider used for Smart Edit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LlmProvider {
+    /// OpenAI (ChatGPT) models.
+    #[serde(rename = "openai")]
+    OpenAi,
+    /// Anthropic (Claude) models.
+    #[serde(rename = "anthropic")]
+    Anthropic,
+}
+
+impl Default for LlmProvider {
+    fn default() -> Self {
+        Self::OpenAi
+    }
+}
+
 /// Application settings.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     pub always_on_top: bool,
     pub live_preview_port: u16,
+    /// Which LLM provider Smart Edit talks to.
+    pub provider: LlmProvider,
     /// OpenAI API key used for Smart Edit. Stored in the settings file on disk.
     pub openai_api_key: String,
     /// OpenAI model used for Smart Edit (e.g. "gpt-4o", "gpt-4.1").
     pub openai_model: String,
+    /// Anthropic API key used for Smart Edit. Stored in the settings file on disk.
+    pub anthropic_api_key: String,
+    /// Anthropic model used for Smart Edit (e.g. "claude-opus-4-8").
+    pub anthropic_model: String,
 }
 
 impl Default for AppSettings {
@@ -28,8 +51,29 @@ impl Default for AppSettings {
         Self {
             always_on_top: false,
             live_preview_port: 3718,
+            provider: LlmProvider::default(),
             openai_api_key: String::new(),
             openai_model: "gpt-4.1".to_string(),
+            anthropic_api_key: String::new(),
+            anthropic_model: "claude-opus-4-8".to_string(),
+        }
+    }
+}
+
+impl AppSettings {
+    /// The API key for the currently selected provider.
+    pub fn active_api_key(&self) -> &str {
+        match self.provider {
+            LlmProvider::OpenAi => &self.openai_api_key,
+            LlmProvider::Anthropic => &self.anthropic_api_key,
+        }
+    }
+
+    /// The model identifier for the currently selected provider.
+    pub fn active_model(&self) -> &str {
+        match self.provider {
+            LlmProvider::OpenAi => &self.openai_model,
+            LlmProvider::Anthropic => &self.anthropic_model,
         }
     }
 }

@@ -25,6 +25,7 @@ tokio = { version = "1", features = ["full"] }
 dirs = "5.0"
 toml = "0.8"
 async-openai = { version = "0.40", features = ["chat-completion", "byot", "model"] }
+reqwest = { version = "0.13", features = ["json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["clock"] }
