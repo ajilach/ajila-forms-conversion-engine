@@ -126,7 +126,7 @@ impl From<&str> for FieldId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum StructuredNode {
     Heading(HeadingNode),
@@ -145,7 +145,7 @@ pub enum StructuredNode {
     Footnote(FootnoteNode),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListItem {
     pub content: TranslatedText,
@@ -183,28 +183,28 @@ impl ListItem {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListNode {
     pub list_style: crate::document::ListStyleType,
     pub items: Vec<ListItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GridLayout {
     pub columns: usize,
     pub elements: Vec<GridLayoutElement>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GridLayoutElement {
     pub span: usize,
     pub node: StructuredNode,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TableNode {
     pub header: Option<TableHeader>,
@@ -212,19 +212,19 @@ pub struct TableNode {
     pub caption: Option<TranslatedText>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TableRow {
     pub cells: Vec<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TableHeader {
     pub cells: Vec<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageNode {
     #[serde(skip, default)]
@@ -232,13 +232,13 @@ pub struct ImageNode {
     pub alt_text: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupNode {
     pub children: Vec<StructuredNode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RepeatableNode {
     pub item: Box<StructuredNode>,
@@ -246,29 +246,30 @@ pub struct RepeatableNode {
     pub max_occurrences: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConditionalNode {
     pub condition: FieldCondition,
     pub content: Box<StructuredNode>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCondition {
+    #[schemars(with = "String")]
     pub field_name: FieldId,
     pub value: InputValue,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum InputValue {
     Text(String),
-    Number(Decimal),
+    Number(#[schemars(with = "String")] Decimal),
     Bool(bool),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum FieldType {
     Text {
@@ -280,8 +281,11 @@ pub enum FieldType {
         max_length: Option<usize>,
     },
     Number {
+        #[schemars(with = "Option<String>")]
         min: Option<Decimal>,
+        #[schemars(with = "Option<String>")]
         max: Option<Decimal>,
+        #[schemars(with = "Option<String>")]
         step: Option<Decimal>,
     },
     Date,
@@ -300,7 +304,7 @@ pub enum FieldType {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NameValue {
     pub name: TranslatableString,
@@ -308,7 +312,7 @@ pub struct NameValue {
 }
 
 /// A string that can have translations
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum TranslatableString {
     Plain(String),
@@ -439,9 +443,10 @@ impl From<&str> for TranslatableString {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldNode {
+    #[schemars(with = "String")]
     pub name: FieldId,
     #[serde(skip, default)]
     pub som_path: Option<SomPath>,
@@ -453,7 +458,7 @@ pub struct FieldNode {
     pub required: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ParagraphNode {
     pub content: TranslatedText,
@@ -463,7 +468,7 @@ pub struct ParagraphNode {
     pub source_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HeadingNode {
     pub level: HeadingLevel,
@@ -474,7 +479,7 @@ pub struct HeadingNode {
     pub source_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FootnoteNode {
     pub content: TranslatedText,
@@ -487,7 +492,7 @@ pub struct FootnoteNode {
     pub source_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct InlineText(pub Vec<InlineNode>);
 
@@ -659,7 +664,7 @@ impl Default for InlineText {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
 pub enum InlineNode {
     Text(String),
@@ -673,7 +678,7 @@ pub enum InlineNode {
 ///
 /// Each language gets its own `InlineText` tree, allowing bold/italic/etc.
 /// to be positioned independently across languages.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct TranslatedText(pub HashMap<String, InlineText>);
 
@@ -866,14 +871,14 @@ impl InlineNode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkNode {
     pub href: String,
     pub content: InlineText,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum HeadingLevel {
     H1,

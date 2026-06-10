@@ -146,6 +146,16 @@ pub use structured::{
     merge_two,
 };
 
+/// JSON Schema for the structured document content (`Vec<StructuredNode>`).
+///
+/// Generated from the structured model via `schemars`. Intended to be embedded
+/// as text in LLM prompts so the model knows the exact shape to emit — it is
+/// NOT used as a structured-output constraint (the model is recursive).
+pub fn structured_schema() -> serde_json::Value {
+    serde_json::to_value(schemars::schema_for!(Vec<StructuredNode>))
+        .expect("StructuredNode schema serializes")
+}
+
 // AEM generation
 pub use aem::{
     AemConfig, AemNode, AemProfile, AemScriptEngine, ParsedAemPackage, ParsedFragment,

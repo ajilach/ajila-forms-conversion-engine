@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// The CSS `list-style-type` for a list, preserved from the detected marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ListStyleType {
     // Unordered

@@ -34,15 +34,15 @@ impl Default for LlmProvider {
 pub struct AppSettings {
     pub always_on_top: bool,
     pub live_preview_port: u16,
-    /// Which LLM provider Smart Edit talks to.
+    /// Which LLM provider the AI features (Smart Edit, AI processing) talk to.
     pub provider: LlmProvider,
-    /// OpenAI API key used for Smart Edit. Stored in the settings file on disk.
+    /// OpenAI API key used for AI features. Stored in the settings file on disk.
     pub openai_api_key: String,
-    /// OpenAI model used for Smart Edit (e.g. "gpt-4o", "gpt-4.1").
+    /// OpenAI model used for AI features (e.g. "gpt-4o", "gpt-4.1").
     pub openai_model: String,
-    /// Anthropic API key used for Smart Edit. Stored in the settings file on disk.
+    /// Anthropic API key used for AI features. Stored in the settings file on disk.
     pub anthropic_api_key: String,
-    /// Anthropic model used for Smart Edit (e.g. "claude-opus-4-8").
+    /// Anthropic model used for AI features (e.g. "claude-opus-4-8").
     pub anthropic_model: String,
 }
 

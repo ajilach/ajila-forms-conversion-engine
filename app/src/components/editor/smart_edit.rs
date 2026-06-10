@@ -17,6 +17,11 @@ use serde_json::Value;
 use crate::platform::chat_turn;
 use crate::settings::LlmProvider;
 
+/// Output-token cap for Smart Edit turns (edits of an existing selection).
+const SMART_EDIT_MAX_TOKENS: u32 = 16000;
+/// Output-token cap for generating a whole document from PDFs (larger output).
+const AI_GENERATE_MAX_TOKENS: u32 = 32000;
+
 /// Ordered list of LLM chat messages for a single smart-edit session.
 pub type ChatHistory = Vec<serde_json::Value>;
 
@@ -86,7 +91,17 @@ pub async fn run_smart_edit(
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(provider, &mut history, &user_text, &images, api_key, model).await?;
+    let raw = chat_turn(
+        provider,
+        &mut history,
+        &user_text,
+        &images,
+        &[],
+        api_key,
+        model,
+        SMART_EDIT_MAX_TOKENS,
+    )
+    .await?;
     let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
     ensure_change_list(
         content,
@@ -121,7 +136,17 @@ pub async fn run_smart_edit_with_feedback(
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(provider, &mut history, &user_text, &images, api_key, model).await?;
+    let raw = chat_turn(
+        provider,
+        &mut history,
+        &user_text,
+        &images,
+        &[],
+        api_key,
+        model,
+        SMART_EDIT_MAX_TOKENS,
+    )
+    .await?;
     let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
     ensure_change_list(
         content,
@@ -136,31 +161,41 @@ pub async fn run_smart_edit_with_feedback(
     Ok(result)
 }
 
-async fn parse_with_repair(
+/// Parse `raw` with `parse`; on failure, send one repair turn (echoing the
+/// parse error plus `repair_instructions`) and re-parse. Provider/format
+/// agnostic — used by both Smart Edit and AI generation.
+async fn parse_with_repair_generic<T>(
     raw: &str,
     history: &mut ChatHistory,
     provider: LlmProvider,
     api_key: &str,
     model: &str,
-) -> Result<SmartEditResult, String> {
-    match parse_smart_edit_response(raw) {
-        Ok(result) => Ok(result),
+    max_tokens: u32,
+    repair_instructions: &str,
+    parse: impl Fn(&str) -> Result<T, String>,
+) -> Result<T, String> {
+    match parse(raw) {
+        Ok(value) => Ok(value),
         Err(original_error) => {
             // The bad response is already in history; include the parse error
             // so the model knows what to fix.
             let repair_prompt = format!(
                 "Your previous response was not parseable by the consumer. \
-                 Parse error: {original_error}\n\n\
-                 Re-emit the SAME answer in the exact required format.\n\
-                 Return ONLY one valid JSON object with exactly two keys:\n\
-                 - \"nodes\": array of StructuredNode JSON\n\
-                 - \"changes\": array of {{\"id\": int, \"description\": string}}\n\
-                 Do not add explanations, markdown, or code fences."
+                 Parse error: {original_error}\n\n{repair_instructions}"
             );
 
-            if let Ok(repaired_raw) =
-                chat_turn(provider, history, &repair_prompt, &[], api_key, model).await
-                && let Ok(parsed) = parse_smart_edit_response(&repaired_raw)
+            if let Ok(repaired_raw) = chat_turn(
+                provider,
+                history,
+                &repair_prompt,
+                &[],
+                &[],
+                api_key,
+                model,
+                max_tokens,
+            )
+            .await
+                && let Ok(parsed) = parse(&repaired_raw)
             {
                 return Ok(parsed);
             }
@@ -168,6 +203,79 @@ async fn parse_with_repair(
             Err(original_error)
         }
     }
+}
+
+async fn parse_with_repair(
+    raw: &str,
+    history: &mut ChatHistory,
+    provider: LlmProvider,
+    api_key: &str,
+    model: &str,
+) -> Result<SmartEditResult, String> {
+    parse_with_repair_generic(
+        raw,
+        history,
+        provider,
+        api_key,
+        model,
+        SMART_EDIT_MAX_TOKENS,
+        "Re-emit the SAME answer in the exact required format.\n\
+         Return ONLY one valid JSON object with exactly two keys:\n\
+         - \"nodes\": array of StructuredNode JSON\n\
+         - \"changes\": array of {\"id\": int, \"description\": string}\n\
+         Do not add explanations, markdown, or code fences.",
+        parse_smart_edit_response,
+    )
+    .await
+}
+
+/// Generate a fresh structured document from input PDFs.
+///
+/// Sends the PDFs plus the auto-generated JSON Schema to the LLM, then parses
+/// the response into `Vec<StructuredNode>` (reusing [`parse_smart_edit_response`]
+/// and the shared repair cycle). Skips the deterministic core pipeline entirely.
+///
+/// `pdfs` is a list of `(filename, raw_bytes)` pairs.
+pub async fn run_ai_generate(
+    pdfs: &[(String, Vec<u8>)],
+    provider: LlmProvider,
+    api_key: &str,
+    model: &str,
+) -> Result<Vec<StructuredNode>, String> {
+    let schema = serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default();
+    let user_text = format!(
+        "From these input PDFs, generate a JSON representation that fits the attached schema. \
+         Make sure to include all dynamic functionality. Do not modify, add or delete any text content.\n\n\
+         Return ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
+         that is directly parseable as Vec<StructuredNode>. No surrounding prose, no markdown fences.\n\n\
+         BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA"
+    );
+
+    let mut history: ChatHistory = Vec::new();
+    let raw = chat_turn(
+        provider,
+        &mut history,
+        &user_text,
+        &[],
+        pdfs,
+        api_key,
+        model,
+        AI_GENERATE_MAX_TOKENS,
+    )
+    .await?;
+
+    parse_with_repair_generic(
+        &raw,
+        &mut history,
+        provider,
+        api_key,
+        model,
+        AI_GENERATE_MAX_TOKENS,
+        "Re-emit ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
+         directly parseable as Vec<StructuredNode>. No prose, no markdown fences.",
+        |s| parse_smart_edit_response(s).map(|r| r.nodes),
+    )
+    .await
 }
 
 async fn ensure_change_list(
@@ -210,7 +318,17 @@ async fn ensure_change_list(
          No surrounding prose, no markdown fences, no backticks."
     );
 
-    if let Ok(raw) = chat_turn(provider, history, &followup_prompt, &[], api_key, model).await
+    if let Ok(raw) = chat_turn(
+        provider,
+        history,
+        &followup_prompt,
+        &[],
+        &[],
+        api_key,
+        model,
+        SMART_EDIT_MAX_TOKENS,
+    )
+    .await
         && let Ok(changes) = parse_change_list(&raw)
         && !changes.is_empty()
     {
@@ -279,36 +397,18 @@ fn build_smart_edit_prompt(
         )
     };
 
+    let schema = serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default();
+
     format!(
         "You are editing structured form nodes for a multilingual form engine.\n\
          Scope: {selection_scope}.\n\
          Visual references are attached as PNG page renderings.\n\
          \n\
-         StructuredNode schema (tagged enum, JSON key is the variant name):\n\
-         - Heading: {{ level: \"H1\"..\"H6\", content: InlineText }}\n\
-         - Paragraph: {{ content: InlineText }}\n\
-         - Field: {{ name: UUID, label: InlineText|null, input_type: FieldType, value: InputValue|null, placeholder: TranslatableString|null, required: bool }}\n\
-         - Table: {{ header: {{ cells: [StructuredNode] }}|null, rows: [{{ cells: [StructuredNode] }}], caption: InlineText|null }}\n\
-         - List: {{ list_style: \"Disc\"|\"Decimal\"|\"LowerAlpha\"|\"UpperAlpha\"|\"LowerRoman\"|\"UpperRoman\"|\"None\", items: [{{ content: InlineText, sublist: ListNode|null }}] }}\n\
-         - Group: {{ children: [StructuredNode] }}\n\
-         - Repeatable: {{ item: StructuredNode, min_occurrences: int, max_occurrences: int|null }}\n\
-         - Conditional: {{ condition: {{ field_name: UUID, value: InputValue }}, content: StructuredNode }}\n\
-         - GridLayout: {{ columns: int, elements: [{{ span: int, node: StructuredNode }}] }}\n\
-         - Image: {{ data: base64, mime_type: string, alt: string|null }}\n\
-         - Footnote: {{ content: InlineText, marker: string|null }}\n\
-         - Empty: (unit)\n\
-         \n\
-         InlineText is an array of InlineNode:\n\
-         - {{ Text: \"...\" }} – plain text\n\
-         - {{ TranslatedText: {{ \"en\": \"...\", \"de\": \"...\" }} }} – multilingual text\n\
-         - {{ Strong: InlineNode }} – bold\n\
-         - {{ Emphasis: InlineNode }} – italic\n\
-         - {{ Superscript: InlineNode }}\n\
-         - {{ Link: {{ href: \"...\", content: InlineText }} }}\n\
-         \n\
-         FieldType variants: Text {{ regex, max_length, min_length }}, Textarea {{ max_length }}, Number {{ min, max, step }}, Date, Email, Tel, Bool, Radio {{ options }}, Select {{ options }}, CheckboxGroup {{ options }}\n\
-         InputValue variants: {{ Text: \"...\" }}, {{ Number: \"...\" }}, {{ Bool: true/false }}\n\
-         TranslatableString: {{ Plain: \"...\" }} or {{ Translated: {{ \"en\": \"...\", ... }} }}\n\
+         The \"nodes\" array must conform to the following JSON Schema (the schema for \
+         Vec<StructuredNode>):\n\
+         BEGIN JSON SCHEMA\n\
+         {schema}\n\
+         END JSON SCHEMA\n\
          \n\
          Primary goal:\n\
          - Improve structural layout and ordering so the form is logically organized and easy to read.\n\

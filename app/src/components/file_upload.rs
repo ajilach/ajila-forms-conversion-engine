@@ -47,6 +47,10 @@ pub fn FileUploadSection(
     profiles: Vec<String>,
     selected_profile: Signal<Option<String>>,
     on_process: EventHandler<Vec<(String, Vec<u8>)>>,
+    /// Generate the structured document from the uploaded PDFs via the LLM.
+    on_ai_process: EventHandler<Vec<(String, Vec<u8>)>>,
+    /// Whether AI processing is available (an API key is configured).
+    ai_available: bool,
     on_continue: EventHandler<String>,
 ) -> Element {
     let uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
@@ -261,6 +265,38 @@ pub fn FileUploadSection(
                             "Processing..."
                         } else {
                             "Start Processing"
+                        }
+                    }
+
+                    {
+                        let has_pdf = uploaded_files
+                            .read()
+                            .iter()
+                            .any(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"));
+                        let title = if !ai_available {
+                            "Configure an AI provider and API key in Settings to enable this."
+                        } else if !has_pdf {
+                            "Upload at least one PDF to use AI processing."
+                        } else {
+                            "Generate the structured document from the PDFs using the configured AI model."
+                        };
+                        rsx! {
+                            button {
+                                class: "btn btn-secondary btn-sm",
+                                disabled: is_processing || !ai_available || !has_pdf,
+                                title,
+                                onclick: {
+                                    let files = uploaded_files.read().clone();
+                                    move |_| {
+                                        on_ai_process.call(files.clone());
+                                    }
+                                },
+                                if is_processing {
+                                    "Processing..."
+                                } else {
+                                    "Start AI Processing"
+                                }
+                            }
                         }
                     }
                 }

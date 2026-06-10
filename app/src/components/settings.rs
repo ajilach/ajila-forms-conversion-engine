@@ -50,7 +50,7 @@ pub fn SettingsPanel(
             // ── Window behaviour (desktop only) ──────────────────────────────
             {
                 #[cfg(not(target_arch = "wasm32"))]
-                {
+                let section = {
                     let settings_for_aot = settings.clone();
                     let settings_for_port = settings.clone();
                     let settings_for_provider = settings.clone();
@@ -93,15 +93,15 @@ pub fn SettingsPanel(
                         match provider {
                             LlmProvider::OpenAi => (
                                 "OpenAI API Key",
-                                "Paste your OpenAI API key here. Used for Smart Edit. Stored locally on disk.",
+                                "Paste your OpenAI API key here. Used for AI features. Stored locally on disk.",
                                 "sk-...",
-                                "OpenAI model to use for Smart Edit.",
+                                "OpenAI model used for AI features (Smart Edit and AI processing).",
                             ),
                             LlmProvider::Anthropic => (
                                 "Anthropic API Key",
-                                "Paste your Anthropic (Claude) API key here. Used for Smart Edit. Stored locally on disk.",
+                                "Paste your Anthropic (Claude) API key here. Used for AI features. Stored locally on disk.",
                                 "sk-ant-...",
-                                "Claude model to use for Smart Edit.",
+                                "Claude model used for AI features (Smart Edit and AI processing).",
                             ),
                         };
 
@@ -253,12 +253,14 @@ pub fn SettingsPanel(
                             }
                         }
                     }
-                }
+                };
 
                 #[cfg(target_arch = "wasm32")]
-                rsx! {
+                let section = rsx! {
                     p { class: "settings-no-options", "No configurable settings for the web version." }
-                }
+                };
+
+                section
             }
         }
     }

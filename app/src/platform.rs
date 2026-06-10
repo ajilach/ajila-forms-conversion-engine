@@ -133,18 +133,25 @@ pub fn show_html_preview(html: String, filename: &str) {
 /// Dispatches to the OpenAI or Anthropic implementation based on `provider`.
 /// Because a single smart-edit session always uses one provider, `history`
 /// only ever holds messages in that provider's wire format.
+/// `images` are `(label, base64_png)` pairs; `pdfs` are `(filename, raw_bytes)`
+/// pairs attached as document inputs. `max_tokens` bounds the reply length
+/// (only the Anthropic API requires it; the OpenAI path lets the model decide).
 pub async fn chat_turn(
     provider: LlmProvider,
     history: &mut Vec<serde_json::Value>,
     user_text: &str,
     images: &[(String, String)],
+    pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
+    max_tokens: u32,
 ) -> Result<String, String> {
     match provider {
-        LlmProvider::OpenAi => openai_chat_turn(history, user_text, images, api_key, model).await,
+        LlmProvider::OpenAi => {
+            openai_chat_turn(history, user_text, images, pdfs, api_key, model, max_tokens).await
+        }
         LlmProvider::Anthropic => {
-            anthropic_chat_turn(history, user_text, images, api_key, model).await
+            anthropic_chat_turn(history, user_text, images, pdfs, api_key, model, max_tokens).await
         }
     }
 }
@@ -163,17 +170,23 @@ pub async fn list_models(provider: LlmProvider, api_key: &str) -> Result<Vec<Str
 /// and the assistant reply so subsequent calls automatically continue the thread.
 /// `user_text` is the user message text for this turn.
 /// `images` is a list of `(label, base64_png)` pairs; pass an empty slice for follow-up turns.
+/// `pdfs` is a list of `(filename, raw_bytes)` pairs attached as `file` inputs.
 /// `api_key` is the OpenAI API key.
 /// `model` is the OpenAI model identifier (e.g. "gpt-4o").
+/// `max_tokens` is accepted for signature parity but not sent — the OpenAI path
+/// lets the model use its default completion limit.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn openai_chat_turn(
     history: &mut Vec<serde_json::Value>,
     user_text: &str,
     images: &[(String, String)],
+    pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
+    _max_tokens: u32,
 ) -> Result<String, String> {
     use async_openai::{Client, config::OpenAIConfig};
+    use base64::Engine;
 
     if api_key.is_empty() {
         return Err(
@@ -190,6 +203,17 @@ pub async fn openai_chat_turn(
             "image_url": {
                 "url": format!("data:image/png;base64,{b64}"),
                 "detail": "high"
+            }
+        }));
+    }
+
+    for (filename, bytes) in pdfs {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        content.push(serde_json::json!({
+            "type": "file",
+            "file": {
+                "filename": filename,
+                "file_data": format!("data:application/pdf;base64,{b64}")
             }
         }));
     }
@@ -226,10 +250,12 @@ pub async fn openai_chat_turn(
     _history: &mut Vec<serde_json::Value>,
     _user_text: &str,
     _images: &[(String, String)],
+    _pdfs: &[(String, Vec<u8>)],
     _api_key: &str,
     _model: &str,
+    _max_tokens: u32,
 ) -> Result<String, String> {
-    Err("Smart Edit is only supported in the desktop app. The web version cannot call the OpenAI API directly.".to_string())
+    Err("AI features are only supported in the desktop app. The web version cannot call the OpenAI API directly.".to_string())
 }
 
 // ── List available OpenAI models ─────────────────────────────────────
@@ -308,9 +334,13 @@ pub async fn anthropic_chat_turn(
     history: &mut Vec<serde_json::Value>,
     user_text: &str,
     images: &[(String, String)],
+    pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
+    max_tokens: u32,
 ) -> Result<String, String> {
+    use base64::Engine;
+
     if api_key.is_empty() {
         return Err(
             "Anthropic API key is not configured. Open Settings and paste your API key."
@@ -332,13 +362,26 @@ pub async fn anthropic_chat_turn(
         }));
     }
 
+    for (_filename, bytes) in pdfs {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        content.push(serde_json::json!({
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": b64
+            }
+        }));
+    }
+
     history.push(serde_json::json!({"role": "user", "content": content}));
 
-    // Non-streaming request. 16k output tokens stays under the Anthropic SDK's
-    // streaming-required threshold and comfortably below every model's cap.
+    // Non-streaming request. Large `max_tokens` (e.g. full-document generation)
+    // risks truncation under the non-streaming server timeout; streaming would
+    // be the real fix but is out of scope.
     let request = serde_json::json!({
         "model": model,
-        "max_tokens": 16000,
+        "max_tokens": max_tokens,
         "messages": history,
     });
 
@@ -394,10 +437,12 @@ pub async fn anthropic_chat_turn(
     _history: &mut Vec<serde_json::Value>,
     _user_text: &str,
     _images: &[(String, String)],
+    _pdfs: &[(String, Vec<u8>)],
     _api_key: &str,
     _model: &str,
+    _max_tokens: u32,
 ) -> Result<String, String> {
-    Err("Smart Edit is only supported in the desktop app. The web version cannot call the Anthropic API directly.".to_string())
+    Err("AI features are only supported in the desktop app. The web version cannot call the Anthropic API directly.".to_string())
 }
 
 /// Fetch the list of available model IDs from the Anthropic API, sorted

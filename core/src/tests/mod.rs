@@ -1,5 +1,25 @@
 pub mod helpers;
 
+#[test]
+fn structured_schema_is_object_with_defs() {
+    let schema = crate::structured_schema();
+    let obj = schema.as_object().expect("schema is a JSON object");
+    let defs = obj
+        .get("$defs")
+        .and_then(|d| d.as_object())
+        .expect("schema has $defs");
+    assert!(defs.contains_key("StructuredNode"), "$defs has StructuredNode");
+
+    // FieldId is annotated `#[schemars(with = "String")]`, so the FieldNode
+    // `name` property must be a plain string schema (not an object/ref).
+    let name = defs
+        .get("FieldNode")
+        .and_then(|n| n.get("properties"))
+        .and_then(|p| p.get("name"))
+        .expect("FieldNode.name property exists");
+    assert_eq!(name.get("type").and_then(|t| t.as_str()), Some("string"));
+}
+
 use helpers::{
     assert_aem_package_valid_for, assert_aem_xml_valid_for,
     build_aem_test_output_with_custom_elements, collect_conditionals, collect_field_labels,
