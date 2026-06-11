@@ -8,6 +8,27 @@ pub fn ProgressDisplay(
     state: ProcessingState,
     on_image_click: EventHandler<(String, String)>,
 ) -> Element {
+    // AI processing bypasses the staged pipeline — show a simple spinner (or the
+    // error) instead of the five step indicators.
+    if state.step == ProcessingStep::AiGenerating {
+        return rsx! {
+            div { class: "progress-container",
+                h2 { "Progress" }
+                if let Some(error) = &state.error {
+                    div { class: "progress-error",
+                        strong { "Error: " }
+                        "{error}"
+                    }
+                } else {
+                    div { class: "ai-generating",
+                        Spinner { size: "lg" }
+                        p { "Generating structured document with AI…" }
+                    }
+                }
+            }
+        };
+    }
+
     rsx! {
         div { class: "progress-container",
 

@@ -1841,6 +1841,15 @@ body > div, #main {
     padding: var(--space-xl) 0;
 }
 
+/* AI processing progress (no staged pipeline) */
+.ai-generating {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-xl) 0;
+}
+
 /* Reusable spinner used across toolbar/buttons */
 .spinner {
     display: inline-block;

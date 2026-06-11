@@ -120,7 +120,7 @@ fn App() -> Element {
         let model = settings.active_model().to_string();
 
         processing_state.set(ProcessingState {
-            step: ProcessingStep::Parsing,
+            step: ProcessingStep::AiGenerating,
             ..ProcessingState::new()
         });
 
@@ -130,14 +130,34 @@ fn App() -> Element {
                 .map(|(name, _)| name.clone())
                 .collect::<Vec<_>>()
                 .join(", ");
-            match components::editor::smart_edit::run_ai_generate(&pdfs, provider, &api_key, &model)
-                .await
+
+            // Run the pipeline up to state rendering (no labelling) to attach
+            // the plain page renders as visual references for the model.
+            let images = pipeline::render_plain_states(&pdfs).await;
+
+            match components::editor::smart_edit::run_ai_generate(
+                &pdfs, &images, provider, &api_key, &model,
+            )
+            .await
             {
                 Ok(nodes) => {
+                    // Derive the real Context (language + XFA variables such as
+                    // `formrange_code`) from the source PDF, so profile outputs
+                    // (AEM/XSD/HTML) generate exactly like the normal pipeline.
+                    // Fall back to a language-only context if the PDF can't be
+                    // parsed (e.g. a flat/scanned PDF with no XFA).
+                    let context = pdfs
+                        .iter()
+                        .find_map(|(_, bytes)| {
+                            blueprint::Blueprint::from_pdf_bytes(bytes)
+                                .ok()
+                                .map(|bp| bp.context())
+                        })
+                        .unwrap_or_else(|| {
+                            blueprint::Context::with_language(processing::primary_language(&nodes))
+                        });
                     let envelope = DocumentEnvelope {
-                        context: blueprint::Context::with_language(processing::primary_language(
-                            &nodes,
-                        )),
+                        context,
                         content: nodes,
                         state_count: 1,
                     };
@@ -152,8 +172,10 @@ fn App() -> Element {
                     );
                 }
                 Err(e) => {
+                    // Keep the AiGenerating step so ProgressDisplay stays visible
+                    // and shows the error instead of the staged-pipeline view.
                     processing_state.set(ProcessingState {
-                        step: ProcessingStep::Idle,
+                        step: ProcessingStep::AiGenerating,
                         error: Some(format!("AI processing failed: {e}")),
                         ..ProcessingState::new()
                     });

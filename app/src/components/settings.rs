@@ -159,12 +159,11 @@ pub fn SettingsPanel(
                             }
                         }
                         div { class: "settings-section",
-                            h3 { class: "settings-section-title", "AI Provider" }
                             div { class: "settings-row",
                                 div { class: "settings-row-info",
                                     span { class: "settings-row-label", "Provider" }
                                     span { class: "settings-row-desc",
-                                        "Which AI provider Smart Edit uses."
+                                        "Which AI provider is used for Smart Edit and Smart Processing."
                                     }
                                 }
                                 select {

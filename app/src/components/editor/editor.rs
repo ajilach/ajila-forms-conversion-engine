@@ -1859,6 +1859,12 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                     .filter(|c| rejected_ids.read().contains(&c.id))
                                                     .cloned()
                                                     .collect();
+                                                let accepted: Vec<smart_edit::ChangeItem> = result
+                                                    .changes
+                                                    .iter()
+                                                    .filter(|c| !rejected_ids.read().contains(&c.id))
+                                                    .cloned()
+                                                    .collect();
                                                 let content = content_for_retry.clone();
                                                 let plain_images = plain_images_for_retry.clone();
                                                 let selected_indices = selected_indices_for_retry.clone();
@@ -1873,6 +1879,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             let content = content.clone();
                                                             let plain_images = plain_images.clone();
                                                             let selected_indices = selected_indices.clone();
+                                                            let accepted = accepted.clone();
                                                             let rejected = rejected.clone();
                                                             let api_key = api_key.clone();
                                                             let model = model.clone();
@@ -1884,6 +1891,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         &content,
                                                                         &selected_indices,
                                                                         &plain_images,
+                                                                        &accepted,
                                                                         &rejected,
                                                                         provider,
                                                                         &api_key,

@@ -283,6 +283,7 @@ pub fn FileUploadSection(
                         rsx! {
                             button {
                                 class: "btn btn-secondary btn-sm",
+                                style: "margin-left: 0.5rem;",
                                 disabled: is_processing || !ai_available || !has_pdf,
                                 title,
                                 onclick: {

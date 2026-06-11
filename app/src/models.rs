@@ -12,6 +12,9 @@ pub enum ProcessingStep {
     Flattening,
     Structuring,
     Merging,
+    /// Generating the structured document directly from PDFs via the LLM
+    /// (the "Start AI Processing" path, which skips the staged pipeline).
+    AiGenerating,
     Complete,
 }
 

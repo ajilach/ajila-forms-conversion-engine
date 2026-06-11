@@ -187,6 +187,7 @@ pub async fn openai_chat_turn(
 ) -> Result<String, String> {
     use async_openai::{Client, config::OpenAIConfig};
     use base64::Engine;
+    use futures_util::StreamExt;
 
     if api_key.is_empty() {
         return Err(
@@ -198,10 +199,11 @@ pub async fn openai_chat_turn(
         vec![serde_json::json!({"type": "text", "text": user_text})];
 
     for (_label, b64) in images {
+        let media_type = image_media_type(b64);
         content.push(serde_json::json!({
             "type": "image_url",
             "image_url": {
-                "url": format!("data:image/png;base64,{b64}"),
+                "url": format!("data:{media_type};base64,{b64}"),
                 "detail": "high"
             }
         }));
@@ -227,18 +229,24 @@ pub async fn openai_chat_turn(
         "model": model,
         "messages": history,
         "response_format": { "type": "json_object" },
+        "stream": true,
     });
 
-    let response: serde_json::Value = client
+    // Stream the reply and accumulate the full text. Streaming avoids the
+    // request timeout on long generations (e.g. whole-document AI processing).
+    let mut stream = client
         .chat()
-        .create_byot(request)
+        .create_stream_byot::<serde_json::Value, serde_json::Value>(request)
         .await
         .map_err(|e| format!("OpenAI API error: {e}"))?;
 
-    let response_text = response["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or_else(|| format!("Unexpected OpenAI response structure: {response}"))?
-        .to_string();
+    let mut response_text = String::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("OpenAI API error: {e}"))?;
+        if let Some(delta) = chunk["choices"][0]["delta"]["content"].as_str() {
+            response_text.push_str(delta);
+        }
+    }
 
     history.push(serde_json::json!({"role": "assistant", "content": response_text}));
 
@@ -321,7 +329,36 @@ pub async fn openai_list_models(_api_key: &str) -> Result<Vec<String>, String> {
     Err("Listing models is only supported in the desktop app.".to_string())
 }
 
+/// Detect the image media type from a base64 payload by its leading bytes.
+/// PNG base64 begins with `iVBOR` (`\x89PNG`); JPEG with `/9j/` (`\xff\xd8\xff`).
+#[cfg(not(target_arch = "wasm32"))]
+fn image_media_type(b64: &str) -> &'static str {
+    if b64.starts_with("/9j/") {
+        "image/jpeg"
+    } else {
+        "image/png"
+    }
+}
+
 // ── Smart edit (Anthropic API) ───────────────────────────────────────
+
+/// Format a `reqwest` error together with its underlying source chain.
+///
+/// `reqwest`'s top-level message is often opaque (e.g. "error decoding response
+/// body"); the source chain reveals the real cause (e.g. "connection closed
+/// before message completed").
+#[cfg(not(target_arch = "wasm32"))]
+fn describe_error(e: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut msg = e.to_string();
+    let mut source = e.source();
+    while let Some(s) = source {
+        msg.push_str(" — ");
+        msg.push_str(&s.to_string());
+        source = s.source();
+    }
+    msg
+}
 
 /// Send one turn of a multi-turn chat to the Anthropic Messages API and return
 /// the assistant's reply.
@@ -340,6 +377,7 @@ pub async fn anthropic_chat_turn(
     max_tokens: u32,
 ) -> Result<String, String> {
     use base64::Engine;
+    use futures_util::StreamExt;
 
     if api_key.is_empty() {
         return Err(
@@ -356,7 +394,7 @@ pub async fn anthropic_chat_turn(
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": "image/png",
+                "media_type": image_media_type(b64),
                 "data": b64
             }
         }));
@@ -376,13 +414,13 @@ pub async fn anthropic_chat_turn(
 
     history.push(serde_json::json!({"role": "user", "content": content}));
 
-    // Non-streaming request. Large `max_tokens` (e.g. full-document generation)
-    // risks truncation under the non-streaming server timeout; streaming would
-    // be the real fix but is out of scope.
+    // Streaming request — accumulate text deltas. Streaming avoids the
+    // server timeout on long generations (e.g. whole-document AI processing).
     let request = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": history,
+        "stream": true,
     });
 
     let response = reqwest::Client::new()
@@ -393,39 +431,57 @@ pub async fn anthropic_chat_turn(
         .json(&request)
         .send()
         .await
-        .map_err(|e| format!("Anthropic API error: {e}"))?;
+        .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
 
     let status = response.status();
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Anthropic API error: {e}"))?;
-
     if !status.is_success() {
-        let msg = body["error"]["message"]
-            .as_str()
-            .unwrap_or("unknown error");
+        let body = response.text().await.unwrap_or_default();
+        let msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().map(String::from))
+            .unwrap_or(body);
         return Err(format!("Anthropic API error ({status}): {msg}"));
     }
 
-    // Concatenate all text blocks from the response content array.
-    let response_text = body["content"]
-        .as_array()
-        .map(|blocks| {
-            blocks
-                .iter()
-                .filter_map(|b| {
-                    if b["type"] == "text" {
-                        b["text"].as_str()
-                    } else {
-                        None
+    // Parse the SSE stream. Each `data:` line carries one complete JSON event;
+    // accumulate `text_delta`s and surface any `error` event.
+    let mut stream = response.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut response_text = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
+        buf.extend_from_slice(&chunk);
+
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
+            let Some(data) = line.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() {
+                continue;
+            }
+            let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+            match event["type"].as_str() {
+                Some("content_block_delta") if event["delta"]["type"] == "text_delta" => {
+                    if let Some(t) = event["delta"]["text"].as_str() {
+                        response_text.push_str(t);
                     }
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        })
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("Unexpected Anthropic response structure: {body}"))?;
+                }
+                Some("error") => {
+                    let msg = event["error"]["message"]
+                        .as_str()
+                        .unwrap_or("unknown error");
+                    return Err(format!("Anthropic API error: {msg}"));
+                }
+                _ => {}
+            }
+        }
+    }
 
     history.push(serde_json::json!({"role": "assistant", "content": response_text}));
 

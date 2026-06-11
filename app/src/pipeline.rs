@@ -9,6 +9,10 @@ use crate::models::{ProcessingState, ProcessingStep};
 use base64::Engine;
 use image::ImageEncoder;
 
+/// JPEG quality for plain page renders attached to AI requests / shown in the
+/// UI. Balances legibility against payload size.
+const PLAIN_JPEG_QUALITY: u8 = 82;
+
 /// Run the full blueprint pipeline asynchronously.
 ///
 /// On native targets the heavy computation runs on a blocking thread
@@ -81,15 +85,17 @@ pub async fn run_blueprint_pipeline(
                     }
                     PipelineEvent::StatesFound { .. } => {}
                     PipelineEvent::PlainRender { label, image } => {
-                        let mut png_bytes = Vec::new();
-                        match encode_rgba_to_png(&image, &mut png_bytes) {
-                            Ok(()) => {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                        // JPEG-compress plain renders: far smaller than PNG for
+                        // page renders, keeping the Smart Edit request (which
+                        // attaches these) within provider size limits.
+                        match encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY) {
+                            Ok(jpeg) => {
+                                let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
                                 state.plain_images.insert(label, b64);
                             }
                             Err(e) => state
                                 .warnings
-                                .push(format!("PNG encode failed for {label}: {e}")),
+                                .push(format!("JPEG encode failed for {label}: {e}")),
                         }
                         on_progress(&state);
                     }
@@ -118,9 +124,8 @@ pub async fn run_blueprint_pipeline(
                 while let Ok(event) = rx.try_recv() {
                     match event {
                         PipelineEvent::PlainRender { label, image } => {
-                            let mut png_bytes = Vec::new();
-                            if let Ok(()) = encode_rgba_to_png(&image, &mut png_bytes) {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                            if let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY) {
+                                let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
                                 state.plain_images.insert(label, b64);
                             }
                         }
@@ -219,6 +224,56 @@ pub async fn run_blueprint_pipeline(
     }
 }
 
+/// Render the plain (unlabeled) state images for `files`, running the pipeline
+/// up to state rendering but **without labelling** (`render_labelled: false`).
+///
+/// Best-effort and silent: progress events are discarded (AI processing shows
+/// its own spinner) and an empty list is returned if the pipeline fails — the
+/// AI still has the PDFs and XFA XML to work from. Returns `(label, base64-PNG)`
+/// pairs in discovery order.
+#[allow(dead_code)]
+pub async fn render_plain_states(files: &[(String, Vec<u8>)]) -> Vec<(String, String)> {
+    use blueprint::PipelineConfig;
+
+    // Keep full render resolution (legibility) but encode as JPEG: a rendered
+    // form page is far smaller as JPEG than lossless PNG, keeping the request
+    // (PDFs + XFA + images + prompt) under the provider's size limit. Exhaustive
+    // search can also emit many near-duplicate state renders, so cap count/size.
+    const MAX_IMAGES: usize = 12;
+    const MAX_TOTAL_B64_BYTES: usize = 8 * 1024 * 1024; // ~8 MB across all images
+
+    let config = PipelineConfig {
+        render_plain: true,
+        render_labelled: false,
+        render_annotated: false,
+        ..PipelineConfig::default()
+    };
+
+    let files_owned: Vec<(String, Vec<u8>)> = files.to_vec();
+    let result =
+        tokio::task::spawn_blocking(move || blueprint::run_pipeline(&files_owned, &config, |_| {}))
+            .await;
+
+    let mut images = Vec::new();
+    let mut total = 0usize;
+    if let Ok(Ok(output)) = result {
+        for (label, image) in output.plain_renders {
+            if images.len() >= MAX_IMAGES {
+                break;
+            }
+            if let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY) {
+                let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
+                if total + b64.len() > MAX_TOTAL_B64_BYTES {
+                    break;
+                }
+                total += b64.len();
+                images.push((label, b64));
+            }
+        }
+    }
+    images
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Encode an RGBA image to PNG bytes.
@@ -233,4 +288,23 @@ pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> R
     encoder
         .write_image(img.as_raw(), width, height, ExtendedColorType::Rgba8)
         .map_err(|e| format!("PNG encoding error: {}", e))
+}
+
+/// Encode an RGBA image to JPEG bytes at the given quality (1–100).
+///
+/// JPEG has no alpha channel; the alpha is dropped (rendered form pages are
+/// opaque). Far smaller than PNG for page renders, which keeps the AI request
+/// payload within provider size limits without sacrificing resolution.
+#[allow(dead_code)]
+pub fn encode_rgba_to_jpeg(img: &blueprint::RgbaImage, quality: u8) -> Result<Vec<u8>, String> {
+    use image::ExtendedColorType;
+    use image::codecs::jpeg::JpegEncoder;
+
+    let rgb = image::DynamicImage::ImageRgba8(img.clone()).into_rgb8();
+    let (width, height) = rgb.dimensions();
+    let mut output = Vec::new();
+    JpegEncoder::new_with_quality(&mut output, quality)
+        .write_image(rgb.as_raw(), width, height, ExtendedColorType::Rgb8)
+        .map_err(|e| format!("JPEG encoding error: {e}"))?;
+    Ok(output)
 }

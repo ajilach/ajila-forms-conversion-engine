@@ -2,6 +2,18 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
+/// Build an `<img>` data URL, detecting PNG vs JPEG from the base64 prefix
+/// (`iVBOR` → PNG, `/9j/` → JPEG). Plain renders are JPEG-compressed; labelled
+/// renders stay PNG.
+fn image_data_uri(b64: &str) -> String {
+    let mime = if b64.starts_with("/9j/") {
+        "image/jpeg"
+    } else {
+        "image/png"
+    };
+    format!("data:{mime};base64,{b64}")
+}
+
 #[component]
 pub fn ImageGrid(
     title: String,
@@ -16,7 +28,7 @@ pub fn ImageGrid(
                     div { class: "image-card",
                         div { class: "image-card-label", "{state_name}" }
                         img {
-                            src: "data:image/png;base64,{image_b64}",
+                            src: image_data_uri(image_b64),
                             class: "thumbnail-image",
                             alt: "{state_name}",
                             onclick: {
@@ -50,7 +62,7 @@ pub fn ImageModal(name: String, data: String, on_close: EventHandler<()>) -> Ele
                 div { class: "modal-title", "{name}" }
 
                 img {
-                    src: "data:image/png;base64,{data}",
+                    src: image_data_uri(&data),
                     class: "modal-image",
                     alt: "{name}",
                 }

@@ -19,8 +19,9 @@ use crate::settings::LlmProvider;
 
 /// Output-token cap for Smart Edit turns (edits of an existing selection).
 const SMART_EDIT_MAX_TOKENS: u32 = 16000;
-/// Output-token cap for generating a whole document from PDFs (larger output).
-const AI_GENERATE_MAX_TOKENS: u32 = 32000;
+/// Output-token cap for generating a whole document from PDFs. Large, since a
+/// full document can be long; streaming keeps the request from timing out.
+const AI_GENERATE_MAX_TOKENS: u32 = 64000;
 
 /// Ordered list of LLM chat messages for a single smart-edit session.
 pub type ChatHistory = Vec<serde_json::Value>;
@@ -116,12 +117,13 @@ pub async fn run_smart_edit(
     Ok(result)
 }
 
-/// Run a follow-up smart-edit call, informing the AI which previously
-/// proposed changes were rejected so it should avoid repeating them.
+/// Run a follow-up smart-edit call, informing the AI which previously proposed
+/// changes the user accepted (keep them) and which were rejected (avoid them).
 pub async fn run_smart_edit_with_feedback(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
+    accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     provider: LlmProvider,
     api_key: &str,
@@ -132,7 +134,8 @@ pub async fn run_smart_edit_with_feedback(
         .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let prompt = build_feedback_prompt(selected_indices, plain_images, rejected_changes);
+    let prompt =
+        build_feedback_prompt(selected_indices, plain_images, accepted_changes, rejected_changes);
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let mut history: ChatHistory = Vec::new();
@@ -235,20 +238,62 @@ async fn parse_with_repair(
 /// the response into `Vec<StructuredNode>` (reusing [`parse_smart_edit_response`]
 /// and the shared repair cycle). Skips the deterministic core pipeline entirely.
 ///
-/// `pdfs` is a list of `(filename, raw_bytes)` pairs.
+/// `pdfs` is a list of `(filename, raw_bytes)` pairs. `images` are
+/// `(label, base64_png)` plain (unlabeled) page renders attached as visual
+/// references.
 pub async fn run_ai_generate(
     pdfs: &[(String, Vec<u8>)],
+    images: &[(String, String)],
     provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<Vec<StructuredNode>, String> {
     let schema = serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default();
+
+    // Dynamic XFA forms only render an "Adobe Reader required" shell page, so a
+    // model reading the raw PDF never sees the actual form. Extract the embedded
+    // XFA/XDP XML and hand it to the model as the authoritative form definition.
+    let mut xfa_sections = String::new();
+    for (name, bytes) in pdfs {
+        if let Ok(Some(xfa)) = blueprint::extract_xfa_from_pdf_bytes(bytes) {
+            let xml = String::from_utf8_lossy(&xfa);
+            xfa_sections.push_str(&format!(
+                "\n\nBEGIN XFA XML ({name})\n{xml}\nEND XFA XML ({name})"
+            ));
+        }
+    }
+
+    let xfa_note = if xfa_sections.is_empty() {
+        String::new()
+    } else {
+        "The PDFs are dynamic XFA forms: the visible PDF page is only an \"Adobe Reader \
+         required\" placeholder, so use the XFA XML form definitions included below as the \
+         AUTHORITATIVE source for fields, labels, options, and dynamic behaviour (conditional \
+         and repeatable sections). The text content (labels, captions, paragraphs) must come \
+         verbatim from the XFA XML.\n\n"
+            .to_string()
+    };
+
+    let images_note = if images.is_empty() {
+        String::new()
+    } else {
+        "Rendered page images of the form are attached for visual reference (layout, \
+         grouping, columns).\n\n"
+            .to_string()
+    };
+
     let user_text = format!(
         "From these input PDFs, generate a JSON representation that fits the attached schema. \
-         Make sure to include all dynamic functionality. Do not modify, add or delete any text content.\n\n\
+         Make sure to include all dynamic functionality, including XFA (XML Forms Architecture) \
+         content embedded in the PDFs — parse the XFA form structure, fields, and scripting-driven \
+         dynamic behaviour (conditional/repeatable sections) and represent it in the output. \
+         Ignore page headers and footers (running titles, page numbers, document/print IDs, \
+         copyright and confidentiality lines): do not include them in the output. \
+         Do not modify, add or delete any text content.\n\n\
+         {images_note}{xfa_note}\
          Return ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
          that is directly parseable as Vec<StructuredNode>. No surrounding prose, no markdown fences.\n\n\
-         BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA"
+         BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA{xfa_sections}"
     );
 
     let mut history: ChatHistory = Vec::new();
@@ -256,7 +301,7 @@ pub async fn run_ai_generate(
         provider,
         &mut history,
         &user_text,
-        &[],
+        images,
         pdfs,
         api_key,
         model,
@@ -438,21 +483,29 @@ fn build_smart_edit_prompt(
 fn build_feedback_prompt(
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
+    accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
 ) -> String {
     let base = build_smart_edit_prompt(selected_indices, plain_images);
-    let rejected_list = rejected_changes
-        .iter()
-        .map(|c| format!("  - [{}] {}", c.id, c.description))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let format_list = |changes: &[ChangeItem]| {
+        changes
+            .iter()
+            .map(|c| format!("  - [{}] {}", c.id, c.description))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let accepted_list = format_list(accepted_changes);
+    let rejected_list = format_list(rejected_changes);
     format!(
         "{base}\n\n\
-         IMPORTANT – The user reviewed your previous suggestion and rejected the following \
-         changes. Do NOT apply these again in your new suggestion:\n\
+         IMPORTANT – The user reviewed your previous suggestion. They ACCEPTED the following \
+         changes; keep them in your new suggestion:\n\
+         {accepted_list}\n\
+         \n\
+         They REJECTED the following changes. Do NOT apply these again in your new suggestion:\n\
          {rejected_list}\n\
-         Please produce a revised suggestion that still improves the structure but avoids \
-         the rejected changes."
+         Please produce a revised suggestion that keeps the accepted changes and still improves \
+         the structure, but avoids the rejected changes."
     )
 }
 
