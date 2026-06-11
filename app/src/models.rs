@@ -34,6 +34,11 @@ pub struct ProcessingState {
     pub error: Option<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
+    /// When `true`, the progress UI shows the AI-processing step layout
+    /// (pipeline up to state rendering, then a single "AI Generation" step)
+    /// instead of the full staged pipeline.
+    #[serde(default)]
+    pub ai_mode: bool,
     /// The merged document envelope for the editor.
     /// This is the structured representation before JSON serialization.
     #[serde(skip)]
@@ -56,6 +61,7 @@ impl PartialEq for ProcessingState {
             && self.xsd_schema == other.xsd_schema
             && self.error == other.error
             && self.warnings == other.warnings
+            && self.ai_mode == other.ai_mode
         // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
     }
 }

@@ -225,20 +225,23 @@ pub async fn run_blueprint_pipeline(
 }
 
 /// Render the plain (unlabeled) state images for `files`, running the pipeline
-/// up to state rendering but **without labelling** (`render_labelled: false`).
+/// up to state rendering but **without labelling** (`render_labelled: false`),
+/// streaming progress via `on_progress` so the AI-processing UI shows the same
+/// staged steps as normal processing.
 ///
-/// Best-effort and silent: progress events are discarded (AI processing shows
-/// its own spinner) and an empty list is returned if the pipeline fails — the
-/// AI still has the PDFs and XFA XML to work from. Returns `(label, base64-PNG)`
-/// pairs in discovery order.
+/// The displayed step is advanced only through rendering (Parsing → Exhaustive
+/// Searching → Flattening); the pipeline's internal structuring/merging is not
+/// surfaced because AI generation takes over afterwards. JPEG-encodes the
+/// renders (legible but small) and caps count/size to keep the request within
+/// provider limits. Best-effort: an empty list is returned if the pipeline
+/// fails — the AI still has the PDFs and XFA XML to work from.
 #[allow(dead_code)]
-pub async fn render_plain_states(files: &[(String, Vec<u8>)]) -> Vec<(String, String)> {
-    use blueprint::PipelineConfig;
+pub async fn render_plain_states(
+    files: &[(String, Vec<u8>)],
+    mut on_progress: impl FnMut(&ProcessingState),
+) -> Vec<(String, String)> {
+    use blueprint::{PipelineConfig, PipelineEvent, PipelineStep as CoreStep};
 
-    // Keep full render resolution (legibility) but encode as JPEG: a rendered
-    // form page is far smaller as JPEG than lossless PNG, keeping the request
-    // (PDFs + XFA + images + prompt) under the provider's size limit. Exhaustive
-    // search can also emit many near-duplicate state renders, so cap count/size.
     const MAX_IMAGES: usize = 12;
     const MAX_TOTAL_B64_BYTES: usize = 8 * 1024 * 1024; // ~8 MB across all images
 
@@ -250,27 +253,81 @@ pub async fn render_plain_states(files: &[(String, Vec<u8>)]) -> Vec<(String, St
     };
 
     let files_owned: Vec<(String, Vec<u8>)> = files.to_vec();
-    let result =
-        tokio::task::spawn_blocking(move || blueprint::run_pipeline(&files_owned, &config, |_| {}))
-            .await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<PipelineEvent>();
+    let mut handle = tokio::task::spawn_blocking(move || {
+        let _ = blueprint::run_pipeline(&files_owned, &config, |event| {
+            let _ = tx.send(event);
+        });
+    });
 
-    let mut images = Vec::new();
+    let mut state = ProcessingState {
+        step: ProcessingStep::Parsing,
+        ai_mode: true,
+        ..ProcessingState::new()
+    };
+    on_progress(&state);
+
+    let mut images: Vec<(String, String)> = Vec::new();
     let mut total = 0usize;
-    if let Ok(Ok(output)) = result {
-        for (label, image) in output.plain_renders {
-            if images.len() >= MAX_IMAGES {
-                break;
-            }
-            if let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY) {
-                let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
-                if total + b64.len() > MAX_TOTAL_B64_BYTES {
-                    break;
+
+    loop {
+        tokio::select! {
+            Some(event) = rx.recv() => {
+                match event {
+                    PipelineEvent::StepChanged(step) => {
+                        // Advance the display only through rendering; later steps
+                        // (structuring/merging) are internal and discarded.
+                        let mapped = match step {
+                            CoreStep::Parsing => Some(ProcessingStep::Parsing),
+                            CoreStep::ExhaustiveSearching => Some(ProcessingStep::ExhaustiveSearching),
+                            CoreStep::Flattening => Some(ProcessingStep::Flattening),
+                            _ => None,
+                        };
+                        if let Some(s) = mapped {
+                            state.step = s;
+                            on_progress(&state);
+                        }
+                    }
+                    PipelineEvent::PlainRender { label, image } => {
+                        if images.len() < MAX_IMAGES
+                            && let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY)
+                        {
+                            let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
+                            if total + b64.len() <= MAX_TOTAL_B64_BYTES {
+                                total += b64.len();
+                                state.plain_images.insert(label.clone(), b64.clone());
+                                images.push((label, b64));
+                                on_progress(&state);
+                            }
+                        }
+                    }
+                    PipelineEvent::Warning(msg) => {
+                        state.warnings.push(msg);
+                        on_progress(&state);
+                    }
+                    _ => {}
                 }
-                total += b64.len();
-                images.push((label, b64));
+            }
+            _ = &mut handle => {
+                // Pipeline finished — drain any buffered render events.
+                while let Ok(event) = rx.try_recv() {
+                    if let PipelineEvent::PlainRender { label, image } = event
+                        && images.len() < MAX_IMAGES
+                        && let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY)
+                    {
+                        let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
+                        if total + b64.len() <= MAX_TOTAL_B64_BYTES {
+                            total += b64.len();
+                            state.plain_images.insert(label.clone(), b64.clone());
+                            images.push((label, b64));
+                        }
+                    }
+                }
+                break;
             }
         }
     }
+
     images
 }
 

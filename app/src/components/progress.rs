@@ -8,21 +8,86 @@ pub fn ProgressDisplay(
     state: ProcessingState,
     on_image_click: EventHandler<(String, String)>,
 ) -> Element {
-    // AI processing bypasses the staged pipeline — show a simple spinner (or the
-    // error) instead of the five step indicators.
-    if state.step == ProcessingStep::AiGenerating {
+    // AI processing shows the staged pipeline up to state rendering, then a
+    // single "AI Generation" step takes over (same StepIndicator style, fewer
+    // steps).
+    if state.ai_mode {
+        let step = &state.step;
         return rsx! {
             div { class: "progress-container",
+
                 h2 { "Progress" }
+
+                div { class: "progress-steps",
+
+                    StepIndicator {
+                        name: "1. Parsing",
+                        is_current: *step == ProcessingStep::Parsing,
+                        is_complete: matches!(
+                            step,
+                            ProcessingStep::ExhaustiveSearching
+                            | ProcessingStep::Flattening
+                            | ProcessingStep::AiGenerating
+                            | ProcessingStep::Complete
+                        ),
+                        progress: if *step == ProcessingStep::Parsing { state.step_progress } else { None },
+                    }
+
+                    StepIndicator {
+                        name: "2. Exhaustive Searching",
+                        is_current: *step == ProcessingStep::ExhaustiveSearching,
+                        is_complete: matches!(
+                            step,
+                            ProcessingStep::Flattening
+                            | ProcessingStep::AiGenerating
+                            | ProcessingStep::Complete
+                        ),
+                        progress: if *step == ProcessingStep::ExhaustiveSearching { state.step_progress } else { None },
+                    }
+
+                    StepIndicator {
+                        name: "3. State Rendering",
+                        is_current: *step == ProcessingStep::Flattening,
+                        is_complete: matches!(
+                            step,
+                            ProcessingStep::AiGenerating | ProcessingStep::Complete
+                        ),
+                        progress: if *step == ProcessingStep::Flattening { state.step_progress } else { None },
+                    }
+
+                    // Show the rendered page images once available (same grid
+                    // as normal processing).
+                    if !state.plain_images.is_empty() {
+                        super::image_grid::ImageGrid {
+                            title: "Plain State Images",
+                            images: state.plain_images.clone(),
+                            on_image_click,
+                        }
+                    }
+
+                    StepIndicator {
+                        name: "4. AI Generation",
+                        is_current: *step == ProcessingStep::AiGenerating,
+                        is_complete: *step == ProcessingStep::Complete,
+                        progress: None,
+                    }
+                }
+
+                if !state.warnings.is_empty() {
+                    div { class: "progress-warnings",
+                        strong { "Warnings:" }
+                        ul {
+                            for warning in state.warnings.iter() {
+                                li { "{warning}" }
+                            }
+                        }
+                    }
+                }
+
                 if let Some(error) = &state.error {
                     div { class: "progress-error",
                         strong { "Error: " }
                         "{error}"
-                    }
-                } else {
-                    div { class: "ai-generating",
-                        Spinner { size: "lg" }
-                        p { "Generating structured document with AI…" }
                     }
                 }
             }

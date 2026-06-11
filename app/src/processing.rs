@@ -53,6 +53,7 @@ pub fn load_envelope_from_json(
         current_session,
         &label,
         "Imported from JSON",
+        false,
     );
 }
 
@@ -71,6 +72,7 @@ pub fn finalize_envelope(
     mut current_session: Signal<Option<String>>,
     session_label: &str,
     edit_label: &str,
+    ai_mode: bool,
 ) {
     // Load profile fonts so derived outputs render with the right typefaces.
     if let Some(profile_name) = profile {
@@ -79,6 +81,7 @@ pub fn finalize_envelope(
 
     let mut state = ProcessingState {
         step: ProcessingStep::Complete,
+        ai_mode,
         ..ProcessingState::new()
     };
     regenerate_outputs(&mut state, envelope, profile);

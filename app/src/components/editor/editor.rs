@@ -113,6 +113,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     // Reset to empty whenever a new smart-edit run starts.
     let mut rejected_ids = use_signal(std::collections::HashSet::<usize>::new);
 
+    // Free-text feedback the user can add when retrying a smart-edit suggestion.
+    let mut feedback_text = use_signal(String::new);
+
     // Search state
     let mut search_query = use_signal(String::new);
     let mut search_index = use_signal(|| 0usize);
@@ -1535,6 +1538,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
 
                 smart_edit_state.set(SmartEditState::Loading);
                 rejected_ids.write().clear();
+                feedback_text.set(String::new());
 
                 spawn(async move {
                     match smart_edit::run_smart_edit(
@@ -1812,6 +1816,19 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         }
                                     }
 
+                                    div { class: "smart-edit-feedback",
+                                        label { class: "smart-edit-feedback-label",
+                                            "Additional feedback (optional)"
+                                        }
+                                        textarea {
+                                            class: "smart-edit-feedback-input",
+                                            rows: "2",
+                                            placeholder: "Describe what to change, then retry with feedback…",
+                                            value: "{feedback_text}",
+                                            oninput: move |evt| feedback_text.set(evt.value()),
+                                        }
+                                    }
+
                                     div { class: "smart-edit-actions",
                                         button {
                                             class: "editor-btn editor-btn-secondary",
@@ -1844,14 +1861,18 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         button {
                                             class: "editor-btn editor-btn-secondary",
                                             onclick: move |_| {
+                                                feedback_text.set(String::new());
+                                                rejected_ids.write().clear();
                                                 smart_edit_state.set(SmartEditState::Idle);
-
                                             },
                                             "Dismiss"
                                         }
 
-                                        // Show "Retry with Feedback" when some changes are rejected.
-                                        if !rejected_ids.read().is_empty() {
+                                        // Show "Retry with Feedback" when some changes are rejected
+                                        // or the user added free-text feedback.
+                                        if !rejected_ids.read().is_empty()
+                                            || !feedback_text.read().trim().is_empty()
+                                        {
                                             {
                                                 let rejected: Vec<smart_edit::ChangeItem> = result
                                                     .changes
@@ -1881,11 +1902,13 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             let selected_indices = selected_indices.clone();
                                                             let accepted = accepted.clone();
                                                             let rejected = rejected.clone();
+                                                            let user_feedback = feedback_text.read().clone();
                                                             let api_key = api_key.clone();
                                                             let model = model.clone();
                                                             let started_at = std::time::Instant::now();
                                                             smart_edit_state.set(SmartEditState::Loading);
                                                             rejected_ids.write().clear();
+                                                            feedback_text.set(String::new());
                                                             spawn(async move {
                                                                 match smart_edit::run_smart_edit_with_feedback(
                                                                         &content,
@@ -1893,6 +1916,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         &plain_images,
                                                                         &accepted,
                                                                         &rejected,
+                                                                        &user_feedback,
                                                                         provider,
                                                                         &api_key,
                                                                         &model,
@@ -1961,8 +1985,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                     }
 
                                                     selection.write().clear();
+                                                    feedback_text.set(String::new());
                                                     smart_edit_state.set(SmartEditState::Idle);
-
                                                 },
                                                 "Apply Changes"
                                             }

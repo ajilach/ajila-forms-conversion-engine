@@ -125,6 +125,7 @@ pub async fn run_smart_edit_with_feedback(
     plain_images: &HashMap<String, String>,
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
+    user_feedback: &str,
     provider: LlmProvider,
     api_key: &str,
     model: &str,
@@ -134,8 +135,13 @@ pub async fn run_smart_edit_with_feedback(
         .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let prompt =
-        build_feedback_prompt(selected_indices, plain_images, accepted_changes, rejected_changes);
+    let prompt = build_feedback_prompt(
+        selected_indices,
+        plain_images,
+        accepted_changes,
+        rejected_changes,
+        user_feedback,
+    );
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let mut history: ChatHistory = Vec::new();
@@ -485,6 +491,7 @@ fn build_feedback_prompt(
     plain_images: &HashMap<String, String>,
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
+    user_feedback: &str,
 ) -> String {
     let base = build_smart_edit_prompt(selected_indices, plain_images);
     let format_list = |changes: &[ChangeItem]| {
@@ -496,6 +503,17 @@ fn build_feedback_prompt(
     };
     let accepted_list = format_list(accepted_changes);
     let rejected_list = format_list(rejected_changes);
+
+    let feedback_section = if user_feedback.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\nThe user also gave the following additional feedback; follow it in your new \
+             suggestion:\n{}",
+            user_feedback.trim()
+        )
+    };
+
     format!(
         "{base}\n\n\
          IMPORTANT – The user reviewed your previous suggestion. They ACCEPTED the following \
@@ -505,7 +523,7 @@ fn build_feedback_prompt(
          They REJECTED the following changes. Do NOT apply these again in your new suggestion:\n\
          {rejected_list}\n\
          Please produce a revised suggestion that keeps the accepted changes and still improves \
-         the structure, but avoids the rejected changes."
+         the structure, but avoids the rejected changes.{feedback_section}"
     )
 }
 

@@ -1833,16 +1833,32 @@ body > div, #main {
     margin-top: var(--space-md);
 }
 
-.smart-edit-loading {
+.smart-edit-feedback {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-xl) 0;
+    gap: 0.25rem;
+    margin-top: var(--space-md);
 }
 
-/* AI processing progress (no staged pipeline) */
-.ai-generating {
+.smart-edit-feedback-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    opacity: 0.75;
+}
+
+.smart-edit-feedback-input {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font: inherit;
+    padding: var(--space-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: inherit;
+}
+
+.smart-edit-loading {
     display: flex;
     flex-direction: column;
     align-items: center;
