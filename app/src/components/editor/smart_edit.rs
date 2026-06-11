@@ -413,7 +413,6 @@ fn build_smart_edit_prompt(
          Primary goal:\n\
          - Improve structural layout and ordering so the form is logically organized and easy to read.\n\
          - Keep the output semantically faithful to the input.\n\
-         - Set `required: true` on fields that contextually appear mandatory (e.g. fields marked with asterisks, labels containing \"required\"/\"mandatory\"/\"Pflichtfeld\", or fields that are clearly essential like name, signature, date fields in official forms). Default to `required: false` when uncertain.\n\
          \n\
          Hard constraints (must follow):\n\
          - Never invent, add, or hallucinate new textual content in any language.\n\
