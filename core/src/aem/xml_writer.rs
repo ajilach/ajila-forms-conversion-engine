@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
+use super::{AemConfig, AemNode, AemOption, OptionAlignment};
 use crate::aem::template;
 use crate::structured::InputValue;
 use crate::util::escape_html as xml_escape;
@@ -23,8 +23,62 @@ use crate::util::escape_html as xml_escape;
 /// `config.component_templates`. Attributes are post-processed to appear
 /// one per line (matching AEM's export style).
 pub fn generate_aem_xml(root: &AemNode, config: &AemConfig) -> String {
-    let rendered = render_node(root, config);
+    // Invert the trigger-field condition rules into a per-panel map so each
+    // conditional panel can carry its own AABO-style `fd:visible` SHOW_EXPRESSION.
+    let vis = collect_panel_visibility(root);
+    let rendered = render_node(root, config, &vis);
     reformat_attributes(&rendered)
+}
+
+// ============================================================================
+// Panel visibility map (AABO-style `fd:visible` SHOW_EXPRESSION)
+// ============================================================================
+
+/// Maps a conditional panel's AEM `name` to the `(trigger_field, value)` pairs
+/// that should make it visible. Built by inverting the `ConditionRule`s that
+/// the converter wired onto trigger fields (radio/checkbox/dropdown).
+type PanelVisibilityMap = HashMap<String, Vec<(String, InputValue)>>;
+
+/// Walk the node tree and invert every trigger field's `show` conditions into
+/// a `panel_name → [(trigger_field, value), …]` map.
+fn collect_panel_visibility(root: &AemNode) -> PanelVisibilityMap {
+    let mut map = PanelVisibilityMap::new();
+    collect_panel_visibility_rec(root, &mut map);
+    map
+}
+
+fn collect_panel_visibility_rec(node: &AemNode, map: &mut PanelVisibilityMap) {
+    match node {
+        AemNode::RadioButton {
+            name, conditions, ..
+        }
+        | AemNode::Checkbox {
+            name, conditions, ..
+        }
+        | AemNode::Dropdown {
+            name, conditions, ..
+        } => {
+            for rule in conditions {
+                if rule.show {
+                    map.entry(rule.target_panel_name.clone())
+                        .or_default()
+                        .push((name.clone(), rule.value.clone()));
+                }
+            }
+        }
+        _ => {}
+    }
+
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => {
+            for child in children {
+                collect_panel_visibility_rec(child, map);
+            }
+        }
+        _ => {}
+    }
 }
 
 // ============================================================================
@@ -35,7 +89,7 @@ pub fn generate_aem_xml(root: &AemNode, config: &AemConfig) -> String {
 ///
 /// If no template exists for the node type, an empty string is returned
 /// (the component is omitted from the output).
-fn render_node(node: &AemNode, config: &AemConfig) -> String {
+fn render_node(node: &AemNode, config: &AemConfig, vis: &PanelVisibilityMap) -> String {
     // Custom nodes use a separate template lookup.
     if let AemNode::Custom { template_key, .. } = node {
         let template = match config.custom_templates.get(template_key) {
@@ -48,7 +102,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
                 return String::new();
             }
         };
-        let ctx = build_node_context(node, config);
+        let ctx = build_node_context(node, config, vis);
         return match template::render_string(template, &ctx) {
             Ok(rendered) => rendered,
             Err(e) => {
@@ -86,7 +140,7 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
         None => return String::new(),
     };
 
-    let ctx = build_node_context(node, config);
+    let ctx = build_node_context(node, config, vis);
     match template::render_string(template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
@@ -97,8 +151,11 @@ fn render_node(node: &AemNode, config: &AemConfig) -> String {
 }
 
 /// Render all children of a node and concatenate the results.
-fn render_children(children: &[AemNode], config: &AemConfig) -> String {
-    children.iter().map(|c| render_node(c, config)).collect()
+fn render_children(children: &[AemNode], config: &AemConfig, vis: &PanelVisibilityMap) -> String {
+    children
+        .iter()
+        .map(|c| render_node(c, config, vis))
+        .collect()
 }
 
 /// Build a Tera context for a single node.
@@ -107,7 +164,11 @@ fn render_children(children: &[AemNode], config: &AemConfig) -> String {
 /// - Global variables: `xfa.*`, `variables.*`, `author`, `master_language`,
 ///   `languages`, `expanded_languages`
 /// - Node-specific variables depending on the variant
-fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
+fn build_node_context(
+    node: &AemNode,
+    config: &AemConfig,
+    vis: &PanelVisibilityMap,
+) -> tera::Context {
     let mut ctx = tera::Context::new();
 
     // ── Global context ─────────────────────────────────────────────────
@@ -125,7 +186,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
         AemNode::Root { title, children } => {
             ctx.insert("title", &xml_escape(title));
             ctx.insert("form_code", &config.form_code);
-            ctx.insert("children", &render_children(children, config));
+            ctx.insert("children", &render_children(children, config, vis));
         }
 
         AemNode::Panel {
@@ -136,7 +197,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             is_page,
             dor_exclude,
             visible,
-            is_conditional: _,
+            is_conditional,
             dor_num_cols,
             colspan,
             dor_colspan,
@@ -152,7 +213,31 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("dor_num_cols", dor_num_cols);
             ctx.insert("dor_colspan", dor_colspan);
             ctx.insert("bind_ref", bind_ref);
-            ctx.insert("children", &render_children(children, config));
+            ctx.insert("children", &render_children(children, config, vis));
+
+            // Conditional panels carry an AABO-style `fd:visible` SHOW_EXPRESSION
+            // that toggles both form visibility and DOR inclusion via the UBS
+            // `showAFShowDor`/`hideAFHideDor` helpers. Only the structured
+            // `(trigger_field, value)` pairs are passed here — the SHOW_EXPRESSION
+            // JSON is assembled by the `conditional` template. When present, the
+            // expression governs visibility, so the static `visible` attribute is
+            // suppressed (see conditional.xml).
+            if *is_conditional {
+                if let Some(triggers) = vis.get(name) {
+                    if !triggers.is_empty() {
+                        let trigger_ctx: Vec<HashMap<&str, String>> = triggers
+                            .iter()
+                            .map(|(field, value)| {
+                                HashMap::from([
+                                    ("field", field.clone()),
+                                    ("value", condition_value_str(value)),
+                                ])
+                            })
+                            .collect();
+                        ctx.insert("visibility_triggers", &trigger_ctx);
+                    }
+                }
+            }
         }
 
         AemNode::TextField {
@@ -227,7 +312,10 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             colspan,
             dor_colspan,
             field_id: _,
-            conditions,
+            // Visibility is now emitted on the target panel (AABO-style
+            // `fd:visible` SHOW_EXPRESSION), not as a `fd:valueCommit` on the
+            // trigger field. See `collect_panel_visibility`.
+            conditions: _,
             bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
@@ -239,7 +327,6 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("dor_colspan", dor_colspan);
             ctx.insert("bind_ref", bind_ref);
             insert_options_context(&mut ctx, options);
-            insert_conditions_context(&mut ctx, name, conditions);
         }
 
         AemNode::Checkbox {
@@ -252,7 +339,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             colspan,
             dor_colspan,
             field_id: _,
-            conditions,
+            conditions: _,
             bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
@@ -264,7 +351,6 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("bind_ref", bind_ref);
             ctx.insert("alignment", alignment_str(*alignment));
             insert_options_context(&mut ctx, options);
-            insert_conditions_context(&mut ctx, name, conditions);
             // text_is_rich: array of booleans indicating rich text options
             let text_is_rich: Vec<bool> = options.iter().map(|o| o.label.contains('<')).collect();
             let text_is_rich_str = format!(
@@ -289,7 +375,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             colspan,
             dor_colspan,
             field_id: _,
-            conditions,
+            conditions: _,
             bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
@@ -302,7 +388,6 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("bind_ref", bind_ref);
             ctx.insert("alignment", alignment_str(*alignment));
             insert_options_context(&mut ctx, options);
-            insert_conditions_context(&mut ctx, name, conditions);
             // text_is_rich
             let text_is_rich: Vec<bool> = options.iter().map(|o| o.label.contains('<')).collect();
             let text_is_rich_str = format!(
@@ -362,7 +447,7 @@ fn build_node_context(node: &AemNode, config: &AemConfig) -> tera::Context {
             ctx.insert("title", &xml_escape(title));
             ctx.insert("min_occur", min_occur);
             ctx.insert("max_occur", max_occur);
-            ctx.insert("children", &render_children(children, config));
+            ctx.insert("children", &render_children(children, config, vis));
             ctx.insert("bind_ref", bind_ref);
 
             let panel_name = format!("RCP_{}", name);
@@ -439,88 +524,26 @@ fn insert_options_context(ctx: &mut tera::Context, options: &[AemOption]) {
     ctx.insert("options", &opt_list);
 }
 
-/// Insert conditions-related variables into a Tera context.
-fn insert_conditions_context(
-    ctx: &mut tera::Context,
-    field_name: &str,
-    conditions: &[ConditionRule],
-) {
-    if !conditions.is_empty() {
-        ctx.insert(
-            "conditions_script",
-            &xml_escape(&generate_value_commit_json(field_name, conditions)),
-        );
-    }
-}
-
 // ============================================================================
-// Conditional visibility scripts (fd:scripts fd:valueCommit)
+// Conditional visibility scripts (fd:scripts fd:visible SHOW_EXPRESSION)
 // ============================================================================
+//
+// This matches the reference UBS form (AF_AABO): each dynamically-hidden panel
+// carries a `fd:visible` SHOW_EXPRESSION on the panel itself. The expression
+// returns the boolean visibility AND, as a side effect, calls the UBS DOR
+// helpers so the panel is included/excluded from the Document of Record.
+//
+// The full SHOW_EXPRESSION JSON is assembled by the `conditional` template from
+// the `visibility_triggers` context list; the only Rust-side concern is turning
+// each trigger value into its string form for the `==` comparison.
 
-/// Generate the JavaScript if-else chain for a `fd:valueCommit` script.
-///
-/// Groups conditions by target panel. For each panel, builds an
-/// `if (this.value === 'X') { panel.visible = true; ... } else { ... }` block.
-///
-/// The returned string uses JCR/JSON escaping conventions:
-/// - `\\n` for newlines (JCR `\\` → `\`, then JSON `\n` → newline)
-/// - Single quotes in JS to avoid nested double-quote escaping
-fn generate_value_commit_script(conditions: &[ConditionRule]) -> String {
-    use std::collections::HashMap;
-
-    // Group conditions by target panel name. For each panel we collect the
-    // values that should make it visible.
-    let mut by_panel: HashMap<&str, Vec<&InputValue>> = HashMap::new();
-    for rule in conditions {
-        if rule.show {
-            by_panel
-                .entry(&rule.target_panel_name)
-                .or_default()
-                .push(&rule.value);
-        }
+/// Render a single `InputValue` as the string used in a `==` comparison.
+fn condition_value_str(value: &InputValue) -> String {
+    match value {
+        InputValue::Text(s) => s.clone(),
+        InputValue::Number(n) => n.to_string(),
+        InputValue::Bool(b) => b.to_string(),
     }
-
-    let mut script = String::new();
-
-    for (panel_name, values) in &by_panel {
-        // Build the condition: this.value === 'val1' || this.value === 'val2'
-        // Uses single quotes in JS to avoid escaping issues within JSON strings.
-        let cond_parts: Vec<String> = values
-            .iter()
-            .map(|v| {
-                let val_str = match v {
-                    InputValue::Text(s) => s.to_string(),
-                    InputValue::Number(n) => n.to_string(),
-                    InputValue::Bool(b) => b.to_string(),
-                };
-                // Use single quotes for string comparison in JS:
-                // this.value === 'someValue'
-                format!("this.value === '{}'", val_str)
-            })
-            .collect();
-        let condition = cond_parts.join(" || ");
-
-        // \\\\n in Rust source → \\n in Rust string → \\n in XML output
-        // → JCR decodes \\ to \ giving \n → JSON decodes \n to newline
-        script.push_str(&format!(
-            "if ({}) {{\\\\n    {}.visible = true;\\\\n    {}.dorExclusion = false;\\\\n}} else {{\\\\n    {}.visible = false;\\\\n    {}.dorExclusion = true;\\\\n}}\\\\n",
-            condition, panel_name, panel_name, panel_name, panel_name
-        ));
-    }
-
-    script
-}
-
-/// Generate the escaped JSON string for the `fd:valueCommit` attribute.
-///
-/// The format is the `SCRIPTMODEL` pattern used throughout AEM Forms XML.
-fn generate_value_commit_json(field_name: &str, conditions: &[ConditionRule]) -> String {
-    let script_content = generate_value_commit_script(conditions);
-
-    format!(
-        "[{{\"script\":{{\"field\":\"{}\"\\,\"event\":\"Value Commit\"\\,\"model\":{{\"nodeName\":\"EVENT_SCRIPTS\"}}\\,\"content\":\"{}\"}}\\,\"nodeName\":\"SCRIPTMODEL\"\\,\"version\":1\\,\"enabled\":true}}]",
-        field_name, script_content,
-    )
 }
 
 // ============================================================================
@@ -730,7 +753,7 @@ mod tests {
         );
         config.component_templates.insert(
             "conditional".into(),
-            "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ title }}\"{% if not visible %} visible=\"{Boolean}false\"{% endif %}{% if dor_exclude %} dorExclusion=\"true\"{% endif %}{% if dor_num_cols %} dorNumCols=\"{{ dor_num_cols }}\"{% endif %}{% if dor_colspan %} dorColspan=\"{{ dor_colspan }}\"{% endif %}>{{ children }}</{{ element_name }}>".into(),
+            "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ title }}\"{% if not visible and not visibility_triggers %} visible=\"{Boolean}false\"{% endif %}{% if dor_exclude %} dorExclusion=\"true\"{% endif %}{% if dor_num_cols %} dorNumCols=\"{{ dor_num_cols }}\"{% endif %}{% if dor_colspan %} dorColspan=\"{{ dor_colspan }}\"{% endif %}>{{ children }}{% if visibility_triggers %}<fd:scripts fd:visible=\"[{&quot;script&quot;:{&quot;field&quot;:&quot;{{ name }}&quot;\\,&quot;event&quot;:&quot;Visibility&quot;\\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;}\\,&quot;content&quot;:&quot;if ({% for t in visibility_triggers %}{{ t.field }}.value == \\\\&quot;{{ t.value | escape }}\\\\&quot;{% if not loop.last %} || {% endif %}{% endfor %}) {\\\\n  window.forms.ubs.showAFShowDor(this);\\\\n  true;\\\\n} else {\\\\n  window.forms.ubs.hideAFHideDor(this);\\\\n  false;\\\\n}\\\\n&quot;}\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]\" jcr:primaryType=\"nt:unstructured\"/>{% endif %}</{{ element_name }}>".into(),
         );
         config.component_templates.insert(
             "textbox".into(),
@@ -1042,54 +1065,83 @@ mod tests {
         );
     }
 
+    /// Build a conditional panel node with the given AEM name (the target of a
+    /// trigger field's condition rule).
+    fn conditional_panel(name: &str) -> AemNode {
+        AemNode::Panel {
+            uuid: fixed_uuid(),
+            name: name.into(),
+            title: String::new(),
+            children: vec![],
+            is_page: false,
+            dor_exclude: true,
+            visible: false,
+            is_conditional: true,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        }
+    }
+
     #[test]
-    fn radio_button_with_conditions_emits_scripts() {
+    fn radio_button_with_conditions_emits_panel_visible_script() {
         use crate::structured::InputValue;
 
         let root = AemNode::Root {
             title: "Form".into(),
-            children: vec![AemNode::RadioButton {
-                uuid: fixed_uuid(),
-                name: "RB_TriggerField".into(),
-                label: "Choose".into(),
-                options: vec![
-                    AemOption {
-                        label: "Yes".into(),
-                        value: "yes".into(),
-                    },
-                    AemOption {
-                        label: "No".into(),
-                        value: "no".into(),
-                    },
-                ],
-                alignment: OptionAlignment::Vertical,
-                mandatory: false,
-                visible: true,
-                colspan: 12,
-                dor_colspan: None,
-                field_id: None,
-                conditions: vec![ConditionRule {
-                    target_panel_name: "COND_TargetPanel".into(),
-                    value: InputValue::Text("yes".into()),
-                    show: true,
-                }],
-                bind_ref: None,
-            }],
+            children: vec![
+                AemNode::RadioButton {
+                    uuid: fixed_uuid(),
+                    name: "RB_TriggerField".into(),
+                    label: "Choose".into(),
+                    options: vec![
+                        AemOption {
+                            label: "Yes".into(),
+                            value: "yes".into(),
+                        },
+                        AemOption {
+                            label: "No".into(),
+                            value: "no".into(),
+                        },
+                    ],
+                    alignment: OptionAlignment::Vertical,
+                    mandatory: false,
+                    visible: true,
+                    colspan: 12,
+                    dor_colspan: None,
+                    field_id: None,
+                    conditions: vec![ConditionRule {
+                        target_panel_name: "COND_TargetPanel".into(),
+                        value: InputValue::Text("yes".into()),
+                        show: true,
+                    }],
+                    bind_ref: None,
+                },
+                conditional_panel("COND_TargetPanel"),
+            ],
         };
         let xml = generate_aem_xml(&root, &test_config());
+        // AABO mechanism: the SHOW_EXPRESSION lives on the target panel, not as
+        // a valueCommit on the trigger field.
         assert!(
-            xml.contains("fd:scripts"),
-            "Radio with conditions should emit fd:scripts. Got:\n{}",
+            !xml.contains("fd:valueCommit"),
+            "Trigger field should NOT emit fd:valueCommit anymore. Got:\n{}",
             xml
         );
         assert!(
-            xml.contains("fd:valueCommit"),
-            "Radio with conditions should emit fd:valueCommit. Got:\n{}",
+            xml.contains("fd:visible") && xml.contains("SHOW_EXPRESSION"),
+            "Conditional panel should emit a fd:visible SHOW_EXPRESSION. Got:\n{}",
             xml
         );
         assert!(
-            xml.contains("COND_TargetPanel.visible"),
-            "Script content should reference target panel. Got:\n{}",
+            xml.contains("showAFShowDor") && xml.contains("hideAFHideDor"),
+            "Script should call the UBS DOR helpers. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("RB_TriggerField.value =="),
+            "Expression should reference the trigger field by name. Got:\n{}",
             xml
         );
     }
@@ -1155,17 +1207,17 @@ mod tests {
                     show: true,
                 }],
                 bind_ref: None,
-            }],
+            }, conditional_panel("COND_PanelA")],
         };
         let xml = generate_aem_xml(&root, &test_config());
         assert!(
-            xml.contains("fd:scripts"),
-            "Dropdown with conditions should emit fd:scripts. Got:\n{}",
+            xml.contains("fd:visible") && xml.contains("SHOW_EXPRESSION"),
+            "Conditional panel for a dropdown trigger should emit fd:visible. Got:\n{}",
             xml
         );
         assert!(
-            xml.contains("COND_PanelA.visible"),
-            "Script content should reference COND_PanelA. Got:\n{}",
+            xml.contains("DD_Trigger.value =="),
+            "Expression should reference DD_Trigger. Got:\n{}",
             xml
         );
     }
@@ -1195,82 +1247,135 @@ mod tests {
                     show: true,
                 }],
                 bind_ref: None,
-            }],
+            }, conditional_panel("COND_AcceptPanel")],
         };
         let xml = generate_aem_xml(&root, &test_config());
         assert!(
-            xml.contains("fd:scripts"),
-            "Checkbox with conditions should emit fd:scripts. Got:\n{}",
+            xml.contains("fd:visible") && xml.contains("SHOW_EXPRESSION"),
+            "Conditional panel for a checkbox trigger should emit fd:visible. Got:\n{}",
             xml
         );
         assert!(
-            xml.contains("COND_AcceptPanel.visible"),
-            "Script content should reference COND_AcceptPanel. Got:\n{}",
+            xml.contains("CB_Trigger.value == \\\\&quot;true\\\\&quot;"),
+            "Expression should compare CB_Trigger to the bool value. Got:\n{}",
             xml
         );
     }
 
     #[test]
-    fn value_commit_script_uses_single_quotes() {
+    fn visible_script_ors_multiple_trigger_values() {
         use crate::structured::InputValue;
 
-        let conditions = vec![ConditionRule {
-            target_panel_name: "COND_Panel1".into(),
-            value: InputValue::Text("option_a".into()),
-            show: true,
-        }];
-        let script = generate_value_commit_script(&conditions);
+        // A trigger that shows the same panel for two different values
+        // (AABO: `RB_FormularAdressat.value == "3" || ... == "4"`).
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![
+                AemNode::RadioButton {
+                    uuid: fixed_uuid(),
+                    name: "RB_Adressat".into(),
+                    label: "Choose".into(),
+                    options: vec![
+                        AemOption {
+                            label: "Three".into(),
+                            value: "3".into(),
+                        },
+                        AemOption {
+                            label: "Four".into(),
+                            value: "4".into(),
+                        },
+                    ],
+                    alignment: OptionAlignment::Vertical,
+                    mandatory: false,
+                    visible: true,
+                    colspan: 12,
+                    dor_colspan: None,
+                    field_id: None,
+                    conditions: vec![
+                        ConditionRule {
+                            target_panel_name: "COND_Entity".into(),
+                            value: InputValue::Text("3".into()),
+                            show: true,
+                        },
+                        ConditionRule {
+                            target_panel_name: "COND_Entity".into(),
+                            value: InputValue::Text("4".into()),
+                            show: true,
+                        },
+                    ],
+                    bind_ref: None,
+                },
+                conditional_panel("COND_Entity"),
+            ],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        // The rendered expression OR-s both comparisons (AABO escaping `\\&quot;`).
         assert!(
-            script.contains("this.value === 'option_a'"),
-            "Script should use single quotes for value comparison. Got: {}",
-            script
+            xml.contains(
+                "RB_Adressat.value == \\\\&quot;3\\\\&quot; || RB_Adressat.value == \\\\&quot;4\\\\&quot;"
+            ),
+            "Expression should OR both trigger values. Got:\n{}",
+            xml
         );
         assert!(
-            script.contains("COND_Panel1.visible = true"),
-            "Script should set panel visible. Got: {}",
-            script
-        );
-        assert!(
-            script.contains("COND_Panel1.dorExclusion = false"),
-            "Script should set dorExclusion to false when visible. Got: {}",
-            script
+            xml.contains("window.forms.ubs.showAFShowDor(this);")
+                && xml.contains("window.forms.ubs.hideAFHideDor(this);"),
+            "Script should call both DOR helpers. Got:\n{}",
+            xml
         );
     }
 
     #[test]
-    fn value_commit_json_has_correct_structure() {
+    fn visible_json_has_show_expression_structure() {
         use crate::structured::InputValue;
 
-        let conditions = vec![ConditionRule {
-            target_panel_name: "COND_Test".into(),
-            value: InputValue::Text("val".into()),
-            show: true,
-        }];
-        let json = generate_value_commit_json("RB_Field", &conditions);
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![
+                AemNode::Dropdown {
+                    uuid: fixed_uuid(),
+                    name: "DD_Field".into(),
+                    label: "Select".into(),
+                    options: vec![AemOption {
+                        label: "Val".into(),
+                        value: "val".into(),
+                    }],
+                    mandatory: false,
+                    visible: true,
+                    colspan: 12,
+                    dor_colspan: None,
+                    field_id: None,
+                    conditions: vec![ConditionRule {
+                        target_panel_name: "PN_Cond".into(),
+                        value: InputValue::Text("val".into()),
+                        show: true,
+                    }],
+                    bind_ref: None,
+                },
+                conditional_panel("PN_Cond"),
+            ],
+        };
+        let xml = generate_aem_xml(&root, &test_config());
+        // The SHOW_EXPRESSION SCRIPTMODEL envelope, rendered entirely by the template.
         assert!(
-            json.starts_with("[{"),
-            "JSON should start with array+object. Got: {}",
-            json
+            xml.contains("&quot;field&quot;:&quot;PN_Cond&quot;"),
+            "field should be the target panel name. Got:\n{}",
+            xml
         );
         assert!(
-            json.contains("\"script\""),
-            "JSON should contain \"script\" key. Got: {}",
-            json
+            xml.contains("&quot;event&quot;:&quot;Visibility&quot;"),
+            "event should be Visibility. Got:\n{}",
+            xml
         );
         assert!(
-            json.contains("\"field\":\"RB_Field\""),
-            "JSON should contain field name. Got: {}",
-            json
+            xml.contains("&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;"),
+            "model nodeName should be SHOW_EXPRESSION. Got:\n{}",
+            xml
         );
         assert!(
-            json.contains("\"event\":\"Value Commit\""),
-            "JSON should contain Value Commit event. Got: {}",
-            json
-        );
-        assert!(
-            json.contains("SCRIPTMODEL"),
-            "JSON should contain SCRIPTMODEL. Got: {}",
-            json
+            xml.contains("SCRIPTMODEL"),
+            "envelope should contain SCRIPTMODEL. Got:\n{}",
+            xml
         );
     }
 
@@ -1409,7 +1514,7 @@ mod tests {
                 name: "PRF_Preface_abcdef01".into(),
             };
 
-            let xml = render_node(&node, &config);
+            let xml = render_node(&node, &config, &PanelVisibilityMap::new());
 
             assert!(
                 xml.contains(&format!("fragRef=\"{}\"", expected_frag_ref)),
@@ -1463,7 +1568,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config);
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
 
         assert!(
             xml.contains("BT_Add.visible = true"),
@@ -1508,7 +1613,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config);
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
 
         let expected_remove_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
@@ -1562,7 +1667,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config);
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
 
         let expected_add_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
@@ -1616,7 +1721,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config);
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
 
         let expected_add_init = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",

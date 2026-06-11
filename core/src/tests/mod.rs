@@ -20,6 +20,32 @@ fn structured_schema_is_object_with_defs() {
     assert_eq!(name.get("type").and_then(|t| t.as_str()), Some("string"));
 }
 
+#[test]
+fn deserialize_ai_nodes_with_non_uuid_field_names() {
+    use crate::StructuredNode;
+
+    // A representative slice of AI-generated output: meaningful (non-UUID)
+    // field names, a select with options, a conditional referencing a field by
+    // name, and a repeatable grid. This must deserialize — field names are
+    // hashed into deterministic FieldIds rather than requiring canonical UUIDs.
+    let json = r#"[
+        {"type":"field","name":"CL_ClientType","inputType":{"type":"select","options":[
+            {"name":{"de":"Firma"},"value":{"type":"text","value":"Firma"}},
+            {"name":"GbR","value":{"type":"text","value":"GbR"}}
+        ]},"label":{"de":[{"type":"text","content":"Adressat"}]},"value":{"type":"text","value":"Firma"}},
+        {"type":"conditional","condition":{"fieldName":"CL_ClientType","value":{"type":"text","value":"Firma"}},
+         "content":{"type":"paragraph","content":{"en":[{"type":"strong","content":{"type":"text","content":"X"}}]}}},
+        {"type":"repeatable","minOccurrences":1,"maxOccurrences":null,"item":{"type":"gridLayout","columns":2,"elements":[
+            {"span":1,"node":{"type":"field","name":"TF_FamilyName","inputType":{"type":"text"},"label":null}},
+            {"span":1,"node":{"type":"field","name":"Depot","inputType":{"type":"text","max_length":3,"regex":"^[0-9]+$"},"label":{"en":[{"type":"text","content":"Depot Nr."}]}}}
+        ]}}
+    ]"#;
+
+    let nodes: Vec<StructuredNode> =
+        serde_json::from_str(json).expect("AI node slice deserializes");
+    assert_eq!(nodes.len(), 3);
+}
+
 use helpers::{
     assert_aem_package_valid_for, assert_aem_xml_valid_for,
     build_aem_test_output_with_custom_elements, collect_conditionals, collect_field_labels,

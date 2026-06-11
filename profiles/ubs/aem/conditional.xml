@@ -15,11 +15,15 @@
     name="{{ name }}"
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false"
-    {% if not visible %}visible="{Boolean}false"{% endif %}>
+    {% if not visible and not visibility_triggers %}visible="{Boolean}false"{% endif %}>
     <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
         {{ children }}
     </items>
     <layout jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}" columns="1" dorLayoutType="columnar"{% if dor_num_cols %} dorNumCols="{{ dor_num_cols }}"{% endif %} nonNavigable="{Boolean}true" toolbarPosition="Bottom"/>
+    {% if visibility_triggers %}
+    <fd:rules jcr:primaryType="nt:unstructured"/>
+    <fd:scripts fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;{{ name }}&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;}\,&quot;content&quot;:&quot;if ({% for t in visibility_triggers %}{{ t.field }}.value == \\&quot;{{ t.value | escape }}\\&quot;{% if not loop.last %} || {% endif %}{% endfor %}) {\\n  window.forms.ubs.showAFShowDor(this);\\n  true;\\n} else {\\n  window.forms.ubs.hideAFHideDor(this);\\n  false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured"/>
+    {% endif %}
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>

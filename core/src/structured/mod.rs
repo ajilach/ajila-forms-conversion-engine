@@ -103,8 +103,14 @@ impl Serialize for FieldId {
 impl<'de> Deserialize<'de> for FieldId {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        let uuid = Uuid::parse_str(&s).map_err(serde::de::Error::custom)?;
-        Ok(FieldId(uuid))
+        // Accept either a canonical UUID (round-tripping our own serialized
+        // output) or an arbitrary identifier / SOM path (e.g. AI- or
+        // hand-authored field names like "CL_ClientType"), which we hash into a
+        // deterministic UUID v5 — matching `FieldId::from(&str)`.
+        Ok(match Uuid::parse_str(&s) {
+            Ok(uuid) => FieldId(uuid),
+            Err(_) => FieldId::from(s.as_str()),
+        })
     }
 }
 
