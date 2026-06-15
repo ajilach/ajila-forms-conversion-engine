@@ -1532,6 +1532,100 @@ mod tests {
         }
     }
 
+    /// The banking-relationship preface fragment must be excluded from the
+    /// Document of Record. The reference packages always carry
+    /// `dorExclusion="true"` on `PN_BankingRelationship`.
+    #[test]
+    fn preface_excludes_banking_relationship_from_dor() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "preface".into(),
+            include_str!("../../../profiles/ubs/aem/preface.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+
+        let node = AemNode::Preface {
+            uuid: fixed_uuid(),
+            name: "PRF_Preface_abcdef01".into(),
+        };
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+
+        assert!(
+            xml.contains("dorExclusion=\"true\""),
+            "PN_BankingRelationship preface must be DOR-excluded. Got:\n{}",
+            xml
+        );
+    }
+
+    /// For a `PN_FormConfigurator` page panel, the full `dorExclusion` must sit
+    /// on the generated `…Title` sub-panel, NOT on the parent panel (the parent
+    /// only carries `dorExcludeTitle`/`dorExcludeDescription`). This mirrors the
+    /// reference packages; the previous template wrongly excluded the whole
+    /// configurator subtree from the DOR.
+    #[test]
+    fn form_configurator_excludes_title_subpanel_not_parent_from_dor() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "panel".into(),
+            include_str!("../../../profiles/ubs/aem/panel.xml").into(),
+        );
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ajila-forms-customers/ajila-forms-ubs/components".into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "default".into());
+
+        let node = AemNode::Panel {
+            uuid: fixed_uuid(),
+            name: "PN_FormConfigurator_abcdef01".into(),
+            title: "Form configurator".into(),
+            children: vec![],
+            is_page: true,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        };
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+
+        // The parent FormConfigurator panel element (up to the first `>`) must
+        // NOT carry dorExclusion; it keeps only dorExcludeTitle/Description.
+        let parent_tag = &xml[..xml.find('>').expect("panel open tag")];
+        assert!(
+            !parent_tag.contains("dorExclusion=\"true\""),
+            "FormConfigurator parent panel must NOT be DOR-excluded. Got tag:\n{}",
+            parent_tag
+        );
+        assert!(
+            parent_tag.contains("dorExcludeTitle=\"true\""),
+            "FormConfigurator parent panel should keep dorExcludeTitle. Got tag:\n{}",
+            parent_tag
+        );
+        // The generated Title sub-panel must carry the full dorExclusion.
+        assert!(
+            xml.contains("name=\"PN_FormConfigurator_abcdef01Title\""),
+            "expected generated Title sub-panel. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("dorExclusion=\"true\""),
+            "FormConfigurator Title sub-panel must be DOR-excluded. Got:\n{}",
+            xml
+        );
+    }
+
     /// The remove-button click script must restore BT_Add.visible on the last
     /// instance whenever the count drops back below max_occur.
     ///
