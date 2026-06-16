@@ -1508,6 +1508,9 @@ mod tests {
                 "default_layout".into(),
                 "fd/af/layouts/gridFluidLayout2".into(),
             );
+            config
+                .user_vars
+                .insert("dor_field_styling".into(), "Default".into());
 
             let node = AemNode::Preface {
                 uuid: fixed_uuid(),
@@ -1546,6 +1549,9 @@ mod tests {
             "default_layout".into(),
             "fd/af/layouts/gridFluidLayout2".into(),
         );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "Default".into());
 
         let node = AemNode::Preface {
             uuid: fixed_uuid(),
@@ -1556,6 +1562,13 @@ mod tests {
         assert!(
             xml.contains("dorExclusion=\"true\""),
             "PN_BankingRelationship preface must be DOR-excluded. Got:\n{}",
+            xml
+        );
+        // The reference packages carry `dorFieldStyling` on every panel,
+        // including the banking-relationship preface.
+        assert!(
+            xml.contains("dorFieldStyling=\"Default\""),
+            "PN_BankingRelationship preface must carry dorFieldStyling. Got:\n{}",
             xml
         );
     }
