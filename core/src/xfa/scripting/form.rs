@@ -479,6 +479,12 @@ impl XfaForm {
         // by script execution (which produces authoritative runtime state).
         Flattened::merge_form_presence_into_template(&mut nodes, &script_result.presence_changes);
 
+        // Merge access values from Form DOM into Template DOM. Fields whose
+        // template leaves `access` unset but which become `nonInteractive` at
+        // runtime (via init script or the form packet) are captured here so they
+        // render as static captions/labels rather than editable inputs.
+        Flattened::merge_form_access_into_template(&mut nodes);
+
         let init_values = script_result.computed_values;
 
         // Flatten with the init-time computed values

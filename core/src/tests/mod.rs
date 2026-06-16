@@ -26154,6 +26154,60 @@ fn test_aaow_zip_structured_output() {
 }
 
 #[test]
+fn test_bavx_has_two_date_inputs_with_caption_labels() {
+    use crate::structured::{FieldNode, FieldType};
+
+    // BAVX puts the two date inputs' labels in separate non-interactive caption
+    // fields placed directly below each input. Regression test: the date inputs
+    // must end up labelled with those captions (not with an unrelated paragraph
+    // above the section), and the captions must not surface as editable inputs.
+    let envelope = crate::run_exhaustive_to_envelope(input_path("BAVX_019_EN.pdf"), "en")
+        .expect("Failed to process BAVX_019_EN.pdf");
+    let nodes = &envelope.content;
+
+    let date_fields: Vec<(FieldNode, String)> = collect_fields(nodes)
+        .into_iter()
+        .filter(|f| matches!(f.input_type, FieldType::Date))
+        .map(|f| {
+            let label = f
+                .label
+                .as_ref()
+                .map(|l| l.as_plain_text())
+                .unwrap_or_default();
+            (f, label)
+        })
+        .collect();
+
+    let labels: Vec<String> = date_fields.iter().map(|(_, label)| label.clone()).collect();
+
+    for expected_label in [
+        "Date of the month-end balance statement",
+        "Expiry of the month-end balance statement",
+    ] {
+        assert!(
+            labels.iter().any(|l| l.contains(expected_label)),
+            "Expected a date input labelled '{}', but none found.\nAll date input labels: {:?}",
+            expected_label,
+            labels
+        );
+    }
+
+    // The caption text must not leak through as the value of any field.
+    let all_fields = collect_fields(nodes);
+    for f in &all_fields {
+        let value_text = match &f.value {
+            Some(crate::structured::InputValue::Text(t)) => t.clone(),
+            _ => String::new(),
+        };
+        assert!(
+            !value_text.contains("month-end balance statement"),
+            "Caption text leaked into a field value: {:?}",
+            f.som_path_str()
+        );
+    }
+}
+
+#[test]
 fn test_aacx_no_duplicate_headings() {
     // AACX has a heading "Titolare del conto (di seguito il Cliente)" that should
     // appear exactly once. Previously it appeared three times because hidden panels

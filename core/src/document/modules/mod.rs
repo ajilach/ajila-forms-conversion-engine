@@ -94,6 +94,7 @@
 //! run_analysis_pipeline(&mut doc);
 //! ```
 
+mod caption_field_labeler;
 mod checkbox_content;
 mod checkbox_detector;
 mod checkbox_grouper;
@@ -121,6 +122,7 @@ mod table_detector;
 mod text_block;
 mod text_block_merger;
 
+pub use caption_field_labeler::CaptionFieldLabeler;
 pub use checkbox_content::CheckboxContentDetector;
 pub use checkbox_detector::CheckboxDetector;
 pub use checkbox_grouper::CheckboxGrouper;
@@ -238,6 +240,9 @@ pub fn run_analysis_pipeline_with_context(
 
     HeadingDetector::new().process_with_context(doc, ctx);
     InlineFieldDetector::new().process_with_context(doc, ctx);
+    // Pair inputs with adjacent non-interactive caption fields (same subform)
+    // before the generic geometry-based label attacher runs.
+    CaptionFieldLabeler::new().process_with_context(doc, ctx);
     LabelAttacher::new().process_with_context(doc, ctx);
     GridTemplateDetector::new().process_with_context(doc, ctx);
 

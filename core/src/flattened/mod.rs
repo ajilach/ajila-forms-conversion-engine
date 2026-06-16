@@ -2229,6 +2229,125 @@ impl Flattened {
         path.truncate(prev_len);
     }
 
+    /// Merge `access` attributes from the Form DOM packet into the Template DOM.
+    ///
+    /// Some forms leave a field's `access` unset in the template and only set it
+    /// (e.g. to `nonInteractive`) at runtime — either via an `initialize` script
+    /// (`this.access = "nonInteractive"`) or directly in the `<form>` packet. The
+    /// `<form>` packet captures that runtime state, so copying its `access` values
+    /// onto the matching template fields lets `extract_field_access` see them and
+    /// correctly treat such fields as non-interactive captions rather than inputs.
+    pub fn merge_form_access_into_template(xfa_nodes: &mut [XfaNode]) {
+        // Step 1: Find the "form" element and collect access values.
+        let mut form_access: HashMap<String, String> = HashMap::new();
+        for node in xfa_nodes.iter() {
+            Self::find_form_element_and_collect_access(node, &mut form_access);
+        }
+
+        if form_access.is_empty() {
+            return;
+        }
+
+        // Step 2: Walk the template and apply access from form DOM.
+        for node in xfa_nodes.iter_mut() {
+            Self::apply_access_to_template(node, &form_access, &mut String::new());
+        }
+    }
+
+    /// Recursively find the `<form>` element and collect `access` attribute values.
+    fn find_form_element_and_collect_access(
+        node: &XfaNode,
+        access_map: &mut HashMap<String, String>,
+    ) {
+        if let XfaNodeKind::Element { tag_name, .. } = &node.kind
+            && tag_name == "form"
+        {
+            for child in &node.children {
+                Self::collect_form_node_access(child, &mut String::new(), access_map);
+            }
+            return;
+        }
+        for child in &node.children {
+            Self::find_form_element_and_collect_access(child, access_map);
+        }
+    }
+
+    /// Walk inside the form packet collecting `access` values for fields.
+    fn collect_form_node_access(
+        node: &XfaNode,
+        path: &mut String,
+        access_map: &mut HashMap<String, String>,
+    ) {
+        let segment = match &node.kind {
+            XfaNodeKind::Subform | XfaNodeKind::Field | XfaNodeKind::ExclGroup => {
+                node.name.as_deref()
+            }
+            _ => None,
+        };
+
+        let prev_len = path.len();
+        if let Some(name) = segment {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(name);
+        }
+
+        // Only record `nonInteractive` ("renders to paper") — the static-caption
+        // case. `readOnly`/`protected` appear pervasively in form packets as
+        // transient runtime states and must NOT disable a field's interactivity,
+        // which the template-level access already governs.
+        if segment.is_some() {
+            if let Some(access) = node.attributes.get("access") {
+                if access == "nonInteractive" {
+                    access_map.insert(path.clone(), access.clone());
+                }
+            }
+        }
+
+        for child in &node.children {
+            Self::collect_form_node_access(child, path, access_map);
+        }
+
+        path.truncate(prev_len);
+    }
+
+    /// Walk the template and apply `access` values from the form DOM.
+    fn apply_access_to_template(
+        node: &mut XfaNode,
+        form_access: &HashMap<String, String>,
+        path: &mut String,
+    ) {
+        let segment = match &node.kind {
+            XfaNodeKind::Subform | XfaNodeKind::Field | XfaNodeKind::ExclGroup => {
+                node.name.as_deref()
+            }
+            _ => None,
+        };
+
+        let prev_len = path.len();
+        if let Some(name) = segment {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(name);
+        }
+
+        if segment.is_some() {
+            if let Some(access) = form_access.get(path.as_str()) {
+                if node.attributes.get("access") != Some(access) {
+                    node.attributes.insert("access".to_string(), access.clone());
+                }
+            }
+        }
+
+        for child in &mut node.children {
+            Self::apply_access_to_template(child, form_access, path);
+        }
+
+        path.truncate(prev_len);
+    }
+
     /// Recursively find the `<form>` element and collect items from all its fields.
     /// Builds a map from SOM-like path (e.g. "UBSForms.Page.ClientType.CL_ClientType")
     /// to the list of `<items>` XfaNode children.

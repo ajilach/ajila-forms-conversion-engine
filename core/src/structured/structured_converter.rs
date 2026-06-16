@@ -2475,6 +2475,14 @@ impl<'a, 'b> Converter<'a, 'b> {
             && !content.is_empty()
         {
             result.push(InlineNode::Text(content.clone()));
+        } else if let FlattenedNodeKind::Field { value, .. } = &node.kind
+            && !node.is_interactive()
+            && !value.is_empty()
+        {
+            // A non-interactive field carries its static caption text as a value
+            // (not a Text node). This lets such a field serve as a label when it
+            // is the label child of a LabeledField (see CaptionFieldLabeler).
+            result.push(InlineNode::Text(value.clone()));
         }
     }
 
