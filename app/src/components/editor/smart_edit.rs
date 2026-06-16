@@ -23,6 +23,126 @@ const SMART_EDIT_MAX_TOKENS: u32 = 16000;
 /// full document can be long; streaming keeps the request from timing out.
 const AI_GENERATE_MAX_TOKENS: u32 = 64000;
 
+/// Domain guidance for the AI-processing (whole-document generation) prompt.
+///
+/// Encodes how to map XFA source into the right `StructuredNode` kinds, field
+/// types, and grouping, plus which standard sections the AEM pipeline inserts
+/// automatically and therefore must NOT be emitted. Derived from diffing engine
+/// output against hand-corrected reference forms (UBS Germany `019`, Italy
+/// `033`). See `specs/ai-prompts.md`.
+const AI_GENERATE_GUIDANCE: &str = "\
+HOW TO MAP THE XFA SOURCE INTO STRUCTURED NODES\n\
+Reproduce text verbatim; your job is to choose the right node KIND, the right \
+FIELD TYPE, and the right GROUPING/NESTING.\n\
+\n\
+FIELD-TYPE INFERENCE (pick the most specific type; do not default everything to Text):\n\
+- A single-select with a small, fixed option set (~2-4) that gates other content \
+=> Radio{options}. Do NOT emit Select for these even if the XFA renders a \
+dropdown/choiceList; reserve Select only for long option lists (>4) that do not \
+drive visibility.\n\
+- Date only when the caption denotes a calendar date (\"Datum\", \"Date\", \"Data\", \
+\"am\", \"Ort und Datum\"). A label naming a person/role/agent (e.g. \
+\"Legitimationspruefung durch\", \"geprueft durch\") is Text, NOT Date.\n\
+- Amounts/quantities => Number; email => Email; phone => Tel; multi-line free text \
+(XFA field multiLine / tall) => Textarea; single on/off => Bool; multi-check \
+option lists => CheckboxGroup{options}.\n\
+- Preserve `required` from XFA mandatory constraints and `value` from defaults. \
+Keep `name` equal to the XFA field name (SOM leaf) so identities stay stable.\n\
+\n\
+GROUPING (use Group/Heading; never emit a flat run of Paragraphs/Fields for a labelled section):\n\
+- Address blocks: when street, house-number, ZIP, city, and/or country fields \
+occur together, wrap them in ONE Group in postal order, as Text fields.\n\
+- Signature blocks: wrap each signer in a Group under the signature Heading. A \
+signer Group contains, in order: the signature-line Field (Text, labelled with \
+the signature caption), a place Field (Text), a date Field (Date), and a \
+name/role Field (Text) when present. Emit one Group per distinct signer (client, \
+legal representative, bank), never a single merged block.\n\
+- Account-holder / client-details sections: emit a Heading + Group. The \
+account/person-type selector inside it is a Radio (Individual vs Legal entity / \
+\"Tipo\", \"Typ\", \"Type\"). Branch the body with Conditional nodes keyed on that \
+Radio's value.\n\
+- Long legal sections (definitions, declarations, US-person clauses, terms): a \
+Heading per source sub-heading with the body Paragraphs nested in a Group under \
+it. Where the section says \"choose one of the following\", model the choice as a \
+Radio, not separate unlinked options.\n\
+\n\
+DYNAMIC BEHAVIOUR (read XFA scripts and occurrence settings, not just the static page):\n\
+- Sections the user can add/remove (XFA occur max > 1, add/remove buttons, \
+instanceManager scripts) => Repeatable{item, minOccurrences, maxOccurrences}. \
+Multiple account holders and multiple legal representatives are Repeatable.\n\
+- Show/hide driven by a field value (visibility scripts referencing another \
+field) => Conditional{condition:{fieldName,value}, content}.\n\
+\n\
+SPECIAL CASES - sections the AEM pipeline INSERTS AUTOMATICALLY. Do NOT emit \
+these as nodes; emitting them causes duplicate sections:\n\
+- Banking relationship / opening \"preface\" block: auto-prepended as the first \
+element of the first page in the entity-correct variant (Germany 019 vs Italy \
+033). Even if the source PDF shows it at the top, omit it entirely (text + fields).\n\
+- Appendix block (auto-appended to the last page) and the \"Summary of form \
+information\" summary panel (auto-generated) - omit both.\n\
+- Recurring form-footer legal boilerplate rendered from a shared fragment (e.g. \
+the standard Italian footnote) - omit; keep only content-specific footnotes.\n\
+\n\
+BUT STILL EMIT content sections that are matched-and-REPLACED downstream (they \
+must be present so the matcher can template them): the account-holder / \
+client-details section (with its account-type Radio), the signature section \
+(per-signer Groups), and the form-addressee / \"Tipo\" / \"Formular Adressat\" \
+type Radio.\n";
+
+/// Domain guidance for the Smart Edit (restructure-existing-selection) prompt.
+///
+/// Restructuring rules that fix the recurring divergences observed against the
+/// reference forms, expressed against the existing `StructuredNode` selection.
+/// Must not invent text. See `specs/ai-prompts.md`.
+const SMART_EDIT_GUIDANCE: &str = "\
+RESTRUCTURING RULES (improve structure WITHOUT inventing, paraphrasing, or deleting text):\n\
+\n\
+Fix field-type misclassifications:\n\
+- Convert Select => Radio when the option set is small (~2-4) and the field gates \
+visibility of other nodes (account/person type, addressee, a \"Tipo\" selector). \
+Keep the existing options and translations unchanged.\n\
+- Convert Date => Text when the field's label names a person/role/agent rather \
+than a calendar date (e.g. \"Legitimationspruefung durch\"). Conversely set Date \
+when the label clearly denotes a date but the type is Text.\n\
+- Promote multi-line free-text from Text to Textarea. Never change a field's \
+label text when changing its type.\n\
+\n\
+Regroup flattened content:\n\
+- Collapse a flat run of Paragraphs that share a heading into a Heading + Group.\n\
+- Gather scattered address fields (street/number/ZIP/city/country) into one Group \
+in postal order.\n\
+- Gather signature-related fields into one Group per signer (signature line, \
+place, date, name), under the signature Heading. Do not merge distinct signers.\n\
+- Move an account/person-type Radio to the top of its section and wrap the \
+Individual / Legal-entity bodies in Conditional nodes keyed to it, if those \
+bodies already exist as separate nodes.\n\
+\n\
+Apply dynamic structure that is already implied:\n\
+- If duplicated sibling blocks represent \"client 1 / client 2 / ...\" or repeated \
+representatives, replace the duplicates with a single Repeatable (de-duplication \
+by moving existing content is allowed; do not fabricate a new instance's text).\n\
+- Where one node's visibility obviously depends on another field's value and that \
+relationship is present in the data, express it as a Conditional.\n\
+\n\
+Multilingual alignment:\n\
+- Keep every translated string's language keys consistent across sibling nodes; \
+if a node carries de/en/it, its siblings in the same group must keep the same key \
+set and order. Never drop a language present in the input.\n\
+\n\
+Special cases - auto-inserted standard sections:\n\
+- The AEM pipeline auto-prepends the banking-relationship \"preface\" to the first \
+page (entity-specific DE/IT) and auto-appends the appendix and the \"Summary of \
+form information\" panel. If the input nodes already contain a banking-relationship \
+/ summary / appendix block, REMOVE it so it is not duplicated and record this as a \
+change. Never add one.\n\
+- Do NOT remove the account-holder, signature, or addressee/Tipo type-radio \
+sections - those are matched and re-templated downstream and must remain.\n\
+\n\
+Do NOT:\n\
+- Add headings, labels, or option text that is not already in the input.\n\
+- Reorder content in a way that breaks the reading order of legal text.\n\
+- Split a single legal paragraph mid-sentence.\n";
+
 /// Ordered list of LLM chat messages for a single smart-edit session.
 pub type ChatHistory = Vec<serde_json::Value>;
 
@@ -297,6 +417,7 @@ pub async fn run_ai_generate(
          copyright and confidentiality lines): do not include them in the output. \
          Do not modify, add or delete any text content.\n\n\
          {images_note}{xfa_note}\
+         {AI_GENERATE_GUIDANCE}\n\
          Return ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
          that is directly parseable as Vec<StructuredNode>. No surrounding prose, no markdown fences.\n\n\
          BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA{xfa_sections}"
@@ -473,6 +594,7 @@ fn build_smart_edit_prompt(
          - Keep field identities stable whenever possible (names/som_path) and preserve valid schema shape for StructuredNode JSON.\n\
          - Do not emit markdown, explanations, or code fences.\n\
          \n\
+         {SMART_EDIT_GUIDANCE}\n\
          Output format:\n\
          - Return ONLY one valid JSON object with exactly two keys:\n\
            \"nodes\": a JSON array of the replacement StructuredNode objects\n\
