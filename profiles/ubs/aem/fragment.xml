@@ -7,7 +7,7 @@
     sling:resourceType="fd/af/components/panel"
     dorExcludeDescription="true"
     dorExcludeTitle="true"
-    dorExclusion="true"
+    {% if frag_ref is ending_with("affrg_BankingRelationship1") %}dorExclusion="true"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     fragRef="{{ frag_ref }}"
     guideNodeClass="guidePanel"
