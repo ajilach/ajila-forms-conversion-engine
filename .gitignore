@@ -12,6 +12,19 @@
 /judge/*.csv
 
 /specs/migrated
-AAHA_019_merged.zip
 
-.claude
+# AEM conversion output (root-level)
+*.plain.png
+*_merged.json
+*_merged.zip
+*_multilingual.json
+*_multilingual.zip
+
+# Temporary extraction directories created during XML patching
+_pkg_tmp/
+_frag_tmp/
+_check_tmp/
+*_merged/
+*_merged */
+
+.env

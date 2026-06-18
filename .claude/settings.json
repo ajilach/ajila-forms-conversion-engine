@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo run*)",
+      "Bash(cargo build*)",
+      "Bash(cargo test*)",
+      "Bash(unzip*)",
+      "Bash(zip*)",
+      "Bash(curl*)",
+      "Bash(open*)",
+      "Bash(sleep*)",
+      "Bash(screencapture*)",
+      "Bash(rm -f*)",
+      "Bash(rm -rf _*)",
+      "Bash(grep*)",
+      "Bash(python3*)",
+      "Bash(mkdir*)",
+      "Bash(cp *)",
+      "Bash(ls*)",
+      "Bash(find*)"
+    ]
+  }
+}

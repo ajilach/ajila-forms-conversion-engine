@@ -21,8 +21,13 @@ pub enum RenderMode {
 struct Args {
     /// Path(s) to the PDF document(s). Multiple files of the same document in
     /// different languages can be passed for multilingual output.
-    #[arg(value_name = "DOCUMENT", required = true)]
+    #[arg(value_name = "DOCUMENT")]
     documents: Vec<PathBuf>,
+
+    /// Accept a pre-generated structured JSON file instead of PDF input.
+    /// Skips PDF parsing; runs AEM/HTML/XSD generation from the existing JSON.
+    #[arg(long, value_name = "JSON_FILE")]
+    from_structured: Option<PathBuf>,
 
     /// Render mode(s) for output images. Can be specified multiple times.
     /// Modes: plain, labelled, annotated
@@ -71,6 +76,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     let args = Args::parse();
+
+    // ─── --from-structured: regenerate outputs from an existing JSON file ────
+    if let Some(ref json_path) = args.from_structured {
+        if !json_path.exists() {
+            eprintln!("Error: file not found: {}", json_path.display());
+            std::process::exit(1);
+        }
+        let json = std::fs::read_to_string(json_path)
+            .map_err(|e| format!("Failed to read JSON: {e}"))?;
+        let envelope: blueprint::DocumentEnvelope = serde_json::from_str(&json)
+            .map_err(|e| format!("Failed to parse structured JSON: {e}"))?;
+
+        let stem = json_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("document");
+        let base = stem
+            .strip_suffix("_merged")
+            .or_else(|| stem.strip_suffix("_multilingual"))
+            .unwrap_or(stem);
+
+        if let Some(ref profile_name) = args.profile {
+            blueprint::load_profile_fonts(profile_name)?;
+        }
+
+        if args.html {
+            let profile_name = require_profile_name(args.profile.as_deref())?;
+            let custom_styles = Some(
+                blueprint::load_html_custom_styles(profile_name)
+                    .map_err(|e| format!("Failed to load HTML profile: {e}"))?,
+            );
+            let html_config = HtmlConfig {
+                custom_styles,
+                ..HtmlConfig::default()
+            };
+            let html = blueprint::to_html(&envelope.content, &html_config);
+            let html_path = PathBuf::from(format!("{}_merged.html", base));
+            std::fs::write(&html_path, html)
+                .map_err(|e| format!("Failed to write HTML: {}", e))?;
+            info!("HTML: {}", html_path.display());
+        }
+
+        if args.aem {
+            let profile_name = require_profile_name(args.profile.as_deref())?;
+            let aem_config = blueprint::load_aem_config(profile_name, &envelope.context)
+                .map_err(|e| format!("Failed to load AEM profile: {e}"))?;
+            let aem_zip = blueprint::to_aem_package(&envelope.content, &aem_config);
+            let aem_path = PathBuf::from(format!("{}_merged.zip", base));
+            std::fs::write(&aem_path, aem_zip)
+                .map_err(|e| format!("Failed to write AEM package: {}", e))?;
+            info!("AEM package: {}", aem_path.display());
+        }
+
+        if args.xsd {
+            let profile_name = require_profile_name(args.profile.as_deref())?;
+            let mut xsd_config = blueprint::load_xsd_config(profile_name)
+                .map_err(|e| format!("Failed to load XSD profile: {e}"))?;
+            let form_code = base.split('_').next().unwrap_or(base);
+            xsd_config.form_code = Some(form_code.to_string());
+            let xsd = blueprint::to_xsd(&envelope.content, &xsd_config);
+            let xsd_path = PathBuf::from(format!("{}_merged.xsd", base));
+            std::fs::write(&xsd_path, xsd)
+                .map_err(|e| format!("Failed to write XSD: {}", e))?;
+            info!("XSD: {}", xsd_path.display());
+        }
+
+        return Ok(());
+    }
+
+    // Validate that document input is provided.
+    if args.documents.is_empty() {
+        eprintln!("Error: provide at least one DOCUMENT or use --from-structured");
+        std::process::exit(1);
+    }
 
     // Validate that all paths exist up-front.
     for doc_path in &args.documents {

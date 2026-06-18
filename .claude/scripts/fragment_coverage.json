@@ -1,0 +1,4 @@
+{
+  "affrg_BankingRelationship1": ["bankbeziehung", "clearing-nr.", "konto-nr."],
+  "affrg_IndividualBasic1": ["nachname", "vorname(n)"]
+}
