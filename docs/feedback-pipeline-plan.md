@@ -54,6 +54,7 @@ sequenceDiagram
 
     U->>Main: /feedback
     Main->>R: read known resolutions
+    Main->>C: read context.json
     Main->>Mgr: spawn (parallel batches)
 
     Mgr->>R: read known resolutions
