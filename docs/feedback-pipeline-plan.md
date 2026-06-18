@@ -56,13 +56,14 @@ sequenceDiagram
     Main->>R: read known resolutions
     Main->>Mgr: spawn (parallel batches)
 
+    Mgr->>R: read known resolutions
     Mgr->>C: context_update.py → status=in_progress
     Mgr->>Wkr: spawn parallel (1 form each)
 
     Wkr->>Wkr: aem_inspect.py --json (baseline)
 
     loop for each feedback item
-        Wkr->>Wkr: feedback_match.py → known fix?
+        Wkr->>R: feedback_match.py → lookup known fix
         Wkr->>Wkr: apply fix (XML patch only — no engine re-run)
         Wkr->>Wkr: aem_install.py
         Wkr->>Wkr: aem_inspect.py --json (verify)
