@@ -164,6 +164,57 @@ feedback/
 
 ---
 
+## New scripts
+
+Four scripts to give agents reliable, reusable primitives instead of ad-hoc bash:
+
+### `feedback_match.py`
+
+Given a feedback text string, fuzzy-searches `feedback/knowledge/resolved.md` and returns the top N matching entries ranked by relevance. Workers call this before diagnosing a feedback item — if a match is found with high confidence, they apply the known fix directly without re-solving.
+
+```
+python3 .claude/scripts/feedback_match.py \
+  --query "Formular Adressat shows wrong options" \
+  --resolved feedback/knowledge/resolved.md \
+  --top 3
+```
+
+Output: ranked list of FEEDBACK-XXX entries with match score.
+
+### `context_update.py`
+
+Atomic read-modify-write on `feedback/run/context.json`. Accepts structured `--set` args so agents never manually edit JSON. Prevents partial writes if a worker crashes mid-update.
+
+```
+python3 .claude/scripts/context_update.py \
+  --file feedback/run/context.json \
+  --set AAFB_019.status=done \
+  --set AAFB_019.fixes_applied="maxOccur corrected"
+```
+
+### `aem_inspect.py --json`
+
+Extend the existing `aem_inspect.py` with a `--json` flag that outputs a machine-readable JSON object instead of the current human-readable text. Workers can pipe the output to `jq` or parse it directly for automated decision-making.
+
+```bash
+curl -s ... | python3 .claude/scripts/aem_inspect.py --json
+# → { "panels": [...], "issues": [...] }
+```
+
+The default text output is unchanged — `--json` is additive.
+
+### `aem_install.py`
+
+Wraps the AEM package install curl call + XML response parsing into a single script that exits `0` on success and `1` on failure, printing a clean one-line result. Removes the need for every agent to re-implement XML grep on the curl response.
+
+```bash
+python3 .claude/scripts/aem_install.py AAFB_019_merged.zip
+# → Installed: AAFB (200 OK)
+# or: Error: package upload failed — <reason>
+```
+
+---
+
 ## Reuse from existing tooling
 
 | Existing | Reused by |
