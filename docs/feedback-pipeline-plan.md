@@ -156,8 +156,9 @@ feedback/
 
 1. `feedback/knowledge/resolved.md` — empty template (ready to grow)
 2. `feedback/run/context.json` — empty template
-3. `.claude/skills/feedback.md` — Main skill (`/feedback` command)
-4. `.claude/skills/feedback-worker.md` — Worker skill (one per form)
+3. `.claude/skills/feedback-worker.md` — Worker skill (one per form)
+4. `.claude/skills/feedback-manager.md` — Manager skill (coordinates workers per batch)
+5. `.claude/skills/feedback.md` — Main skill (`/feedback` command, entry point)
 
 **Main skill steps (`feedback.md`):**
 1. Read all `feedback/input/*.md` files → group by form code
@@ -245,8 +246,16 @@ python3 .claude/scripts/aem_install.py AAFB_019_merged.zip
 
 ## Implementation order
 
-1. Create `feedback/knowledge/resolved.md` + `feedback/run/context.json` templates
-2. Write `feedback-worker.md` skill
-3. Write `feedback.md` main skill
-4. Define `feedback/input/` format (when concrete feedback arrives)
-5. Test on 1 form → then scale to 3 × 3
+Build bottom-up — each layer depends on the one below it.
+
+1. **File templates** — `feedback/knowledge/resolved.md` + `feedback/run/context.json`; defines the data formats everything else reads/writes
+2. **Scripts** (leaf primitives, no skill dependencies):
+   a. Extend `aem_inspect.py` with `--json` flag
+   b. Write `aem_install.py`
+   c. Write `feedback_match.py` (needs `resolved.md` format from step 1)
+   d. Write `context_update.py` (needs `context.json` format from step 1)
+3. **Worker skill** (`feedback-worker.md`) — uses all scripts from step 2
+4. **Manager skill** (`feedback-manager.md`) — coordinates Workers, uses `context_update.py`
+5. **Main skill** (`feedback.md`) — entry point, spawns Managers
+6. **Input format** — define `feedback/input/*.md` schema when first real feedback arrives
+7. **End-to-end test** on 1 form → then scale to 3 × 3
