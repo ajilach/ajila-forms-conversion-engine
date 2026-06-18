@@ -56,16 +56,18 @@ sequenceDiagram
     Main->>R: read known resolutions
     Main->>Mgr: spawn batch (parallel ×3)
 
-    Mgr->>R: read snapshot
-    Mgr->>C: mark forms in_progress
+    Mgr->>C: context_update.py --set <form>.status=in_progress
     Mgr->>Wkr: spawn (parallel ×3, 1 form each)
 
-    Wkr->>Wkr: lookup feedback in snapshot
-    Wkr->>Wkr: diagnose + fix + install
+    Wkr->>Wkr: feedback_match.py --query "<item>"
+    Wkr->>Wkr: aem_inspect.py --json → diagnose
+    Wkr->>Wkr: fix (XML patch cycle or JSON regen)
+    Wkr->>Wkr: aem_install.py <form>.zip
+    Wkr->>Wkr: aem_inspect.py --json → verify
     Wkr-->>Mgr: { fixed[], unfixed[], new_patterns[] }
 
     Mgr->>R: append new patterns (sequential)
-    Mgr->>C: update form status
+    Mgr->>C: context_update.py --set <form>.status=done
     Mgr-->>Main: batch report
 
     Main-->>U: final summary
@@ -84,18 +86,19 @@ sequenceDiagram
 
 ### Manager (~3 in parallel, each handling a batch of forms)
 - Spawned by Main; receives a batch of N forms
-- Reads `feedback/knowledge/resolved.md` and `feedback/run/context.json`
+- Marks forms in progress: `context_update.py --set <form>.status=in_progress`
 - Spawns **~3 Workers in parallel** (one per form in its batch)
 - Collects all Worker results; **sequentially appends new patterns to `resolved.md`** — Manager is the only writer, Workers never write directly (no concurrent file conflicts)
-- Updates `context.json` with per-form status
+- Marks forms done/blocked: `context_update.py --set <form>.status=done`
 - Routes blocked questions back up to Main
 
 ### Worker (one per form, ~3 per Manager → ~9 total in parallel)
-- Spawned by Manager; receives: form code + feedback items + read-only snapshot of `resolved.md`
-- Reads `<form>_merged.zip` + `<form>_merged.json`
-- Looks up each feedback item in `resolved.md` snapshot → apply known fix if found
-- For unknown feedback: diagnose (inspect AEM, check XML/JSON), devise fix, apply
-- Install + re-inspect via `aem_inspect.py`
+- Spawned by Manager; receives: form code + feedback items
+- For each feedback item: `feedback_match.py --query "<item>"` → apply known fix if high-confidence match found
+- For unknown/low-confidence items: `aem_inspect.py --json` → diagnose from live AEM state + ZIP/JSON
+- Apply fixes: XML patch cycle or JSON edit + regenerate
+- Install: `aem_install.py <form>_merged.zip`
+- Verify: `aem_inspect.py --json` → confirm issues resolved
 - Writes result to `feedback/output/<form>_report.md` (own file — no conflicts)
 - Returns structured result to Manager: `{ fixed[], unfixed[], new_patterns[] }`
 
@@ -154,11 +157,11 @@ feedback/
 4. Collect results; write final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
-1. Read form feedback items + `resolved.md` snapshot
-2. For each feedback item: look up in `resolved.md` → apply known fix, or diagnose fresh
-3. Fetch AEM form state via JCR API (same as `/install`)
-4. Apply fixes (XML patch cycle or JSON + regenerate)
-5. Install + run `aem_inspect.py`
+1. For each feedback item: `feedback_match.py --query "<item>" --top 3` → if high-confidence match, apply known fix
+2. For remaining items: `curl ... | aem_inspect.py --json` → diagnose from live AEM state
+3. Apply fixes: XML patch cycle (`unzip → edit → rezip`) or JSON edit + regenerate
+4. `aem_install.py <form>_merged.zip` — install and confirm success
+5. `curl ... | aem_inspect.py --json` — verify issues resolved
 6. Write `feedback/output/<form>_report.md`
 7. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
@@ -215,14 +218,16 @@ python3 .claude/scripts/aem_install.py AAFB_019_merged.zip
 
 ---
 
-## Reuse from existing tooling
+## Tooling summary
 
-| Existing | Reused by |
-|----------|-----------|
-| `.claude/scripts/aem_inspect.py` | Worker — post-fix verification |
-| `/install` XML patch cycle | Worker — fix application |
-| `feedback/knowledge/resolved.md` | Worker (read) + Manager (write) |
-| `.claude/settings.json` permissions | All agents |
+| Script | Used by | Purpose |
+|--------|---------|---------|
+| `feedback_match.py` | Worker | Match feedback text → known resolution in `resolved.md` |
+| `context_update.py` | Manager | Atomic read-modify-write on `context.json` |
+| `aem_inspect.py --json` | Worker | Structured form state from AEM (diagnose + verify) |
+| `aem_install.py` | Worker | Install ZIP, clean exit code, no XML parsing |
+| XML patch cycle (bash) | Worker | unzip → edit → rezip for XML-only fixes |
+| `fragment_coverage.json` | Worker | ENGINE DUPLICATE detection during diagnosis |
 
 `engine-bugs.md` is **not** used in this pipeline — it belongs to the conversion flow only.
 
