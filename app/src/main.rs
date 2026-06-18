@@ -316,9 +316,7 @@ fn App() -> Element {
                 match config {
                     Some(cfg) => {
                         let root = blueprint::convert_to_aem(&envelope.content, &cfg);
-                        let conn = profile
-                            .as_deref()
-                            .and_then(|p| blueprint::load_aem_connection(p).ok().flatten());
+                        let conn = app_settings.read().aem_connection();
                         let master_lang = cfg.master_language.clone();
                         let languages = cfg.languages.clone();
                         let content_translations = blueprint::aem_translations_from_content(

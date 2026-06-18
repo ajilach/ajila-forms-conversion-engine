@@ -56,6 +56,9 @@ pub fn SettingsPanel(
                     let settings_for_provider = settings.clone();
                     let settings_for_apikey = settings.clone();
                     let settings_for_model = settings.clone();
+                    let settings_for_aem_host = settings.clone();
+                    let settings_for_aem_user = settings.clone();
+                    let settings_for_aem_pass = settings.clone();
 
                     let provider = settings.provider;
                     let active_api_key = settings.active_api_key().to_string();
@@ -248,6 +251,76 @@ pub fn SettingsPanel(
                                             "{model_id}"
                                         }
                                     }
+                                }
+                            }
+                        }
+                        div { class: "settings-section",
+                            h3 { class: "settings-section-title", "AEM Connection" }
+                            div { class: "settings-row",
+                                div { class: "settings-row-info",
+                                    span { class: "settings-row-label", "AEM Host" }
+                                    span { class: "settings-row-desc",
+                                        "Base URL of the AEM author instance used for package upload."
+                                    }
+                                }
+                                input {
+                                    class: "settings-input-apikey",
+                                    r#type: "text",
+                                    placeholder: "http://localhost:4502",
+                                    value: "{settings_for_aem_host.aem_host}",
+                                    onchange: {
+                                        let on_changed = on_settings_changed;
+                                        let s = settings_for_aem_host.clone();
+                                        move |e: Event<FormData>| {
+                                            let mut new_s = s.clone();
+                                            new_s.aem_host = e.value().trim().to_string();
+                                            on_changed.call(new_s);
+                                        }
+                                    },
+                                }
+                            }
+                            div { class: "settings-row",
+                                div { class: "settings-row-info",
+                                    span { class: "settings-row-label", "AEM Username" }
+                                    span { class: "settings-row-desc", "Username for AEM HTTP basic auth." }
+                                }
+                                input {
+                                    class: "settings-input-apikey",
+                                    r#type: "text",
+                                    placeholder: "admin",
+                                    value: "{settings_for_aem_user.aem_username}",
+                                    onchange: {
+                                        let on_changed = on_settings_changed;
+                                        let s = settings_for_aem_user.clone();
+                                        move |e: Event<FormData>| {
+                                            let mut new_s = s.clone();
+                                            new_s.aem_username = e.value().trim().to_string();
+                                            on_changed.call(new_s);
+                                        }
+                                    },
+                                }
+                            }
+                            div { class: "settings-row",
+                                div { class: "settings-row-info",
+                                    span { class: "settings-row-label", "AEM Password" }
+                                    span { class: "settings-row-desc",
+                                        "Password for AEM HTTP basic auth. Stored locally on disk."
+                                    }
+                                }
+                                input {
+                                    class: "settings-input-apikey",
+                                    r#type: "password",
+                                    placeholder: "••••••••",
+                                    value: "{settings_for_aem_pass.aem_password}",
+                                    onchange: {
+                                        let on_changed = on_settings_changed;
+                                        let s = settings_for_aem_pass.clone();
+                                        move |e: Event<FormData>| {
+                                            let mut new_s = s.clone();
+                                            new_s.aem_password = e.value();
+                                            on_changed.call(new_s);
+                                        }
+                                    },
                                 }
                             }
                         }

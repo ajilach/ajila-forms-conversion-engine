@@ -44,6 +44,13 @@ pub struct AppSettings {
     pub anthropic_api_key: String,
     /// Anthropic model used for AI features (e.g. "claude-opus-4-8").
     pub anthropic_model: String,
+    /// Base URL of the AEM author instance for package upload
+    /// (e.g. "http://localhost:4502").
+    pub aem_host: String,
+    /// Username for AEM HTTP basic auth.
+    pub aem_username: String,
+    /// Password for AEM HTTP basic auth. Stored locally on disk.
+    pub aem_password: String,
 }
 
 impl Default for AppSettings {
@@ -56,6 +63,9 @@ impl Default for AppSettings {
             openai_model: "gpt-4.1".to_string(),
             anthropic_api_key: String::new(),
             anthropic_model: "claude-opus-4-8".to_string(),
+            aem_host: "http://localhost:4502".to_string(),
+            aem_username: "admin".to_string(),
+            aem_password: "admin".to_string(),
         }
     }
 }
@@ -75,6 +85,21 @@ impl AppSettings {
             LlmProvider::OpenAi => &self.openai_model,
             LlmProvider::Anthropic => &self.anthropic_model,
         }
+    }
+
+    /// Build an AEM upload connection from the configured host/credentials,
+    /// or `None` if host or username have not been set.
+    pub fn aem_connection(&self) -> Option<blueprint::AemConnection> {
+        let host = self.aem_host.trim();
+        let username = self.aem_username.trim();
+        if host.is_empty() || username.is_empty() {
+            return None;
+        }
+        Some(blueprint::AemConnection {
+            host: host.trim_end_matches('/').to_string(),
+            username: username.to_string(),
+            password: self.aem_password.clone(),
+        })
     }
 }
 
