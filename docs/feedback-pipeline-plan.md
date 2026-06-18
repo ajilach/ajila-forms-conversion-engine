@@ -16,15 +16,10 @@ The diagram shows a 3-tier architecture: **Main** (orchestrator / user-facing) â
 graph TD
     User(["ðŸ‘¤ User"])
     Main["Main\n(orchestrator)"]
-    M1["Manager 1"]
-    M2["Manager 2"]
-    M3["Manager 3"]
+    Mgr["Manager"]
     W1["Worker\nForm A"]
     W2["Worker\nForm B"]
     W3["Worker\nForm C"]
-    W4["Worker\nForm D"]
-    W5["Worker\nForm E"]
-    W6["Worker\nForm F"]
     Resolved[("feedback/knowledge\nresolved.md\n(persistent)")]
     Context[("feedback/run\ncontext.json\n(ephemeral)")]
     Input[("feedback/input\n*.md")]
@@ -32,28 +27,18 @@ graph TD
     User -- "questions / approval" --> Main
     Main -- "reads" --> Input
     Main -- "reads" --> Resolved
-    Main -- "spawns parallel" --> M1
-    Main -- "spawns parallel" --> M2
-    Main -- "spawns parallel" --> M3
+    Main -- "spawns" --> Mgr
 
-    M1 -- "spawns" --> W1
-    M1 -- "spawns" --> W2
-    M2 -- "spawns" --> W3
-    M2 -- "spawns" --> W4
-    M3 -- "spawns" --> W5
-    M3 -- "spawns" --> W6
+    Mgr -- "spawns parallel" --> W1
+    Mgr -- "spawns parallel" --> W2
+    Mgr -- "spawns parallel" --> W3
 
     W1 -- "reads (snapshot)" --> Resolved
     W2 -- "reads (snapshot)" --> Resolved
     W3 -- "reads (snapshot)" --> Resolved
 
-    M1 -- "writes new patterns" --> Resolved
-    M2 -- "writes new patterns" --> Resolved
-    M3 -- "writes new patterns" --> Resolved
-
-    M1 -- "updates" --> Context
-    M2 -- "updates" --> Context
-    M3 -- "updates" --> Context
+    Mgr -- "writes new patterns" --> Resolved
+    Mgr -- "updates" --> Context
 ```
 
 ## Data flow
