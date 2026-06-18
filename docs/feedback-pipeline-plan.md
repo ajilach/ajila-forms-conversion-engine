@@ -47,27 +47,33 @@ graph TD
 sequenceDiagram
     participant U as User
     participant Main
-    participant Mgr as Manager (×3)
-    participant Wkr as Worker (×3 per Mgr)
+    participant Mgr as Manager
+    participant Wkr as Worker (per form)
     participant R as resolved.md
     participant C as context.json
 
     U->>Main: /feedback
     Main->>R: read known resolutions
-    Main->>Mgr: spawn batch (parallel ×3)
+    Main->>Mgr: spawn (parallel batches)
 
-    Mgr->>C: context_update.py --set <form>.status=in_progress
-    Mgr->>Wkr: spawn (parallel ×3, 1 form each)
+    Mgr->>C: context_update.py → status=in_progress
+    Mgr->>Wkr: spawn parallel (1 form each)
 
-    Wkr->>Wkr: feedback_match.py --query "<item>"
-    Wkr->>Wkr: aem_inspect.py --json → diagnose
-    Wkr->>Wkr: fix (XML patch cycle or JSON regen)
-    Wkr->>Wkr: aem_install.py <form>.zip
-    Wkr->>Wkr: aem_inspect.py --json → verify
+    Wkr->>Wkr: aem_inspect.py --json (baseline)
+
+    loop for each feedback item
+        Wkr->>Wkr: feedback_match.py → known fix?
+        Wkr->>Wkr: apply fix (XML patch or JSON regen)
+        Wkr->>Wkr: aem_install.py
+        Wkr->>Wkr: aem_inspect.py --json (verify)
+        Wkr->>Wkr: compare result vs feedback item
+    end
+
     Wkr-->>Mgr: { fixed[], unfixed[], new_patterns[] }
 
-    Mgr->>R: append new patterns (sequential)
-    Mgr->>C: context_update.py --set <form>.status=done
+    Mgr->>Mgr: sanity check — all input items in fixed[]∪unfixed[]
+    Mgr->>R: append new_patterns[] (sequential)
+    Mgr->>C: context_update.py → status=done/blocked
     Mgr-->>Main: batch report
 
     Main-->>U: final summary
@@ -88,19 +94,22 @@ sequenceDiagram
 - Spawned by Main; receives a batch of N forms
 - Marks forms in progress: `context_update.py --set <form>.status=in_progress`
 - Spawns **~3 Workers in parallel** (one per form in its batch)
-- Collects all Worker results; **sequentially appends new patterns to `resolved.md`** — Manager is the only writer, Workers never write directly (no concurrent file conflicts)
-- Marks forms done/blocked: `context_update.py --set <form>.status=done`
-- Routes blocked questions back up to Main
+- Collects all Worker results; **sanity-checks that every input feedback item appears in either `fixed[]` or `unfixed[]`** — catches Workers that silently dropped an item
+- Sequentially appends `new_patterns[]` to `resolved.md` — Manager is the only writer (no concurrent write conflicts)
+- Marks forms done/blocked: `context_update.py --set <form>.status=done|blocked`
+- Routes `unfixed[]` items back up to Main for escalation
 
 ### Worker (one per form, ~3 per Manager → ~9 total in parallel)
 - Spawned by Manager; receives: form code + feedback items
-- For each feedback item: `feedback_match.py --query "<item>"` → apply known fix if high-confidence match found
-- For unknown/low-confidence items: `aem_inspect.py --json` → diagnose from live AEM state + ZIP/JSON
-- Apply fixes: XML patch cycle or JSON edit + regenerate
-- Install: `aem_install.py <form>_merged.zip`
-- Verify: `aem_inspect.py --json` → confirm issues resolved
+- Takes a **baseline snapshot**: `aem_inspect.py --json` before any changes
+- For each feedback item:
+  1. `feedback_match.py --query "<item>"` → apply known fix if high-confidence match
+  2. Otherwise: diagnose from baseline snapshot + ZIP/JSON, devise fix
+  3. Apply fix: XML patch cycle or JSON edit + regenerate
+  4. `aem_install.py <form>_merged.zip`
+  5. `aem_inspect.py --json` → compare result against this feedback item — mark fixed or unfixed
 - Writes result to `feedback/output/<form>_report.md` (own file — no conflicts)
-- Returns structured result to Manager: `{ fixed[], unfixed[], new_patterns[] }`
+- Returns `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
 ---
 
@@ -157,13 +166,14 @@ feedback/
 4. Collect results; write final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
-1. For each feedback item: `feedback_match.py --query "<item>" --top 3` → if high-confidence match, apply known fix
-2. For remaining items: `curl ... | aem_inspect.py --json` → diagnose from live AEM state
-3. Apply fixes: XML patch cycle (`unzip → edit → rezip`) or JSON edit + regenerate
-4. `aem_install.py <form>_merged.zip` — install and confirm success
-5. `curl ... | aem_inspect.py --json` — verify issues resolved
-6. Write `feedback/output/<form>_report.md`
-7. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
+1. `curl ... | aem_inspect.py --json` — baseline snapshot before any changes
+2. For each feedback item:
+   a. `feedback_match.py --query "<item>" --top 3` — check for known resolution
+   b. Apply fix (known or freshly diagnosed): XML patch cycle or JSON + regenerate
+   c. `aem_install.py <form>_merged.zip`
+   d. `curl ... | aem_inspect.py --json` — verify this item is resolved; mark fixed or unfixed
+3. Write `feedback/output/<form>_report.md`
+4. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
 ---
 
