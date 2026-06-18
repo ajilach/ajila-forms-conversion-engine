@@ -10,6 +10,84 @@ The diagram shows a 3-tier architecture: **Main** (orchestrator / user-facing) �
 
 ---
 
+## Architecture overview
+
+```mermaid
+graph TD
+    User(["👤 User"])
+    Main["Main\n(orchestrator)"]
+    M1["Manager 1"]
+    M2["Manager 2"]
+    M3["Manager 3"]
+    W1["Worker\nForm A"]
+    W2["Worker\nForm B"]
+    W3["Worker\nForm C"]
+    W4["Worker\nForm D"]
+    W5["Worker\nForm E"]
+    W6["Worker\nForm F"]
+    Resolved[("feedback/knowledge\nresolved.md\n(persistent)")]
+    Context[("feedback/run\ncontext.json\n(ephemeral)")]
+    Input[("feedback/input\n*.md")]
+
+    User -- "questions / approval" --> Main
+    Main -- "reads" --> Input
+    Main -- "reads" --> Resolved
+    Main -- "spawns parallel" --> M1
+    Main -- "spawns parallel" --> M2
+    Main -- "spawns parallel" --> M3
+
+    M1 -- "spawns" --> W1
+    M1 -- "spawns" --> W2
+    M2 -- "spawns" --> W3
+    M2 -- "spawns" --> W4
+    M3 -- "spawns" --> W5
+    M3 -- "spawns" --> W6
+
+    W1 -- "reads (snapshot)" --> Resolved
+    W2 -- "reads (snapshot)" --> Resolved
+    W3 -- "reads (snapshot)" --> Resolved
+
+    M1 -- "writes new patterns" --> Resolved
+    M2 -- "writes new patterns" --> Resolved
+    M3 -- "writes new patterns" --> Resolved
+
+    M1 -- "updates" --> Context
+    M2 -- "updates" --> Context
+    M3 -- "updates" --> Context
+```
+
+## Data flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant Main
+    participant Mgr as Manager (×3)
+    participant Wkr as Worker (×3 per Mgr)
+    participant R as resolved.md
+    participant C as context.json
+
+    U->>Main: /feedback
+    Main->>R: read known resolutions
+    Main->>Mgr: spawn batch (parallel ×3)
+
+    Mgr->>R: read snapshot
+    Mgr->>C: mark forms in_progress
+    Mgr->>Wkr: spawn (parallel ×3, 1 form each)
+
+    Wkr->>Wkr: lookup feedback in snapshot
+    Wkr->>Wkr: diagnose + fix + install
+    Wkr-->>Mgr: { fixed[], unfixed[], new_patterns[] }
+
+    Mgr->>R: append new patterns (sequential)
+    Mgr->>C: update form status
+    Mgr-->>Main: batch report
+
+    Main-->>U: final summary
+```
+
+---
+
 ## Agent roles
 
 ### Main
