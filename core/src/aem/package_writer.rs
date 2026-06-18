@@ -35,6 +35,63 @@ pub fn generate_aem_package(
     config: &AemConfig,
     content: &[StructuredNode],
 ) -> Vec<u8> {
+    // Form-content translations come from the structured source tree.
+    let translations = extract_translations(content, &config.master_language);
+
+    // XSD schema is only emitted when binding is enabled and configured.
+    let xsd_content = if config.bind_to_xsd && config.xsd_path.is_some() {
+        config
+            .xsd_config
+            .as_ref()
+            .map(|xsd_config| crate::xsd::generate_xsd(content, xsd_config))
+    } else {
+        None
+    };
+
+    assemble_package(root, config, translations, xsd_content)
+}
+
+/// Generate a package directly from an edited [`AemNode`] tree, without an
+/// originating structured-node source.
+///
+/// Used by the AEM editor, where the `AemNode` tree is the source of truth.
+/// Because the node tree only carries master-language strings, no form-content
+/// translation dictionary is derived here (only the profile's
+/// `default_translations` are emitted); XSD generation is skipped.
+pub fn generate_aem_package_from_node(root: &AemNode, config: &AemConfig) -> Vec<u8> {
+    assemble_package(root, config, I18nDictionary::new(), None)
+}
+
+/// Like [`generate_aem_package_from_node`] but with an explicit form-content
+/// translation dictionary (master-text → { lang → translation }), e.g. the
+/// per-language labels edited in the AEM editor.
+pub fn generate_aem_package_from_node_with_translations(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+) -> Vec<u8> {
+    assemble_package(root, config, translations, None)
+}
+
+/// Extract the form-content translation dictionary from structured nodes.
+///
+/// Exposed so the AEM editor can seed its per-language label overlay from the
+/// originating structured document.
+pub fn aem_translations_from_content(
+    content: &[StructuredNode],
+    master_lang: &str,
+) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
+    extract_translations(content, master_lang)
+}
+
+/// Assemble the FileVault ZIP from a node tree plus pre-computed
+/// form-content translations and optional XSD content.
+fn assemble_package(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: I18nDictionary,
+    xsd_content: Option<String>,
+) -> Vec<u8> {
     let form_xml = generate_aem_xml(root, config);
     let dam_xml = generate_dam_xml(config);
 
@@ -186,7 +243,7 @@ pub fn generate_aem_package(
     write_entry(&mut zip, &opts, &mut written, &dam_content_path, &dam_xml);
 
     // ── Translation dictionaries ────────────────────────────────────────
-    let mut translations = extract_translations(content, &config.master_language);
+    let mut translations = translations;
 
     // Merge default translations from the profile (toolbar buttons, messages, etc.).
     // Form-content translations take precedence over defaults.
@@ -241,8 +298,7 @@ pub fn generate_aem_package(
 
     // ── XSD schema (when bind_to_xsd = true and xsd_path is set) ──────
     if config.bind_to_xsd && config.xsd_path.is_some() {
-        if let Some(ref xsd_config) = config.xsd_config {
-            let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
+        if let Some(xsd_content) = xsd_content.as_deref() {
             let xsd_zip_path = config.xsd_zip_path().unwrap();
 
             // Write intermediate .content.xml files for the XSD directory
@@ -266,7 +322,7 @@ pub fn generate_aem_package(
                 }
             }
 
-            write_entry(&mut zip, &opts, &mut written, &xsd_zip_path, &xsd_content);
+            write_entry(&mut zip, &opts, &mut written, &xsd_zip_path, xsd_content);
         }
     }
 

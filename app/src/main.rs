@@ -1,3 +1,4 @@
+mod aem_client;
 mod components;
 mod db;
 mod markdown;
@@ -12,8 +13,9 @@ mod settings;
 use dioxus::prelude::*;
 
 use components::{
-    AemPreview, AemPreviewEnvelope, EnvelopeWrapper, FileUploadSection, ImageModal,
-    ProgressDisplay, ResultsSection, SettingsPanel, StructuredEditor,
+    AemConfigWrapper, AemConnWrapper, AemEditor, AemPreview, AemPreviewEnvelope, AemRootWrapper,
+    EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ResultsSection, SettingsPanel,
+    StructuredEditor,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
@@ -62,6 +64,7 @@ fn App() -> Element {
     let mut settings_open = use_signal(|| false);
     let mut app_settings = use_signal(AppSettings::load);
     let mut aem_preview_envelope = use_signal(|| None::<DocumentEnvelope>);
+    let mut aem_editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     // Edit-history session id for the currently loaded document (desktop only).
     let mut current_session = use_signal(|| None::<String>);
 
@@ -302,6 +305,64 @@ fn App() -> Element {
                 profile: selected_profile.read().clone(),
                 on_close: move |_| aem_preview_envelope.set(None),
             }
+        } else if let Some(envelope) = aem_editor_envelope.read().clone() {
+            // AEM Node Editor (full page view)
+            {
+                let profile = selected_profile.read().clone();
+                let config = profile
+                    .as_deref()
+                    .filter(|p| blueprint::has_aem_config(p))
+                    .and_then(|p| blueprint::load_aem_config(p, &envelope.context).ok());
+                match config {
+                    Some(cfg) => {
+                        let root = blueprint::convert_to_aem(&envelope.content, &cfg);
+                        let conn = profile
+                            .as_deref()
+                            .and_then(|p| blueprint::load_aem_connection(p).ok().flatten());
+                        let master_lang = cfg.master_language.clone();
+                        let languages = cfg.languages.clone();
+                        let content_translations = blueprint::aem_translations_from_content(
+                            &envelope.content,
+                            &cfg.master_language,
+                        );
+                        let form_code = cfg.form_code.clone();
+                        rsx! {
+                            div { class: "editor-page",
+                                AemEditor {
+                                    root: AemRootWrapper(root),
+                                    plain_images: processing_state.read().plain_images.clone(),
+                                    aem_config: AemConfigWrapper(cfg),
+                                    connection: AemConnWrapper(conn),
+                                    master_lang,
+                                    languages,
+                                    content_translations,
+                                    provider: app_settings.read().provider,
+                                    api_key: app_settings.read().active_api_key().to_string(),
+                                    model: app_settings.read().active_model().to_string(),
+                                    on_apply: move |zip: Vec<u8>| {
+                                        let mut state = processing_state.write();
+                                        state.aem_package = Some(zip);
+                                        state.form_code = Some(form_code.clone());
+                                        drop(state);
+                                        aem_editor_envelope.set(None);
+                                    },
+                                    on_cancel: move |_| aem_editor_envelope.set(None),
+                                }
+                            }
+                        }
+                    }
+                    None => rsx! {
+                        div { class: "editor-page",
+                            p { "This profile has no AEM configuration." }
+                            button {
+                                class: "btn btn-secondary",
+                                onclick: move |_| aem_editor_envelope.set(None),
+                                "Close"
+                            }
+                        }
+                    },
+                }
+            }
         } else {
             // Main app content (scrollable area)
             div { class: "app-scrollable",
@@ -341,6 +402,9 @@ fn App() -> Element {
                             },
                             on_aem_preview: move |envelope| {
                                 aem_preview_envelope.set(Some(envelope));
+                            },
+                            on_aem_edit: move |envelope| {
+                                aem_editor_envelope.set(Some(envelope));
                             },
                         }
                     }

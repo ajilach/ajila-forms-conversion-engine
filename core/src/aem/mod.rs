@@ -33,12 +33,15 @@ mod xml_writer;
 
 pub use converter::convert_to_aem;
 pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
-pub use package_writer::{collect_languages, generate_aem_package};
+pub use package_writer::{
+    aem_translations_from_content, collect_languages, generate_aem_package,
+    generate_aem_package_from_node, generate_aem_package_from_node_with_translations,
+};
 pub use parser::{
     AemScript, ParsedAemPackage, TranslationData, VisibilityCondition, detect_aem_zip,
     parse_aem_zip,
 };
-pub use profile::AemProfile;
+pub use profile::{AemConnectionProfile, AemProfile};
 pub use script_engine::AemScriptEngine;
 pub use to_structured::aem_to_structured;
 pub use xml_writer::generate_aem_xml;
@@ -409,14 +412,16 @@ impl AemConfig {
 // ============================================================================
 
 /// Alignment of options in checkbox / radio button groups.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub enum OptionAlignment {
     Horizontal,
     Vertical,
 }
 
 /// A single option in a checkbox or radio button group.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct AemOption {
     /// Display label (may contain rich text HTML).
     pub label: String,
@@ -429,7 +434,7 @@ pub struct AemOption {
 ///
 /// When the trigger field's value matches `value`, the target panel's
 /// visibility is set to the `show` value.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct ConditionRule {
     /// AEM `name` of the conditional panel to show/hide.
     pub target_panel_name: String,
@@ -443,7 +448,8 @@ pub struct ConditionRule {
 ///
 /// Each variant maps to a specific AEM Adaptive Forms component and carries
 /// all the data needed for XML serialization.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type")]
 pub enum AemNode {
     /// Top-level form container — produces the full JCR page structure.
     Root {
@@ -533,6 +539,7 @@ pub enum AemNode {
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
         /// The `FieldId` of the original structured field (for condition wiring).
+        #[schemars(with = "Option<String>")]
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
@@ -553,6 +560,7 @@ pub enum AemNode {
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
         /// The `FieldId` of the original structured field (for condition wiring).
+        #[schemars(with = "Option<String>")]
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
@@ -573,6 +581,7 @@ pub enum AemNode {
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
         /// The `FieldId` of the original structured field (for condition wiring).
+        #[schemars(with = "Option<String>")]
         field_id: Option<FieldId>,
         /// Visibility condition rules populated during the second pass.
         conditions: Vec<ConditionRule>,
