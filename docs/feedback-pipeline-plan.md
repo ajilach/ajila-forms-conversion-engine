@@ -63,7 +63,7 @@ sequenceDiagram
 
     loop for each feedback item
         Wkr->>Wkr: feedback_match.py → known fix?
-        Wkr->>Wkr: apply fix (XML patch or JSON regen)
+        Wkr->>Wkr: apply fix (XML patch only — no engine re-run)
         Wkr->>Wkr: aem_install.py
         Wkr->>Wkr: aem_inspect.py --json (verify)
         Wkr->>Wkr: compare result vs feedback item
@@ -105,7 +105,7 @@ sequenceDiagram
 - For each feedback item:
   1. `feedback_match.py --query "<item>"` → apply known fix if high-confidence match
   2. Otherwise: diagnose from baseline snapshot + ZIP/JSON, devise fix
-  3. Apply fix: XML patch cycle or JSON edit + regenerate
+  3. Apply fix: XML patch only — unzip → edit XML → rezip (engine is never re-run in the feedback flow)
   4. `aem_install.py <form>_merged.zip`
   5. `aem_inspect.py --json` → compare result against this feedback item — mark fixed or unfixed
 - Writes result to `feedback/output/<form>_report.md` (own file — no conflicts)
@@ -169,7 +169,7 @@ feedback/
 1. `curl ... | aem_inspect.py --json` — baseline snapshot before any changes
 2. For each feedback item:
    a. `feedback_match.py --query "<item>" --top 3` — check for known resolution
-   b. Apply fix (known or freshly diagnosed): XML patch cycle or JSON + regenerate
+   b. Apply fix (known or freshly diagnosed): XML patch only — unzip → edit → rezip
    c. `aem_install.py <form>_merged.zip`
    d. `curl ... | aem_inspect.py --json` — verify this item is resolved; mark fixed or unfixed
 3. Write `feedback/output/<form>_report.md`
