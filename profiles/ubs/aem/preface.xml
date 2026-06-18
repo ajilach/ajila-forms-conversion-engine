@@ -9,6 +9,7 @@
     dorExclusion="true"
     dorFieldStyling="{{ variables.dor_field_styling }}"
     fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"
+    summaryExclusion="true"
     guideNodeClass="guidePanel"
     name="PN_BankingRelationship"
     textIsRich="true"
