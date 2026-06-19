@@ -17,7 +17,7 @@ use dioxus::prelude::*;
 use components::{
     AemConfigWrapper, AemConnWrapper, AemEditor, AemPreview, AemPreviewEnvelope, AemRootWrapper,
     AgentFlow, EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ReferencesPage,
-    ResultsSection, SettingsPanel, StructuredEditor,
+    ResultsSection, SettingsPage, StructuredEditor,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
@@ -25,6 +25,7 @@ use settings::AppSettings;
 
 fn main() {
     let saved = AppSettings::load();
+    saved.apply_runtime_config();
     let mut config = dioxus::desktop::Config::new().with_window(
         dioxus::desktop::WindowBuilder::new()
             .with_always_on_top(saved.always_on_top)
@@ -298,21 +299,24 @@ fn App() -> Element {
             }
         }
 
-        // Settings modal
-        SettingsPanel {
-            open: *settings_open.read(),
-            on_close: move |_| settings_open.set(false),
-            settings: app_settings.read().clone(),
-            on_settings_changed: move |new_settings: AppSettings| {
-                new_settings.save();
-                dioxus::desktop::use_window().set_always_on_top(new_settings.always_on_top);
-                app_settings.set(new_settings);
-            },
-            on_open_references: move |_| references_open.set(true),
-        }
-
-        // Show either the editor, AEM preview, references manager, or main content
-        if *references_open.read() {
+        // Show either the settings, editor, AEM preview, references manager, or
+        // main content (full-page views, under the persistent header).
+        if *settings_open.read() {
+            SettingsPage {
+                on_close: move |_| settings_open.set(false),
+                settings: app_settings.read().clone(),
+                on_settings_changed: move |new_settings: AppSettings| {
+                    new_settings.save();
+                    new_settings.apply_runtime_config();
+                    dioxus::desktop::use_window().set_always_on_top(new_settings.always_on_top);
+                    app_settings.set(new_settings);
+                },
+                on_open_references: move |_| {
+                    settings_open.set(false);
+                    references_open.set(true);
+                },
+            }
+        } else if *references_open.read() {
             // Reference-forms manager (full page view)
             ReferencesPage {
                 profile: selected_profile.read().clone(),

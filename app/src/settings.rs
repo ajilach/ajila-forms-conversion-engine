@@ -33,6 +33,17 @@ pub struct AppSettings {
     /// agent flow.
     #[serde(default)]
     pub legacy_agent_ui: bool,
+    /// History-eviction tuning for the agent / smart-edit token usage. See
+    /// [`crate::platform::configure_eviction`]. Trailing messages kept verbatim
+    /// (even → whole turn-pairs). Missing/0 is normalized to the default in
+    /// [`AppSettings::load`].
+    pub evict_keep_recent_messages: usize,
+    /// Tool-result text longer than this (chars) is elided once stale.
+    pub evict_text_over_chars: usize,
+    /// Tool-use input longer than this (chars) is elided once stale.
+    pub evict_input_over_chars: usize,
+    /// Eviction is a no-op until the serialized history exceeds this many bytes.
+    pub evict_trigger_bytes: usize,
 }
 
 impl Default for AppSettings {
@@ -46,11 +57,26 @@ impl Default for AppSettings {
             aem_username: "admin".to_string(),
             aem_password: "admin".to_string(),
             legacy_agent_ui: false,
+            evict_keep_recent_messages: crate::platform::DEFAULT_KEEP_RECENT_MESSAGES,
+            evict_text_over_chars: crate::platform::DEFAULT_ELIDE_TEXT_OVER_CHARS,
+            evict_input_over_chars: crate::platform::DEFAULT_ELIDE_INPUT_OVER_CHARS,
+            evict_trigger_bytes: crate::platform::DEFAULT_EVICT_TRIGGER_BYTES,
         }
     }
 }
 
 impl AppSettings {
+    /// Push runtime tuning (currently history eviction) into the platform layer.
+    /// Call at startup and whenever settings change.
+    pub fn apply_runtime_config(&self) {
+        crate::platform::configure_eviction(
+            self.evict_keep_recent_messages,
+            self.evict_text_over_chars,
+            self.evict_input_over_chars,
+            self.evict_trigger_bytes,
+        );
+    }
+
     /// The Anthropic API key used for AI features.
     pub fn active_api_key(&self) -> &str {
         &self.anthropic_api_key
@@ -78,11 +104,31 @@ impl AppSettings {
 }
 
 impl AppSettings {
+    /// Coerce missing/zero eviction values to their real defaults. Guards against
+    /// configs saved before these fields had sensible defaults (where a `0` would
+    /// otherwise show in the UI and read as "off").
+    fn normalize_eviction(&mut self) {
+        let d = Self::default();
+        if self.evict_keep_recent_messages == 0 {
+            self.evict_keep_recent_messages = d.evict_keep_recent_messages;
+        }
+        if self.evict_text_over_chars == 0 {
+            self.evict_text_over_chars = d.evict_text_over_chars;
+        }
+        if self.evict_input_over_chars == 0 {
+            self.evict_input_over_chars = d.evict_input_over_chars;
+        }
+        if self.evict_trigger_bytes == 0 {
+            self.evict_trigger_bytes = d.evict_trigger_bytes;
+        }
+    }
+
     /// Load settings from the database, falling back to defaults on any error.
     pub fn load() -> Self {
         if let Some(json) = crate::db::get_setting(SETTINGS_KEY)
-            && let Ok(settings) = serde_json::from_str::<AppSettings>(&json)
+            && let Ok(mut settings) = serde_json::from_str::<AppSettings>(&json)
         {
+            settings.normalize_eviction();
             return settings;
         }
 

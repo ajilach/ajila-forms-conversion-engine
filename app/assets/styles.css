@@ -2223,25 +2223,38 @@ body > div, #main {
 }
 
 /* ── Settings backdrop (cierra al clickar fuera) ── */
-.settings-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 99;
+/* ── Settings (full-page view) ── */
+.settings-page {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+    background: var(--light);
 }
 
-/* ── Settings dropdown ── */
-.settings-dropdown {
-    position: fixed;
-    top: 52px;        /* ajusta a la altura de tu header */
-    right: 12px;
-    z-index: 100;
-    background: var(--color-surface, #fff);
-    border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: 10px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-    padding: 1rem 1.25rem;
-    width: 300px;
-    max-width: 90vw;
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-light);
+}
+
+.settings-header h2 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+}
+
+.settings-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: var(--space-lg);
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
 }
 
 /* ── Contenido del dropdown ── */

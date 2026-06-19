@@ -19,4 +19,4 @@ pub use image_grid::ImageModal;
 pub use progress::ProgressDisplay;
 pub use references_page::ReferencesPage;
 pub use results::ResultsSection;
-pub use settings::SettingsPanel;
+pub use settings::SettingsPage;

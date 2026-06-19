@@ -281,19 +281,57 @@ const MAX_TOOL_ITERATIONS: usize = 16;
 
 // ── Prompt caching + history eviction (shared by every Messages-API path) ────
 
-/// Trailing messages kept verbatim by [`evict_stale_history`]. Even, so whole
-/// assistant+`tool_result` turn-pairs survive (the latest data stays intact).
-const KEEP_RECENT_MESSAGES: usize = 4;
-/// Tool-result text longer than this (chars) is elided once it's stale.
-const ELIDE_TEXT_OVER_CHARS: usize = 2000;
-/// `tool_use` input longer than this (chars) is elided once it's stale.
-const ELIDE_INPUT_OVER_CHARS: usize = 2000;
-/// Eviction is a no-op until the serialized history exceeds this size, so short
-/// calls (most smart-edits, chat turns) are never touched.
-const EVICT_TRIGGER_BYTES: usize = 200_000;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Default trailing messages kept verbatim by [`evict_stale_history`]. Even, so
+/// whole assistant+`tool_result` turn-pairs survive (the latest data stays
+/// intact). Overridable at runtime via [`configure_eviction`].
+pub const DEFAULT_KEEP_RECENT_MESSAGES: usize = 4;
+/// Default: tool-result text longer than this (chars) is elided once stale.
+pub const DEFAULT_ELIDE_TEXT_OVER_CHARS: usize = 2000;
+/// Default: `tool_use` input longer than this (chars) is elided once stale.
+pub const DEFAULT_ELIDE_INPUT_OVER_CHARS: usize = 2000;
+/// Default: eviction is a no-op until the serialized history exceeds this size,
+/// so short calls (most smart-edits, chat turns) are never touched.
+pub const DEFAULT_EVICT_TRIGGER_BYTES: usize = 200_000;
 /// Sentinel prefix marking an already-elided block. Makes eviction idempotent:
 /// repeated passes are byte-identical, so the cached prefix is not invalidated.
 const ELIDED_MARKER: &str = "\u{1}elided";
+
+// Live, runtime-configurable eviction tuning (synced from `AppSettings`).
+static CFG_KEEP_RECENT: AtomicUsize = AtomicUsize::new(DEFAULT_KEEP_RECENT_MESSAGES);
+static CFG_TEXT_OVER: AtomicUsize = AtomicUsize::new(DEFAULT_ELIDE_TEXT_OVER_CHARS);
+static CFG_INPUT_OVER: AtomicUsize = AtomicUsize::new(DEFAULT_ELIDE_INPUT_OVER_CHARS);
+static CFG_TRIGGER_BYTES: AtomicUsize = AtomicUsize::new(DEFAULT_EVICT_TRIGGER_BYTES);
+
+/// Override the history-eviction tuning (called from settings on startup and on
+/// change). A `0` argument resets that parameter to its default. `keep_recent`
+/// is clamped to an even number ≥ 2 so whole turn-pairs always stay verbatim.
+pub fn configure_eviction(
+    keep_recent: usize,
+    text_over: usize,
+    input_over: usize,
+    trigger_bytes: usize,
+) {
+    let keep = if keep_recent == 0 {
+        DEFAULT_KEEP_RECENT_MESSAGES
+    } else {
+        (keep_recent + (keep_recent & 1)).max(2) // round up to even, min 2
+    };
+    CFG_KEEP_RECENT.store(keep, Ordering::Relaxed);
+    CFG_TEXT_OVER.store(
+        if text_over == 0 { DEFAULT_ELIDE_TEXT_OVER_CHARS } else { text_over },
+        Ordering::Relaxed,
+    );
+    CFG_INPUT_OVER.store(
+        if input_over == 0 { DEFAULT_ELIDE_INPUT_OVER_CHARS } else { input_over },
+        Ordering::Relaxed,
+    );
+    CFG_TRIGGER_BYTES.store(
+        if trigger_bytes == 0 { DEFAULT_EVICT_TRIGGER_BYTES } else { trigger_bytes },
+        Ordering::Relaxed,
+    );
+}
 
 /// Shrink heavy, stale content in `history` **in place** to bound context growth
 /// on long tool loops. Older base64 images, oversized `tool_result` text, and
@@ -303,19 +341,24 @@ const ELIDED_MARKER: &str = "\u{1}elided";
 /// `tool_use`↔`tool_result` pairing stays intact.
 ///
 /// Protects `history[0]` (the instruction prefix) and the last
-/// [`KEEP_RECENT_MESSAGES`] messages. Size-gated by [`EVICT_TRIGGER_BYTES`] and
+/// [`DEFAULT_KEEP_RECENT_MESSAGES`] messages. Size-gated by [`EVICT_TRIGGER_BYTES`] and
 /// idempotent (already-stubbed blocks are skipped), so it cooperates with prompt
 /// caching instead of busting the cached prefix.
 fn evict_stale_history(history: &mut [serde_json::Value]) {
+    let keep_recent = CFG_KEEP_RECENT.load(Ordering::Relaxed);
+    let text_over = CFG_TEXT_OVER.load(Ordering::Relaxed);
+    let input_over = CFG_INPUT_OVER.load(Ordering::Relaxed);
+    let trigger_bytes = CFG_TRIGGER_BYTES.load(Ordering::Relaxed);
+
     let total = serde_json::to_string(&history).map(|s| s.len()).unwrap_or(0);
-    if total < EVICT_TRIGGER_BYTES {
+    if total < trigger_bytes {
         return;
     }
     let len = history.len();
-    if len <= 1 + KEEP_RECENT_MESSAGES {
+    if len <= 1 + keep_recent {
         return;
     }
-    let cutoff = len - KEEP_RECENT_MESSAGES; // index >= cutoff is protected
+    let cutoff = len - keep_recent; // index >= cutoff is protected
 
     // Pass 1 (read-only): map tool_use_id -> tool name, to label result stubs.
     let mut names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -342,8 +385,8 @@ fn evict_stale_history(history: &mut [serde_json::Value]) {
         };
         for block in blocks.iter_mut() {
             match block.get("type").and_then(|t| t.as_str()) {
-                Some("tool_use") => elide_tool_use(block),
-                Some("tool_result") => elide_tool_result(block, &names),
+                Some("tool_use") => elide_tool_use(block, input_over),
+                Some("tool_result") => elide_tool_result(block, &names, text_over),
                 _ => {}
             }
         }
@@ -353,7 +396,7 @@ fn evict_stale_history(history: &mut [serde_json::Value]) {
 /// Replace an oversized `tool_use` `input` with a small stub object. `input`
 /// must stay a JSON object; history replay does not re-validate it against the
 /// tool schema, so the stub is safe.
-fn elide_tool_use(block: &mut serde_json::Value) {
+fn elide_tool_use(block: &mut serde_json::Value, input_over: usize) {
     let Some(input) = block.get("input") else {
         return;
     };
@@ -361,7 +404,7 @@ fn elide_tool_use(block: &mut serde_json::Value) {
         return; // already stubbed
     }
     let size = serde_json::to_string(input).map(|s| s.len()).unwrap_or(0);
-    if size <= ELIDE_INPUT_OVER_CHARS {
+    if size <= input_over {
         return;
     }
     let name = block
@@ -381,6 +424,7 @@ fn elide_tool_use(block: &mut serde_json::Value) {
 fn elide_tool_result(
     block: &mut serde_json::Value,
     names: &std::collections::HashMap<String, String>,
+    text_over: usize,
 ) {
     let tool = block
         .get("tool_use_id")
@@ -402,7 +446,7 @@ fn elide_tool_result(
             }
             Some("text") => {
                 let text = b.get("text").and_then(|t| t.as_str()).unwrap_or("");
-                if text.starts_with(ELIDED_MARKER) || text.len() <= ELIDE_TEXT_OVER_CHARS {
+                if text.starts_with(ELIDED_MARKER) || text.len() <= text_over {
                     continue;
                 }
                 let n = text.len();
@@ -430,7 +474,7 @@ fn cache_marked_messages(history: &[serde_json::Value]) -> Vec<serde_json::Value
     {
         last_block.insert(
             "cache_control".to_string(),
-            serde_json::json!({"type": "ephemeral"}),
+            serde_json::json!({"type": "ephemeral", "ttl": "1h"}),
         );
     }
     messages
@@ -444,7 +488,7 @@ fn cache_marked_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
     if let Some(last_tool) = tools_cached.last_mut().and_then(|t| t.as_object_mut()) {
         last_tool.insert(
             "cache_control".to_string(),
-            serde_json::json!({"type": "ephemeral"}),
+            serde_json::json!({"type": "ephemeral", "ttl": "1h"}),
         );
     }
     tools_cached
@@ -831,10 +875,10 @@ mod tests {
         let mut h = original.clone();
         evict_stale_history(&mut h);
 
-        // Index 0 and the last KEEP_RECENT_MESSAGES are byte-identical.
+        // Index 0 and the last DEFAULT_KEEP_RECENT_MESSAGES are byte-identical.
         assert_eq!(h[0], original[0]);
         let len = h.len();
-        for i in (len - KEEP_RECENT_MESSAGES)..len {
+        for i in (len - DEFAULT_KEEP_RECENT_MESSAGES)..len {
             assert_eq!(h[i], original[i], "recent message {i} changed");
         }
 
@@ -882,7 +926,7 @@ mod tests {
         let original = vec![
             user_text("SYSTEM"),
             assistant_tool_use("tu1", "get_xfa", json!({})),
-            result_text("tu1", &"x".repeat(ELIDE_TEXT_OVER_CHARS + 100)),
+            result_text("tu1", &"x".repeat(DEFAULT_ELIDE_TEXT_OVER_CHARS + 100)),
             assistant_tool_use("tu2", "get_structured", json!({})),
             result_text("tu2", "recent"),
             assistant_tool_use("tu3", "finish", json!({})),
