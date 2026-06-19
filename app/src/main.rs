@@ -3,6 +3,7 @@ mod agent;
 mod ai_tools;
 mod components;
 mod db;
+mod local_inference;
 mod markdown;
 mod models;
 mod pipeline;
@@ -139,8 +140,6 @@ fn App() -> Element {
 
         let profile = selected_profile.read().clone();
         let settings = app_settings.read().clone();
-        let api_key = settings.active_api_key().to_string();
-        let model = settings.active_model().to_string();
 
         processing_state.set(ProcessingState {
             step: ProcessingStep::Parsing,
@@ -164,15 +163,11 @@ fn App() -> Element {
             // Hand the whole conversion to the autonomous agent: it drives the
             // engine via tools (extract → structure → convert → AEM → package →
             // upload/verify), versioning each step, and finalizes the result.
-            let conn = settings.aem_connection();
             crate::agent::run_agent(
                 pdfs,
                 profile,
-                api_key,
-                model,
-                conn,
+                settings,
                 session_label,
-                settings.agent_instructions.clone(),
                 processing_state,
                 current_session,
             )
@@ -196,8 +191,6 @@ fn App() -> Element {
 
         let profile = selected_profile.read().clone();
         let settings = app_settings.read().clone();
-        let api_key = settings.active_api_key().to_string();
-        let model = settings.active_model().to_string();
 
         is_processing.set(true);
         aem_modified.set(false);
@@ -209,16 +202,12 @@ fn App() -> Element {
         });
 
         spawn(async move {
-            let conn = settings.aem_connection();
             crate::agent::run_agent_feedback(
                 feedback,
                 pdfs,
                 profile,
-                api_key,
-                model,
-                conn,
+                settings,
                 session,
-                settings.agent_instructions.clone(),
                 processing_state,
                 current_session,
             )

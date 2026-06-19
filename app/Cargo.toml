@@ -22,3 +22,4 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["clock"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 regex-lite = "0.1"
+mistralrs = { version = "0.8", default-features = false, features = ["metal"] }

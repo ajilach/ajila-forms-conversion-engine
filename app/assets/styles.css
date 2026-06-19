@@ -3437,3 +3437,16 @@ body > div, #main {
     display: flex;
     justify-content: center;
 }
+
+/* Local model download progress */
+.download-progress-bar {
+    height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; width: 100%;
+}
+.download-progress-fill {
+    height: 100%; background: var(--primary); transition: width 0.2s ease;
+}
+.local-model-downloaded { color: var(--success, #22c55e); font-size: 12px; }
+.local-model-actions { display: flex; align-items: center; gap: 12px; }
+.local-model-progress-wrap { display: flex; align-items: center; gap: var(--space-2); width: 100%; }
+.local-model-progress-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.local-model-error { color: var(--error, #ef4444); font-size: 12px; margin-top: var(--space-2); }

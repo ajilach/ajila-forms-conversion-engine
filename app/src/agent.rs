@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 use blueprint::{AemConfig, AemConnection, AemNode, Context, DocumentEnvelope, StructuredNode};
 
 use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
-use crate::platform::{ToolReply, anthropic_stream_turn, tool_result_message};
+use crate::platform::{ToolReply, tool_result_message};
 
 /// Output-token cap per agent turn.
 const AGENT_MAX_TOKENS: u32 = 16000;
@@ -996,11 +996,8 @@ Keep tool inputs minimal and valid JSON.";
 pub async fn run_agent(
     pdfs: Vec<(String, Vec<u8>)>,
     profile: Option<String>,
-    api_key: String,
-    model: String,
-    conn: Option<AemConnection>,
+    settings: crate::settings::AppSettings,
     session_label: String,
-    instructions: String,
     mut processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
@@ -1025,13 +1022,13 @@ pub async fn run_agent(
     let agent = ConversionAgent::new(
         profile.clone(),
         pdfs.clone(),
-        conn,
+        settings.aem_connection(),
         structured_session.clone(),
     );
 
     let intro = format!(
         "{SYSTEM_PROMPT}{}",
-        crate::settings::extra_instructions_block(&instructions)
+        crate::settings::extra_instructions_block(&settings.agent_instructions)
     );
     let mut history: Vec<serde_json::Value> = Vec::new();
     history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
@@ -1039,8 +1036,7 @@ pub async fn run_agent(
     drive_agent(
         agent,
         history,
-        api_key,
-        model,
+        settings,
         profile,
         structured_session,
         start,
@@ -1058,11 +1054,8 @@ pub async fn run_agent_feedback(
     feedback: String,
     pdfs: Vec<(String, Vec<u8>)>,
     profile: Option<String>,
-    api_key: String,
-    model: String,
-    conn: Option<AemConnection>,
+    settings: crate::settings::AppSettings,
     structured_session: String,
-    instructions: String,
     processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
@@ -1075,7 +1068,7 @@ pub async fn run_agent_feedback(
         .and_then(|json| serde_json::from_str::<Vec<StructuredNode>>(&json).ok())
         .unwrap_or_default();
 
-    let mut agent = ConversionAgent::new(profile.clone(), pdfs, conn, structured_session.clone());
+    let mut agent = ConversionAgent::new(profile.clone(), pdfs, settings.aem_connection(), structured_session.clone());
     agent.seed_structured(prior);
 
     let intro = format!(
@@ -1086,7 +1079,7 @@ Apply the requested changes to the structured tree, then re-convert to AEM \
 (convert_structured_to_aem), rebuild the package (build_aem_package), and \
 re-upload (upload_to_aem) if an AEM connection is configured, verifying as needed. \
 Then call finish.",
-        crate::settings::extra_instructions_block(&instructions)
+        crate::settings::extra_instructions_block(&settings.agent_instructions)
     );
 
     let mut history: Vec<serde_json::Value> = Vec::new();
@@ -1095,8 +1088,7 @@ Then call finish.",
     drive_agent(
         agent,
         history,
-        api_key,
-        model,
+        settings,
         profile,
         structured_session,
         start,
@@ -1113,8 +1105,7 @@ Then call finish.",
 async fn drive_agent(
     mut agent: ConversionAgent,
     mut history: Vec<serde_json::Value>,
-    api_key: String,
-    model: String,
+    settings: crate::settings::AppSettings,
     profile: Option<String>,
     structured_session: String,
     start: std::time::Instant,
@@ -1125,7 +1116,7 @@ async fn drive_agent(
 
     for _ in 0..MAX_ITERATIONS {
         let turn =
-            match anthropic_stream_turn(&mut history, &tools, &api_key, &model, AGENT_MAX_TOKENS)
+            match crate::platform::stream_turn(&mut history, &tools, &settings, AGENT_MAX_TOKENS)
                 .await
             {
                 Ok(t) => t,
