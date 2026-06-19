@@ -521,11 +521,38 @@ pub async fn anthropic_stream_turn(
         );
     }
 
+    // Prompt caching: place `ephemeral` cache breakpoints so the stable prefix
+    // (tool schemas + the system/instruction prefix + all prior turns) is billed
+    // at the reduced cache-read rate on each turn instead of full input price.
+    //
+    // 1. Mark the last tool definition. The tool block is identical for the whole
+    //    run, so this caches the entire tools array permanently (within the TTL).
+    // 2. Mark the final content block of the conversation. Anthropic matches the
+    //    longest previously-cached prefix, so moving this breakpoint to the new
+    //    tail each turn reuses everything cached on earlier turns (rolling cache).
+    let cache_control = serde_json::json!({"type": "ephemeral"});
+
+    let mut tools_cached = tools.to_vec();
+    if let Some(last_tool) = tools_cached.last_mut().and_then(|t| t.as_object_mut()) {
+        last_tool.insert("cache_control".to_string(), cache_control.clone());
+    }
+
+    let mut messages = history.clone();
+    if let Some(last_block) = messages
+        .last_mut()
+        .and_then(|m| m.get_mut("content"))
+        .and_then(|c| c.as_array_mut())
+        .and_then(|blocks| blocks.last_mut())
+        .and_then(|b| b.as_object_mut())
+    {
+        last_block.insert("cache_control".to_string(), cache_control.clone());
+    }
+
     let request = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens,
-        "messages": history,
-        "tools": tools,
+        "messages": messages,
+        "tools": tools_cached,
         "stream": true,
     });
 
