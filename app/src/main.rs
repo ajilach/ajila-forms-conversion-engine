@@ -9,6 +9,7 @@ mod platform;
 #[cfg(not(target_arch = "wasm32"))]
 mod preview_server;
 mod processing;
+mod references;
 mod settings;
 
 use dioxus::prelude::*;
@@ -176,7 +177,7 @@ fn App() -> Element {
             // screen and advance to the "AI Generation" step.
             processing_state.write().step = ProcessingStep::AiGenerating;
 
-            match components::editor::smart_edit::run_ai_generate(&pdfs, &api_key, &model).await {
+            match components::editor::smart_edit::run_ai_generate(&pdfs, &api_key, &model, profile.as_deref()).await {
                 Ok(nodes) => {
                     // Derive the real Context (language + XFA variables such as
                     // `formrange_code`) from the source PDF, so profile outputs
@@ -303,6 +304,7 @@ fn App() -> Element {
             open: *settings_open.read(),
             on_close: move |_| settings_open.set(false),
             settings: app_settings.read().clone(),
+            profile: selected_profile.read().clone(),
             on_settings_changed: move |new_settings: AppSettings| {
                 new_settings.save();
                 #[cfg(feature = "desktop")]
@@ -322,6 +324,7 @@ fn App() -> Element {
                     api_key: app_settings.read().active_api_key().to_string(),
                     model: app_settings.read().active_model().to_string(),
                     session_id: current_session.read().clone(),
+                    profile: selected_profile.read().clone(),
                     on_apply: handle_editor_apply,
                     on_cancel: move |_| editor_envelope.set(None),
                 }
@@ -385,6 +388,7 @@ fn App() -> Element {
                                     content_translations,
                                     api_key: app_settings.read().active_api_key().to_string(),
                                     model: app_settings.read().active_model().to_string(),
+                                    profile: profile.clone(),
                                     on_apply: move |zip: Vec<u8>| {
                                         let mut state = processing_state.write();
                                         state.aem_package = Some(zip);

@@ -4,7 +4,8 @@ members = [
     "cli",
     "app",
     "judge",
-    "teacher"
+    "teacher",
+    "reference-builder"
 ]
 resolver = "3"
 

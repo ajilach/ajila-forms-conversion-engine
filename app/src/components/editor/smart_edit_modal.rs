@@ -89,6 +89,7 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
                     &source_pdfs,
                     &api_key,
                     &model,
+                    None,
                 )
                 .await
                 {

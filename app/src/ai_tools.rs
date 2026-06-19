@@ -32,19 +32,85 @@ pub trait ToolExecutor {
 
 /// Build the tool executor for an editing session.
 ///
-/// When the source PDFs are available, this is the full [`FormToolContext`] —
-/// the exact same tools AI processing uses (states, on-demand renders,
+/// When the source PDFs are available, the base is the full [`FormToolContext`]
+/// — the exact same tools AI processing uses (states, on-demand renders,
 /// structured layout, XFA). Otherwise (JSON/AEM input, or a reopened session
 /// without the source PDFs) it falls back to the pre-rendered page images via
 /// [`ImageToolContext`].
+///
+/// If `profile` has stored reference forms, the base is combined with a
+/// [`ReferenceToolContext`] so the model can also search/read worked examples
+/// for that profile (see [`CompositeToolExecutor`]).
 pub async fn build_tools(
     source_pdfs: &[(String, Vec<u8>)],
     plain_images: &HashMap<String, String>,
+    profile: Option<&str>,
 ) -> Box<dyn ToolExecutor> {
-    if source_pdfs.is_empty() {
+    let base: Box<dyn ToolExecutor> = if source_pdfs.is_empty() {
         Box::new(ImageToolContext::new(plain_images.clone()))
     } else {
         Box::new(FormToolContext::build(source_pdfs).await)
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(p) = profile
+        && crate::references::count(p) > 0
+        && let Some(refs) = ReferenceToolContext::new(p)
+    {
+        return Box::new(CompositeToolExecutor::new(vec![base, Box::new(refs)]));
+    }
+
+    let _ = profile;
+    base
+}
+
+/// Build the tool executor for the **describe-a-reference** step (adding a
+/// reference form in Settings): the source-PDF tools ([`FormToolContext`] —
+/// states, page renders, structured layout, XFA) **plus** read access to the
+/// uploaded AEM package files ([`PackageToolContext`]), so the model can
+/// analyse both the input form and its final package before writing the
+/// description.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn build_describe_tools(
+    pdf_name: &str,
+    pdf_bytes: Vec<u8>,
+    package_files: Vec<(String, String)>,
+) -> Box<dyn ToolExecutor> {
+    let form = FormToolContext::build(&[(pdf_name.to_string(), pdf_bytes)]).await;
+    Box::new(CompositeToolExecutor::new(vec![
+        Box::new(form),
+        Box::new(PackageToolContext::new(package_files)),
+    ]))
+}
+
+/// Combine multiple [`ToolExecutor`]s into one: the advertised tools are the
+/// concatenation, and a call is routed to the executor that advertises a tool
+/// of that name (first match wins).
+pub struct CompositeToolExecutor {
+    executors: Vec<Box<dyn ToolExecutor>>,
+}
+
+impl CompositeToolExecutor {
+    pub fn new(executors: Vec<Box<dyn ToolExecutor>>) -> Self {
+        Self { executors }
+    }
+}
+
+impl ToolExecutor for CompositeToolExecutor {
+    fn tools(&self) -> Vec<serde_json::Value> {
+        self.executors.iter().flat_map(|e| e.tools()).collect()
+    }
+
+    fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply {
+        for e in &self.executors {
+            if e.tools()
+                .iter()
+                .any(|t| t["name"].as_str() == Some(name))
+            {
+                return e.execute(name, input);
+            }
+        }
+        ToolReply::Error(format!("Unknown tool: {name}"))
     }
 }
 
@@ -279,6 +345,78 @@ impl ToolExecutor for ImageToolContext {
     }
 }
 
+// ── Package-inspection tools (uploaded AEM package, not yet stored) ──────────
+
+/// Tool executor over an unzipped AEM package's text files. Used by the
+/// describe-a-reference step so the model can read the resulting `.content.xml`
+/// while it analyses the input form.
+pub struct PackageToolContext {
+    /// path → file content (UTF-8 text entries only).
+    files: Vec<(String, String)>,
+}
+
+impl PackageToolContext {
+    pub fn new(files: Vec<(String, String)>) -> Self {
+        Self { files }
+    }
+}
+
+impl ToolExecutor for PackageToolContext {
+    fn tools(&self) -> Vec<serde_json::Value> {
+        vec![
+            serde_json::json!({
+                "name": "list_package_files",
+                "description": "List the file paths in the resulting AEM package (the FileVault \
+                    ZIP, unzipped). Use read_package_file to read any of them — the form \
+                    definition is usually a .content.xml.",
+                "input_schema": {"type": "object", "properties": {}}
+            }),
+            serde_json::json!({
+                "name": "read_package_file",
+                "description": "Read one AEM package file by its path from list_package_files. \
+                    Optional line offset/limit for large files.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "offset": {"type": "integer", "description": "First line (0-based, optional)."},
+                        "limit": {"type": "integer", "description": "Max lines (optional)."}
+                    },
+                    "required": ["path"]
+                }
+            }),
+        ]
+    }
+
+    fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply {
+        match name {
+            "list_package_files" => {
+                let paths: Vec<&String> = self.files.iter().map(|(p, _)| p).collect();
+                ToolReply::Text(serde_json::to_string_pretty(&paths).unwrap_or_default())
+            }
+            "read_package_file" => {
+                let path = input["path"].as_str().unwrap_or_default();
+                let Some((_, content)) = self.files.iter().find(|(p, _)| p == path) else {
+                    return ToolReply::Error(format!("No such package file: {path:?}"));
+                };
+                let offset = input["offset"].as_u64().unwrap_or(0) as usize;
+                let limit = input["limit"].as_u64().unwrap_or(0) as usize;
+                if offset == 0 && limit == 0 {
+                    return ToolReply::Text(content.clone());
+                }
+                let sliced: String = content
+                    .lines()
+                    .skip(offset)
+                    .take(if limit == 0 { usize::MAX } else { limit })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ToolReply::Text(sliced)
+            }
+            other => ToolReply::Error(format!("Unknown package tool: {other}")),
+        }
+    }
+}
+
 // ── Shared tool definitions ──────────────────────────────────────────────────
 
 fn tool_list_states() -> serde_json::Value {
@@ -304,6 +442,166 @@ fn tool_get_plain_state_image() -> serde_json::Value {
             "required": ["state_label"]
         }
     })
+}
+
+// ── Reference-form tools (worked examples, per profile) ──────────────────────
+
+/// Tool executor backed by the per-profile reference-form store
+/// ([`crate::references`]). Lets the model search worked examples (original
+/// form + final AEM package + description), read their files, and view source
+/// pages. Desktop-only (needs the embedding model + SQLite).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct ReferenceToolContext {
+    profile: String,
+    matcher: blueprint::semantic::SemanticMatcher,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ReferenceToolContext {
+    /// Load the embedding model for this profile's reference searches. Returns
+    /// `None` if the model fails to load (the caller then omits reference tools).
+    pub fn new(profile: &str) -> Option<Self> {
+        let matcher = blueprint::semantic::SemanticMatcher::new().ok()?;
+        Some(Self {
+            profile: profile.to_string(),
+            matcher,
+        })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ToolExecutor for ReferenceToolContext {
+    fn tools(&self) -> Vec<serde_json::Value> {
+        vec![
+            serde_json::json!({
+                "name": "list_reference_forms",
+                "description": "List the reference forms available for this profile. Each is a \
+                    worked example: an original input form, its final AEM package, and a \
+                    description. Returns ref_id, label, description, pdf_count, and the package's \
+                    file paths. Consult these before converting an unfamiliar block.",
+                "input_schema": {"type": "object", "properties": {}}
+            }),
+            serde_json::json!({
+                "name": "search_references",
+                "description": "Search the profile's reference forms. Hybrid match: semantic \
+                    similarity over the descriptions, plus literal substring match in the \
+                    descriptions and in the AEM package XML. Returns hits with ref_id, where the \
+                    match was (a file path or 'description'), the matching signal, and a snippet.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "What to look for (a block type, field name, label, or AEM resource type)."},
+                        "top_k": {"type": "integer", "description": "Max hits per signal (default 3)."}
+                    },
+                    "required": ["query"]
+                }
+            }),
+            serde_json::json!({
+                "name": "read_reference_file",
+                "description": "Read a reference's description (path 'description') or one of its \
+                    AEM package files (a path from list_reference_forms / search_references). \
+                    Optional line offset/limit for large files.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ref_id": {"type": "string"},
+                        "path": {"type": "string", "description": "'description' or a package file path."},
+                        "offset": {"type": "integer", "description": "First line (0-based, optional)."},
+                        "limit": {"type": "integer", "description": "Max lines (optional)."}
+                    },
+                    "required": ["ref_id", "path"]
+                }
+            }),
+            serde_json::json!({
+                "name": "view_reference_page",
+                "description": "Render and view a page of a reference's original input form, so you \
+                    can see the visual layout the AEM package was produced from.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ref_id": {"type": "string"},
+                        "pdf_index": {"type": "integer", "description": "Which source PDF (default 0)."},
+                        "page": {"type": "integer", "description": "Page number (default 0)."}
+                    },
+                    "required": ["ref_id"]
+                }
+            }),
+        ]
+    }
+
+    fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply {
+        match name {
+            "list_reference_forms" => {
+                let list: Vec<serde_json::Value> = crate::references::list_references(&self.profile)
+                    .into_iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "ref_id": r.ref_id,
+                            "label": r.label,
+                            "description": r.description,
+                            "pdf_count": r.pdf_count,
+                            "files": r.files,
+                        })
+                    })
+                    .collect();
+                ToolReply::Text(serde_json::to_string_pretty(&list).unwrap_or_default())
+            }
+            "search_references" => {
+                let query = input["query"].as_str().unwrap_or_default();
+                if query.is_empty() {
+                    return ToolReply::Error("search_references requires a non-empty query".into());
+                }
+                let top_k = input["top_k"].as_u64().unwrap_or(3).max(1) as usize;
+                let hits = crate::references::search_references(
+                    &self.profile,
+                    query,
+                    &self.matcher,
+                    top_k,
+                );
+                let list: Vec<serde_json::Value> = hits
+                    .into_iter()
+                    .map(|h| {
+                        serde_json::json!({
+                            "ref_id": h.ref_id,
+                            "label": h.label,
+                            "where": h.location,
+                            "matched": h.matched,
+                            "score": h.score,
+                            "snippet": h.snippet,
+                        })
+                    })
+                    .collect();
+                if list.is_empty() {
+                    ToolReply::Text("No matching reference forms.".to_string())
+                } else {
+                    ToolReply::Text(serde_json::to_string_pretty(&list).unwrap_or_default())
+                }
+            }
+            "read_reference_file" => {
+                let ref_id = input["ref_id"].as_str().unwrap_or_default();
+                let path = input["path"].as_str().unwrap_or_default();
+                let offset = input["offset"].as_u64().unwrap_or(0) as usize;
+                let limit = input["limit"].as_u64().unwrap_or(0) as usize;
+                match crate::references::read_reference_file(ref_id, path, offset, limit) {
+                    Ok(text) => ToolReply::Text(text),
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "view_reference_page" => {
+                let ref_id = input["ref_id"].as_str().unwrap_or_default();
+                let pdf_index = input["pdf_index"].as_u64().unwrap_or(0) as usize;
+                let page = input["page"].as_u64().unwrap_or(0) as usize;
+                match crate::references::render_reference_page(ref_id, pdf_index, page) {
+                    Ok(jpeg) => ToolReply::Image {
+                        media_type: "image/jpeg",
+                        b64: base64::prelude::BASE64_STANDARD.encode(&jpeg),
+                    },
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            other => ToolReply::Error(format!("Unknown reference tool: {other}")),
+        }
+    }
 }
 
 #[cfg(test)]

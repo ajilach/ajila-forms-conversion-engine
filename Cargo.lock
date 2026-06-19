@@ -596,6 +596,7 @@ dependencies = [
  "uuid",
  "wasm-bindgen",
  "web-sys",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -6397,6 +6398,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "reference-builder"
+version = "0.1.0"
+dependencies = [
+ "blueprint",
+ "rusqlite",
+ "serde",
+ "sha2",
+ "toml",
+ "zip 2.4.2",
 ]
 
 [[package]]

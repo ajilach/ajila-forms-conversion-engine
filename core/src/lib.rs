@@ -76,6 +76,7 @@ pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
+pub mod reference_db;
 #[cfg(feature = "semantic-matching")]
 pub mod semantic;
 pub mod structured;

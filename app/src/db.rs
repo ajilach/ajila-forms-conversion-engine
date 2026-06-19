@@ -61,7 +61,10 @@ mod imp {
     }
 
     /// Open the database connection, creating the file and schema if needed.
-    fn open() -> rusqlite::Result<Connection> {
+    ///
+    /// Public so the reference store ([`crate::references`]) can share the same
+    /// single `history.db` connection rather than opening a second database.
+    pub fn open() -> rusqlite::Result<Connection> {
         let path = db_path();
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -100,6 +103,10 @@ mod imp {
             CREATE INDEX IF NOT EXISTS idx_edits_session ON edits(session_id, seq);
             CREATE INDEX IF NOT EXISTS idx_sessions_doc ON sessions(doc_hash, created_at);",
         )?;
+        // Reference-form tables (shared schema with the `reference-builder`
+        // crate, so dataset exports import without drift). Stored in the same
+        // `history.db`; only these tables are written by reference import/export.
+        conn.execute_batch(blueprint::reference_db::SCHEMA_SQL)?;
         Ok(())
     }
 

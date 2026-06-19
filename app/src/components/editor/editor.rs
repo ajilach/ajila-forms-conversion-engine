@@ -85,6 +85,9 @@ pub struct StructuredEditorProps {
     pub model: String,
     /// Edit-history session id for this document (desktop only; `None` on web).
     pub session_id: Option<String>,
+    /// Active conversion profile — scopes which reference forms Smart Edit can
+    /// search. `None` when no profile is selected.
+    pub profile: Option<String>,
     /// Callback when editing is complete (with the modified envelope).
     pub on_apply: EventHandler<DocumentEnvelope>,
     /// Callback when editing is cancelled.
@@ -109,6 +112,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let smart_edit_pdfs_for_action = smart_edit_pdfs.clone();
     let api_key = use_signal(|| props.api_key.clone());
     let model = use_signal(|| props.model.clone());
+    let profile = use_signal(|| props.profile.clone());
 
     // Which change IDs the user has rejected in the current Preview round.
     // Reset to empty whenever a new smart-edit run starts.
@@ -1535,6 +1539,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let source_pdfs = smart_edit_pdfs_for_action.clone();
                 let api_key = api_key.read().clone();
                 let model = model.read().clone();
+                let profile = profile.read().clone();
                 let started_at = std::time::Instant::now();
 
                 smart_edit_state.set(SmartEditState::Loading);
@@ -1549,6 +1554,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         &source_pdfs,
                         &api_key,
                         &model,
+                        profile.as_deref(),
                     )
                     .await
                     {
@@ -1907,6 +1913,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             let user_feedback = feedback_text.read().clone();
                                                             let api_key = api_key.clone();
                                                             let model = model.clone();
+                                                            let profile = profile.read().clone();
                                                             let started_at = std::time::Instant::now();
                                                             smart_edit_state.set(SmartEditState::Loading);
                                                             rejected_ids.write().clear();
@@ -1922,6 +1929,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         &user_feedback,
                                                                         &api_key,
                                                                         &model,
+                                                                        profile.as_deref(),
                                                                     )
                                                                     .await
                                                                 {
@@ -2025,6 +2033,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 let selected_indices = selected_indices_for_retry.clone();
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
+                                                let profile = profile.read().clone();
                                                 let started_at = std::time::Instant::now();
                                                 smart_edit_state.set(SmartEditState::Loading);
                                                 rejected_ids.write().clear();
@@ -2036,6 +2045,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             &source_pdfs,
                                                             &api_key,
                                                             &model,
+                                                            profile.as_deref(),
                                                         )
                                                         .await
                                                     {

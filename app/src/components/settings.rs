@@ -24,6 +24,8 @@ pub fn SettingsPanel(
     settings: AppSettings,
     /// Called when the user changes any setting.
     on_settings_changed: EventHandler<AppSettings>,
+    /// Active conversion profile — reference forms are managed per profile.
+    profile: Option<String>,
 ) -> Element {
     if !open {
         return rsx! {};
@@ -47,6 +49,7 @@ pub fn SettingsPanel(
                     let settings_for_aem_host = settings.clone();
                     let settings_for_aem_user = settings.clone();
                     let settings_for_aem_pass = settings.clone();
+                    let settings_for_refs = settings.clone();
 
                     let active_api_key = settings.active_api_key().to_string();
                     let active_model = settings.active_model().to_string();
@@ -252,6 +255,10 @@ pub fn SettingsPanel(
                                 }
                             }
                         }
+                        ReferenceFormsSection {
+                            profile: profile.clone(),
+                            settings: settings_for_refs.clone(),
+                        }
                     }
                 };
 
@@ -261,6 +268,307 @@ pub fn SettingsPanel(
                 };
 
                 section
+            }
+        }
+    }
+}
+
+/// Prompt sent to the LLM to describe an input form when adding a reference.
+/// The model is given tools to analyse the inputs first (see
+/// [`crate::ai_tools::build_describe_tools`]).
+#[cfg(not(target_arch = "wasm32"))]
+const DESCRIBE_PROMPT: &str = "\
+You are cataloguing a reference form so it can later be matched against similar forms. \
+First ANALYSE THE INPUTS using the tools: inspect the source form via `list_states`, \
+`get_plain_state_image`, `get_flattened_structure_for_state`, and `get_xfa` (the XFA is the \
+authoritative field/label/option source), and inspect the resulting AEM package via \
+`list_package_files` and `read_package_file`. Call as many as you need before answering.\n\n\
+Then write a detailed description covering: the overall purpose; each section and its heading; \
+the fields in order with their literal labels and types (text, date, number, select, radio, \
+checkbox); logical groupings (address blocks, signature blocks, account-holder / client-details \
+sections, type selectors like 'Tipo'/'Type'); and any dynamic behaviour (repeatable sections, \
+conditional show/hide). Use precise, literal labels. Respond with prose only — no preamble, no \
+markdown.";
+
+/// Per-profile reference-form management: add (with LLM-generated description),
+/// list/delete, import a dataset, and export the profile's references.
+#[cfg(not(target_arch = "wasm32"))]
+#[component]
+fn ReferenceFormsSection(profile: Option<String>, settings: AppSettings) -> Element {
+    let mut refresh = use_signal(|| 0u32);
+    let mut pdf = use_signal(|| None::<(String, Vec<u8>)>);
+    let mut pkg = use_signal(|| None::<(String, Vec<u8>)>);
+    let mut status = use_signal(|| None::<(bool, String)>);
+    let mut busy = use_signal(|| false);
+
+    // No profile → nothing to manage.
+    let Some(profile_name) = profile.clone() else {
+        return rsx! {
+            div { class: "settings-section",
+                h3 { class: "settings-section-title", "Reference forms" }
+                p { class: "settings-row-desc",
+                    "Select a profile to manage its reference forms."
+                }
+            }
+        };
+    };
+
+    // Recompute the list whenever `refresh` changes.
+    let _ = refresh();
+    let refs = crate::references::list_references(&profile_name);
+
+    let api_key = settings.active_api_key().to_string();
+    let model = settings.active_model().to_string();
+
+    // Per-closure owned clones (Option<String> / String are not Copy).
+    let profile_add = profile_name.clone();
+    let profile_import = profile_name.clone();
+    let profile_export = profile_name.clone();
+
+    rsx! {
+        div { class: "settings-section",
+            h3 { class: "settings-section-title", "Reference forms" }
+
+            if let Some((ok, msg)) = status.read().clone() {
+                p {
+                    class: "settings-row-desc",
+                    style: if ok { "" } else { "color: var(--danger, #c0392b);" },
+                    "{msg}"
+                }
+            }
+
+            // ── Add a reference form (original PDF + final AEM package) ──────
+            div { class: "settings-row",
+                div { class: "settings-row-info",
+                    span { class: "settings-row-label", "Original PDF" }
+                    span { class: "settings-row-desc",
+                        {pdf.read().as_ref().map(|(n, _)| n.clone()).unwrap_or_else(|| "The input form (XFA PDF).".to_string())}
+                    }
+                }
+                input {
+                    r#type: "file",
+                    accept: ".pdf",
+                    onchange: move |evt: Event<FormData>| async move {
+                        if let Some(f) = evt.files().into_iter().next()
+                            && let Ok(b) = f.read_bytes().await
+                        {
+                            pdf.set(Some((f.name(), b.to_vec())));
+                        }
+                    },
+                }
+            }
+            div { class: "settings-row",
+                div { class: "settings-row-info",
+                    span { class: "settings-row-label", "Final AEM package" }
+                    span { class: "settings-row-desc",
+                        {pkg.read().as_ref().map(|(n, _)| n.clone()).unwrap_or_else(|| "The resulting FileVault ZIP.".to_string())}
+                    }
+                }
+                input {
+                    r#type: "file",
+                    accept: ".zip",
+                    onchange: move |evt: Event<FormData>| async move {
+                        if let Some(f) = evt.files().into_iter().next()
+                            && let Ok(b) = f.read_bytes().await
+                        {
+                            pkg.set(Some((f.name(), b.to_vec())));
+                        }
+                    },
+                }
+            }
+            div { class: "settings-row",
+                button {
+                    class: "btn btn-primary btn-sm",
+                    disabled: *busy.read(),
+                    onclick: move |_| {
+                        let profile = profile_add.clone();
+                        let api_key = api_key.clone();
+                        let model = model.clone();
+                        let pdf_data = pdf.read().clone();
+                        let pkg_data = pkg.read().clone();
+                        spawn(async move {
+                            let (Some((pdf_name, pdf_bytes)), Some((_, pkg_bytes))) = (pdf_data, pkg_data) else {
+                                status.set(Some((false, "Pick both an original PDF and an AEM package first.".into())));
+                                return;
+                            };
+                            busy.set(true);
+                            status.set(Some((true, "Unpacking the AEM package…".into())));
+
+                            // Unzip the package so the model can read it via tools.
+                            let pkg_for_unzip = pkg_bytes.clone();
+                            let files = match tokio::task::spawn_blocking(move || {
+                                crate::references::unzip_package(&pkg_for_unzip)
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                            {
+                                Ok(f) => f,
+                                Err(e) => {
+                                    busy.set(false);
+                                    status.set(Some((false, format!("Unzip failed: {e}"))));
+                                    return;
+                                }
+                            };
+
+                            // Build the analysis tools (form states/XFA + package files).
+                            status.set(Some((true, "Analyzing the inputs…".into())));
+                            let tools = crate::ai_tools::build_describe_tools(
+                                &pdf_name,
+                                pdf_bytes.clone(),
+                                files.clone(),
+                            )
+                            .await;
+
+                            let mut history: Vec<serde_json::Value> = Vec::new();
+                            let description = match crate::platform::anthropic_agentic_turn(
+                                &mut history,
+                                DESCRIBE_PROMPT,
+                                &api_key,
+                                &model,
+                                4000,
+                                &tools.tools(),
+                                |name, input| tools.execute(name, input),
+                            )
+                            .await
+                            {
+                                Ok(d) => d,
+                                Err(e) => {
+                                    busy.set(false);
+                                    status.set(Some((false, format!("Describe failed: {e}"))));
+                                    return;
+                                }
+                            };
+
+                            status.set(Some((true, "Saving the reference…".into())));
+                            let label = pdf_name.trim_end_matches(".pdf").to_string();
+                            let result = tokio::task::spawn_blocking(move || {
+                                let emb = crate::references::embed_description(&description)?;
+                                let ref_id = crate::references::compute_ref_id(&pdf_bytes);
+                                let pages = crate::references::pdf_state_count(&pdf_bytes);
+                                crate::references::add_reference(
+                                    &profile, &ref_id, &label, &description, &emb,
+                                    &[(pages, pdf_bytes)], &files,
+                                )
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()));
+
+                            busy.set(false);
+                            match result {
+                                Ok(()) => {
+                                    status.set(Some((true, "Reference form added.".into())));
+                                    pdf.set(None);
+                                    pkg.set(None);
+                                    let n = refresh();
+                                    refresh.set(n + 1);
+                                }
+                                Err(e) => status.set(Some((false, format!("Add failed: {e}")))),
+                            }
+                        });
+                    },
+                    if *busy.read() { "Working…" } else { "Add reference form" }
+                }
+            }
+
+            // ── Existing references ──────────────────────────────────────────
+            if refs.is_empty() {
+                p { class: "settings-row-desc", "No reference forms for this profile yet." }
+            } else {
+                ul { class: "session-list",
+                    for r in refs.iter() {
+                        li {
+                            key: "{r.ref_id}",
+                            class: "session-item",
+                            div { class: "session-meta",
+                                span { class: "session-label", "{r.label}" }
+                                span { class: "session-submeta",
+                                    "{r.pdf_count} pdf(s) · {r.files.len()} file(s)"
+                                }
+                            }
+                            button {
+                                class: "btn btn-secondary btn-sm",
+                                onclick: {
+                                    let ref_id = r.ref_id.clone();
+                                    move |_| {
+                                        crate::references::delete_reference(&ref_id);
+                                        let n = refresh();
+                                        refresh.set(n + 1);
+                                    }
+                                },
+                                "Delete"
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Import / export dataset ──────────────────────────────────────
+            div { class: "settings-row",
+                div { class: "settings-row-info",
+                    span { class: "settings-row-label", "Import dataset" }
+                    span { class: "settings-row-desc",
+                        "Load a reference dataset (.db) into this profile."
+                    }
+                }
+                input {
+                    r#type: "file",
+                    accept: ".db,.sqlite",
+                    onchange: move |evt: Event<FormData>| {
+                        let profile = profile_import.clone();
+                        async move {
+                            if let Some(f) = evt.files().into_iter().next()
+                                && let Ok(b) = f.read_bytes().await
+                            {
+                                let tmp = std::env::temp_dir().join("blueprint-ref-import.db");
+                                if std::fs::write(&tmp, &b).is_ok() {
+                                    match crate::references::import_reference_db(
+                                        &tmp.to_string_lossy(),
+                                        &profile,
+                                    ) {
+                                        Ok(n) => {
+                                            status.set(Some((true, format!("Imported {n} reference(s)."))));
+                                            let c = refresh();
+                                            refresh.set(c + 1);
+                                        }
+                                        Err(e) => status.set(Some((false, format!("Import failed: {e}")))),
+                                    }
+                                    let _ = std::fs::remove_file(&tmp);
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+            div { class: "settings-row",
+                button {
+                    class: "btn btn-secondary btn-sm",
+                    disabled: refs.is_empty(),
+                    onclick: move |_| {
+                        let profile = profile_export.clone();
+                        spawn(async move {
+                            let Some(home) = dirs::home_dir() else {
+                                status.set(Some((false, "Could not find home directory.".into())));
+                                return;
+                            };
+                            let out = home.join("Downloads").join(format!("references-{profile}.db"));
+                            let out_str = out.to_string_lossy().to_string();
+                            let profile2 = profile.clone();
+                            let res = tokio::task::spawn_blocking(move || {
+                                crate::references::export_references(&out_str, Some(&profile2))
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()));
+                            match res {
+                                Ok(n) => {
+                                    status.set(Some((true, format!("Exported {n} reference(s) to {}", out.display()))));
+                                    crate::platform::reveal_in_file_explorer(&out);
+                                }
+                                Err(e) => status.set(Some((false, format!("Export failed: {e}")))),
+                            }
+                        });
+                    },
+                    "Export references"
+                }
             }
         }
     }

@@ -14,7 +14,7 @@ use blueprint::StructuredNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ai_tools::{FormToolContext, ToolExecutor, build_tools};
+use crate::ai_tools::build_tools;
 use crate::platform::{anthropic_agentic_turn, chat_turn};
 
 /// Output-token cap for Smart Edit turns (edits of an existing selection).
@@ -202,12 +202,13 @@ pub async fn run_smart_edit(
     source_pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
+    profile: Option<&str>,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let prompt = build_smart_edit_prompt(selected_indices, plain_images);
     let user_text = build_initial_user_text(&prompt, &json_context);
 
-    let tools = build_tools(source_pdfs, plain_images).await;
+    let tools = build_tools(source_pdfs, plain_images, profile).await;
     let mut history: ChatHistory = Vec::new();
     let raw = anthropic_agentic_turn(
         &mut history,
@@ -244,6 +245,7 @@ pub async fn run_smart_edit_with_feedback(
     user_feedback: &str,
     api_key: &str,
     model: &str,
+    profile: Option<&str>,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let prompt = build_feedback_prompt(
@@ -255,7 +257,7 @@ pub async fn run_smart_edit_with_feedback(
     );
     let user_text = build_initial_user_text(&prompt, &json_context);
 
-    let tools = build_tools(source_pdfs, plain_images).await;
+    let tools = build_tools(source_pdfs, plain_images, profile).await;
     let mut history: ChatHistory = Vec::new();
     let raw = anthropic_agentic_turn(
         &mut history,
@@ -357,6 +359,7 @@ pub async fn run_ai_generate(
     pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
+    profile: Option<&str>,
 ) -> Result<Vec<StructuredNode>, String> {
     let schema = serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default();
 
@@ -376,12 +379,15 @@ pub async fn run_ai_generate(
          reference (layout, grouping, columns); `get_flattened_structure_for_state` returns the \
          engine's own structured layout for a state. Call these as needed before answering.\n\n\
          {AI_GENERATE_GUIDANCE}\n\
+         If reference forms are available for this profile, call `list_reference_forms` and \
+         `search_references` / `read_reference_file` / `view_reference_page` to consult a real \
+         worked example (input form + final AEM package) before converting an unfamiliar block.\n\
          Return ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
          that is directly parseable as Vec<StructuredNode>. No surrounding prose, no markdown fences.\n\n\
          BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA"
     );
 
-    let tools = FormToolContext::build(pdfs).await;
+    let tools = build_tools(pdfs, &HashMap::new(), profile).await;
     let mut history: ChatHistory = Vec::new();
     let raw = anthropic_agentic_turn(
         &mut history,
@@ -554,6 +560,10 @@ fn build_smart_edit_prompt(
          - Do not emit markdown, explanations, or code fences.\n\
          \n\
          {SMART_EDIT_GUIDANCE}\n\
+         If reference forms are available, call `list_reference_forms` and then \
+         `search_references` (semantic over descriptions plus literal in descriptions and AEM XML) \
+         / `read_reference_file` / `view_reference_page` to consult a real worked example before \
+         converting an unfamiliar block.\n\
          Output format:\n\
          - Return ONLY one valid JSON object with exactly two keys:\n\
            \"nodes\": a JSON array of the replacement StructuredNode objects\n\

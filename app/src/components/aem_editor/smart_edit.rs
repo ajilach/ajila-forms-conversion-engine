@@ -65,6 +65,7 @@ pub async fn run_smart_aem_edit(
     source_pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
+    profile: Option<&str>,
 ) -> Result<AemSmartEditResult, String> {
     let json_context =
         serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
@@ -72,7 +73,7 @@ pub async fn run_smart_aem_edit(
     let prompt = build_prompt(plain_images.len());
     let user_text = build_user_text(&prompt, &json_context);
 
-    let tools = build_tools(source_pdfs, plain_images).await;
+    let tools = build_tools(source_pdfs, plain_images, profile).await;
     let mut history: ChatHistory = Vec::new();
     let raw = anthropic_agentic_turn(
         &mut history,
@@ -99,6 +100,7 @@ pub async fn run_smart_aem_edit_with_feedback(
     user_feedback: &str,
     api_key: &str,
     model: &str,
+    profile: Option<&str>,
 ) -> Result<AemSmartEditResult, String> {
     let json_context =
         serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
@@ -127,7 +129,7 @@ pub async fn run_smart_aem_edit_with_feedback(
     );
     let user_text = build_user_text(&prompt, &json_context);
 
-    let tools = build_tools(source_pdfs, plain_images).await;
+    let tools = build_tools(source_pdfs, plain_images, profile).await;
     let mut history: ChatHistory = Vec::new();
     let raw = anthropic_agentic_turn(
         &mut history,
@@ -148,6 +150,9 @@ fn build_prompt(image_count: usize) -> String {
     let schema = serde_json::to_string_pretty(&blueprint::aem_schema()).unwrap_or_default();
     format!(
         "{AEM_EDIT_GUIDANCE}\n\
+         If reference forms are available for this profile, call `list_reference_forms` and \
+         `search_references` / `read_reference_file` / `view_reference_page` to consult a real \
+         worked example (input form + final AEM package) before changing an unfamiliar block.\n\
          The \"root\" must conform to this JSON Schema (the schema for AemNode):\n\
          BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA\n\
          \n\

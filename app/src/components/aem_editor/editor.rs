@@ -113,6 +113,9 @@ pub struct AemEditorProps {
     pub content_translations: HashMap<String, HashMap<String, String>>,
     pub api_key: String,
     pub model: String,
+    /// Active conversion profile — scopes which reference forms Smart AEM Edit
+    /// can search. `None` when no profile is selected.
+    pub profile: Option<String>,
     /// Called with the built package bytes when the user applies their edits.
     pub on_apply: EventHandler<Vec<u8>>,
     pub on_cancel: EventHandler<()>,
@@ -134,6 +137,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
     let connection = use_signal(|| props.connection.0.clone());
     let api_key = use_signal(|| props.api_key.clone());
     let model = use_signal(|| props.model.clone());
+    let profile = use_signal(|| props.profile.clone());
 
     // Seed the per-language label overlay (uuid → lang → text) by matching each
     // node's master label against the source document's translations.
@@ -303,12 +307,13 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
                 let pdfs = source_pdfs.clone();
                 let api_key = api_key.read().clone();
                 let model = model.read().clone();
+                let profile = profile.read().clone();
                 let started = std::time::Instant::now();
                 smart_state.set(SmartState::Loading);
                 rejected_ids.write().clear();
                 feedback_text.set(String::new());
                 spawn(async move {
-                    match smart_edit::run_smart_aem_edit(&current, &images, &pdfs, &api_key, &model).await
+                    match smart_edit::run_smart_aem_edit(&current, &images, &pdfs, &api_key, &model, profile.as_deref()).await
                     {
                         Ok(result) => smart_state.set(SmartState::Preview {
                             result,
@@ -413,7 +418,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             }
 
             // Smart edit review panel
-            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, undo_stack, redo_stack, status_msg, selection, aem_config, connection, node_translations, api_key, model, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
+            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, undo_stack, redo_stack, status_msg, selection, aem_config, connection, node_translations, api_key, model, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
 
             // Node tree
             div { class: "aem-editor-tree",
@@ -486,6 +491,7 @@ fn render_smart_panel(
     node_translations: Signal<NodeTranslations>,
     api_key: Signal<String>,
     model: Signal<String>,
+    profile: Signal<Option<String>>,
     plain_images: HashMap<String, String>,
     source_pdfs: Vec<(String, Vec<u8>)>,
 ) -> Element {
@@ -582,13 +588,14 @@ fn render_smart_panel(
                                             let user_feedback = feedback_text.read().clone();
                                             let api_key = api_key.read().clone();
                                             let model = model.read().clone();
+                                            let profile = profile.read().clone();
                                             let started = std::time::Instant::now();
                                             smart_state.set(SmartState::Loading);
                                             rejected_ids.write().clear();
                                             feedback_text.set(String::new());
                                             spawn(async move {
                                                 match smart_edit::run_smart_aem_edit_with_feedback(
-                                                    &current, &images, &pdfs, &accepted, &rejected, &user_feedback, &api_key, &model,
+                                                    &current, &images, &pdfs, &accepted, &rejected, &user_feedback, &api_key, &model, profile.as_deref(),
                                                 ).await {
                                                     Ok(result) => smart_state.set(SmartState::Preview { result, elapsed_ms: started.elapsed().as_millis() }),
                                                     Err(message) => smart_state.set(SmartState::Error { message }),
