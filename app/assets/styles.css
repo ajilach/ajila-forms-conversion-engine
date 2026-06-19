@@ -2418,11 +2418,29 @@ body > div, #main {
 
 /* ── AEM node editor ─────────────────────────────────────────────────── */
 
+/* Row shell holding the editor and its edit-history sidebar side by side. */
+.aem-editor-shell {
+    background: var(--light);
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    overflow: hidden;
+    min-height: 0;
+}
+
 .aem-editor {
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+}
+
+/* When inside the shell, the editor takes the remaining width beside the sidebar. */
+.aem-editor-shell .aem-editor {
+    flex: 1 1 0;
+    min-width: 0;
+    height: auto;
 }
 
 .aem-editor-tree {

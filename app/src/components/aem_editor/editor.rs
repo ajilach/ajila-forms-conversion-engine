@@ -20,6 +20,7 @@ use super::state::{
     outdent_node, set_editable_text,
 };
 use super::toolbar::AemToolbar;
+use crate::db::{self, EditInfo};
 
 /// Per-node, per-language label overlay: node uuid → { language → text }.
 pub type NodeTranslations = HashMap<Uuid, HashMap<String, String>>;
@@ -113,6 +114,10 @@ pub struct AemEditorProps {
     pub content_translations: HashMap<String, HashMap<String, String>>,
     pub api_key: String,
     pub model: String,
+    /// Edit-history session id (desktop only; `None` on web). Stable across
+    /// re-derivations of the tree, so AEM history survives — and records — a
+    /// structure edit that regenerates the tree, rather than starting fresh.
+    pub session_id: Option<String>,
     /// Active conversion profile — scopes which reference forms Smart AEM Edit
     /// can search. `None` when no profile is selected.
     pub profile: Option<String>,
@@ -130,8 +135,51 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
     let mut feedback_text = use_signal(String::new);
     let mut status_msg = use_signal(|| None::<(bool, String)>);
 
-    let mut undo_stack = use_signal(Vec::<AemNode>::new);
-    let mut redo_stack = use_signal(Vec::<AemNode>::new);
+    // Edit-history session (desktop only). The session has no `sessions` row,
+    // so it never shows up in the document session browser; undo/redo and the
+    // sidebar work purely off the `edits` table. `None` on web, where there is
+    // no local database (the history signals are then inert).
+    let session_id = use_signal(|| -> Option<String> {
+        let json = serde_json::to_string(&props.root.0).ok()?;
+        match props.session_id.clone() {
+            // Stable session from the parent — persists across openings. The
+            // tree is re-derived from the structured content every time the
+            // editor opens; if a structure edit changed it since we last
+            // edited AEM, the new tree differs from the latest snapshot, so we
+            // append it as a distinct "Regenerated from structure" entry
+            // instead of overwriting the prior history.
+            Some(sid) => {
+                let latest = db::latest_seq(&sid).and_then(|seq| db::snapshot_at(&sid, seq));
+                match latest {
+                    // Unchanged since the last snapshot: just resume.
+                    Some(prev) if prev == json => {}
+                    Some(_) => {
+                        db::insert_edit(&sid, "Regenerated from structure", &json);
+                    }
+                    None => {
+                        db::insert_edit(&sid, "Initial structure", &json);
+                    }
+                }
+                Some(sid)
+            }
+            // No parent session (e.g. web): fall back to an ephemeral local one.
+            None => {
+                let sid = Uuid::new_v4().to_string();
+                db::insert_edit(&sid, "Initial structure", &json)?;
+                Some(sid)
+            }
+        }
+    });
+    // Current position in the session's edit chronology.
+    let mut undo_seq = use_signal(|| {
+        session_id
+            .read()
+            .as_ref()
+            .and_then(|sid| db::latest_seq(sid))
+            .unwrap_or(0)
+    });
+    // Bumped whenever the history changes, to refresh the sidebar.
+    let mut history_version = use_signal(|| 0u64);
 
     let aem_config = use_signal(|| props.aem_config.0.clone());
     let connection = use_signal(|| props.connection.0.clone());
@@ -206,12 +254,8 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
 
     // ── Action handler ─────────────────────────────────────────────────────
     let handle_action = move |action: AemEditorAction| {
-        let mutates = describe_action(&action).is_some();
-        if mutates {
-            // Snapshot for undo.
-            undo_stack.write().push(root.read().clone());
-            redo_stack.write().clear();
-        }
+        // Label for content-mutating actions (used to record history below).
+        let history_label = describe_action(&action);
 
         match action {
             AemEditorAction::ToggleSelection(p) => selection.write().toggle(p),
@@ -345,41 +389,92 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
                 });
             }
         }
+
+        // Record a post-edit snapshot for content-mutating actions (desktop only).
+        if let Some(label) = history_label
+            && let Some(sid) = session_id.read().clone()
+        {
+            let after_seq = *undo_seq.read();
+            if let Ok(json) = serde_json::to_string(&*root.read())
+                && let Some(seq) = db::record_edit(&sid, after_seq, label, &json)
+            {
+                undo_seq.set(seq);
+                history_version += 1;
+            }
+        }
     };
 
     let on_apply = props.on_apply;
     let on_cancel = props.on_cancel;
     let root_title = root_title(&root.read());
 
+    // ── Edit history (desktop only) ───────────────────────────────────────────
+    let has_session = session_id.read().is_some();
+    // Re-read history whenever it changes (history_version is the dependency).
+    let _history_version = *history_version.read();
+    let max_seq = session_id
+        .read()
+        .as_ref()
+        .and_then(|sid| db::latest_seq(sid))
+        .unwrap_or(0);
+    let current_seq = *undo_seq.read();
+    let can_undo = has_session && current_seq > 0;
+    let can_redo = has_session && current_seq < max_seq;
+    let history_entries: Vec<EditInfo> = session_id
+        .read()
+        .as_ref()
+        .map(|sid| db::list_edits(sid))
+        .unwrap_or_default();
+
+    // Load a specific snapshot into the editor (used by undo/redo and history clicks).
+    let mut load_snapshot = move |target_seq: usize| {
+        let Some(sid) = session_id.read().clone() else {
+            return;
+        };
+        let Some(json) = db::snapshot_at(&sid, target_seq) else {
+            return;
+        };
+        if let Ok(node) = serde_json::from_str::<AemNode>(&json) {
+            root.set(node);
+            undo_seq.set(target_seq);
+            selection.write().clear();
+            history_version += 1;
+        }
+    };
+
+    let do_undo = move |_| {
+        let cur = *undo_seq.read();
+        if cur > 0 {
+            load_snapshot(cur - 1);
+        }
+    };
+    let do_redo = move |_| {
+        let cur = *undo_seq.read();
+        load_snapshot(cur + 1);
+    };
+
     rsx! {
+        div { class: "aem-editor-shell",
         div { class: "aem-editor",
             // Header
             div { class: "editor-header",
                 h2 { "Edit AEM Structure — {root_title}" }
                 div { class: "editor-header-actions",
-                    button {
-                        class: "editor-btn",
-                        disabled: undo_stack.read().is_empty(),
-                        onclick: move |_| {
-                            if let Some(prev) = undo_stack.write().pop() {
-                                redo_stack.write().push(root.read().clone());
-                                root.set(prev);
-                                selection.write().clear();
-                            }
-                        },
-                        "Undo"
-                    }
-                    button {
-                        class: "editor-btn",
-                        disabled: redo_stack.read().is_empty(),
-                        onclick: move |_| {
-                            if let Some(next) = redo_stack.write().pop() {
-                                undo_stack.write().push(root.read().clone());
-                                root.set(next);
-                                selection.write().clear();
-                            }
-                        },
-                        "Redo"
+                    if has_session {
+                        button {
+                            class: "editor-btn",
+                            title: "Undo",
+                            disabled: !can_undo,
+                            onclick: do_undo,
+                            "↶ Undo"
+                        }
+                        button {
+                            class: "editor-btn",
+                            title: "Redo",
+                            disabled: !can_redo,
+                            onclick: do_redo,
+                            "↷ Redo"
+                        }
                     }
                     button {
                         class: "editor-btn editor-btn-secondary",
@@ -418,7 +513,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             }
 
             // Smart edit review panel
-            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, undo_stack, redo_stack, status_msg, selection, aem_config, connection, node_translations, api_key, model, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
+            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, session_id, undo_seq, history_version, status_msg, selection, aem_config, connection, node_translations, api_key, model, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
 
             // Node tree
             div { class: "aem-editor-tree",
@@ -435,7 +530,42 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
                     }
                 }
             }
+        } // end aem-editor
+
+        // ── Edit history sidebar (desktop only) ───────────────────────
+        if has_session {
+            aside { class: "history-sidebar",
+                div { class: "history-header",
+                    h3 { "History" }
+                }
+                div { class: "history-list",
+                    for entry in history_entries.iter().rev() {
+                        {
+                            let seq = entry.seq;
+                            let is_current = seq == current_seq;
+                            let is_future = seq > current_seq;
+                            let mut item_class = String::from("history-item");
+                            if is_current {
+                                item_class.push_str(" history-item-current");
+                            }
+                            if is_future {
+                                item_class.push_str(" history-item-future");
+                            }
+                            rsx! {
+                                button {
+                                    key: "{seq}",
+                                    class: "{item_class}",
+                                    onclick: move |_| load_snapshot(seq),
+                                    div { class: "history-item-label", "{entry.action_label}" }
+                                    div { class: "history-item-time", "{db::format_timestamp(&entry.created_at)}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+        } // end aem-editor-shell
     }
 }
 
@@ -482,8 +612,9 @@ fn render_smart_panel(
     mut rejected_ids: Signal<std::collections::HashSet<usize>>,
     mut feedback_text: Signal<String>,
     mut root: Signal<AemNode>,
-    mut undo_stack: Signal<Vec<AemNode>>,
-    mut redo_stack: Signal<Vec<AemNode>>,
+    session_id: Signal<Option<String>>,
+    mut undo_seq: Signal<usize>,
+    mut history_version: Signal<u64>,
     mut status_msg: Signal<Option<(bool, String)>>,
     mut selection: Signal<AemSelectionState>,
     aem_config: Signal<AemConfig>,
@@ -613,9 +744,20 @@ fn render_smart_panel(
                             button {
                                 class: "editor-btn editor-btn-primary",
                                 onclick: move |_| {
-                                    undo_stack.write().push(root.read().clone());
-                                    redo_stack.write().clear();
                                     root.set(result_for_apply.root.clone());
+
+                                    // Record the Smart AEM Edit in the persisted history so
+                                    // undo/redo and the sidebar stay in sync.
+                                    if let Some(sid) = session_id.read().clone() {
+                                        let after_seq = *undo_seq.read();
+                                        if let Ok(json) = serde_json::to_string(&*root.read())
+                                            && let Some(seq) = db::record_edit(&sid, after_seq, "Smart AEM Edit", &json)
+                                        {
+                                            undo_seq.set(seq);
+                                            history_version += 1;
+                                        }
+                                    }
+
                                     selection.write().clear();
                                     feedback_text.set(String::new());
                                     smart_state.set(SmartState::Idle);

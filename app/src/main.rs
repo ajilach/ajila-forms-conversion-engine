@@ -388,6 +388,10 @@ fn App() -> Element {
                                     content_translations,
                                     api_key: app_settings.read().active_api_key().to_string(),
                                     model: app_settings.read().active_model().to_string(),
+                                    // Dedicated AEM history session, derived from the document's
+                                    // structured session so it resets per document and never
+                                    // collides with the (structured) session browser.
+                                    session_id: current_session.read().clone().map(|s| format!("{s}#aem")),
                                     profile: profile.clone(),
                                     on_apply: move |zip: Vec<u8>| {
                                         let mut state = processing_state.write();
