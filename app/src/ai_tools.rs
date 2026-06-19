@@ -72,11 +72,10 @@ pub async fn build_tools(
 /// description.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn build_describe_tools(
-    pdf_name: &str,
-    pdf_bytes: Vec<u8>,
+    pdfs: Vec<(String, Vec<u8>)>,
     package_files: Vec<(String, String)>,
 ) -> Box<dyn ToolExecutor> {
-    let form = FormToolContext::build(&[(pdf_name.to_string(), pdf_bytes)]).await;
+    let form = FormToolContext::build(&pdfs).await;
     Box::new(CompositeToolExecutor::new(vec![
         Box::new(form),
         Box::new(PackageToolContext::new(package_files)),

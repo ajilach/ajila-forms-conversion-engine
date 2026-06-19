@@ -1841,6 +1841,151 @@ body > div, #main {
     font-size: var(--font-size-lg);
 }
 
+/* ── Reference-forms manager (full page) ─────────────────────────────── */
+
+.references-page {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+    background: var(--light);
+}
+
+.references-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-light);
+}
+
+.references-header h2 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+}
+
+.references-subtitle {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.references-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+.references-card {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: var(--space-md);
+    background: var(--color-surface, #fff);
+}
+
+.references-card h3 {
+    margin: 0 0 var(--space-sm) 0;
+    font-size: var(--font-size-md, 1rem);
+}
+
+.references-card-desc {
+    margin: 0 0 var(--space-md) 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.references-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) 0;
+}
+
+.references-row-actions {
+    justify-content: flex-end;
+}
+
+.references-row-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.references-row-label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.references-row-desc {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.references-empty {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.references-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: var(--font-size-sm);
+}
+
+/* Let the meta column take the row width so the description can clamp. */
+.references-page .session-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.references-item-desc {
+    margin-top: 0.25rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    line-height: 1.4;
+    cursor: pointer;
+    display: block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.references-item-desc-expanded {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.references-status {
+    padding: var(--space-sm) var(--space-md);
+    border-radius: 6px;
+    font-size: var(--font-size-sm);
+}
+
+.references-status-ok {
+    background: rgba(39, 174, 96, 0.12);
+}
+
+.references-status-err {
+    background: var(--danger-soft, rgba(194, 24, 91, 0.10));
+    color: var(--danger);
+}
+
 .smart-edit-body {
     padding: var(--space-lg);
     overflow-y: auto;

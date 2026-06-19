@@ -16,8 +16,8 @@ use dioxus::prelude::*;
 
 use components::{
     AemConfigWrapper, AemConnWrapper, AemEditor, AemPreview, AemPreviewEnvelope, AemRootWrapper,
-    EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ResultsSection, SettingsPanel,
-    StructuredEditor,
+    EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ReferencesPage,
+    ResultsSection, SettingsPanel, StructuredEditor,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
@@ -64,6 +64,8 @@ fn App() -> Element {
     let mut selected_profile = use_signal(|| None::<String>);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut settings_open = use_signal(|| false);
+    // Whether the full-page reference-forms manager is open.
+    let mut references_open = use_signal(|| false);
     let mut app_settings = use_signal(AppSettings::load);
     let mut aem_preview_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut aem_editor_envelope = use_signal(|| None::<DocumentEnvelope>);
@@ -304,17 +306,24 @@ fn App() -> Element {
             open: *settings_open.read(),
             on_close: move |_| settings_open.set(false),
             settings: app_settings.read().clone(),
-            profile: selected_profile.read().clone(),
             on_settings_changed: move |new_settings: AppSettings| {
                 new_settings.save();
                 #[cfg(feature = "desktop")]
                 dioxus::desktop::use_window().set_always_on_top(new_settings.always_on_top);
                 app_settings.set(new_settings);
             },
+            on_open_references: move |_| references_open.set(true),
         }
 
-        // Show either the editor, AEM preview, or the main app content
-        if let Some(envelope) = editor_envelope.read().clone() {
+        // Show either the editor, AEM preview, references manager, or main content
+        if *references_open.read() {
+            // Reference-forms manager (full page view)
+            ReferencesPage {
+                profile: selected_profile.read().clone(),
+                settings: app_settings.read().clone(),
+                on_close: move |_| references_open.set(false),
+            }
+        } else if let Some(envelope) = editor_envelope.read().clone() {
             // Structured Editor (full page view)
             div { class: "editor-page",
                 StructuredEditor {

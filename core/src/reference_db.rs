@@ -22,6 +22,9 @@
 //!   PDF(s), keyed by `ref_id` only.
 //! - `reference_files(ref_id, path, content)` — the unzipped AEM package text
 //!   files (the `.content.xml` etc.), for literal search and reading.
+//! - `reference_docs(doc_id PK, profile, label, content, created_at)` — plain
+//!   reference documentation (`.txt`/`.md`), keyed by a content hash. Stored and
+//!   imported/exported alongside reference forms, but otherwise independent.
 
 /// The complete schema for the reference tables. Idempotent (`IF NOT EXISTS`),
 /// so it can be applied to a fresh export file or merged into an existing DB.
@@ -48,7 +51,15 @@ CREATE TABLE IF NOT EXISTS reference_files (
     path    TEXT NOT NULL,
     content TEXT NOT NULL,
     PRIMARY KEY (ref_id, path)
-);";
+);
+CREATE TABLE IF NOT EXISTS reference_docs (
+    doc_id     TEXT PRIMARY KEY,
+    profile    TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reference_docs_profile ON reference_docs(profile);";
 
 /// Identifier for the embedding model that produced `description_embedding`.
 ///

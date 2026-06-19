@@ -38,9 +38,19 @@ pub struct SearchHit {
     pub score: Option<f32>,
 }
 
+/// One stored reference-documentation entry (a plain `.txt`/`.md` file), keyed
+/// by a content hash. Independent of reference forms.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ReferenceDocInfo {
+    pub doc_id: String,
+    pub profile: String,
+    pub label: String,
+    pub content: String,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{ReferenceInfo, SearchHit};
+    use super::{ReferenceDocInfo, ReferenceInfo, SearchHit};
     use blueprint::reference_db::{
         EMBEDDING_MODEL_VERSION, SCHEMA_SQL, blob_to_vec, vec_to_blob,
     };
@@ -120,6 +130,53 @@ mod imp {
         let _ = conn.execute("DELETE FROM reference_pdfs WHERE ref_id = ?1", [ref_id]);
         let _ = conn.execute("DELETE FROM reference_files WHERE ref_id = ?1", [ref_id]);
         let _ = conn.execute("DELETE FROM references_ WHERE ref_id = ?1", [ref_id]);
+    }
+
+    // ── Reference documentation (plain txt/md) ──────────────────────────────────
+
+    /// `doc_id` for a documentation file — a content hash (the same mechanism
+    /// references and sessions use), so identical content deduplicates.
+    pub fn compute_doc_id(content: &str) -> String {
+        crate::db::document_hash(&[("doc".to_string(), content.as_bytes().to_vec())])
+    }
+
+    /// Insert or replace one documentation entry.
+    pub fn add_doc(profile: &str, doc_id: &str, label: &str, content: &str) -> Result<(), String> {
+        let conn = crate::db::open().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO reference_docs (doc_id, profile, label, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![doc_id, profile, label, content, now()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn list_docs(profile: &str) -> Vec<ReferenceDocInfo> {
+        let Ok(conn) = crate::db::open() else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT doc_id, profile, label, content FROM reference_docs
+             WHERE profile = ?1 ORDER BY created_at DESC",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([profile], |row| {
+            Ok(ReferenceDocInfo {
+                doc_id: row.get(0)?,
+                profile: row.get(1)?,
+                label: row.get(2)?,
+                content: row.get(3)?,
+            })
+        })
+        .map(|it| it.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    pub fn delete_doc(doc_id: &str) {
+        let Ok(conn) = crate::db::open() else { return };
+        let _ = conn.execute("DELETE FROM reference_docs WHERE doc_id = ?1", [doc_id]);
     }
 
     // ── Read / list ────────────────────────────────────────────────────────────
@@ -395,15 +452,15 @@ mod imp {
     // ── Import / export ──────────────────────────────────────────────────────────
 
     /// Import a reference dataset file, stamping `profile` onto the rows. Only
-    /// the reference tables are written. Returns the number of references
-    /// imported. If imported rows used a different embedding model, their
-    /// embeddings are recomputed.
-    pub fn import_reference_db(path: &str, profile: &str) -> Result<usize, String> {
+    /// the reference tables are written. Returns `(references, docs)` imported.
+    /// If imported rows used a different embedding model, their embeddings are
+    /// recomputed.
+    pub fn import_reference_db(path: &str, profile: &str) -> Result<(usize, usize), String> {
         let conn = crate::db::open().map_err(|e| e.to_string())?;
         conn.execute("ATTACH DATABASE ?1 AS imp", [path])
             .map_err(|e| format!("Cannot open dataset: {e}"))?;
 
-        let result = (|| -> Result<usize, String> {
+        let result = (|| -> Result<(usize, usize), String> {
             conn.execute(
                 "INSERT OR REPLACE INTO references_
                  (ref_id, profile, label, description, description_embedding, model_version, created_at)
@@ -422,16 +479,35 @@ mod imp {
                 [],
             )
             .map_err(|e| e.to_string())?;
-            let n: i64 = conn
+            // Backward-compat: older datasets lack reference_docs; ensure the
+            // attached source has it (empty) before selecting from it.
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS imp.reference_docs (
+                    doc_id TEXT PRIMARY KEY, profile TEXT NOT NULL, label TEXT NOT NULL,
+                    content TEXT NOT NULL, created_at TEXT NOT NULL
+                )",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "INSERT OR REPLACE INTO reference_docs (doc_id, profile, label, content, created_at)
+                 SELECT doc_id, ?1, label, content, created_at FROM imp.reference_docs",
+                [profile],
+            )
+            .map_err(|e| e.to_string())?;
+            let refs: i64 = conn
                 .query_row("SELECT COUNT(*) FROM imp.references_", [], |r| r.get(0))
                 .unwrap_or(0);
-            Ok(n as usize)
+            let docs: i64 = conn
+                .query_row("SELECT COUNT(*) FROM imp.reference_docs", [], |r| r.get(0))
+                .unwrap_or(0);
+            Ok((refs as usize, docs as usize))
         })();
 
         let _ = conn.execute("DETACH DATABASE imp", []);
-        let count = result?;
+        let counts = result?;
         recompute_stale_embeddings(profile)?;
-        Ok(count)
+        Ok(counts)
     }
 
     /// Recompute embeddings for any reference whose stored `model_version`
@@ -468,8 +544,12 @@ mod imp {
     }
 
     /// Export references (all, or one profile) to a fresh profile-agnostic
-    /// SQLite file containing only the reference tables. Returns the count.
-    pub fn export_references(out_path: &str, profile: Option<&str>) -> Result<usize, String> {
+    /// SQLite file containing only the reference tables. Returns
+    /// `(references, docs)` exported.
+    pub fn export_references(
+        out_path: &str,
+        profile: Option<&str>,
+    ) -> Result<(usize, usize), String> {
         // Create the destination with the shared schema first.
         {
             let out = Connection::open(out_path)
@@ -481,7 +561,7 @@ mod imp {
         conn.execute("ATTACH DATABASE ?1 AS exp", [out_path])
             .map_err(|e| format!("Cannot attach export file: {e}"))?;
 
-        let result = (|| -> Result<usize, String> {
+        let result = (|| -> Result<(usize, usize), String> {
             // profile is blanked to '' for portability; bound at import.
             let filter = match profile {
                 Some(_) => "WHERE profile = ?1",
@@ -501,22 +581,32 @@ mod imp {
                 "INSERT INTO exp.reference_files SELECT * FROM reference_files
                  WHERE ref_id IN (SELECT ref_id FROM references_ {filter})"
             );
+            // Documentation has its own `profile` column, so it filters directly.
+            let docs_sql = format!(
+                "INSERT INTO exp.reference_docs (doc_id, profile, label, content, created_at)
+                 SELECT doc_id, '', label, content, created_at FROM reference_docs {filter}"
+            );
             match profile {
                 Some(p) => {
                     conn.execute(&refs_sql, [p]).map_err(|e| e.to_string())?;
                     conn.execute(&pdfs_sql, [p]).map_err(|e| e.to_string())?;
                     conn.execute(&files_sql, [p]).map_err(|e| e.to_string())?;
+                    conn.execute(&docs_sql, [p]).map_err(|e| e.to_string())?;
                 }
                 None => {
                     conn.execute(&refs_sql, []).map_err(|e| e.to_string())?;
                     conn.execute(&pdfs_sql, []).map_err(|e| e.to_string())?;
                     conn.execute(&files_sql, []).map_err(|e| e.to_string())?;
+                    conn.execute(&docs_sql, []).map_err(|e| e.to_string())?;
                 }
             }
-            let n: i64 = conn
+            let refs: i64 = conn
                 .query_row("SELECT COUNT(*) FROM exp.references_", [], |r| r.get(0))
                 .unwrap_or(0);
-            Ok(n as usize)
+            let docs: i64 = conn
+                .query_row("SELECT COUNT(*) FROM exp.reference_docs", [], |r| r.get(0))
+                .unwrap_or(0);
+            Ok((refs as usize, docs as usize))
         })();
 
         let _ = conn.execute("DETACH DATABASE exp", []);
@@ -525,9 +615,12 @@ mod imp {
 
     // ── Build-from-uploads helpers (used by the Settings add flow) ──────────────
 
-    /// `ref_id` for an input PDF — the same content hash sessions use.
-    pub fn compute_ref_id(pdf_bytes: &[u8]) -> String {
-        crate::db::document_hash(&[("input.pdf".to_string(), pdf_bytes.to_vec())])
+    /// `ref_id` for the input PDF(s) — the same order-independent content hash
+    /// sessions use. Filenames are ignored, so the id depends only on contents
+    /// and is stable regardless of selection order. A single-PDF call yields the
+    /// same value as before, preserving cross-crate (`reference-builder`) ids.
+    pub fn compute_ref_id(pdfs: &[(String, Vec<u8>)]) -> String {
+        crate::db::document_hash(pdfs)
     }
 
     /// Unzip an AEM package (FileVault ZIP) into `(path, content)` text rows.
@@ -579,22 +672,35 @@ mod imp {
         // pure helpers that don't touch it.
         #[test]
         fn ref_id_is_content_hash() {
-            let a = compute_ref_id(b"hello");
-            let b = compute_ref_id(b"hello");
-            let c = compute_ref_id(b"world");
+            let a = compute_ref_id(&[("f.pdf".into(), b"hello".to_vec())]);
+            let b = compute_ref_id(&[("f.pdf".into(), b"hello".to_vec())]);
+            let c = compute_ref_id(&[("f.pdf".into(), b"world".to_vec())]);
             assert_eq!(a, b);
             assert_ne!(a, c);
             assert!(!a.is_empty());
         }
 
-        /// Pins the exact `ref_id` for a fixed input. The `reference-builder`
-        /// crate has the identical assertion, so app-added and builder-built
-        /// references for the same form share an id. If either side's hashing
-        /// changes, one of these tests fails.
+        #[test]
+        fn ref_id_is_order_independent() {
+            let a = compute_ref_id(&[
+                ("a.pdf".into(), b"one".to_vec()),
+                ("b.pdf".into(), b"two".to_vec()),
+            ]);
+            let b = compute_ref_id(&[
+                ("b.pdf".into(), b"two".to_vec()),
+                ("a.pdf".into(), b"one".to_vec()),
+            ]);
+            assert_eq!(a, b);
+        }
+
+        /// Pins the exact `ref_id` for a fixed single-PDF input. The
+        /// `reference-builder` crate has the identical assertion, so app-added
+        /// and builder-built references for the same form share an id. If either
+        /// side's hashing changes, one of these tests fails.
         #[test]
         fn ref_id_matches_canonical_hash() {
             assert_eq!(
-                compute_ref_id(b"reference-id-test"),
+                compute_ref_id(&[("input.pdf".into(), b"reference-id-test".to_vec())]),
                 "c0314ff86abc2dcf5cfd090203e5d24eb456bbff56e290ead6cd302fd16af90a"
             );
         }
@@ -613,11 +719,21 @@ pub use imp::*;
 
 #[cfg(target_arch = "wasm32")]
 mod stub {
-    use super::{ReferenceInfo, SearchHit};
+    use super::{ReferenceDocInfo, ReferenceInfo, SearchHit};
 
     pub fn list_references(_profile: &str) -> Vec<ReferenceInfo> {
         Vec::new()
     }
+    pub fn compute_doc_id(_content: &str) -> String {
+        String::new()
+    }
+    pub fn add_doc(_profile: &str, _doc_id: &str, _label: &str, _content: &str) -> Result<(), String> {
+        Err("References are only available in the desktop app.".to_string())
+    }
+    pub fn list_docs(_profile: &str) -> Vec<ReferenceDocInfo> {
+        Vec::new()
+    }
+    pub fn delete_doc(_doc_id: &str) {}
     pub fn count(_profile: &str) -> usize {
         0
     }
@@ -640,13 +756,16 @@ mod stub {
     ) -> Result<Vec<u8>, String> {
         Err("References are only available in the desktop app.".to_string())
     }
-    pub fn import_reference_db(_path: &str, _profile: &str) -> Result<usize, String> {
+    pub fn import_reference_db(_path: &str, _profile: &str) -> Result<(usize, usize), String> {
         Err("References are only available in the desktop app.".to_string())
     }
-    pub fn export_references(_out_path: &str, _profile: Option<&str>) -> Result<usize, String> {
+    pub fn export_references(
+        _out_path: &str,
+        _profile: Option<&str>,
+    ) -> Result<(usize, usize), String> {
         Err("References are only available in the desktop app.".to_string())
     }
-    pub fn compute_ref_id(_pdf_bytes: &[u8]) -> String {
+    pub fn compute_ref_id(_pdfs: &[(String, Vec<u8>)]) -> String {
         String::new()
     }
     pub fn unzip_package(_zip_bytes: &[u8]) -> Result<Vec<(String, String)>, String> {
