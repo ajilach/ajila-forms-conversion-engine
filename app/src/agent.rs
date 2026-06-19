@@ -117,6 +117,10 @@ pub struct ConversionAgent {
 
     structured: Vec<StructuredNode>,
     aem: Option<AemNode>,
+    /// The stored, hand-editable `.content.xml`. `None` = not materialized;
+    /// materialized lazily from the AEM tree on first read/edit and used
+    /// verbatim for the package build until something upstream invalidates it.
+    aem_xml: Option<String>,
     package: Option<Vec<u8>>,
 
     structured_session: String,
@@ -150,6 +154,7 @@ impl ConversionAgent {
             extractors: HashMap::new(),
             structured: Vec::new(),
             aem: None,
+            aem_xml: None,
             package: None,
             structured_session,
             aem_session: None,
@@ -221,6 +226,23 @@ impl ConversionAgent {
         crate::db::insert_edit(&sid, label, &json);
     }
 
+    fn snapshot_aem_xml(&mut self, label: &str) {
+        let Some(ref xml) = self.aem_xml else { return };
+        let sid = format!("{}#aem-xml", self.structured_session);
+        crate::db::insert_edit(&sid, label, xml);
+    }
+
+    /// Ensure `self.aem_xml` is materialized from the current AEM tree, returning
+    /// the stored XML. Errors if there is no AEM tree yet.
+    fn ensure_aem_xml(&mut self) -> Result<String, String> {
+        if self.aem_xml.is_none() {
+            let aem = self.aem.clone().ok_or("No AEM tree yet; call convert_structured_to_aem.")?;
+            let cfg = self.config()?;
+            self.aem_xml = Some(blueprint::generate_aem_xml(&aem, &cfg));
+        }
+        Ok(self.aem_xml.clone().unwrap())
+    }
+
     // ── Tool definitions ───────────────────────────────────────────────────────
 
     pub fn tools(&self) -> Vec<serde_json::Value> {
@@ -257,13 +279,14 @@ impl ConversionAgent {
             t("get_merged_structured", "The engine's full merged structured tree for the source (the usual seed for set_structured).", with_source(serde_json::json!({})), serde_json::json!([])),
             // §2 structured tree
             t("get_structured", "Return the current working structured tree (JSON).", serde_json::json!({}), serde_json::json!([])),
-            t("set_structured", "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Versioned.", serde_json::json!({"nodes": {"type":"array"}}), serde_json::json!(["nodes"])),
+            t("set_structured", "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.", serde_json::json!({"nodes": {"type":"array"}}), serde_json::json!(["nodes"])),
             // §3 conversion
-            t("convert_structured_to_aem", "Convert the current structured tree to the AEM tree (replaces it). Versioned.", serde_json::json!({}), serde_json::json!([])),
+            t("convert_structured_to_aem", "Convert the current structured tree to the AEM tree (replaces it). Invalidates the content XML and package. Versioned.", serde_json::json!({}), serde_json::json!([])),
             // §4 aem tree
             t("get_aem", "Return the current working AEM tree (JSON).", serde_json::json!({}), serde_json::json!([])),
-            t("set_aem", "Replace the whole AEM tree. `root` is a JSON object parseable as AemNode. Versioned.", serde_json::json!({"root": {"type":"object"}}), serde_json::json!(["root"])),
-            t("get_aem_xml", "Render the current AEM tree to the final JCR .content.xml string.", serde_json::json!({}), serde_json::json!([])),
+            t("set_aem", "Replace the whole AEM tree. `root` is a JSON object parseable as AemNode. Invalidates the content XML and package. Versioned.", serde_json::json!({"root": {"type":"object"}}), serde_json::json!(["root"])),
+            t("get_aem_content_xml", "Return the AEM .content.xml (the final JCR XML). Materialized from the AEM tree on first access, then reflects any edits made via edit_aem_content_xml.", serde_json::json!({}), serde_json::json!([])),
+            t("edit_aem_content_xml", "Hand-edit the AEM .content.xml with a targeted find/replace (like the Edit tool). `old_string` must occur exactly once unless `replace_all` is true. Materializes the XML from the AEM tree first if needed, then invalidates the package. Expert mode: the edited XML is used verbatim for the package; everything else (XSD, translations, DAM) still derives from the AEM tree, and converting/setting the structured or AEM tree discards these edits. Versioned.", serde_json::json!({"old_string": {"type":"string"}, "new_string": {"type":"string"}, "replace_all": {"type":"boolean"}}), serde_json::json!(["old_string","new_string"])),
             // §5 output
             t("build_aem_package", "Build the AEM FileVault package (ZIP) from the current AEM tree. Stores it for upload.", serde_json::json!({}), serde_json::json!([])),
             t("get_package_info", "Size and file list of the built package.", serde_json::json!({}), serde_json::json!([])),
@@ -410,8 +433,15 @@ impl ConversionAgent {
                 match serde_json::from_value::<Vec<StructuredNode>>(v) {
                     Ok(nodes) => {
                         self.structured = nodes;
+                        // A structured edit resets the AEM tree + everything downstream.
+                        self.aem = None;
+                        self.aem_xml = None;
+                        self.package = None;
                         self.snapshot_structured("AI: set structured");
-                        ToolReply::Text(format!("OK ({} top-level node(s)).", self.structured.len()))
+                        ToolReply::Text(format!(
+                            "OK ({} top-level node(s)). AEM tree, content XML and package reset — re-run convert_structured_to_aem.",
+                            self.structured.len()
+                        ))
                     }
                     Err(e) => ToolReply::Error(format!("Invalid StructuredNode JSON: {e}")),
                 }
@@ -428,8 +458,11 @@ impl ConversionAgent {
                 };
                 let aem = blueprint::convert_to_aem(&self.structured, &cfg);
                 self.aem = Some(aem);
+                // New AEM tree invalidates the content XML + package.
+                self.aem_xml = None;
+                self.package = None;
                 self.snapshot_aem("AI: convert from structured");
-                ToolReply::Text("OK — AEM tree generated from structured.".into())
+                ToolReply::Text("OK — AEM tree generated from structured (content XML + package invalidated).".into())
             }
 
             // §4 aem
@@ -442,20 +475,56 @@ impl ConversionAgent {
                 match serde_json::from_value::<AemNode>(v) {
                     Ok(node) => {
                         self.aem = Some(node);
+                        // Updating the AEM tree invalidates the content XML + package.
+                        self.aem_xml = None;
+                        self.package = None;
                         self.snapshot_aem("AI: set AEM tree");
-                        ToolReply::Text("OK.".into())
+                        ToolReply::Text("OK (content XML + package invalidated).".into())
                     }
                     Err(e) => ToolReply::Error(format!("Invalid AemNode JSON: {e}")),
                 }
             }
-            "get_aem_xml" => {
-                let Some(aem) = self.aem.clone() else {
-                    return ToolReply::Error("No AEM tree yet.".into());
-                };
-                match self.config() {
-                    Ok(cfg) => ToolReply::Text(blueprint::generate_aem_xml(&aem, &cfg)),
-                    Err(e) => ToolReply::Error(e),
+            "get_aem_content_xml" => match self.ensure_aem_xml() {
+                Ok(xml) => ToolReply::Text(xml),
+                Err(e) => ToolReply::Error(e),
+            },
+            "edit_aem_content_xml" => {
+                let old = input["old_string"].as_str().unwrap_or_default();
+                let new = input["new_string"].as_str().unwrap_or_default();
+                let replace_all = input["replace_all"].as_bool().unwrap_or(false);
+                if old.is_empty() {
+                    return ToolReply::Error("`old_string` must not be empty.".into());
                 }
+                if old == new {
+                    return ToolReply::Error("`old_string` and `new_string` are identical.".into());
+                }
+                let xml = match self.ensure_aem_xml() {
+                    Ok(xml) => xml,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                let count = xml.matches(old).count();
+                if count == 0 {
+                    return ToolReply::Error("`old_string` not found in the content XML.".into());
+                }
+                if count > 1 && !replace_all {
+                    return ToolReply::Error(format!(
+                        "`old_string` occurs {count} times; pass replace_all:true or make it unique."
+                    ));
+                }
+                let updated = if replace_all {
+                    xml.replace(old, new)
+                } else {
+                    xml.replacen(old, new, 1)
+                };
+                let len = updated.len();
+                self.aem_xml = Some(updated);
+                // Editing the content XML invalidates the package.
+                self.package = None;
+                self.snapshot_aem_xml("AI: edit AEM content XML");
+                ToolReply::Text(format!(
+                    "OK — replaced {} occurrence(s); content XML is now {len} bytes (package invalidated).",
+                    if replace_all { count } else { 1 }
+                ))
             }
 
             // §5 output
@@ -469,10 +538,19 @@ impl ConversionAgent {
                 };
                 let translations =
                     blueprint::aem_translations_from_content(&self.structured, &cfg.master_language);
-                let pkg = blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations);
+                let (pkg, note) = match self.aem_xml.clone() {
+                    Some(xml) => (
+                        blueprint::to_aem_package_from_node_with_xml(&aem, &cfg, translations, xml),
+                        " (using edited content XML)",
+                    ),
+                    None => (
+                        blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations),
+                        "",
+                    ),
+                };
                 let size = pkg.len();
                 self.package = Some(pkg);
-                ToolReply::Text(format!("Built package ({size} bytes)."))
+                ToolReply::Text(format!("Built package ({size} bytes){note}."))
             }
             "get_package_info" => match &self.package {
                 Some(pkg) => {
@@ -679,9 +757,17 @@ Typical workflow (call tools as needed; each step is a separate call):\n\
 get_plain_state_image / get_annotated_state_image, get_flattened_structure_for_state.\n\
 2. Seed the structured tree: get_merged_structured, then set_structured (whole tree). Call \
 get_schema('structured') for the exact JSON shape. Fix field types and grouping.\n\
-3. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_xml and refine with \
-set_aem (get_schema('aem') for the shape).\n\
+3. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
+with set_aem (get_schema('aem') for the shape).\n\
+3b. Optional, last-resort tuning: once the AEM tree is settled, hand-edit the final JCR XML \
+with edit_aem_content_xml (targeted find/replace). Prefer fixing the structured or AEM tree \
+when possible — XML edits are discarded the moment you re-run set_structured / \
+convert_structured_to_aem / set_aem.\n\
 4. Package: build_aem_package, get_package_info, read_package_file to verify.\n\
+Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
+downward: editing the structured tree resets the AEM tree, content XML and package; updating \
+the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
+package. After any edit, re-run the downstream steps.\n\
 5. If an AEM connection is configured: upload_to_aem, then fetch_aem_form_html / \
 fetch_aem_dor_pdf to verify the deployed result.\n\
 Consult reference forms and documentation when unsure: list_reference_forms, \

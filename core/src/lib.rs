@@ -173,7 +173,8 @@ pub use aem::{
     ConditionRule, OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement,
     aem_to_structured, aem_translations_from_content, collect_languages, convert_to_aem,
     detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
-    generate_aem_package_from_node_with_translations, generate_aem_xml, parse_aem_zip,
+    generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
+    generate_aem_xml, parse_aem_zip,
     parse_fragment_content, scan_fragments,
 };
 
@@ -1194,6 +1195,20 @@ pub fn to_aem_package_from_node_with_translations(
     translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 ) -> Vec<u8> {
     generate_aem_package_from_node_with_translations(root, config, translations)
+}
+
+/// Like [`to_aem_package_from_node_with_translations`] but uses a pre-generated
+/// `.content.xml` string verbatim instead of rendering it from the node tree.
+///
+/// Used when the form XML has been hand-edited (expert mode). The XSD,
+/// translations and DAM metadata are still derived from `root`/`translations`.
+pub fn to_aem_package_from_node_with_xml(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    form_xml: String,
+) -> Vec<u8> {
+    generate_aem_package_from_node_with_xml(root, config, translations, form_xml)
 }
 
 fn ensure_aem_bind_config(config: &AemConfig) {

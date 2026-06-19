@@ -48,7 +48,7 @@ pub fn generate_aem_package(
         None
     };
 
-    assemble_package(root, config, translations, xsd_content)
+    assemble_package(root, config, translations, xsd_content, None)
 }
 
 /// Generate a package directly from an edited [`AemNode`] tree, without an
@@ -59,7 +59,7 @@ pub fn generate_aem_package(
 /// translation dictionary is derived here (only the profile's
 /// `default_translations` are emitted); XSD generation is skipped.
 pub fn generate_aem_package_from_node(root: &AemNode, config: &AemConfig) -> Vec<u8> {
-    assemble_package(root, config, I18nDictionary::new(), None)
+    assemble_package(root, config, I18nDictionary::new(), None, None)
 }
 
 /// Like [`generate_aem_package_from_node`] but with an explicit form-content
@@ -70,7 +70,23 @@ pub fn generate_aem_package_from_node_with_translations(
     config: &AemConfig,
     translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 ) -> Vec<u8> {
-    assemble_package(root, config, translations, None)
+    assemble_package(root, config, translations, None, None)
+}
+
+/// Like [`generate_aem_package_from_node_with_translations`] but uses a
+/// pre-generated `.content.xml` string verbatim instead of rendering it from
+/// the `AemNode` tree.
+///
+/// Used when the form XML has been hand-edited (expert mode): the supplied
+/// `form_xml` becomes the package's `.content.xml`, while everything else
+/// (XSD, translations, DAM metadata) is still derived from the node tree.
+pub fn generate_aem_package_from_node_with_xml(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    form_xml: String,
+) -> Vec<u8> {
+    assemble_package(root, config, translations, None, Some(form_xml))
 }
 
 /// Extract the form-content translation dictionary from structured nodes.
@@ -91,8 +107,9 @@ fn assemble_package(
     config: &AemConfig,
     translations: I18nDictionary,
     xsd_content: Option<String>,
+    custom_form_xml: Option<String>,
 ) -> Vec<u8> {
-    let form_xml = generate_aem_xml(root, config);
+    let form_xml = custom_form_xml.unwrap_or_else(|| generate_aem_xml(root, config));
     let dam_xml = generate_dam_xml(config);
 
     let package_name = config.form_code.clone();
@@ -1362,6 +1379,38 @@ mod tests {
         assert!(
             dam_folder_xml.contains("lcFolder"),
             "DAM folder must have lcFolder"
+        );
+    }
+
+    #[test]
+    fn custom_form_xml_is_used_verbatim() {
+        let config = AemConfig::test_default("TEST");
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        let sentinel = "<!-- HAND EDITED SENTINEL 12345 -->";
+        let custom = format!("<?xml version=\"1.0\"?>\n{sentinel}\n");
+
+        let zip_bytes = generate_aem_package_from_node_with_xml(
+            &root,
+            &config,
+            std::collections::HashMap::new(),
+            custom.clone(),
+        );
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        let form_path = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .find(|n| n.contains("content/forms/af/") && n.ends_with("TEST/.content.xml"))
+            .expect("form .content.xml entry");
+        let mut form = archive.by_name(&form_path).unwrap();
+        let mut form_xml = String::new();
+        form.read_to_string(&mut form_xml).unwrap();
+        assert_eq!(
+            form_xml, custom,
+            "injected form XML must be used verbatim, got: {form_xml}"
         );
     }
 

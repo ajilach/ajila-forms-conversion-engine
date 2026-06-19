@@ -36,6 +36,7 @@ pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments
 pub use package_writer::{
     aem_translations_from_content, collect_languages, generate_aem_package,
     generate_aem_package_from_node, generate_aem_package_from_node_with_translations,
+    generate_aem_package_from_node_with_xml,
 };
 pub use parser::{
     AemScript, ParsedAemPackage, TranslationData, VisibilityCondition, detect_aem_zip,
