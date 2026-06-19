@@ -5,8 +5,6 @@
 //!
 //! - upload:  `POST {host}/crx/packmgr/service/.json/?cmd=upload` (multipart)
 //! - install: `POST {host}/crx/packmgr/service/.json{path}?cmd=install`
-//!
-//! Networking is desktop-only; the wasm build provides a stub that errors.
 
 use blueprint::AemConnection;
 
@@ -15,7 +13,6 @@ use blueprint::AemConnection;
 /// `zip` is the raw package bytes, `package_name` becomes the uploaded file
 /// name (`{package_name}.zip`). Returns `Ok(())` on a successful install, or an
 /// `Err` carrying the CRX message / HTTP status on failure.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn upload_and_install_package(
     conn: &AemConnection,
     zip: Vec<u8>,
@@ -65,7 +62,6 @@ pub async fn upload_and_install_package(
 /// Returns the package `path` (present on upload) on success. CRX returns an
 /// HTML login page on auth failure, so a non-JSON body or a non-success status
 /// is surfaced as a clear error.
-#[cfg(not(target_arch = "wasm32"))]
 async fn parse_crx_response(
     resp: reqwest::Response,
     action: &str,
@@ -98,7 +94,6 @@ async fn parse_crx_response(
 /// `form_jcr_path` is the form's JCR node path (e.g.
 /// `/content/forms/af/<form_path>/<form_dir>`); the form renders at that path
 /// with an `.html` extension. Returns the HTML body.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn fetch_form_html(conn: &AemConnection, form_jcr_path: &str) -> Result<String, String> {
     let host = conn.host.trim_end_matches('/');
     let path = form_jcr_path.trim_end_matches('/');
@@ -128,7 +123,6 @@ pub async fn fetch_form_html(conn: &AemConnection, form_jcr_path: &str) -> Resul
 /// errors (with a body snippet) if the response isn't a PDF — e.g. DoR isn't
 /// configured for the form. (Confirm the exact selector against your AEM
 /// version's DoR docs if this 404s.)
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn fetch_dor_pdf(conn: &AemConnection, form_jcr_path: &str) -> Result<Vec<u8>, String> {
     let host = conn.host.trim_end_matches('/');
     let path = form_jcr_path.trim_end_matches('/');
@@ -156,23 +150,4 @@ pub async fn fetch_dor_pdf(conn: &AemConnection, form_jcr_path: &str) -> Result<
         ));
     }
     Ok(bytes)
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn upload_and_install_package(
-    _conn: &AemConnection,
-    _zip: Vec<u8>,
-    _package_name: &str,
-) -> Result<(), String> {
-    Err("AEM upload is only supported in the desktop app.".to_string())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn fetch_form_html(_conn: &AemConnection, _form_jcr_path: &str) -> Result<String, String> {
-    Err("AEM fetch is only supported in the desktop app.".to_string())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn fetch_dor_pdf(_conn: &AemConnection, _form_jcr_path: &str) -> Result<Vec<u8>, String> {
-    Err("AEM fetch is only supported in the desktop app.".to_string())
 }

@@ -126,16 +126,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let mut search_index = use_signal(|| 0usize);
 
     // Live HTML preview toggle (controls the external browser preview server)
-    let mut live_preview = use_signal(|| {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            crate::preview_server::is_active()
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            false
-        }
-    });
+    let mut live_preview = use_signal(|| crate::preview_server::is_active());
 
     // Edit-history state (desktop only; signals are inert when there is no session).
     let session_id = use_signal(|| props.session_id.clone());
@@ -1601,7 +1592,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
         }
 
         // Push live preview update if active (no-op if content unchanged)
-        #[cfg(not(target_arch = "wasm32"))]
         if *live_preview.read() {
             let html =
                 blueprint::to_html(&envelope.read().content, &blueprint::HtmlConfig::default());
@@ -1643,7 +1633,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
             undo_seq.set(target_seq);
             selection.write().clear();
             history_version += 1;
-            #[cfg(not(target_arch = "wasm32"))]
             if *live_preview.read() {
                 let html =
                     blueprint::to_html(&envelope.read().content, &blueprint::HtmlConfig::default());
@@ -1691,7 +1680,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 move |_| {
                                     let active = *live_preview.read();
                                     if active {
-                                        #[cfg(not(target_arch = "wasm32"))]
                                         crate::preview_server::stop_preview();
                                         live_preview.set(false);
                                     } else {
@@ -1699,7 +1687,6 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                             &envelope.read().content,
                                             &blueprint::HtmlConfig::default(),
                                         );
-                                        #[cfg(not(target_arch = "wasm32"))]
                                         crate::preview_server::start_preview(html);
                                         live_preview.set(true);
                                     }

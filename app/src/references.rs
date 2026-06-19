@@ -8,8 +8,6 @@
 //!
 //! The store is keyed by `ref_id` = `document_hash(input PDF)` (the same hash
 //! mechanism sessions use), so re-adding the same form is an idempotent upsert.
-//!
-//! Everything is desktop-only; on `wasm32` the functions are no-op stubs.
 
 /// Metadata about one stored reference, for listing in Settings and the
 /// `list_reference_forms` tool.
@@ -48,7 +46,6 @@ pub struct ReferenceDocInfo {
     pub content: String,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::{ReferenceDocInfo, ReferenceInfo, SearchHit};
     use blueprint::reference_db::{
@@ -880,97 +877,4 @@ mod imp {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use imp::*;
-
-#[cfg(target_arch = "wasm32")]
-mod stub {
-    use super::{ReferenceDocInfo, ReferenceInfo, SearchHit};
-
-    pub fn list_references(_profile: &str) -> Vec<ReferenceInfo> {
-        Vec::new()
-    }
-    pub fn compute_doc_id(_content: &str) -> String {
-        String::new()
-    }
-    pub fn add_doc(_profile: &str, _doc_id: &str, _label: &str, _content: &str) -> Result<(), String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn list_docs(_profile: &str) -> Vec<ReferenceDocInfo> {
-        Vec::new()
-    }
-    pub fn delete_doc(_doc_id: &str) {}
-    pub fn count(_profile: &str) -> usize {
-        0
-    }
-    pub fn delete_reference(_ref_id: &str) {}
-    pub fn list_reference_files(_ref_id: &str) -> Vec<String> {
-        Vec::new()
-    }
-    pub fn read_reference_file(
-        _ref_id: &str,
-        _path: &str,
-        _offset: usize,
-        _limit: usize,
-    ) -> Result<String, String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn render_reference_page(
-        _ref_id: &str,
-        _pdf_index: usize,
-        _page: usize,
-    ) -> Result<Vec<u8>, String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn import_reference_db(_path: &str, _profile: &str) -> Result<(usize, usize), String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn export_references(
-        _out_path: &str,
-        _profile: Option<&str>,
-    ) -> Result<(usize, usize), String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn compute_ref_id(_pdfs: &[(String, Vec<u8>)]) -> String {
-        String::new()
-    }
-    pub fn unzip_package(_zip_bytes: &[u8]) -> Result<Vec<(String, String)>, String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn embed_description(_text: &str) -> Result<Vec<f32>, String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn pdf_state_count(_pdf_bytes: &[u8]) -> u32 {
-        0
-    }
-    pub fn get_reference_pdf_bytes(_ref_id: &str, _pdf_index: usize) -> Result<Vec<u8>, String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn get_reference_package_files(_ref_id: &str) -> Vec<(String, String)> {
-        Vec::new()
-    }
-    pub fn grep_references(_profile: &str, _query: &str, _regex: bool) -> Vec<SearchHit> {
-        Vec::new()
-    }
-    pub fn read_doc(_doc_id: &str, _offset: usize, _limit: usize) -> Result<String, String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-    pub fn grep_docs(_profile: &str, _query: &str, _regex: bool) -> Vec<(String, String, String)> {
-        Vec::new()
-    }
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_reference(
-        _profile: &str,
-        _ref_id: &str,
-        _label: &str,
-        _description: &str,
-        _embedding: &[f32],
-        _pdfs: &[(u32, Vec<u8>)],
-        _package_files: &[(String, String)],
-    ) -> Result<(), String> {
-        Err("References are only available in the desktop app.".to_string())
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub use stub::*;

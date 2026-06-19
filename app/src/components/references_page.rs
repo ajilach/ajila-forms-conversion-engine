@@ -12,7 +12,6 @@ use crate::settings::AppSettings;
 /// Prompt sent to the LLM to describe an input form when adding a reference.
 /// The model is given tools to analyse the inputs first (see
 /// [`crate::ai_tools::build_describe_tools`]).
-#[cfg(not(target_arch = "wasm32"))]
 const DESCRIBE_PROMPT: &str = "\
 You are cataloguing a reference form so it can later be matched against similar forms. \
 First ANALYSE THE INPUTS using the tools: inspect the source form via `list_states`, \
@@ -30,7 +29,6 @@ like \"I now have a complete picture...\", \"Based on the XFA and AEM package...
 catalogue description.\". Begin immediately with the form's purpose (e.g. \"This form ...\").";
 
 /// Full-page reference-form manager.
-#[cfg(not(target_arch = "wasm32"))]
 #[component]
 pub fn ReferencesPage(
     /// Active conversion profile — used as the default profile selection.
@@ -674,34 +672,6 @@ pub fn ReferencesPage(
                 }
 
                 } // end import/export tab
-            }
-        }
-    }
-}
-
-/// Web stub — reference forms require the desktop app's local database.
-#[cfg(target_arch = "wasm32")]
-#[component]
-pub fn ReferencesPage(
-    profile: Option<String>,
-    settings: AppSettings,
-    on_close: EventHandler<()>,
-) -> Element {
-    let _ = (&profile, &settings);
-    rsx! {
-        div { class: "references-page",
-            div { class: "references-header",
-                div { h2 { "Reference Forms" } }
-                button {
-                    class: "btn btn-secondary",
-                    onclick: move |_| on_close.call(()),
-                    "✕ Close"
-                }
-            }
-            div { class: "references-content",
-                p { class: "references-empty",
-                    "Reference forms are only available in the desktop app."
-                }
             }
         }
     }

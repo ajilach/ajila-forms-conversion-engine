@@ -1,9 +1,6 @@
 [application]
 name = "blueprint-app"
-default_platform = "web"
-
-[web.app]
-title = "Ajila Forms Conversion Engine"
+default_platform = "desktop"
 
 [desktop]
 title = "Ajila Forms Conversion Engine"
@@ -15,19 +12,3 @@ publisher = "ajila"
 homepage = "https://www.ajila.com"
 copyright = "Copyright © 2026 Ajila"
 icon = ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"]
-
-
-[web.watcher]
-reload_html = true
-watch_path = ["src"]
-
-[web.resource]
-style = []
-script = []
-
-[web.resource.dev]
-style = []
-script = []
-
-[web.wasm_opt]
-level = "0"

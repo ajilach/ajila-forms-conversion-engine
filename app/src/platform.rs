@@ -3,41 +3,11 @@
 /// Platform-agnostic async sleep.
 #[allow(dead_code)]
 pub async fn async_sleep_ms(ms: u32) {
-    #[cfg(target_arch = "wasm32")]
-    gloo_timers::future::TimeoutFuture::new(ms).await;
-    #[cfg(not(target_arch = "wasm32"))]
     tokio::time::sleep(std::time::Duration::from_millis(ms as u64)).await;
 }
 
 // ── File download / preview helpers ──────────────────────────────────
 
-#[cfg(target_arch = "wasm32")]
-pub fn download_file(data: &[u8], filename: &str, mime_type: &str) {
-    use js_sys::{Array, Uint8Array};
-    use wasm_bindgen::JsCast;
-    use web_sys::{Blob, BlobPropertyBag, HtmlAnchorElement, Url};
-
-    let uint8_array = Uint8Array::from(data);
-    let array = Array::new();
-    array.push(&uint8_array.buffer());
-
-    let mut options = BlobPropertyBag::new();
-    options.set_type(mime_type);
-
-    let blob = Blob::new_with_buffer_source_sequence_and_options(&array, &options).unwrap();
-    let url = Url::create_object_url_with_blob(&blob).unwrap();
-
-    let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-    let a: HtmlAnchorElement = document.create_element("a").unwrap().dyn_into().unwrap();
-    a.set_href(&url);
-    a.set_download(filename);
-    a.click();
-
-    let _ = Url::revoke_object_url(&url);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
     match dirs::home_dir() {
         Some(home) => {
@@ -64,26 +34,6 @@ pub fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
 
 // ── HTML preview ─────────────────────────────────────────────────────
 
-#[cfg(target_arch = "wasm32")]
-pub fn show_html_preview(html: String, _filename: &str) {
-    use js_sys::{Array, Uint8Array};
-    use web_sys::{Blob, BlobPropertyBag, Url};
-
-    let uint8_array = Uint8Array::from(html.as_bytes());
-    let array = Array::new();
-    array.push(&uint8_array.buffer());
-
-    let mut options = BlobPropertyBag::new();
-    options.set_type("text/html");
-
-    let blob = Blob::new_with_buffer_source_sequence_and_options(&array, &options).unwrap();
-    let url = Url::create_object_url_with_blob(&blob).unwrap();
-
-    let window = web_sys::window().unwrap();
-    let _ = window.open_with_url_and_target(&url, "_blank");
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub fn show_html_preview(html: String, filename: &str) {
     let home = match dirs::home_dir() {
         Some(h) => h,
@@ -151,7 +101,6 @@ pub async fn list_models(api_key: &str) -> Result<Vec<String>, String> {
 
 /// Detect the image media type from a base64 payload by its leading bytes.
 /// PNG base64 begins with `iVBOR` (`\x89PNG`); JPEG with `/9j/` (`\xff\xd8\xff`).
-#[cfg(not(target_arch = "wasm32"))]
 fn image_media_type(b64: &str) -> &'static str {
     if b64.starts_with("/9j/") {
         "image/jpeg"
@@ -167,7 +116,6 @@ fn image_media_type(b64: &str) -> &'static str {
 /// `reqwest`'s top-level message is often opaque (e.g. "error decoding response
 /// body"); the source chain reveals the real cause (e.g. "connection closed
 /// before message completed").
-#[cfg(not(target_arch = "wasm32"))]
 fn describe_error(e: &reqwest::Error) -> String {
     use std::error::Error;
     let mut msg = e.to_string();
@@ -187,7 +135,6 @@ fn describe_error(e: &reqwest::Error) -> String {
 /// same conversation thread continues across repair and follow-up calls within
 /// a smart-edit session. Used for no-tool text turns; for tool-enabled turns see
 /// [`anthropic_agentic_turn`].
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn anthropic_chat_turn(
     history: &mut Vec<serde_json::Value>,
     user_text: &str,
@@ -309,19 +256,6 @@ pub async fn anthropic_chat_turn(
     Ok(response_text)
 }
 
-#[cfg(target_arch = "wasm32")]
-pub async fn anthropic_chat_turn(
-    _history: &mut Vec<serde_json::Value>,
-    _user_text: &str,
-    _images: &[(String, String)],
-    _pdfs: &[(String, Vec<u8>)],
-    _api_key: &str,
-    _model: &str,
-    _max_tokens: u32,
-) -> Result<String, String> {
-    Err("AI features are only supported in the desktop app. The web version cannot call the Anthropic API directly.".to_string())
-}
-
 // ── Agentic tool loop (Anthropic) ────────────────────────────────────
 
 /// The result of executing one tool call, to be returned to the model as a
@@ -372,7 +306,6 @@ pub struct TurnOutput {
 /// The assistant `tool_use` messages and the user `tool_result` messages are
 /// appended to `history`, so a subsequent [`chat_turn`] (e.g. a repair turn)
 /// continues the same thread.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn anthropic_agentic_turn(
     history: &mut Vec<serde_json::Value>,
     user_text: &str,
@@ -572,7 +505,6 @@ pub async fn anthropic_agentic_turn(
 /// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:
 /// it executes the returned tool calls (which may be async) and appends a user
 /// `tool_result` message via [`tool_result_message`] before the next turn.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn anthropic_stream_turn(
     history: &mut Vec<serde_json::Value>,
     tools: &[serde_json::Value],
@@ -724,7 +656,6 @@ pub async fn anthropic_stream_turn(
 /// Build the user `tool_result` message for a batch of executed tool calls.
 /// Each entry is `(tool_use_id, ToolReply)`. Append the result to `history`
 /// before the next [`anthropic_stream_turn`].
-#[cfg(not(target_arch = "wasm32"))]
 pub fn tool_result_message(results: Vec<(String, ToolReply)>) -> serde_json::Value {
     let content: Vec<serde_json::Value> = results
         .into_iter()
@@ -753,39 +684,9 @@ pub fn tool_result_message(results: Vec<(String, ToolReply)>) -> serde_json::Val
     serde_json::json!({ "role": "user", "content": content })
 }
 
-#[cfg(target_arch = "wasm32")]
-pub async fn anthropic_agentic_turn(
-    _history: &mut Vec<serde_json::Value>,
-    _user_text: &str,
-    _api_key: &str,
-    _model: &str,
-    _max_tokens: u32,
-    _tools: &[serde_json::Value],
-    _execute: impl FnMut(&str, &serde_json::Value) -> ToolReply,
-) -> Result<String, String> {
-    Err("AI features are only supported in the desktop app. The web version cannot call the Anthropic API directly.".to_string())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn anthropic_stream_turn(
-    _history: &mut Vec<serde_json::Value>,
-    _tools: &[serde_json::Value],
-    _api_key: &str,
-    _model: &str,
-    _max_tokens: u32,
-) -> Result<TurnOutput, String> {
-    Err("AI features are only supported in the desktop app.".to_string())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn tool_result_message(_results: Vec<(String, ToolReply)>) -> serde_json::Value {
-    serde_json::json!({})
-}
-
 /// Fetch the list of available model IDs from the Anthropic API, sorted
 /// alphabetically. All Claude models support the chat + vision endpoint, so no
 /// filtering is applied.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String> {
     if api_key.is_empty() {
         return Err("Anthropic API key is not configured.".to_string());
@@ -825,14 +726,8 @@ pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String>
     Ok(ids)
 }
 
-#[cfg(target_arch = "wasm32")]
-pub async fn anthropic_list_models(_api_key: &str) -> Result<Vec<String>, String> {
-    Err("Listing models is only supported in the desktop app.".to_string())
-}
-
 // ── File explorer reveal ─────────────────────────────────────────────
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn reveal_in_file_explorer(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
     {

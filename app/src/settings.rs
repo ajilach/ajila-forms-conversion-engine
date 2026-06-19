@@ -88,12 +88,9 @@ impl AppSettings {
 
         // No settings in the database yet: try a one-time import from the
         // legacy TOML file, then persist it into the database.
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some(imported) = Self::load_legacy_toml() {
-                imported.save();
-                return imported;
-            }
+        if let Some(imported) = Self::load_legacy_toml() {
+            imported.save();
+            return imported;
         }
 
         Self::default()
@@ -107,14 +104,12 @@ impl AppSettings {
     }
 
     /// One-time import of the legacy `settings.toml` file, if it exists.
-    #[cfg(not(target_arch = "wasm32"))]
     fn load_legacy_toml() -> Option<Self> {
         let path = Self::legacy_settings_path();
         let contents = std::fs::read_to_string(path).ok()?;
         toml::from_str(&contents).ok()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn legacy_settings_path() -> std::path::PathBuf {
         let base = dirs::config_dir().unwrap_or_else(|| {
             dirs::home_dir()

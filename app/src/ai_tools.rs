@@ -58,7 +58,6 @@ pub async fn build_tools(
         Box::new(FormToolContext::build(source_pdfs).await)
     };
 
-    #[cfg(not(target_arch = "wasm32"))]
     if let Some(p) = profile
         && crate::references::count(p) > 0
         && let Some(refs) = ReferenceToolContext::new(p)
@@ -66,7 +65,6 @@ pub async fn build_tools(
         return Box::new(CompositeToolExecutor::new(vec![base, Box::new(refs)]));
     }
 
-    let _ = profile;
     base
 }
 
@@ -76,7 +74,6 @@ pub async fn build_tools(
 /// uploaded AEM package files ([`PackageToolContext`]), so the model can
 /// analyse both the input form and its final package before writing the
 /// description.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn build_describe_tools(
     pdfs: Vec<(String, Vec<u8>)>,
     package_files: Vec<(String, String)>,
@@ -460,14 +457,12 @@ fn tool_get_plain_state_image() -> serde_json::Value {
 /// Tool executor backed by the per-profile reference-form store
 /// ([`crate::references`]). Lets the model search worked examples (original
 /// form + final AEM package + description), read their files, and view source
-/// pages. Desktop-only (needs the embedding model + SQLite).
-#[cfg(not(target_arch = "wasm32"))]
+/// pages. Needs the embedding model + SQLite.
 pub struct ReferenceToolContext {
     profile: String,
     matcher: blueprint::semantic::SemanticMatcher,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl ReferenceToolContext {
     /// Load the embedding model for this profile's reference searches. Returns
     /// `None` if the model fails to load (the caller then omits reference tools).
@@ -480,7 +475,6 @@ impl ReferenceToolContext {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl ToolExecutor for ReferenceToolContext {
     fn tools(&self) -> Vec<serde_json::Value> {
         vec![

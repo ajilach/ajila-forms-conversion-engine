@@ -19,14 +19,14 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 |---|---|
 | `core` | Core library — PDF parsing, XFA processing, analysis pipeline, and all output renderers. |
 | `cli` | Command-line interface for processing PDFs. |
-| `app` | Dioxus web/desktop application with drag-and-drop upload and live preview. |
+| `app` | Dioxus desktop application with drag-and-drop upload and live preview. |
 | `judge` | Evaluates translation quality of multi-language PDF forms and writes scores to CSV. |
 | `teacher` | Runs the pipeline and an LLM smart-edit pass, then prints suggested changes. |
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
-- [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the web app
+- [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the desktop app
 
 Dioxus can easily be installed using cargo-binstall:
 
@@ -102,39 +102,21 @@ cargo run --release -p blueprint-cli -- path/to/form.pdf --dump-xfa
 
 ## App
 
-The app is built with [Dioxus](https://dioxuslabs.com/) and supports web and desktop targets. This is the recommended way of running the migration engine, especially the desktop build.
+The app is built with [Dioxus](https://dioxuslabs.com/) and targets the desktop. This is the recommended way of running the migration engine.
 
-### Web (Development)
-
-```sh
-cd app
-dx serve --platform web
-```
-
-### Web (Production Build)
-
-```sh
-cd app
-dx build --release --platform web
-```
-
-### Desktop
+### Development
 
 ```sh
 cd app
 dx serve --platform desktop
 ```
 
-### Docker
-
-A Docker image is published to GitHub Container Registry with every release.
+### Production Build
 
 ```sh
-docker pull ghcr.io/ajilach/blueprint-app:latest
-docker run -p 8080:8080 ghcr.io/ajilach/blueprint-app:latest
+cd app
+dx build --release --platform desktop
 ```
-
-Then open http://localhost:8080.
 
 ## Library Documentation
 

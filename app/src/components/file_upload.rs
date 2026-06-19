@@ -343,7 +343,7 @@ pub fn FileUploadSection(
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use dioxus::html::{NativeFileData, bytes::Bytes};

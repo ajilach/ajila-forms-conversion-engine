@@ -1,5 +1,4 @@
 mod aem_client;
-#[cfg(not(target_arch = "wasm32"))]
 mod agent;
 mod ai_tools;
 mod components;
@@ -8,7 +7,6 @@ mod markdown;
 mod models;
 mod pipeline;
 mod platform;
-#[cfg(not(target_arch = "wasm32"))]
 mod preview_server;
 mod processing;
 mod references;
@@ -26,30 +24,23 @@ use processing::run_and_track;
 use settings::AppSettings;
 
 fn main() {
-    #[cfg(feature = "desktop")]
-    {
-        let saved = AppSettings::load();
-        let mut config = dioxus::desktop::Config::new().with_window(
-            dioxus::desktop::WindowBuilder::new()
-                .with_always_on_top(saved.always_on_top)
-                .with_inner_size(dioxus::desktop::LogicalSize::new(1400.0, 960.0))
-                .with_title("Ajila Forms Conversion Engine"),
-        );
+    let saved = AppSettings::load();
+    let mut config = dioxus::desktop::Config::new().with_window(
+        dioxus::desktop::WindowBuilder::new()
+            .with_always_on_top(saved.always_on_top)
+            .with_inner_size(dioxus::desktop::LogicalSize::new(1400.0, 960.0))
+            .with_title("Ajila Forms Conversion Engine"),
+    );
 
-        // Window/taskbar icon (no-op on macOS, used on Windows/Linux).
-        if let Some(icon) = load_window_icon() {
-            config = config.with_icon(icon);
-        }
-
-        dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
+    // Window/taskbar icon (no-op on macOS, used on Windows/Linux).
+    if let Some(icon) = load_window_icon() {
+        config = config.with_icon(icon);
     }
 
-    #[cfg(not(feature = "desktop"))]
-    dioxus::launch(App);
+    dioxus::LaunchBuilder::new().with_cfg(config).launch(App);
 }
 
 /// Decode the bundled PNG into a `tao` window icon.
-#[cfg(feature = "desktop")]
 fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
     let rgba = image::load_from_memory(include_bytes!("../icons/icon.png"))
         .ok()?
@@ -172,31 +163,18 @@ fn App() -> Element {
             // Hand the whole conversion to the autonomous agent: it drives the
             // engine via tools (extract → structure → convert → AEM → package →
             // upload/verify), versioning each step, and finalizes the result.
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let conn = settings.aem_connection();
-                crate::agent::run_agent(
-                    pdfs,
-                    profile,
-                    api_key,
-                    model,
-                    conn,
-                    session_label,
-                    processing_state,
-                    current_session,
-                )
-                .await;
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                let _ = (pdfs, profile, api_key, model, session_label);
-                processing_state.set(ProcessingState {
-                    step: ProcessingStep::AiGenerating,
-                    ai_mode: true,
-                    error: Some("Agent Processing is only available in the desktop app.".into()),
-                    ..ProcessingState::new()
-                });
-            }
+            let conn = settings.aem_connection();
+            crate::agent::run_agent(
+                pdfs,
+                profile,
+                api_key,
+                model,
+                conn,
+                session_label,
+                processing_state,
+                current_session,
+            )
+            .await;
             is_processing.set(false);
         });
     };
@@ -229,26 +207,19 @@ fn App() -> Element {
         });
 
         spawn(async move {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let conn = settings.aem_connection();
-                crate::agent::run_agent_feedback(
-                    feedback,
-                    pdfs,
-                    profile,
-                    api_key,
-                    model,
-                    conn,
-                    session,
-                    processing_state,
-                    current_session,
-                )
-                .await;
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                let _ = (feedback, pdfs, profile, api_key, model, session);
-            }
+            let conn = settings.aem_connection();
+            crate::agent::run_agent_feedback(
+                feedback,
+                pdfs,
+                profile,
+                api_key,
+                model,
+                conn,
+                session,
+                processing_state,
+                current_session,
+            )
+            .await;
             is_processing.set(false);
         });
     };
@@ -334,7 +305,6 @@ fn App() -> Element {
             settings: app_settings.read().clone(),
             on_settings_changed: move |new_settings: AppSettings| {
                 new_settings.save();
-                #[cfg(feature = "desktop")]
                 dioxus::desktop::use_window().set_always_on_top(new_settings.always_on_top);
                 app_settings.set(new_settings);
             },

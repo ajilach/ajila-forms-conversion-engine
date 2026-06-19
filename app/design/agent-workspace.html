@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent — Single Page · Workspace</title>
+<style>
+    :root {
+        --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+        --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", monospace;
+
+        --bg: #f4f5f8;
+        --surface: #ffffff;
+        --surface-2: #f7f8fb;
+        --text: #1c2030;
+        --muted: #6b7186;
+        --faint: #9aa0b4;
+
+        --border: #e6e8ef;
+        --border-strong: #d3d7e2;
+
+        --accent: #5b5bd6;
+        --accent-grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        --accent-soft: rgba(99, 102, 241, 0.10);
+        --accent-ring: rgba(99, 102, 241, 0.22);
+        --on-accent: #fff;
+
+        --success: #16a34a;
+        --success-soft: rgba(22, 163, 74, 0.10);
+        --warn: #d97706;
+
+        --radius: 16px;
+        --radius-sm: 10px;
+        --radius-pill: 999px;
+        --shadow: 0 8px 30px rgba(30, 35, 70, 0.08);
+        --shadow-sm: 0 2px 8px rgba(30, 35, 70, 0.06);
+
+        --s2: 6px; --s3: 10px; --s4: 14px; --s5: 20px; --s6: 26px; --s7: 32px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: var(--font); font-size: 14px; line-height: 1.5;
+        color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+    h1,h2,h3,p { margin: 0; }
+    button, textarea, select { font-family: inherit; }
+
+    .app { height: 100%; display: flex; flex-direction: column; }
+    .topbar { flex: 0 0 auto; height: 60px; display: flex; align-items: center; gap: var(--s4);
+        padding: 0 var(--s5); background: var(--surface); border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: var(--s3); }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+        font-weight: 800; font-size: 15px; color: var(--on-accent); background: var(--accent-grad);
+        box-shadow: 0 4px 12px rgba(99,102,241,.4); }
+    .brand-text { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+    .ver { font-family: var(--font-mono); font-size: 11px; padding: 2px 8px; border-radius: var(--radius-pill);
+        color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); }
+    .spacer { flex: 1; }
+    .tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+        color: var(--accent); background: var(--accent-soft); padding: 4px 10px; border-radius: var(--radius-pill); }
+    .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px;
+        border: 1px solid transparent; background: transparent; color: var(--muted); font-size: 17px; cursor: pointer; }
+    .icon-btn:hover { background: var(--surface-2); border-color: var(--border); }
+
+    /* ===== Two-pane single page ===== */
+    .work { flex: 1; min-height: 0; display: grid; grid-template-columns: 340px 1fr; }
+
+    /* ---- Left rail: inputs + status ---- */
+    .rail { border-right: 1px solid var(--border); background: var(--surface);
+        padding: var(--s5); overflow-y: auto; display: flex; flex-direction: column; gap: var(--s6); }
+    .block-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+        color: var(--muted); margin-bottom: var(--s3); }
+
+    .field select { width: 100%; height: 40px; padding: 0 36px 0 var(--s4); font-size: 14px; color: var(--text);
+        background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none; appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 14px center; cursor: pointer; }
+
+    .filebox { display: flex; flex-direction: column; gap: var(--s2); }
+    .file { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--surface-2);
+        border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12.5px; }
+    .file .ext { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--on-accent);
+        background: var(--accent); padding: 2px 6px; border-radius: 5px; }
+    .file .pdf { background: #dc2626; } .file .json { background: #0891b2; } .file .zip { background: #b45309; }
+    .file .sz { margin-left: auto; color: var(--faint); font-family: var(--font-mono); font-size: 11px; }
+    .dropmini { margin-top: var(--s2); border: 1.5px dashed var(--border-strong); border-radius: var(--radius-sm);
+        padding: var(--s4); text-align: center; font-size: 12px; color: var(--muted); cursor: pointer; }
+    .dropmini:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+    /* progress checklist */
+    .checklist { display: flex; flex-direction: column; gap: 2px; }
+    .ck { display: flex; align-items: center; gap: var(--s3); padding: 8px 6px; font-size: 13px; border-radius: 8px; }
+    .ck .dot { flex: 0 0 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+        font-size: 10px; font-weight: 800; border: 2px solid var(--border-strong); color: var(--faint); background: var(--surface); }
+    .ck.done .dot { background: var(--success); border-color: var(--success); color: #fff; }
+    .ck.active { background: var(--accent-soft); }
+    .ck.active .dot { border-color: var(--accent); }
+    .ck.active .lbl { font-weight: 700; }
+    .ck.pending { color: var(--faint); }
+    .ck .spin { width: 12px; height: 12px; border: 2px solid var(--border-strong); border-top-color: var(--accent);
+        border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- Main: live activity ---- */
+    .main { display: flex; flex-direction: column; min-height: 0; }
+    .main-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s4); padding: var(--s5) var(--s6);
+        border-bottom: 1px solid var(--border); }
+    .pulse { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); }
+    .pulse .spin { width: 18px; height: 18px; border: 2.5px solid var(--accent-soft); border-top-color: var(--accent);
+        border-radius: 50%; animation: spin .8s linear infinite; }
+    .main-head h2 { font-size: 15px; font-weight: 700; }
+    .main-head .sub { font-size: 12.5px; color: var(--muted); }
+    .main-head .elapsed { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+        background: var(--surface-2); border: 1px solid var(--border); padding: 5px 10px; border-radius: var(--radius-pill); }
+
+    .stream { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s6); }
+    .timeline { max-width: 680px; position: relative; padding-left: 26px; }
+    .timeline::before { content: ""; position: absolute; left: 8px; top: 4px; bottom: 4px; width: 2px; background: var(--border); }
+    .think { position: relative; color: var(--muted); font-size: 13.5px; line-height: 1.55; margin: var(--s4) 0; }
+    .think::before { content: ""; position: absolute; left: -22px; top: 7px; width: 6px; height: 6px; border-radius: 50%;
+        background: var(--border-strong); }
+    .tool { position: relative; display: flex; align-items: flex-start; gap: var(--s3); margin: var(--s4) 0;
+        padding: var(--s3) var(--s4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+    .tool::before { content: ""; position: absolute; left: -22px; top: 16px; width: 10px; height: 10px; border-radius: 50%;
+        background: var(--success); box-shadow: 0 0 0 3px var(--bg); }
+    .tool.run::before { background: var(--accent); }
+    .tool .ic { flex: 0 0 18px; height: 18px; display: grid; place-items: center; margin-top: 1px; }
+    .tick { width: 18px; height: 18px; border-radius: 50%; background: var(--success); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+    .tool.run { border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
+    .tool.run .ic .spin { width: 16px; height: 16px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+    .tool-name { font-weight: 600; font-size: 13.5px; }
+    .tool-detail { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+
+    /* feedback composer pinned in main */
+    .composer { flex: 0 0 auto; border-top: 1px solid var(--border); padding: var(--s4) var(--s6); background: var(--surface); }
+    .composer-inner { max-width: 680px; display: flex; align-items: flex-end; gap: var(--s3);
+        border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 8px 8px 8px var(--s4); background: var(--surface-2); opacity: .55; }
+    .composer textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; font-size: 14px; color: var(--text); padding: 8px 0; }
+    .composer textarea::placeholder { color: var(--faint); }
+    .composer .note { max-width: 680px; margin-top: 8px; font-size: 11.5px; color: var(--faint); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 var(--s4);
+        font-size: 13.5px; font-weight: 600; border-radius: var(--radius-sm); border: 1px solid transparent; cursor: pointer; white-space: nowrap; transition: filter .15s; }
+    .btn:hover { filter: brightness(1.05); }
+    .btn-primary { background: var(--accent-grad); color: var(--on-accent); }
+    .btn-block { width: 100%; }
+    .btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
+
+    .switch { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: flex; flex-direction: column; gap: 6px;
+        padding: 8px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+    .switch span { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 0 6px 2px; }
+    .switch a { text-decoration: none; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 8px; color: var(--muted); }
+    .switch a.active { background: var(--accent-grad); color: var(--on-accent); }
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <div class="brand"><div class="brand-mark">B</div><span class="brand-text">Blueprint</span></div>
+        <span class="ver">v0.9.0</span>
+        <div class="spacer"></div>
+        <span class="tag">Agent</span>
+        <button class="icon-btn" title="Settings">⚙</button>
+    </header>
+
+    <div class="work">
+        <!-- ===== Left rail: source + status ===== -->
+        <aside class="rail">
+            <div>
+                <div class="block-label">Profile</div>
+                <div class="field">
+                    <select>
+                        <option>UBS · Adaptive Forms</option>
+                        <option>Generic AEM</option>
+                        <option>HTML preview only</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <div class="block-label">Source files</div>
+                <div class="filebox">
+                    <div class="file"><span class="ext pdf">PDF</span> AAHA_019_DE.pdf <span class="sz">248 KB</span></div>
+                    <div class="file"><span class="ext zip">ZIP</span> ubs-package.zip <span class="sz">1.2 MB</span></div>
+                    <div class="file"><span class="ext json">JSON</span> structure.json <span class="sz">18 KB</span></div>
+                </div>
+                <div class="dropmini">+ Drop or choose more files</div>
+            </div>
+
+            <div>
+                <div class="block-label">Progress</div>
+                <div class="checklist">
+                    <div class="ck done"><span class="dot">✓</span><span class="lbl">Parse PDF</span></div>
+                    <div class="ck done"><span class="dot">✓</span><span class="lbl">Build semantic model</span></div>
+                    <div class="ck done"><span class="dot">✓</span><span class="lbl">Generate HTML</span></div>
+                    <div class="ck active"><span class="dot"><span class="spin"></span></span><span class="lbl">Upload to AEM</span></div>
+                    <div class="ck pending"><span class="dot">5</span><span class="lbl">Verify form</span></div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ===== Main: live timeline ===== -->
+        <section class="main">
+            <div class="main-head">
+                <div class="pulse"><span class="spin"></span></div>
+                <div>
+                    <h2>Agent is working</h2>
+                    <div class="sub">Uploading to AEM</div>
+                </div>
+                <span class="elapsed">0:54</span>
+            </div>
+
+            <div class="stream">
+                <div class="timeline">
+                    <p class="think">Reading the PDF and supplied structure to understand layout and field groupings.</p>
+                    <div class="tool"><span class="ic"><span class="tick">✓</span></span><div><span class="tool-name">Parsed PDF form</span><span class="tool-detail">42 fields across 8 sections</span></div></div>
+                    <div class="tool"><span class="ic"><span class="tick">✓</span></span><div><span class="tool-name">Built semantic model</span><span class="tool-detail">mapped 40 / 42 fields</span></div></div>
+                    <p class="think">A signature pad and a repeating address block didn't map cleanly — generating equivalents and wiring validation rules.</p>
+                    <div class="tool"><span class="ic"><span class="tick">✓</span></span><div><span class="tool-name">Generated Adaptive Form HTML</span><span class="tool-detail">5 pages rendered</span></div></div>
+                    <div class="tool run"><span class="ic"><span class="spin"></span></span><div><span class="tool-name">Uploading to AEM</span><span class="tool-detail">/content/forms/af/ubs/aaha-019</span></div></div>
+                </div>
+            </div>
+
+            <div class="composer">
+                <div class="composer-inner">
+                    <textarea rows="1" placeholder="Feedback unlocks once the agent finishes…" disabled></textarea>
+                    <button class="btn btn-primary" disabled>Send ↑</button>
+                </div>
+                <div class="note">When the run completes, the result summary appears here and you can send feedback to re-run.</div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<nav class="switch">
+    <span>Single-page</span>
+    <a href="agent-conversation.html">Conversation</a>
+    <a href="agent-workspace.html" class="active">Workspace</a>
+    <a href="agent-timeline.html">Timeline</a>
+</nav>
+</body>
+</html>

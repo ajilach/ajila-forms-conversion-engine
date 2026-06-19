@@ -38,9 +38,8 @@ pub fn SettingsPanel(
         // Dropdown panel — positioned via CSS relative to the header button.
         div { class: "settings-dropdown",
 
-            // ── Window behaviour (desktop only) ──────────────────────────────
+            // ── Window behaviour ─────────────────────────────────────────────
             {
-                #[cfg(not(target_arch = "wasm32"))]
                 let section = {
                     let settings_for_aot = settings.clone();
                     let settings_for_legacy_ui = settings.clone();
@@ -302,11 +301,6 @@ pub fn SettingsPanel(
                             }
                         }
                     }
-                };
-
-                #[cfg(target_arch = "wasm32")]
-                let section = rsx! {
-                    p { class: "settings-no-options", "No configurable settings for the web version." }
                 };
 
                 section
