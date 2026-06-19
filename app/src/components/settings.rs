@@ -42,6 +42,9 @@ pub fn SettingsPage(
     let settings_for_trigger = settings.clone();
     let settings_for_etext = settings.clone();
     let settings_for_einput = settings.clone();
+    let settings_for_agent_instr = settings.clone();
+    let settings_for_se_instr = settings.clone();
+    let settings_for_aem_instr = settings.clone();
 
     let active_api_key = settings.active_api_key().to_string();
     let active_model = settings.active_model().to_string();
@@ -343,6 +346,78 @@ pub fn SettingsPage(
                                             new_s.evict_input_over_chars = v;
                                             on_changed.call(new_s);
                                         }
+                                    }
+                                },
+                            }
+                        }
+                    }
+                    div { class: "settings-section",
+                        h3 { class: "settings-section-title", "Custom instructions" }
+                        div { class: "settings-row settings-row-stack",
+                            div { class: "settings-row-info",
+                                span { class: "settings-row-label", "Agent (AI processing)" }
+                                span { class: "settings-row-desc",
+                                    "Extra instructions appended to the autonomous conversion agent's system prompt. Applied to AI processing and feedback re-runs."
+                                }
+                            }
+                            textarea {
+                                class: "settings-textarea",
+                                rows: "4",
+                                placeholder: "e.g. Always keep signature blocks on the last page.",
+                                value: "{settings_for_agent_instr.agent_instructions}",
+                                onchange: {
+                                    let on_changed = on_settings_changed;
+                                    let s = settings_for_agent_instr.clone();
+                                    move |e: Event<FormData>| {
+                                        let mut new_s = s.clone();
+                                        new_s.agent_instructions = e.value();
+                                        on_changed.call(new_s);
+                                    }
+                                },
+                            }
+                        }
+                        div { class: "settings-row settings-row-stack",
+                            div { class: "settings-row-info",
+                                span { class: "settings-row-label", "Smart Edit (structure)" }
+                                span { class: "settings-row-desc",
+                                    "Extra instructions appended to the structured-tree Smart Edit prompt."
+                                }
+                            }
+                            textarea {
+                                class: "settings-textarea",
+                                rows: "4",
+                                placeholder: "e.g. Prefer Radio over Select for choices with up to 5 options.",
+                                value: "{settings_for_se_instr.smart_edit_instructions}",
+                                onchange: {
+                                    let on_changed = on_settings_changed;
+                                    let s = settings_for_se_instr.clone();
+                                    move |e: Event<FormData>| {
+                                        let mut new_s = s.clone();
+                                        new_s.smart_edit_instructions = e.value();
+                                        on_changed.call(new_s);
+                                    }
+                                },
+                            }
+                        }
+                        div { class: "settings-row settings-row-stack",
+                            div { class: "settings-row-info",
+                                span { class: "settings-row-label", "Smart Edit (AEM)" }
+                                span { class: "settings-row-desc",
+                                    "Extra instructions appended to the AEM-tree Smart Edit prompt."
+                                }
+                            }
+                            textarea {
+                                class: "settings-textarea",
+                                rows: "4",
+                                placeholder: "e.g. Keep page panels intact and never merge distinct signers.",
+                                value: "{settings_for_aem_instr.aem_smart_edit_instructions}",
+                                onchange: {
+                                    let on_changed = on_settings_changed;
+                                    let s = settings_for_aem_instr.clone();
+                                    move |e: Event<FormData>| {
+                                        let mut new_s = s.clone();
+                                        new_s.aem_smart_edit_instructions = e.value();
+                                        on_changed.call(new_s);
                                     }
                                 },
                             }

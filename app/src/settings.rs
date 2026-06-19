@@ -11,6 +11,21 @@ use serde::{Deserialize, Serialize};
 /// Key under which the serialized settings are stored.
 const SETTINGS_KEY: &str = "app";
 
+/// Render operator-configured extra instructions as a prompt section, or an
+/// empty string when none are set. Appended after the built-in guidance so the
+/// hard constraints still take precedence.
+pub fn extra_instructions_block(instructions: &str) -> String {
+    let trimmed = instructions.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n--- ADDITIONAL USER INSTRUCTIONS ---\n\
+         The operator configured the following extra instructions. Follow them \
+         wherever they do not conflict with the hard constraints above:\n{trimmed}"
+    )
+}
+
 /// Application settings.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -44,6 +59,18 @@ pub struct AppSettings {
     pub evict_input_over_chars: usize,
     /// Eviction is a no-op until the serialized history exceeds this many bytes.
     pub evict_trigger_bytes: usize,
+    /// Extra operator instructions appended to the autonomous conversion agent's
+    /// system prompt. Empty = none.
+    #[serde(default)]
+    pub agent_instructions: String,
+    /// Extra operator instructions appended to the structured Smart Edit prompt.
+    /// Empty = none.
+    #[serde(default)]
+    pub smart_edit_instructions: String,
+    /// Extra operator instructions appended to the AEM Smart Edit prompt.
+    /// Empty = none.
+    #[serde(default)]
+    pub aem_smart_edit_instructions: String,
 }
 
 impl Default for AppSettings {
@@ -61,6 +88,9 @@ impl Default for AppSettings {
             evict_text_over_chars: crate::platform::DEFAULT_ELIDE_TEXT_OVER_CHARS,
             evict_input_over_chars: crate::platform::DEFAULT_ELIDE_INPUT_OVER_CHARS,
             evict_trigger_bytes: crate::platform::DEFAULT_EVICT_TRIGGER_BYTES,
+            agent_instructions: String::new(),
+            smart_edit_instructions: String::new(),
+            aem_smart_edit_instructions: String::new(),
         }
     }
 }

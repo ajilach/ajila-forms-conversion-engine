@@ -66,11 +66,12 @@ pub async fn run_smart_aem_edit(
     api_key: &str,
     model: &str,
     profile: Option<&str>,
+    instructions: &str,
 ) -> Result<AemSmartEditResult, String> {
     let json_context =
         serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
 
-    let prompt = build_prompt(plain_images.len());
+    let prompt = build_prompt(plain_images.len(), instructions);
     let user_text = build_user_text(&prompt, &json_context);
 
     let tools = build_tools(source_pdfs, plain_images, profile).await;
@@ -101,6 +102,7 @@ pub async fn run_smart_aem_edit_with_feedback(
     api_key: &str,
     model: &str,
     profile: Option<&str>,
+    instructions: &str,
 ) -> Result<AemSmartEditResult, String> {
     let json_context =
         serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
@@ -122,7 +124,7 @@ pub async fn run_smart_aem_edit_with_feedback(
     };
     let prompt = format!(
         "{}\n\nThe user reviewed your previous suggestion. They ACCEPTED these changes; keep them:\n{}\n\nThey REJECTED these changes; do NOT apply them again:\n{}{}",
-        build_prompt(plain_images.len()),
+        build_prompt(plain_images.len(), instructions),
         fmt(accepted_changes),
         fmt(rejected_changes),
         feedback_section,
@@ -146,8 +148,9 @@ pub async fn run_smart_aem_edit_with_feedback(
     Ok(result)
 }
 
-fn build_prompt(image_count: usize) -> String {
+fn build_prompt(image_count: usize, instructions: &str) -> String {
     let schema = serde_json::to_string_pretty(&blueprint::aem_schema()).unwrap_or_default();
+    let extra = crate::settings::extra_instructions_block(instructions);
     format!(
         "{AEM_EDIT_GUIDANCE}\n\
          If reference forms are available for this profile, call `list_reference_forms` and \
@@ -162,7 +165,7 @@ fn build_prompt(image_count: usize) -> String {
            \"changes\": a JSON array of objects, each with \"id\" (integer, 0-based) and \"description\" (string)\n\
          - No surrounding prose, no markdown fences, no backticks.\n\
          \n\
-         Available page images: {image_count}"
+         Available page images: {image_count}{extra}"
     )
 }
 

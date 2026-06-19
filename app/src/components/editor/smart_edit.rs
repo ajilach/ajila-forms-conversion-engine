@@ -206,9 +206,10 @@ pub async fn run_smart_edit(
     api_key: &str,
     model: &str,
     profile: Option<&str>,
+    instructions: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
-    let prompt = build_smart_edit_prompt(selected_indices, plain_images);
+    let prompt = build_smart_edit_prompt(selected_indices, plain_images, instructions);
     let user_text = build_initial_user_text(&prompt, &json_context);
 
     let tools = build_tools(source_pdfs, plain_images, profile).await;
@@ -249,6 +250,7 @@ pub async fn run_smart_edit_with_feedback(
     api_key: &str,
     model: &str,
     profile: Option<&str>,
+    instructions: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
     let prompt = build_feedback_prompt(
@@ -257,6 +259,7 @@ pub async fn run_smart_edit_with_feedback(
         accepted_changes,
         rejected_changes,
         user_feedback,
+        instructions,
     );
     let user_text = build_initial_user_text(&prompt, &json_context);
 
@@ -526,6 +529,7 @@ fn build_initial_user_text(prompt: &str, json_context: &str) -> String {
 fn build_smart_edit_prompt(
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
+    instructions: &str,
 ) -> String {
     let selection_scope = if selected_indices.is_empty() {
         "all root-level nodes".to_string()
@@ -579,8 +583,9 @@ fn build_smart_edit_prompt(
          - Each \"changes\" entry describes one logical change you made (e.g. moved, merged, split, reordered).\n\
          - No surrounding prose, no trailing notes, no backticks.\n\
          \n\
-         Available page images: {}",
+         Available page images: {}{}",
         plain_images.len(),
+        crate::settings::extra_instructions_block(instructions),
     )
 }
 
@@ -590,8 +595,9 @@ fn build_feedback_prompt(
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     user_feedback: &str,
+    instructions: &str,
 ) -> String {
-    let base = build_smart_edit_prompt(selected_indices, plain_images);
+    let base = build_smart_edit_prompt(selected_indices, plain_images, instructions);
     let format_list = |changes: &[ChangeItem]| {
         changes
             .iter()

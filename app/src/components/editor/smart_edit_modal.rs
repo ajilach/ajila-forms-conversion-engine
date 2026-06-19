@@ -90,6 +90,7 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
                     &api_key,
                     &model,
                     None,
+                    "",
                 )
                 .await
                 {

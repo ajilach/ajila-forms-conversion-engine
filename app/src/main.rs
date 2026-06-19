@@ -172,6 +172,7 @@ fn App() -> Element {
                 model,
                 conn,
                 session_label,
+                settings.agent_instructions.clone(),
                 processing_state,
                 current_session,
             )
@@ -217,6 +218,7 @@ fn App() -> Element {
                 model,
                 conn,
                 session,
+                settings.agent_instructions.clone(),
                 processing_state,
                 current_session,
             )
@@ -332,6 +334,7 @@ fn App() -> Element {
                     source_pdfs: source_pdfs.read().clone(),
                     api_key: app_settings.read().active_api_key().to_string(),
                     model: app_settings.read().active_model().to_string(),
+                    smart_edit_instructions: app_settings.read().smart_edit_instructions.clone(),
                     session_id: current_session.read().clone(),
                     profile: selected_profile.read().clone(),
                     on_apply: handle_editor_apply,
@@ -397,6 +400,7 @@ fn App() -> Element {
                                     content_translations,
                                     api_key: app_settings.read().active_api_key().to_string(),
                                     model: app_settings.read().active_model().to_string(),
+                                    smart_edit_instructions: app_settings.read().aem_smart_edit_instructions.clone(),
                                     // Dedicated AEM history session, derived from the document's
                                     // structured session so it resets per document and never
                                     // collides with the (structured) session browser.

@@ -114,6 +114,8 @@ pub struct AemEditorProps {
     pub content_translations: HashMap<String, HashMap<String, String>>,
     pub api_key: String,
     pub model: String,
+    /// Extra operator instructions appended to the Smart AEM Edit prompt.
+    pub smart_edit_instructions: String,
     /// Edit-history session id (desktop only; `None` on web). Stable across
     /// re-derivations of the tree, so AEM history survives — and records — a
     /// structure edit that regenerates the tree, rather than starting fresh.
@@ -185,6 +187,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
     let connection = use_signal(|| props.connection.0.clone());
     let api_key = use_signal(|| props.api_key.clone());
     let model = use_signal(|| props.model.clone());
+    let smart_edit_instructions = use_signal(|| props.smart_edit_instructions.clone());
     let profile = use_signal(|| props.profile.clone());
 
     // Seed the per-language label overlay (uuid → lang → text) by matching each
@@ -351,13 +354,14 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
                 let pdfs = source_pdfs.clone();
                 let api_key = api_key.read().clone();
                 let model = model.read().clone();
+                let instructions = smart_edit_instructions.read().clone();
                 let profile = profile.read().clone();
                 let started = std::time::Instant::now();
                 smart_state.set(SmartState::Loading);
                 rejected_ids.write().clear();
                 feedback_text.set(String::new());
                 spawn(async move {
-                    match smart_edit::run_smart_aem_edit(&current, &images, &pdfs, &api_key, &model, profile.as_deref()).await
+                    match smart_edit::run_smart_aem_edit(&current, &images, &pdfs, &api_key, &model, profile.as_deref(), &instructions).await
                     {
                         Ok(result) => smart_state.set(SmartState::Preview {
                             result,
@@ -513,7 +517,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             }
 
             // Smart edit review panel
-            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, session_id, undo_seq, history_version, status_msg, selection, aem_config, connection, node_translations, api_key, model, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
+            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, session_id, undo_seq, history_version, status_msg, selection, aem_config, connection, node_translations, api_key, model, smart_edit_instructions, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
 
             // Node tree
             div { class: "aem-editor-tree",
@@ -622,6 +626,7 @@ fn render_smart_panel(
     node_translations: Signal<NodeTranslations>,
     api_key: Signal<String>,
     model: Signal<String>,
+    smart_edit_instructions: Signal<String>,
     profile: Signal<Option<String>>,
     plain_images: HashMap<String, String>,
     source_pdfs: Vec<(String, Vec<u8>)>,
@@ -719,6 +724,7 @@ fn render_smart_panel(
                                             let user_feedback = feedback_text.read().clone();
                                             let api_key = api_key.read().clone();
                                             let model = model.read().clone();
+                                            let instructions = smart_edit_instructions.read().clone();
                                             let profile = profile.read().clone();
                                             let started = std::time::Instant::now();
                                             smart_state.set(SmartState::Loading);
@@ -726,7 +732,7 @@ fn render_smart_panel(
                                             feedback_text.set(String::new());
                                             spawn(async move {
                                                 match smart_edit::run_smart_aem_edit_with_feedback(
-                                                    &current, &images, &pdfs, &accepted, &rejected, &user_feedback, &api_key, &model, profile.as_deref(),
+                                                    &current, &images, &pdfs, &accepted, &rejected, &user_feedback, &api_key, &model, profile.as_deref(), &instructions,
                                                 ).await {
                                                     Ok(result) => smart_state.set(SmartState::Preview { result, elapsed_ms: started.elapsed().as_millis() }),
                                                     Err(message) => smart_state.set(SmartState::Error { message }),

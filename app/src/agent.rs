@@ -788,6 +788,7 @@ pub async fn run_agent(
     model: String,
     conn: Option<AemConnection>,
     session_label: String,
+    instructions: String,
     mut processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
@@ -816,8 +817,12 @@ pub async fn run_agent(
         structured_session.clone(),
     );
 
+    let intro = format!(
+        "{SYSTEM_PROMPT}{}",
+        crate::settings::extra_instructions_block(&instructions)
+    );
     let mut history: Vec<serde_json::Value> = Vec::new();
-    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": SYSTEM_PROMPT}]}));
+    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
 
     drive_agent(
         agent,
@@ -845,6 +850,7 @@ pub async fn run_agent_feedback(
     model: String,
     conn: Option<AemConnection>,
     structured_session: String,
+    instructions: String,
     processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
@@ -862,13 +868,14 @@ pub async fn run_agent_feedback(
     agent.seed_structured(prior);
 
     let intro = format!(
-        "{SYSTEM_PROMPT}\n\n--- REFINEMENT ---\n\
+        "{SYSTEM_PROMPT}{}\n\n--- REFINEMENT ---\n\
 A prior conversion already exists in your working structured tree (inspect it with \
 get_structured). The user reviewed the result and gave this feedback:\n\n{feedback}\n\n\
 Apply the requested changes to the structured tree, then re-convert to AEM \
 (convert_structured_to_aem), rebuild the package (build_aem_package), and \
 re-upload (upload_to_aem) if an AEM connection is configured, verifying as needed. \
-Then call finish."
+Then call finish.",
+        crate::settings::extra_instructions_block(&instructions)
     );
 
     let mut history: Vec<serde_json::Value> = Vec::new();

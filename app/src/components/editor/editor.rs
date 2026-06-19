@@ -83,6 +83,8 @@ pub struct StructuredEditorProps {
     pub api_key: String,
     /// Anthropic model identifier for Smart Edit (e.g. "claude-opus-4-8").
     pub model: String,
+    /// Extra operator instructions appended to the Smart Edit prompt.
+    pub smart_edit_instructions: String,
     /// Edit-history session id for this document (desktop only; `None` on web).
     pub session_id: Option<String>,
     /// Active conversion profile — scopes which reference forms Smart Edit can
@@ -112,6 +114,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let smart_edit_pdfs_for_action = smart_edit_pdfs.clone();
     let api_key = use_signal(|| props.api_key.clone());
     let model = use_signal(|| props.model.clone());
+    let smart_edit_instructions = use_signal(|| props.smart_edit_instructions.clone());
     let profile = use_signal(|| props.profile.clone());
 
     // Which change IDs the user has rejected in the current Preview round.
@@ -1530,6 +1533,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let source_pdfs = smart_edit_pdfs_for_action.clone();
                 let api_key = api_key.read().clone();
                 let model = model.read().clone();
+                let instructions = smart_edit_instructions.read().clone();
                 let profile = profile.read().clone();
                 let started_at = std::time::Instant::now();
 
@@ -1546,6 +1550,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         &api_key,
                         &model,
                         profile.as_deref(),
+                        &instructions,
                     )
                     .await
                     {
@@ -1759,6 +1764,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let source_pdfs_for_retry = smart_edit_pdfs.clone();
                             let api_key_for_retry = api_key.read().clone();
                             let model_for_retry = model.read().clone();
+                            let instructions_for_retry = smart_edit_instructions.read().clone();
                             let nodes_for_apply = result.nodes.clone();
                             let original_nodes_for_preview: Vec<StructuredNode> = if selected_indices
                                 .is_empty()
@@ -1886,6 +1892,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 let selected_indices = selected_indices_for_retry.clone();
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
+                                                let instructions = instructions_for_retry.clone();
 
                                                 rsx! {
                                                     button {
@@ -1900,6 +1907,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             let user_feedback = feedback_text.read().clone();
                                                             let api_key = api_key.clone();
                                                             let model = model.clone();
+                                                            let instructions = instructions.clone();
                                                             let profile = profile.read().clone();
                                                             let started_at = std::time::Instant::now();
                                                             smart_edit_state.set(SmartEditState::Loading);
@@ -1917,6 +1925,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         &api_key,
                                                                         &model,
                                                                         profile.as_deref(),
+                                                                        &instructions,
                                                                     )
                                                                     .await
                                                                 {
@@ -1999,6 +2008,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let source_pdfs_for_retry = smart_edit_pdfs.clone();
                             let api_key_for_retry = api_key.read().clone();
                             let model_for_retry = model.read().clone();
+                            let instructions_for_retry = smart_edit_instructions.read().clone();
                             rsx! {
                                 div { class: "smart-edit-inline-panel",
                                     p { class: "smart-edit-hint smart-edit-error", "Smart Edit failed: {message}" }
@@ -2020,6 +2030,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 let selected_indices = selected_indices_for_retry.clone();
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
+                                                let instructions = instructions_for_retry.clone();
                                                 let profile = profile.read().clone();
                                                 let started_at = std::time::Instant::now();
                                                 smart_edit_state.set(SmartEditState::Loading);
@@ -2033,6 +2044,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             &api_key,
                                                             &model,
                                                             profile.as_deref(),
+                                                            &instructions,
                                                         )
                                                         .await
                                                     {
