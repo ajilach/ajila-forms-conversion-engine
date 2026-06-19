@@ -53,6 +53,8 @@ pub fn ReferencesPage(
     // Ids whose description/content is expanded (collapsed to one line by default).
     let mut expanded = use_signal(std::collections::HashSet::<String>::new);
     let mut doc_expanded = use_signal(std::collections::HashSet::<String>::new);
+    // Active tab: 0 = reference forms, 1 = reference documentation.
+    let mut tab = use_signal(|| 0u8);
 
     let profiles = blueprint::list_profiles();
 
@@ -129,13 +131,33 @@ pub fn ReferencesPage(
         div { class: "references-page",
             div { class: "references-header",
                 div {
-                    h2 { "Reference Forms" }
-                    span { class: "references-subtitle", "{total_refs} reference(s)" }
+                    h2 { "References" }
+                    span { class: "references-subtitle",
+                        "{total_refs} form(s) · {total_docs} document(s)"
+                    }
                 }
                 button {
                     class: "btn btn-secondary",
                     onclick: move |_| on_close.call(()),
                     "✕ Close"
+                }
+            }
+
+            div { class: "references-tabs",
+                button {
+                    class: if *tab.read() == 0 { "references-tab active" } else { "references-tab" },
+                    onclick: move |_| tab.set(0),
+                    "Reference forms ({total_refs})"
+                }
+                button {
+                    class: if *tab.read() == 1 { "references-tab active" } else { "references-tab" },
+                    onclick: move |_| tab.set(1),
+                    "Reference documentation ({total_docs})"
+                }
+                button {
+                    class: if *tab.read() == 2 { "references-tab active" } else { "references-tab" },
+                    onclick: move |_| tab.set(2),
+                    "Import / Export"
                 }
             }
 
@@ -148,17 +170,13 @@ pub fn ReferencesPage(
                     }
                 }
 
-                // ── Add a reference form (original PDF + final AEM package) ──────
+                // ── Profile scope (shared across both tabs) ─────────────────────
                 section { class: "references-card",
-                    h3 { "Add a reference form" }
-                    p { class: "references-card-desc",
-                        "Pick the original input form and the resulting AEM package. The form is analysed and described automatically, then stored for matching."
-                    }
                     div { class: "references-row",
                         div { class: "references-row-info",
                             span { class: "references-row-label", "Profile" }
                             span { class: "references-row-desc",
-                                "The reference is added to (and imported/exported for) this profile."
+                                "References and documentation are added to (and imported/exported for) this profile."
                             }
                         }
                         select {
@@ -173,6 +191,16 @@ pub fn ReferencesPage(
                                 }
                             }
                         }
+                    }
+                }
+
+                if *tab.read() == 0 {
+
+                // ── Add a reference form (original PDF + final AEM package) ──────
+                section { class: "references-card",
+                    h3 { "Add a reference form" }
+                    p { class: "references-card-desc",
+                        "Pick the original input form and the resulting AEM package. The form is analysed and described automatically, then stored for matching."
                     }
                     div { class: "references-row",
                         div { class: "references-row-info",
@@ -402,6 +430,10 @@ pub fn ReferencesPage(
                     }
                 }
 
+                } // end forms tab
+
+                if *tab.read() == 1 {
+
                 // ── Add reference documentation (plain txt/md) ──────────────────
                 section { class: "references-card",
                     h3 { "Add reference documentation" }
@@ -527,6 +559,10 @@ pub fn ReferencesPage(
                     }
                 }
 
+                } // end documentation tab
+
+                if *tab.read() == 2 {
+
                 // ── Import / export dataset (scoped to the selected profile) ────
                 section { class: "references-card",
                     h3 { "Import / Export" }
@@ -636,6 +672,8 @@ pub fn ReferencesPage(
                         }
                     }
                 }
+
+                } // end import/export tab
             }
         }
     }

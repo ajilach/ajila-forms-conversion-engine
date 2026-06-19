@@ -1871,6 +1871,38 @@ body > div, #main {
     color: var(--color-text-muted);
 }
 
+.references-tabs {
+    display: flex;
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-md) 0;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-light);
+}
+
+.references-tab {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    margin-bottom: -1px;
+}
+
+.references-tab:hover {
+    color: var(--color-text);
+}
+
+.references-tab.active {
+    background: var(--light);
+    color: var(--color-primary);
+    border-color: var(--color-border);
+    border-bottom-color: var(--light);
+}
+
 .references-content {
     flex: 1;
     overflow-y: auto;
