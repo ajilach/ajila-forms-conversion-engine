@@ -619,6 +619,25 @@ body > div, #main {
     border-radius: var(--radius-sm);
 }
 
+/* ---- Confirm dialog ---- */
+
+.confirm-dialog {
+    max-width: 420px;
+}
+
+.confirm-dialog-text {
+    margin: 0 0 var(--space-lg);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: flex-end;
+}
+
 /* ---- Progress ---- */
 
 .progress-container {
@@ -695,6 +714,14 @@ body > div, #main {
     border-width: 3px;
 }
 
+/* Spinner inside a filled primary button: inherit the button's text colour so
+   it stays legible on the accent background. */
+.btn-primary .spinner {
+    border-color: color-mix(in srgb, currentColor 35%, transparent);
+    border-top-color: currentColor;
+    margin-right: var(--space-2);
+}
+
 /* ---- Step Indicator ---- */
 
 .step {
@@ -749,10 +776,22 @@ body > div, #main {
 }
 
 .results-actions {
-    margin-top: var(--space-5);
     display: flex;
     gap: var(--space-3);
     flex-wrap: wrap;
+}
+
+.results-group {
+    margin-top: var(--space-5);
+}
+
+.results-group-label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.5;
+    margin-bottom: var(--space-2);
 }
 
 /* ==========================================
@@ -2034,7 +2073,7 @@ body > div, #main {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     opacity: 0.5;
-    margin: 0 0 0.75rem;
+    margin: 1.25rem 0 0.75rem;
 }
 .settings-row {
     display: flex;

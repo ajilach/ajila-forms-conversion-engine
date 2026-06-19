@@ -174,7 +174,7 @@ pub fn AemToolbar(props: AemToolbarProps) -> Element {
                 disabled: !props.has_connection,
                 title: if props.has_connection { "Upload the current package to AEM" } else { "Add a [connection] block to this profile's aem/config.toml" },
                 onclick: move |_| on_action.call(AemEditorAction::UploadToAem),
-                span { class: "toolbar-icon", "☁" }
+                span { class: "toolbar-icon", "⬆" }
                 span { class: "toolbar-label", "Upload to AEM" }
             }
 

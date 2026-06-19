@@ -24,7 +24,6 @@ blueprint = { path = "../core" }
 tokio = { version = "1", features = ["full"] }
 dirs = "5.0"
 toml = "0.8"
-async-openai = { version = "0.40", features = ["chat-completion", "byot", "model"] }
 reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"

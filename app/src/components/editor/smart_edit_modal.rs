@@ -11,7 +11,6 @@ use dioxus::prelude::*;
 use blueprint::StructuredNode;
 
 use super::smart_edit;
-use crate::settings::LlmProvider;
 
 /// Possible states of the smart edit flow.
 #[derive(Clone, Debug)]
@@ -37,9 +36,9 @@ pub struct SmartEditModalProps {
     pub content: Vec<StructuredNode>,
     /// Plain render images (label → base64 PNG).
     pub plain_images: HashMap<String, String>,
-    /// LLM provider for Smart Edit.
-    pub provider: LlmProvider,
-    /// API key for Smart Edit (for the selected provider).
+    /// Source PDF bytes (filename → bytes) for the full Smart Edit tool set.
+    pub source_pdfs: Vec<(String, Vec<u8>)>,
+    /// Anthropic API key for Smart Edit.
     pub api_key: String,
     /// Model identifier for Smart Edit.
     pub model: String,
@@ -53,7 +52,7 @@ impl PartialEq for SmartEditModalProps {
     fn eq(&self, other: &Self) -> bool {
         self.selected_indices == other.selected_indices
             && self.plain_images == other.plain_images
-            && self.provider == other.provider
+            && self.source_pdfs == other.source_pdfs
             && self.api_key == other.api_key
             && self.model == other.model
             && self.on_accept == other.on_accept
@@ -70,7 +69,7 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
         let content = props.content.clone();
         let selected_indices = props.selected_indices.clone();
         let plain_images = props.plain_images.clone();
-        let provider = props.provider;
+        let source_pdfs = props.source_pdfs.clone();
         let api_key = props.api_key.clone();
         let model = props.model.clone();
         move |_| {
@@ -79,6 +78,7 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
             let content = content.clone();
             let selected_indices = selected_indices.clone();
             let plain_images = plain_images.clone();
+            let source_pdfs = source_pdfs.clone();
             let api_key = api_key.clone();
             let model = model.clone();
             spawn(async move {
@@ -86,7 +86,7 @@ pub fn SmartEditModal(props: SmartEditModalProps) -> Element {
                     &content,
                     &selected_indices,
                     &plain_images,
-                    provider,
+                    &source_pdfs,
                     &api_key,
                     &model,
                 )

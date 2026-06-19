@@ -1,8 +1,8 @@
-//! Smart edit: AI-assisted document editing via the OpenAI API.
+//! Smart edit: AI-assisted document editing via the Anthropic API.
 //!
-//! Serialises the selected structured nodes to JSON, attaches rendered
-//! page images, and sends the bundle to the configured OpenAI model as a
-//! multi-turn conversation. Each smart-edit session maintains its own
+//! Serialises the selected structured nodes to JSON and exposes the rendered
+//! page images through tool calls, sending the bundle to the configured Claude
+//! model as a multi-turn conversation. Each smart-edit session maintains its own
 //! [`ChatHistory`] so repair and follow-up calls benefit from full context
 //! rather than repeating content. The response is parsed back into
 //! structured nodes along with a structured list of proposed changes that
@@ -14,8 +14,8 @@ use blueprint::StructuredNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::platform::chat_turn;
-use crate::settings::LlmProvider;
+use crate::ai_tools::{FormToolContext, ToolExecutor, build_tools};
+use crate::platform::{anthropic_agentic_turn, chat_turn};
 
 /// Output-token cap for Smart Edit turns (edits of an existing selection).
 const SMART_EDIT_MAX_TOKENS: u32 = 16000;
@@ -199,37 +199,32 @@ pub async fn run_smart_edit(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
-    provider: LlmProvider,
+    source_pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
-    let images: Vec<(String, String)> = plain_images
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
     let prompt = build_smart_edit_prompt(selected_indices, plain_images);
     let user_text = build_initial_user_text(&prompt, &json_context);
 
+    let tools = build_tools(source_pdfs, plain_images).await;
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(
-        provider,
+    let raw = anthropic_agentic_turn(
         &mut history,
         &user_text,
-        &images,
-        &[],
         api_key,
         model,
         SMART_EDIT_MAX_TOKENS,
+        &tools.tools(),
+        |name, input| tools.execute(name, input),
     )
     .await?;
-    let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
     ensure_change_list(
         content,
         selected_indices,
         &mut history,
         &mut result,
-        provider,
         api_key,
         model,
     )
@@ -243,18 +238,14 @@ pub async fn run_smart_edit_with_feedback(
     content: &[StructuredNode],
     selected_indices: &[usize],
     plain_images: &HashMap<String, String>,
+    source_pdfs: &[(String, Vec<u8>)],
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     user_feedback: &str,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<SmartEditResult, String> {
     let json_context = serialize_selected_nodes(content, selected_indices)?;
-    let images: Vec<(String, String)> = plain_images
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
     let prompt = build_feedback_prompt(
         selected_indices,
         plain_images,
@@ -264,25 +255,24 @@ pub async fn run_smart_edit_with_feedback(
     );
     let user_text = build_initial_user_text(&prompt, &json_context);
 
+    let tools = build_tools(source_pdfs, plain_images).await;
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(
-        provider,
+    let raw = anthropic_agentic_turn(
         &mut history,
         &user_text,
-        &images,
-        &[],
         api_key,
         model,
         SMART_EDIT_MAX_TOKENS,
+        &tools.tools(),
+        |name, input| tools.execute(name, input),
     )
     .await?;
-    let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
     ensure_change_list(
         content,
         selected_indices,
         &mut history,
         &mut result,
-        provider,
         api_key,
         model,
     )
@@ -296,7 +286,6 @@ pub async fn run_smart_edit_with_feedback(
 async fn parse_with_repair_generic<T>(
     raw: &str,
     history: &mut ChatHistory,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
     max_tokens: u32,
@@ -314,7 +303,6 @@ async fn parse_with_repair_generic<T>(
             );
 
             if let Ok(repaired_raw) = chat_turn(
-                provider,
                 history,
                 &repair_prompt,
                 &[],
@@ -337,14 +325,12 @@ async fn parse_with_repair_generic<T>(
 async fn parse_with_repair(
     raw: &str,
     history: &mut ChatHistory,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<SmartEditResult, String> {
     parse_with_repair_generic(
         raw,
         history,
-        provider,
         api_key,
         model,
         SMART_EDIT_MAX_TOKENS,
@@ -360,53 +346,19 @@ async fn parse_with_repair(
 
 /// Generate a fresh structured document from input PDFs.
 ///
-/// Sends the PDFs plus the auto-generated JSON Schema to the LLM, then parses
-/// the response into `Vec<StructuredNode>` (reusing [`parse_smart_edit_response`]
-/// and the shared repair cycle). Skips the deterministic core pipeline entirely.
+/// Sends the auto-generated JSON Schema to the LLM and exposes the form's
+/// states, page images, structured layout, and XFA XML through tool calls
+/// (see [`FormToolContext`]) rather than inlining them. Parses the response
+/// into `Vec<StructuredNode>` (reusing [`parse_smart_edit_response`] and the
+/// shared repair cycle). Skips the deterministic core pipeline entirely.
 ///
-/// `pdfs` is a list of `(filename, raw_bytes)` pairs. `images` are
-/// `(label, base64_png)` plain (unlabeled) page renders attached as visual
-/// references.
+/// `pdfs` is a list of `(filename, raw_bytes)` pairs.
 pub async fn run_ai_generate(
     pdfs: &[(String, Vec<u8>)],
-    images: &[(String, String)],
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<Vec<StructuredNode>, String> {
     let schema = serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default();
-
-    // Dynamic XFA forms only render an "Adobe Reader required" shell page, so a
-    // model reading the raw PDF never sees the actual form. Extract the embedded
-    // XFA/XDP XML and hand it to the model as the authoritative form definition.
-    let mut xfa_sections = String::new();
-    for (name, bytes) in pdfs {
-        if let Ok(Some(xfa)) = blueprint::extract_xfa_from_pdf_bytes(bytes) {
-            let xml = String::from_utf8_lossy(&xfa);
-            xfa_sections.push_str(&format!(
-                "\n\nBEGIN XFA XML ({name})\n{xml}\nEND XFA XML ({name})"
-            ));
-        }
-    }
-
-    let xfa_note = if xfa_sections.is_empty() {
-        String::new()
-    } else {
-        "The PDFs are dynamic XFA forms: the visible PDF page is only an \"Adobe Reader \
-         required\" placeholder, so use the XFA XML form definitions included below as the \
-         AUTHORITATIVE source for fields, labels, options, and dynamic behaviour (conditional \
-         and repeatable sections). The text content (labels, captions, paragraphs) must come \
-         verbatim from the XFA XML.\n\n"
-            .to_string()
-    };
-
-    let images_note = if images.is_empty() {
-        String::new()
-    } else {
-        "Rendered page images of the form are attached for visual reference (layout, \
-         grouping, columns).\n\n"
-            .to_string()
-    };
 
     let user_text = format!(
         "From these input PDFs, generate a JSON representation that fits the attached schema. \
@@ -416,30 +368,35 @@ pub async fn run_ai_generate(
          Ignore page headers and footers (running titles, page numbers, document/print IDs, \
          copyright and confidentiality lines): do not include them in the output. \
          Do not modify, add or delete any text content.\n\n\
-         {images_note}{xfa_note}\
+         The PDFs are dynamic XFA forms: the visible PDF page is only an \"Adobe Reader \
+         required\" placeholder. Use the provided tools to inspect the form: `get_xfa` returns \
+         the AUTHORITATIVE XFA XML (text content — labels, captions, paragraphs — must come \
+         verbatim from it, and it defines conditional/repeatable behaviour); `list_states` \
+         enumerates the form states; `get_plain_state_image` renders a state for visual \
+         reference (layout, grouping, columns); `get_flattened_structure_for_state` returns the \
+         engine's own structured layout for a state. Call these as needed before answering.\n\n\
          {AI_GENERATE_GUIDANCE}\n\
          Return ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
          that is directly parseable as Vec<StructuredNode>. No surrounding prose, no markdown fences.\n\n\
-         BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA{xfa_sections}"
+         BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA"
     );
 
+    let tools = FormToolContext::build(pdfs).await;
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(
-        provider,
+    let raw = anthropic_agentic_turn(
         &mut history,
         &user_text,
-        images,
-        pdfs,
         api_key,
         model,
         AI_GENERATE_MAX_TOKENS,
+        &tools.tools(),
+        |name, input| tools.execute(name, input),
     )
     .await?;
 
     parse_with_repair_generic(
         &raw,
         &mut history,
-        provider,
         api_key,
         model,
         AI_GENERATE_MAX_TOKENS,
@@ -455,7 +412,6 @@ async fn ensure_change_list(
     selected_indices: &[usize],
     history: &mut ChatHistory,
     result: &mut SmartEditResult,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) {
@@ -491,7 +447,6 @@ async fn ensure_change_list(
     );
 
     if let Ok(raw) = chat_turn(
-        provider,
         history,
         &followup_prompt,
         &[],
@@ -540,7 +495,10 @@ fn build_initial_user_text(prompt: &str, json_context: &str) -> String {
     format!(
         "{prompt}\n\n\
          The structured JSON representation of the selected form nodes is included below. \
-         The attached PNG images show the rendered form pages for visual reference.\n\n\
+         Use the provided tools to inspect the source form as needed: `list_states` enumerates \
+         the form states, `get_plain_state_image` renders a state, \
+         `get_flattened_structure_for_state` returns the engine's structured layout for a state, \
+         and `get_xfa` returns the authoritative XFA XML.\n\n\
          BEGIN STRUCTURED NODES JSON\n\
          {json_context}\n\
          END STRUCTURED NODES JSON\n\n\
@@ -574,7 +532,8 @@ fn build_smart_edit_prompt(
     format!(
         "You are editing structured form nodes for a multilingual form engine.\n\
          Scope: {selection_scope}.\n\
-         Visual references are attached as PNG page renderings.\n\
+         Tools are available to inspect the source form: `list_states`, `get_plain_state_image`, \
+         `get_flattened_structure_for_state`, and `get_xfa` (the authoritative XFA XML).\n\
          \n\
          The \"nodes\" array must conform to the following JSON Schema (the schema for \
          Vec<StructuredNode>):\n\
@@ -603,8 +562,8 @@ fn build_smart_edit_prompt(
          - Each \"changes\" entry describes one logical change you made (e.g. moved, merged, split, reordered).\n\
          - No surrounding prose, no trailing notes, no backticks.\n\
          \n\
-         Attached images: {}",
-        plain_images.len()
+         Available page images: {}",
+        plain_images.len(),
     )
 }
 

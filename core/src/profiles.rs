@@ -131,7 +131,7 @@ pub fn load_aem_config(name: &str, ctx: &Context) -> Result<AemConfig, String> {
 }
 
 /// Resolved AEM upload connection (host + credentials), ready to use.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AemConnection {
     /// Base URL of the AEM author instance, with any trailing `/` trimmed.
     pub host: String,

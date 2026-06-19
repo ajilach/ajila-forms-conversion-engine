@@ -1,4 +1,5 @@
 mod aem_client;
+mod ai_tools;
 mod components;
 mod db;
 mod markdown;
@@ -67,6 +68,15 @@ fn App() -> Element {
     let mut aem_editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     // Edit-history session id for the currently loaded document (desktop only).
     let mut current_session = use_signal(|| None::<String>);
+    // Source PDF bytes of the currently loaded document, retained so Smart Edit
+    // can expose the same form-inspection tools as AI processing. Empty when the
+    // document has no PDF source (e.g. JSON/AEM input, or a reopened session).
+    let mut source_pdfs = use_signal(Vec::<(String, Vec<u8>)>::new);
+    // Whether the AEM structure has been edited in the AEM editor since the last
+    // (re)generation from the structured document. AEM edits live only in the
+    // generated package; editing the structured view regenerates that package
+    // and discards them, so we warn before that happens.
+    let mut aem_modified = use_signal(|| false);
 
     let profiles = blueprint::list_profiles();
 
@@ -74,12 +84,14 @@ fn App() -> Element {
     let mut on_process = move |file_data: Vec<(String, Vec<u8>)>| {
         is_processing.set(true);
         current_session.set(None);
+        aem_modified.set(false);
 
         let profile = selected_profile.read().clone();
 
         // A single JSON file is loaded directly as a structured document,
         // bypassing the PDF pipeline.
         if processing::is_json_upload(&file_data) {
+            source_pdfs.set(Vec::new());
             processing::load_envelope_from_json(
                 &file_data,
                 profile,
@@ -89,6 +101,15 @@ fn App() -> Element {
             is_processing.set(false);
             return;
         }
+
+        // Retain the PDF sources so Smart Edit gets the same tools as AI processing.
+        source_pdfs.set(
+            file_data
+                .iter()
+                .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
+                .cloned()
+                .collect(),
+        );
 
         processing_state.set(ProcessingState {
             step: ProcessingStep::Parsing,
@@ -115,10 +136,12 @@ fn App() -> Element {
 
         is_processing.set(true);
         current_session.set(None);
+        aem_modified.set(false);
+        // Retain the PDF sources so Smart Edit gets the same tools as AI processing.
+        source_pdfs.set(pdfs.clone());
 
         let profile = selected_profile.read().clone();
         let settings = app_settings.read().clone();
-        let provider = settings.provider;
         let api_key = settings.active_api_key().to_string();
         let model = settings.active_model().to_string();
 
@@ -143,20 +166,17 @@ fn App() -> Element {
             }
 
             // Run the pipeline up to state rendering (no labelling), streaming
-            // the staged steps into the progress UI, and attach the plain page
-            // renders as visual references for the model.
-            let images =
+            // the staged steps into the progress UI. The model now pulls page
+            // images on demand via tools, so the returned renders are used only
+            // to drive the progress display.
+            let _images =
                 pipeline::render_plain_states(&pdfs, |s| processing_state.set(s.clone())).await;
 
             // Hand off to AI generation: keep the rendered images/steps on
             // screen and advance to the "AI Generation" step.
             processing_state.write().step = ProcessingStep::AiGenerating;
 
-            match components::editor::smart_edit::run_ai_generate(
-                &pdfs, &images, provider, &api_key, &model,
-            )
-            .await
-            {
+            match components::editor::smart_edit::run_ai_generate(&pdfs, &api_key, &model).await {
                 Ok(nodes) => {
                     // Derive the real Context (language + XFA variables such as
                     // `formrange_code`) from the source PDF, so profile outputs
@@ -230,6 +250,10 @@ fn App() -> Element {
         processing::regenerate_outputs(&mut state, &envelope, profile.as_deref());
         drop(state);
 
+        // Reopened sessions don't carry the source PDFs, so Smart Edit falls
+        // back to the rendered page images only.
+        source_pdfs.set(Vec::new());
+        aem_modified.set(false);
         current_session.set(Some(session_id));
         editor_envelope.set(Some(envelope));
     };
@@ -242,6 +266,10 @@ fn App() -> Element {
         let mut state = processing_state.write();
         processing::regenerate_outputs(&mut state, &envelope, profile.as_deref());
         drop(state);
+
+        // The AEM package was just regenerated from the structure, so any prior
+        // AEM-editor changes are gone — clear the modified flag.
+        aem_modified.set(false);
 
         // Close the editor
         editor_envelope.set(None);
@@ -290,7 +318,7 @@ fn App() -> Element {
                 StructuredEditor {
                     envelope: EnvelopeWrapper(envelope),
                     plain_images: processing_state.read().plain_images.clone(),
-                    provider: app_settings.read().provider,
+                    source_pdfs: source_pdfs.read().clone(),
                     api_key: app_settings.read().active_api_key().to_string(),
                     model: app_settings.read().active_model().to_string(),
                     session_id: current_session.read().clone(),
@@ -318,23 +346,43 @@ fn App() -> Element {
                         let root = blueprint::convert_to_aem(&envelope.content, &cfg);
                         let conn = app_settings.read().aem_connection();
                         let master_lang = cfg.master_language.clone();
-                        let languages = cfg.languages.clone();
                         let content_translations = blueprint::aem_translations_from_content(
                             &envelope.content,
                             &cfg.master_language,
                         );
+                        // Show a tab per locale present anywhere in the document —
+                        // mirroring the structured editor, which derives its tabs
+                        // from the document itself rather than the AEM config alone.
+                        // Union: config languages + master + context languages +
+                        // every locale appearing in the content translations.
+                        let languages: Vec<String> = {
+                            let mut set: std::collections::BTreeSet<String> =
+                                std::collections::BTreeSet::new();
+                            set.insert(cfg.master_language.clone());
+                            set.extend(cfg.languages.iter().cloned());
+                            for l in envelope.context.language().split(',') {
+                                let l = l.trim();
+                                if !l.is_empty() {
+                                    set.insert(l.to_string());
+                                }
+                            }
+                            for langs in content_translations.values() {
+                                set.extend(langs.keys().cloned());
+                            }
+                            set.into_iter().collect()
+                        };
                         let form_code = cfg.form_code.clone();
                         rsx! {
                             div { class: "editor-page",
                                 AemEditor {
                                     root: AemRootWrapper(root),
                                     plain_images: processing_state.read().plain_images.clone(),
+                                    source_pdfs: source_pdfs.read().clone(),
                                     aem_config: AemConfigWrapper(cfg),
                                     connection: AemConnWrapper(conn),
                                     master_lang,
                                     languages,
                                     content_translations,
-                                    provider: app_settings.read().provider,
                                     api_key: app_settings.read().active_api_key().to_string(),
                                     model: app_settings.read().active_model().to_string(),
                                     on_apply: move |zip: Vec<u8>| {
@@ -342,6 +390,9 @@ fn App() -> Element {
                                         state.aem_package = Some(zip);
                                         state.form_code = Some(form_code.clone());
                                         drop(state);
+                                        // AEM edits now diverge from the structure; warn before a
+                                        // structured edit regenerates (and discards) them.
+                                        aem_modified.set(true);
                                         aem_editor_envelope.set(None);
                                     },
                                     on_cancel: move |_| aem_editor_envelope.set(None),
@@ -395,6 +446,8 @@ fn App() -> Element {
                     if processing_state.read().step == ProcessingStep::Complete {
                         ResultsSection {
                             state: processing_state.read().clone(),
+                            aem_connection: app_settings.read().aem_connection(),
+                            aem_modified: *aem_modified.read(),
                             on_edit: move |envelope| {
                                 editor_envelope.set(Some(envelope));
                             },

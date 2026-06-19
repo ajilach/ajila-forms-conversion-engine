@@ -28,7 +28,6 @@ use super::state::{
 };
 use super::toolbar::EditorToolbar;
 use crate::db::{self, EditInfo};
-use crate::settings::LlmProvider;
 use crate::markdown::{markdown_to_inline_text, markdown_to_inline_text_multilingual};
 use crate::platform::show_html_preview;
 
@@ -77,11 +76,12 @@ pub struct StructuredEditorProps {
     pub envelope: EnvelopeWrapper,
     /// Plain rendered page images (label → base64 PNG) for Smart Edit.
     pub plain_images: HashMap<String, String>,
-    /// LLM provider for Smart Edit.
-    pub provider: LlmProvider,
-    /// API key for Smart Edit (for the selected provider).
+    /// Source PDF bytes (filename → bytes), enabling the full Smart Edit tool
+    /// set (states/XFA). Empty when unavailable (e.g. reopened session).
+    pub source_pdfs: Vec<(String, Vec<u8>)>,
+    /// Anthropic API key for Smart Edit.
     pub api_key: String,
-    /// Model identifier for Smart Edit (e.g. "gpt-4o" or "claude-opus-4-8").
+    /// Anthropic model identifier for Smart Edit (e.g. "claude-opus-4-8").
     pub model: String,
     /// Edit-history session id for this document (desktop only; `None` on web).
     pub session_id: Option<String>,
@@ -105,7 +105,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let smart_edit_images = props.plain_images.clone();
     let smart_edit_images_for_action = smart_edit_images.clone();
     let has_images = !smart_edit_images.is_empty();
-    let provider = use_signal(|| props.provider);
+    let smart_edit_pdfs = props.source_pdfs.clone();
+    let smart_edit_pdfs_for_action = smart_edit_pdfs.clone();
     let api_key = use_signal(|| props.api_key.clone());
     let model = use_signal(|| props.model.clone());
 
@@ -1531,7 +1532,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 let selected_indices: Vec<usize> = Vec::new();
                 let content = envelope.read().content.clone();
                 let plain_images = smart_edit_images_for_action.clone();
-                let provider = *provider.read();
+                let source_pdfs = smart_edit_pdfs_for_action.clone();
                 let api_key = api_key.read().clone();
                 let model = model.read().clone();
                 let started_at = std::time::Instant::now();
@@ -1545,7 +1546,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                         &content,
                         &selected_indices,
                         &plain_images,
-                        provider,
+                        &source_pdfs,
                         &api_key,
                         &model,
                     )
@@ -1762,7 +1763,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let selected_indices_for_retry = selected_indices.clone();
                             let content_for_retry = envelope.read().content.clone();
                             let plain_images_for_retry = smart_edit_images.clone();
-                            let provider_for_retry = *provider.read();
+                            let source_pdfs_for_retry = smart_edit_pdfs.clone();
                             let api_key_for_retry = api_key.read().clone();
                             let model_for_retry = model.read().clone();
                             let nodes_for_apply = result.nodes.clone();
@@ -1888,8 +1889,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                     .collect();
                                                 let content = content_for_retry.clone();
                                                 let plain_images = plain_images_for_retry.clone();
+                                                let source_pdfs = source_pdfs_for_retry.clone();
                                                 let selected_indices = selected_indices_for_retry.clone();
-                                                let provider = provider_for_retry;
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
 
@@ -1899,6 +1900,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                         onclick: move |_| {
                                                             let content = content.clone();
                                                             let plain_images = plain_images.clone();
+                                                            let source_pdfs = source_pdfs.clone();
                                                             let selected_indices = selected_indices.clone();
                                                             let accepted = accepted.clone();
                                                             let rejected = rejected.clone();
@@ -1914,10 +1916,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                                         &content,
                                                                         &selected_indices,
                                                                         &plain_images,
+                                                                        &source_pdfs,
                                                                         &accepted,
                                                                         &rejected,
                                                                         &user_feedback,
-                                                                        provider,
                                                                         &api_key,
                                                                         &model,
                                                                     )
@@ -1999,7 +2001,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                             let selected_indices_for_retry = selected_indices.clone();
                             let content_for_retry = envelope.read().content.clone();
                             let plain_images_for_retry = smart_edit_images.clone();
-                            let provider_for_retry = *provider.read();
+                            let source_pdfs_for_retry = smart_edit_pdfs.clone();
                             let api_key_for_retry = api_key.read().clone();
                             let model_for_retry = model.read().clone();
                             rsx! {
@@ -2019,8 +2021,8 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                             onclick: move |_| {
                                                 let content = content_for_retry.clone();
                                                 let plain_images = plain_images_for_retry.clone();
+                                                let source_pdfs = source_pdfs_for_retry.clone();
                                                 let selected_indices = selected_indices_for_retry.clone();
-                                                let provider = provider_for_retry;
                                                 let api_key = api_key_for_retry.clone();
                                                 let model = model_for_retry.clone();
                                                 let started_at = std::time::Instant::now();
@@ -2031,7 +2033,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             &content,
                                                             &selected_indices,
                                                             &plain_images,
-                                                            provider,
+                                                            &source_pdfs,
                                                             &api_key,
                                                             &model,
                                                         )

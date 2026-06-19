@@ -576,7 +576,6 @@ dependencies = [
 name = "blueprint-app"
 version = "0.1.36"
 dependencies = [
- "async-openai",
  "base64 0.22.1",
  "blueprint",
  "chrono",

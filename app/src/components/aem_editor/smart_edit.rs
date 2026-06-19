@@ -12,8 +12,8 @@ use blueprint::AemNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::platform::chat_turn;
-use crate::settings::LlmProvider;
+use crate::ai_tools::build_tools;
+use crate::platform::{anthropic_agentic_turn, chat_turn};
 
 /// Output-token cap for a Smart AEM Edit turn.
 const SMART_AEM_EDIT_MAX_TOKENS: u32 = 16000;
@@ -36,8 +36,10 @@ pub struct AemSmartEditResult {
 
 const AEM_EDIT_GUIDANCE: &str = "\
 You are editing the intermediate AEM Adaptive Forms node tree for a form engine.\n\
-The attached PNG images are rendered pages of the SOURCE form and are the ground truth for \
-content, field types, grouping, and order.\n\
+Tools are available to inspect the SOURCE form, which is the ground truth for content, field \
+types, grouping, and order: `list_states` enumerates the states, `get_plain_state_image` \
+renders a state, `get_flattened_structure_for_state` returns the engine's structured layout, \
+and `get_xfa` returns the authoritative XFA XML — call them as needed.\n\
 \n\
 Improve the AEM tree so it faithfully represents the source form:\n\
 - Fix component/field-type mismatches: use TextField, NumberField, DatePicker, Dropdown, \
@@ -60,34 +62,30 @@ HARD CONSTRAINTS:\n\
 pub async fn run_smart_aem_edit(
     root: &AemNode,
     plain_images: &HashMap<String, String>,
-    provider: LlmProvider,
+    source_pdfs: &[(String, Vec<u8>)],
     api_key: &str,
     model: &str,
 ) -> Result<AemSmartEditResult, String> {
     let json_context =
         serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
-    let images: Vec<(String, String)> = plain_images
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
 
     let prompt = build_prompt(plain_images.len());
     let user_text = build_user_text(&prompt, &json_context);
 
+    let tools = build_tools(source_pdfs, plain_images).await;
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(
-        provider,
+    let raw = anthropic_agentic_turn(
         &mut history,
         &user_text,
-        &images,
-        &[],
         api_key,
         model,
         SMART_AEM_EDIT_MAX_TOKENS,
+        &tools.tools(),
+        |name, input| tools.execute(name, input),
     )
     .await?;
-    let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
-    ensure_change_list(root, &mut history, &mut result, provider, api_key, model).await;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
+    ensure_change_list(root, &mut history, &mut result, api_key, model).await;
     Ok(result)
 }
 
@@ -95,19 +93,15 @@ pub async fn run_smart_aem_edit(
 pub async fn run_smart_aem_edit_with_feedback(
     root: &AemNode,
     plain_images: &HashMap<String, String>,
+    source_pdfs: &[(String, Vec<u8>)],
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     user_feedback: &str,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<AemSmartEditResult, String> {
     let json_context =
         serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
-    let images: Vec<(String, String)> = plain_images
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
 
     let fmt = |changes: &[ChangeItem]| {
         changes
@@ -133,20 +127,20 @@ pub async fn run_smart_aem_edit_with_feedback(
     );
     let user_text = build_user_text(&prompt, &json_context);
 
+    let tools = build_tools(source_pdfs, plain_images).await;
     let mut history: ChatHistory = Vec::new();
-    let raw = chat_turn(
-        provider,
+    let raw = anthropic_agentic_turn(
         &mut history,
         &user_text,
-        &images,
-        &[],
         api_key,
         model,
         SMART_AEM_EDIT_MAX_TOKENS,
+        &tools.tools(),
+        |name, input| tools.execute(name, input),
     )
     .await?;
-    let mut result = parse_with_repair(&raw, &mut history, provider, api_key, model).await?;
-    ensure_change_list(root, &mut history, &mut result, provider, api_key, model).await;
+    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
+    ensure_change_list(root, &mut history, &mut result, api_key, model).await;
     Ok(result)
 }
 
@@ -163,15 +157,16 @@ fn build_prompt(image_count: usize) -> String {
            \"changes\": a JSON array of objects, each with \"id\" (integer, 0-based) and \"description\" (string)\n\
          - No surrounding prose, no markdown fences, no backticks.\n\
          \n\
-         Attached images: {image_count}"
+         Available page images: {image_count}"
     )
 }
 
 fn build_user_text(prompt: &str, json_context: &str) -> String {
     format!(
         "{prompt}\n\n\
-         The current AEM node tree (JSON) is below. The attached PNG images show the rendered \
-         source form pages for visual reference.\n\n\
+         The current AEM node tree (JSON) is below. Use the provided tools (`list_states`, \
+         `get_plain_state_image`, `get_flattened_structure_for_state`, `get_xfa`) to inspect the \
+         source form as needed.\n\n\
          BEGIN AEM NODE TREE JSON\n{json_context}\nEND AEM NODE TREE JSON\n\n\
          Return ONLY the JSON object with \"root\" and \"changes\"."
     )
@@ -180,7 +175,6 @@ fn build_user_text(prompt: &str, json_context: &str) -> String {
 async fn parse_with_repair(
     raw: &str,
     history: &mut ChatHistory,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) -> Result<AemSmartEditResult, String> {
@@ -195,7 +189,6 @@ async fn parse_with_repair(
                  No prose, no markdown fences."
             );
             if let Ok(repaired) = chat_turn(
-                provider,
                 history,
                 &repair,
                 &[],
@@ -218,7 +211,6 @@ async fn ensure_change_list(
     original: &AemNode,
     history: &mut ChatHistory,
     result: &mut AemSmartEditResult,
-    provider: LlmProvider,
     api_key: &str,
     model: &str,
 ) {
@@ -236,7 +228,6 @@ async fn ensure_change_list(
          markdown fences."
         .to_string();
     if let Ok(raw) = chat_turn(
-        provider,
         history,
         &prompt,
         &[],
