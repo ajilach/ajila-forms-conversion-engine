@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 
 use components::{
     AemConfigWrapper, AemConnWrapper, AemEditor, AemPreview, AemPreviewEnvelope, AemRootWrapper,
-    EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ReferencesPage,
+    AgentFlow, EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ReferencesPage,
     ResultsSection, SettingsPanel, StructuredEditor,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
@@ -196,6 +196,58 @@ fn App() -> Element {
                     error: Some("Agent Processing is only available in the desktop app.".into()),
                     ..ProcessingState::new()
                 });
+            }
+            is_processing.set(false);
+        });
+    };
+
+    // ── Agent feedback re-run ─────────────────────────────────────────────────
+    // From the agent "done" screen the user can submit feedback; this resumes
+    // the agent in the same session to refine the result and returns the flow
+    // to the in-progress (running) phase.
+    let mut on_ai_feedback = move |feedback: String| {
+        let Some(session) = current_session.read().clone() else {
+            return;
+        };
+        let pdfs = source_pdfs.read().clone();
+        if pdfs.is_empty() {
+            return;
+        }
+
+        let profile = selected_profile.read().clone();
+        let settings = app_settings.read().clone();
+        let api_key = settings.active_api_key().to_string();
+        let model = settings.active_model().to_string();
+
+        is_processing.set(true);
+        aem_modified.set(false);
+        // Return to the running phase with a fresh activity log.
+        processing_state.set(ProcessingState {
+            step: ProcessingStep::Parsing,
+            ai_mode: true,
+            ..ProcessingState::new()
+        });
+
+        spawn(async move {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let conn = settings.aem_connection();
+                crate::agent::run_agent_feedback(
+                    feedback,
+                    pdfs,
+                    profile,
+                    api_key,
+                    model,
+                    conn,
+                    session,
+                    processing_state,
+                    current_session,
+                )
+                .await;
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let _ = (feedback, pdfs, profile, api_key, model, session);
             }
             is_processing.set(false);
         });
@@ -403,8 +455,31 @@ fn App() -> Element {
                     },
                 }
             }
+        } else if !app_settings.read().legacy_agent_ui {
+            // Simplified agent flow: upload → live timeline → done (default).
+            AgentFlow {
+                processing_state,
+                is_processing,
+                profiles: profiles.clone(),
+                selected_profile,
+                ai_available: !app_settings.read().active_api_key().is_empty(),
+                on_ai_process: move |files: Vec<(String, Vec<u8>)>| {
+                    on_ai_process(files);
+                },
+                on_feedback: move |text: String| {
+                    on_ai_feedback(text);
+                },
+                on_reset: move |_| {
+                    is_processing.set(false);
+                    current_session.set(None);
+                    source_pdfs.set(Vec::new());
+                    aem_modified.set(false);
+                    processing_state.set(ProcessingState::new());
+                },
+            }
         } else {
-            // Main app content (scrollable area)
+            // Legacy stacked layout (upload + progress + results), plus normal
+            // (non-agent) processing and "Continue editing".
             div { class: "app-scrollable",
                 div { class: "app-container",
 

@@ -28,6 +28,11 @@ pub struct AppSettings {
     pub aem_username: String,
     /// Password for AEM HTTP basic auth. Stored locally on disk.
     pub aem_password: String,
+    /// When `true`, restore the previous stacked upload / progress / results
+    /// layout (and normal, non-agent processing) instead of the simplified
+    /// agent flow.
+    #[serde(default)]
+    pub legacy_agent_ui: bool,
 }
 
 impl Default for AppSettings {
@@ -40,6 +45,7 @@ impl Default for AppSettings {
             aem_host: "http://localhost:4502".to_string(),
             aem_username: "admin".to_string(),
             aem_password: "admin".to_string(),
+            legacy_agent_ui: false,
         }
     }
 }

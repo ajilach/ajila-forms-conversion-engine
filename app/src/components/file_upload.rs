@@ -3,12 +3,12 @@ use dioxus::prelude::*;
 
 use crate::db::{self, SessionInfo};
 
-fn is_supported_upload_file(name: &str) -> bool {
+pub(crate) fn is_supported_upload_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name.ends_with(".pdf") || name.ends_with(".zip") || name.ends_with(".json")
 }
 
-async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
+pub(crate) async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
     let mut files_data = Vec::new();
     for file in files {
         let name = file.name();

@@ -76,6 +76,17 @@ pub struct ProcessingState {
     /// editor can show every step the agent took. `None` outside agent mode.
     #[serde(default)]
     pub agent_aem_session: Option<String>,
+    /// `true` once the agent has successfully uploaded + installed the built
+    /// package on the configured AEM instance during its run.
+    #[serde(default)]
+    pub aem_uploaded: bool,
+    /// JCR path of the uploaded form on AEM, shown on the agent "done" screen.
+    #[serde(default)]
+    pub aem_form_path: Option<String>,
+    /// Wall-clock duration of the most recent agent run, in seconds. Shown
+    /// next to "Finished" on the agent "done" screen.
+    #[serde(default)]
+    pub elapsed_secs: Option<u64>,
     /// The merged document envelope for the editor.
     /// This is the structured representation before JSON serialization.
     #[serde(skip)]
@@ -101,6 +112,9 @@ impl PartialEq for ProcessingState {
             && self.ai_mode == other.ai_mode
             && self.agent_steps == other.agent_steps
             && self.agent_aem_session == other.agent_aem_session
+            && self.aem_uploaded == other.aem_uploaded
+            && self.aem_form_path == other.aem_form_path
+            && self.elapsed_secs == other.elapsed_secs
         // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
     }
 }

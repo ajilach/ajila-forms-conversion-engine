@@ -122,6 +122,11 @@ pub struct ConversionAgent {
     structured_session: String,
     aem_session: Option<String>,
 
+    /// Set once the package has been uploaded + installed on AEM.
+    aem_uploaded: bool,
+    /// JCR path of the uploaded form on AEM (for the "done" screen).
+    aem_form_path: Option<String>,
+
     finished: bool,
 }
 
@@ -148,8 +153,16 @@ impl ConversionAgent {
             package: None,
             structured_session,
             aem_session: None,
+            aem_uploaded: false,
+            aem_form_path: None,
             finished: false,
         }
+    }
+
+    /// Seed the working structured tree (used when resuming a session to apply
+    /// user feedback to a prior result).
+    fn seed_structured(&mut self, nodes: Vec<StructuredNode>) {
+        self.structured = nodes;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -531,7 +544,11 @@ impl ConversionAgent {
                     Err(e) => return ToolReply::Error(e),
                 };
                 match crate::aem_client::upload_and_install_package(&conn, pkg, &cfg.form_code).await {
-                    Ok(()) => ToolReply::Text("Uploaded and installed on AEM.".into()),
+                    Ok(()) => {
+                        self.aem_uploaded = true;
+                        self.aem_form_path = Some(form_jcr_path(&cfg));
+                        ToolReply::Text("Uploaded and installed on AEM.".into())
+                    }
                     Err(e) => ToolReply::Error(e),
                 }
             }
@@ -686,8 +703,10 @@ pub async fn run_agent(
     conn: Option<AemConnection>,
     session_label: String,
     mut processing_state: Signal<ProcessingState>,
-    mut current_session: Signal<Option<String>>,
+    current_session: Signal<Option<String>>,
 ) {
+    let start = std::time::Instant::now();
+
     // Structured history session (seeded empty); shown in the structured editor.
     let doc_hash = crate::db::document_hash(&pdfs);
     crate::db::upsert_document(&doc_hash, &session_label);
@@ -704,16 +723,101 @@ pub async fn run_agent(
     };
     crate::db::insert_edit(&structured_session, "Initial (empty)", "[]");
 
-    let mut agent = ConversionAgent::new(
+    let agent = ConversionAgent::new(
         profile.clone(),
         pdfs.clone(),
         conn,
         structured_session.clone(),
     );
-    let tools = agent.tools();
 
     let mut history: Vec<serde_json::Value> = Vec::new();
     history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": SYSTEM_PROMPT}]}));
+
+    drive_agent(
+        agent,
+        history,
+        api_key,
+        model,
+        profile,
+        structured_session,
+        start,
+        processing_state,
+        current_session,
+    )
+    .await;
+}
+
+/// Resume the agent on an existing session to refine the result based on the
+/// user's feedback. The agent is seeded with the prior structured tree and
+/// asked to apply the feedback, then re-convert / package / upload and finish.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_agent_feedback(
+    feedback: String,
+    pdfs: Vec<(String, Vec<u8>)>,
+    profile: Option<String>,
+    api_key: String,
+    model: String,
+    conn: Option<AemConnection>,
+    structured_session: String,
+    processing_state: Signal<ProcessingState>,
+    current_session: Signal<Option<String>>,
+) {
+    let start = std::time::Instant::now();
+
+    // Seed the agent with the latest structured tree from the continuing
+    // session so feedback applies to the prior result, not a blank slate.
+    let prior: Vec<StructuredNode> = crate::db::latest_seq(&structured_session)
+        .and_then(|seq| crate::db::snapshot_at(&structured_session, seq))
+        .and_then(|json| serde_json::from_str::<Vec<StructuredNode>>(&json).ok())
+        .unwrap_or_default();
+
+    let mut agent =
+        ConversionAgent::new(profile.clone(), pdfs, conn, structured_session.clone());
+    agent.seed_structured(prior);
+
+    let intro = format!(
+        "{SYSTEM_PROMPT}\n\n--- REFINEMENT ---\n\
+A prior conversion already exists in your working structured tree (inspect it with \
+get_structured). The user reviewed the result and gave this feedback:\n\n{feedback}\n\n\
+Apply the requested changes to the structured tree, then re-convert to AEM \
+(convert_structured_to_aem), rebuild the package (build_aem_package), and \
+re-upload (upload_to_aem) if an AEM connection is configured, verifying as needed. \
+Then call finish."
+    );
+
+    let mut history: Vec<serde_json::Value> = Vec::new();
+    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
+
+    drive_agent(
+        agent,
+        history,
+        api_key,
+        model,
+        profile,
+        structured_session,
+        start,
+        processing_state,
+        current_session,
+    )
+    .await;
+}
+
+/// Drive the agent loop to completion: stream turns, execute tools, version
+/// each step, and finalize the result. Shared by [`run_agent`] and
+/// [`run_agent_feedback`].
+#[allow(clippy::too_many_arguments)]
+async fn drive_agent(
+    mut agent: ConversionAgent,
+    mut history: Vec<serde_json::Value>,
+    api_key: String,
+    model: String,
+    profile: Option<String>,
+    structured_session: String,
+    start: std::time::Instant,
+    mut processing_state: Signal<ProcessingState>,
+    mut current_session: Signal<Option<String>>,
+) {
+    let tools = agent.tools();
 
     for _ in 0..MAX_ITERATIONS {
         let turn = match anthropic_stream_turn(&mut history, &tools, &api_key, &model, AGENT_MAX_TOKENS).await {
@@ -759,7 +863,7 @@ pub async fn run_agent(
         }
     }
 
-    finalize(&agent, &profile, structured_session, &mut processing_state, &mut current_session);
+    finalize(&agent, &profile, structured_session, start, &mut processing_state, &mut current_session);
 }
 
 /// Build the final `ProcessingState` from the agent's working trees.
@@ -767,6 +871,7 @@ fn finalize(
     agent: &ConversionAgent,
     profile: &Option<String>,
     structured_session: String,
+    start: std::time::Instant,
     processing_state: &mut Signal<ProcessingState>,
     current_session: &mut Signal<Option<String>>,
 ) {
@@ -786,6 +891,9 @@ fn finalize(
     state.aem_package = agent.package.clone();
     state.form_code = form_code;
     state.agent_aem_session = agent.aem_session.clone();
+    state.aem_uploaded = agent.aem_uploaded;
+    state.aem_form_path = agent.aem_form_path.clone();
+    state.elapsed_secs = Some(start.elapsed().as_secs());
     drop(state);
 
     let _ = profile;

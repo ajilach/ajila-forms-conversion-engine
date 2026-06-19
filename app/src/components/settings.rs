@@ -43,6 +43,7 @@ pub fn SettingsPanel(
                 #[cfg(not(target_arch = "wasm32"))]
                 let section = {
                     let settings_for_aot = settings.clone();
+                    let settings_for_legacy_ui = settings.clone();
                     let settings_for_port = settings.clone();
                     let settings_for_apikey = settings.clone();
                     let settings_for_model = settings.clone();
@@ -99,6 +100,33 @@ pub fn SettingsPanel(
                                             move |e: Event<FormData>| {
                                                 let mut new_s = s.clone();
                                                 new_s.always_on_top = e.checked();
+                                                on_changed.call(new_s);
+                                            }
+                                        },
+                                    }
+                                    span { class: "toggle-slider" }
+                                }
+                            }
+                        }
+                        div { class: "settings-section",
+                            h3 { class: "settings-section-title", "Interface" }
+                            div { class: "settings-row",
+                                div { class: "settings-row-info",
+                                    span { class: "settings-row-label", "Use legacy agent UI" }
+                                    span { class: "settings-row-desc",
+                                        "Restore the previous stacked upload / progress / results layout (and normal, non-agent processing)."
+                                    }
+                                }
+                                label { class: "toggle-switch",
+                                    input {
+                                        r#type: "checkbox",
+                                        checked: settings_for_legacy_ui.legacy_agent_ui,
+                                        onchange: {
+                                            let on_changed = on_settings_changed;
+                                            let s = settings_for_legacy_ui.clone();
+                                            move |e: Event<FormData>| {
+                                                let mut new_s = s.clone();
+                                                new_s.legacy_agent_ui = e.checked();
                                                 on_changed.call(new_s);
                                             }
                                         },

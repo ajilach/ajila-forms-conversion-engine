@@ -1,5 +1,6 @@
 mod aem_editor;
 mod aem_preview;
+mod agent_flow;
 pub mod editor;
 mod file_upload;
 mod image_grid;
@@ -11,6 +12,7 @@ pub(crate) mod spinner;
 
 pub use aem_editor::{AemConfigWrapper, AemConnWrapper, AemEditor, AemRootWrapper};
 pub use aem_preview::{AemPreview, AemPreviewEnvelope};
+pub use agent_flow::AgentFlow;
 pub use editor::{EnvelopeWrapper, StructuredEditor};
 pub use file_upload::FileUploadSection;
 pub use image_grid::ImageModal;
