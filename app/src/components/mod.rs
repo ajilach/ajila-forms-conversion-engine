@@ -1,6 +1,7 @@
 mod aem_editor;
 mod aem_preview;
 mod agent_flow;
+pub(crate) mod change_list;
 pub mod editor;
 mod file_upload;
 mod image_grid;

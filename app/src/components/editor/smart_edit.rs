@@ -19,78 +19,6 @@ use crate::platform::{anthropic_agentic_turn, chat_turn};
 
 /// Output-token cap for Smart Edit turns (edits of an existing selection).
 const SMART_EDIT_MAX_TOKENS: u32 = 16000;
-/// Output-token cap for generating a whole document from PDFs. Large, since a
-/// full document can be long; streaming keeps the request from timing out.
-/// Retained for the legacy one-shot `run_ai_generate` (superseded by the agent).
-#[allow(dead_code)]
-const AI_GENERATE_MAX_TOKENS: u32 = 64000;
-
-/// Domain guidance for the AI-processing (whole-document generation) prompt.
-///
-/// Encodes how to map XFA source into the right `StructuredNode` kinds, field
-/// types, and grouping, plus which standard sections the AEM pipeline inserts
-/// automatically and therefore must NOT be emitted. Derived from diffing engine
-/// output against hand-corrected reference forms (UBS Germany `019`, Italy
-/// `033`). See `specs/ai-prompts.md`.
-#[allow(dead_code)]
-const AI_GENERATE_GUIDANCE: &str = "\
-HOW TO MAP THE XFA SOURCE INTO STRUCTURED NODES\n\
-Reproduce text verbatim; your job is to choose the right node KIND, the right \
-FIELD TYPE, and the right GROUPING/NESTING.\n\
-\n\
-FIELD-TYPE INFERENCE (pick the most specific type; do not default everything to Text):\n\
-- A single-select with a small, fixed option set (~2-4) that gates other content \
-=> Radio{options}. Do NOT emit Select for these even if the XFA renders a \
-dropdown/choiceList; reserve Select only for long option lists (>4) that do not \
-drive visibility.\n\
-- Date only when the caption denotes a calendar date (\"Datum\", \"Date\", \"Data\", \
-\"am\", \"Ort und Datum\"). A label naming a person/role/agent (e.g. \
-\"Legitimationspruefung durch\", \"geprueft durch\") is Text, NOT Date.\n\
-- Amounts/quantities => Number; email => Email; phone => Tel; multi-line free text \
-(XFA field multiLine / tall) => Textarea; single on/off => Bool; multi-check \
-option lists => CheckboxGroup{options}.\n\
-- Preserve `required` from XFA mandatory constraints and `value` from defaults. \
-Keep `name` equal to the XFA field name (SOM leaf) so identities stay stable.\n\
-\n\
-GROUPING (use Group/Heading; never emit a flat run of Paragraphs/Fields for a labelled section):\n\
-- Address blocks: when street, house-number, ZIP, city, and/or country fields \
-occur together, wrap them in ONE Group in postal order, as Text fields.\n\
-- Signature blocks: wrap each signer in a Group under the signature Heading. A \
-signer Group contains, in order: the signature-line Field (Text, labelled with \
-the signature caption), a place Field (Text), a date Field (Date), and a \
-name/role Field (Text) when present. Emit one Group per distinct signer (client, \
-legal representative, bank), never a single merged block.\n\
-- Account-holder / client-details sections: emit a Heading + Group. The \
-account/person-type selector inside it is a Radio (Individual vs Legal entity / \
-\"Tipo\", \"Typ\", \"Type\"). Branch the body with Conditional nodes keyed on that \
-Radio's value.\n\
-- Long legal sections (definitions, declarations, US-person clauses, terms): a \
-Heading per source sub-heading with the body Paragraphs nested in a Group under \
-it. Where the section says \"choose one of the following\", model the choice as a \
-Radio, not separate unlinked options.\n\
-\n\
-DYNAMIC BEHAVIOUR (read XFA scripts and occurrence settings, not just the static page):\n\
-- Sections the user can add/remove (XFA occur max > 1, add/remove buttons, \
-instanceManager scripts) => Repeatable{item, minOccurrences, maxOccurrences}. \
-Multiple account holders and multiple legal representatives are Repeatable.\n\
-- Show/hide driven by a field value (visibility scripts referencing another \
-field) => Conditional{condition:{fieldName,value}, content}.\n\
-\n\
-SPECIAL CASES - sections the AEM pipeline INSERTS AUTOMATICALLY. Do NOT emit \
-these as nodes; emitting them causes duplicate sections:\n\
-- Banking relationship / opening \"preface\" block: auto-prepended as the first \
-element of the first page in the entity-correct variant (Germany 019 vs Italy \
-033). Even if the source PDF shows it at the top, omit it entirely (text + fields).\n\
-- Appendix block (auto-appended to the last page) and the \"Summary of form \
-information\" summary panel (auto-generated) - omit both.\n\
-- Recurring form-footer legal boilerplate rendered from a shared fragment (e.g. \
-the standard Italian footnote) - omit; keep only content-specific footnotes.\n\
-\n\
-BUT STILL EMIT content sections that are matched-and-REPLACED downstream (they \
-must be present so the matcher can template them): the account-holder / \
-client-details section (with its account-type Radio), the signature section \
-(per-signer Groups), and the form-addressee / \"Tipo\" / \"Formular Adressat\" \
-type Radio.\n";
 
 /// Domain guidance for the Smart Edit (restructure-existing-selection) prompt.
 ///
@@ -187,105 +115,87 @@ pub fn serialize_selected_nodes(
     serde_json::to_string_pretty(&nodes).map_err(|e| format!("JSON serialisation error: {e}"))
 }
 
-/// Run the smart edit flow end-to-end.
-///
-/// * `content` – full document content.
-/// * `selected_indices` – root-level indices of selected nodes (empty = all).
-/// * `plain_images` – label→base64-PNG map from the plain render stage.
-/// * `provider` – which LLM provider to call.
-/// * `api_key` – API key for the provider.
-/// * `model` – model identifier (e.g. "gpt-4o" or "claude-opus-4-8").
-///
-/// Returns a [`SmartEditResult`] containing the suggested nodes and the
-/// structured change list.
+/// Shared inputs for a smart-edit run: the document context, the page images,
+/// the source PDFs (for tool access) and the LLM credentials/model.
+pub struct SmartEditCtx<'a> {
+    /// Full document content.
+    pub content: &'a [StructuredNode],
+    /// Root-level indices of selected nodes (empty = all).
+    pub selected_indices: &'a [usize],
+    /// label→base64-PNG map from the plain render stage.
+    pub plain_images: &'a HashMap<String, String>,
+    /// Source PDF bytes, exposed to the model via tools.
+    pub source_pdfs: &'a [(String, Vec<u8>)],
+    /// API key for the provider.
+    pub api_key: &'a str,
+    /// Model identifier (e.g. "claude-opus-4-8").
+    pub model: &'a str,
+    /// Active profile name, if any.
+    pub profile: Option<&'a str>,
+}
+
+impl SmartEditCtx<'_> {
+    /// Drive one smart-edit agentic turn from a fully-built `prompt`, parsing
+    /// (with repair) and backfilling the change list. Shared by the initial and
+    /// feedback entry points.
+    async fn run(&self, prompt: String) -> Result<SmartEditResult, String> {
+        let json_context = serialize_selected_nodes(self.content, self.selected_indices)?;
+        let user_text = build_initial_user_text(&prompt, &json_context);
+
+        let tools = build_tools(self.source_pdfs, self.plain_images, self.profile).await;
+        let mut history: ChatHistory = Vec::new();
+        let raw = anthropic_agentic_turn(
+            &mut history,
+            &user_text,
+            self.api_key,
+            self.model,
+            SMART_EDIT_MAX_TOKENS,
+            &tools.tools(),
+            |name, input| tools.execute(name, input),
+        )
+        .await?;
+        let mut result = parse_with_repair(&raw, &mut history, self.api_key, self.model).await?;
+        ensure_change_list(
+            self.content,
+            self.selected_indices,
+            &mut history,
+            &mut result,
+            self.api_key,
+            self.model,
+        )
+        .await;
+        Ok(result)
+    }
+}
+
+/// Run the smart edit flow end-to-end. Returns a [`SmartEditResult`] containing
+/// the suggested nodes and the structured change list.
 pub async fn run_smart_edit(
-    content: &[StructuredNode],
-    selected_indices: &[usize],
-    plain_images: &HashMap<String, String>,
-    source_pdfs: &[(String, Vec<u8>)],
-    api_key: &str,
-    model: &str,
-    profile: Option<&str>,
+    ctx: &SmartEditCtx<'_>,
     instructions: &str,
 ) -> Result<SmartEditResult, String> {
-    let json_context = serialize_selected_nodes(content, selected_indices)?;
-    let prompt = build_smart_edit_prompt(selected_indices, plain_images, instructions);
-    let user_text = build_initial_user_text(&prompt, &json_context);
-
-    let tools = build_tools(source_pdfs, plain_images, profile).await;
-    let mut history: ChatHistory = Vec::new();
-    let raw = anthropic_agentic_turn(
-        &mut history,
-        &user_text,
-        api_key,
-        model,
-        SMART_EDIT_MAX_TOKENS,
-        &tools.tools(),
-        |name, input| tools.execute(name, input),
-    )
-    .await?;
-    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
-    ensure_change_list(
-        content,
-        selected_indices,
-        &mut history,
-        &mut result,
-        api_key,
-        model,
-    )
-    .await;
-    Ok(result)
+    let prompt = build_smart_edit_prompt(ctx.selected_indices, ctx.plain_images, instructions);
+    ctx.run(prompt).await
 }
 
 /// Run a follow-up smart-edit call, informing the AI which previously proposed
 /// changes the user accepted (keep them) and which were rejected (avoid them).
 pub async fn run_smart_edit_with_feedback(
-    content: &[StructuredNode],
-    selected_indices: &[usize],
-    plain_images: &HashMap<String, String>,
-    source_pdfs: &[(String, Vec<u8>)],
+    ctx: &SmartEditCtx<'_>,
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     user_feedback: &str,
-    api_key: &str,
-    model: &str,
-    profile: Option<&str>,
     instructions: &str,
 ) -> Result<SmartEditResult, String> {
-    let json_context = serialize_selected_nodes(content, selected_indices)?;
     let prompt = build_feedback_prompt(
-        selected_indices,
-        plain_images,
+        ctx.selected_indices,
+        ctx.plain_images,
         accepted_changes,
         rejected_changes,
         user_feedback,
         instructions,
     );
-    let user_text = build_initial_user_text(&prompt, &json_context);
-
-    let tools = build_tools(source_pdfs, plain_images, profile).await;
-    let mut history: ChatHistory = Vec::new();
-    let raw = anthropic_agentic_turn(
-        &mut history,
-        &user_text,
-        api_key,
-        model,
-        SMART_EDIT_MAX_TOKENS,
-        &tools.tools(),
-        |name, input| tools.execute(name, input),
-    )
-    .await?;
-    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
-    ensure_change_list(
-        content,
-        selected_indices,
-        &mut history,
-        &mut result,
-        api_key,
-        model,
-    )
-    .await;
-    Ok(result)
+    ctx.run(prompt).await
 }
 
 /// Parse `raw` with `parse`; on failure, send one repair turn (echoing the
@@ -348,77 +258,6 @@ async fn parse_with_repair(
          - \"changes\": array of {\"id\": int, \"description\": string}\n\
          Do not add explanations, markdown, or code fences.",
         parse_smart_edit_response,
-    )
-    .await
-}
-
-/// Generate a fresh structured document from input PDFs.
-///
-/// Sends the auto-generated JSON Schema to the LLM and exposes the form's
-/// states, page images, structured layout, and XFA XML through tool calls
-/// (see [`FormToolContext`]) rather than inlining them. Parses the response
-/// into `Vec<StructuredNode>` (reusing [`parse_smart_edit_response`] and the
-/// shared repair cycle). Skips the deterministic core pipeline entirely.
-///
-/// `pdfs` is a list of `(filename, raw_bytes)` pairs.
-///
-/// Legacy one-shot path, superseded by the autonomous [`crate::agent`]. Retained
-/// as a fallback; not currently wired into Agent Processing.
-#[allow(dead_code)]
-pub async fn run_ai_generate(
-    pdfs: &[(String, Vec<u8>)],
-    api_key: &str,
-    model: &str,
-    profile: Option<&str>,
-) -> Result<Vec<StructuredNode>, String> {
-    let schema = serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default();
-
-    let user_text = format!(
-        "From these input PDFs, generate a JSON representation that fits the attached schema. \
-         Make sure to include all dynamic functionality, including XFA (XML Forms Architecture) \
-         content embedded in the PDFs — parse the XFA form structure, fields, and scripting-driven \
-         dynamic behaviour (conditional/repeatable sections) and represent it in the output. \
-         Ignore page headers and footers (running titles, page numbers, document/print IDs, \
-         copyright and confidentiality lines): do not include them in the output. \
-         Do not modify, add or delete any text content.\n\n\
-         The PDFs are dynamic XFA forms: the visible PDF page is only an \"Adobe Reader \
-         required\" placeholder. Use the provided tools to inspect the form: `get_xfa` returns \
-         the AUTHORITATIVE XFA XML (text content — labels, captions, paragraphs — must come \
-         verbatim from it, and it defines conditional/repeatable behaviour); `list_states` \
-         enumerates the form states; `get_plain_state_image` renders a state for visual \
-         reference (layout, grouping, columns); `get_flattened_structure_for_state` returns the \
-         engine's own structured layout for a state. Call these as needed before answering.\n\n\
-         {AI_GENERATE_GUIDANCE}\n\
-         If reference forms are available for this profile, call `list_reference_forms` and \
-         `search_references` / `read_reference_file` / `view_reference_page` to consult a real \
-         worked example (input form + final AEM package) before converting an unfamiliar block.\n\
-         Return ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
-         that is directly parseable as Vec<StructuredNode>. No surrounding prose, no markdown fences.\n\n\
-         BEGIN JSON SCHEMA\n{schema}\nEND JSON SCHEMA"
-    );
-
-    let tools = build_tools(pdfs, &HashMap::new(), profile).await;
-    let mut history: ChatHistory = Vec::new();
-    let raw = anthropic_agentic_turn(
-        &mut history,
-        &user_text,
-        api_key,
-        model,
-        AI_GENERATE_MAX_TOKENS,
-        &tools.tools(),
-        |name, input| tools.execute(name, input),
-    )
-    .await?;
-
-    parse_with_repair_generic(
-        &raw,
-        &mut history,
-        api_key,
-        model,
-        AI_GENERATE_MAX_TOKENS,
-        "Re-emit ONLY one valid JSON object with a single key \"nodes\" whose value is a JSON array \
-         directly parseable as Vec<StructuredNode>. No prose, no markdown fences.",
-        |s| parse_smart_edit_response(s).map(|r| r.nodes),
     )
     .await
 }
@@ -685,18 +524,6 @@ fn try_parse_result_object(input: &str) -> Option<SmartEditResult> {
     Some(SmartEditResult { nodes, changes })
 }
 
-/// Try to extract a JSON array of StructuredNode from the AI response.
-///
-/// The response might contain markdown fences or surrounding prose, so we
-/// try to find the outermost `[…]` and parse that.
-///
-/// This is kept as a compatibility helper for the modal (which has its own
-/// simpler flow).
-#[allow(dead_code)]
-pub fn parse_response_nodes(response: &str) -> Result<Vec<StructuredNode>, String> {
-    parse_smart_edit_response(response).map(|r| r.nodes)
-}
-
 fn extract_fenced_blocks(input: &str) -> Vec<&str> {
     let mut blocks = Vec::new();
     let mut rest = input;
@@ -829,27 +656,5 @@ mod tests {
             StructuredNode::Paragraph(p) => assert_eq!(p.content.as_plain_text(), "Hello"),
             _ => panic!("expected paragraph"),
         }
-    }
-
-    #[test]
-    fn parse_response_nodes_extracts_json_array_from_markdown_fence() {
-        let node = make_paragraph("Hello");
-        let payload = serde_json::to_string(&vec![node]).expect("serialize");
-        let response = format!("Here is the result:\n```json\n{payload}\n```");
-        let parsed = parse_response_nodes(&response).expect("should parse fenced json");
-        assert_eq!(parsed.len(), 1);
-        match &parsed[0] {
-            StructuredNode::Paragraph(p) => assert_eq!(p.content.as_plain_text(), "Hello"),
-            _ => panic!("expected paragraph"),
-        }
-    }
-
-    #[test]
-    fn parse_response_nodes_extracts_balanced_json_array_from_mixed_text() {
-        let node = make_paragraph("Hello");
-        let payload = serde_json::to_string(&vec![node]).expect("serialize");
-        let response = format!("Result below:\n{payload}\nDone.");
-        let parsed = parse_response_nodes(&response).expect("should parse balanced array");
-        assert_eq!(parsed.len(), 1);
     }
 }

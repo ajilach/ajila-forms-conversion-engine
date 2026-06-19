@@ -58,55 +58,74 @@ HARD CONSTRAINTS:\n\
 - Do not drop existing fields or panels unless they are clearly duplicated.\n\
 - Keep the output a single valid AemNode object (the Root) parseable by the schema below.\n";
 
+/// Shared inputs for a Smart AEM Edit run: the tree, the page images, the
+/// source PDFs (for tool access) and the LLM credentials/model.
+pub struct SmartAemEditCtx<'a> {
+    /// Current AEM node tree (the Root).
+    pub root: &'a AemNode,
+    /// label→base64-PNG map from the plain render stage.
+    pub plain_images: &'a HashMap<String, String>,
+    /// Source PDF bytes, exposed to the model via tools.
+    pub source_pdfs: &'a [(String, Vec<u8>)],
+    /// API key for the provider.
+    pub api_key: &'a str,
+    /// Model identifier (e.g. "claude-opus-4-8").
+    pub model: &'a str,
+    /// Active profile name, if any.
+    pub profile: Option<&'a str>,
+}
+
+impl SmartAemEditCtx<'_> {
+    /// Drive one Smart AEM Edit agentic turn from a fully-built `prompt`,
+    /// parsing (with repair) and backfilling the change list. Shared by the
+    /// initial and feedback entry points.
+    async fn run(&self, prompt: String) -> Result<AemSmartEditResult, String> {
+        let json_context = serde_json::to_string_pretty(self.root)
+            .map_err(|e| format!("JSON serialisation error: {e}"))?;
+        let user_text = build_user_text(&prompt, &json_context);
+
+        let tools = build_tools(self.source_pdfs, self.plain_images, self.profile).await;
+        let mut history: ChatHistory = Vec::new();
+        let raw = anthropic_agentic_turn(
+            &mut history,
+            &user_text,
+            self.api_key,
+            self.model,
+            SMART_AEM_EDIT_MAX_TOKENS,
+            &tools.tools(),
+            |name, input| tools.execute(name, input),
+        )
+        .await?;
+        let mut result = parse_with_repair(&raw, &mut history, self.api_key, self.model).await?;
+        ensure_change_list(
+            self.root,
+            &mut history,
+            &mut result,
+            self.api_key,
+            self.model,
+        )
+        .await;
+        Ok(result)
+    }
+}
+
 /// Run Smart AEM Edit on the whole tree.
 pub async fn run_smart_aem_edit(
-    root: &AemNode,
-    plain_images: &HashMap<String, String>,
-    source_pdfs: &[(String, Vec<u8>)],
-    api_key: &str,
-    model: &str,
-    profile: Option<&str>,
+    ctx: &SmartAemEditCtx<'_>,
     instructions: &str,
 ) -> Result<AemSmartEditResult, String> {
-    let json_context =
-        serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
-
-    let prompt = build_prompt(plain_images.len(), instructions);
-    let user_text = build_user_text(&prompt, &json_context);
-
-    let tools = build_tools(source_pdfs, plain_images, profile).await;
-    let mut history: ChatHistory = Vec::new();
-    let raw = anthropic_agentic_turn(
-        &mut history,
-        &user_text,
-        api_key,
-        model,
-        SMART_AEM_EDIT_MAX_TOKENS,
-        &tools.tools(),
-        |name, input| tools.execute(name, input),
-    )
-    .await?;
-    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
-    ensure_change_list(root, &mut history, &mut result, api_key, model).await;
-    Ok(result)
+    let prompt = build_prompt(ctx.plain_images.len(), instructions);
+    ctx.run(prompt).await
 }
 
 /// Run a follow-up Smart AEM Edit informed by accepted / rejected changes.
 pub async fn run_smart_aem_edit_with_feedback(
-    root: &AemNode,
-    plain_images: &HashMap<String, String>,
-    source_pdfs: &[(String, Vec<u8>)],
+    ctx: &SmartAemEditCtx<'_>,
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     user_feedback: &str,
-    api_key: &str,
-    model: &str,
-    profile: Option<&str>,
     instructions: &str,
 ) -> Result<AemSmartEditResult, String> {
-    let json_context =
-        serde_json::to_string_pretty(root).map_err(|e| format!("JSON serialisation error: {e}"))?;
-
     let fmt = |changes: &[ChangeItem]| {
         changes
             .iter()
@@ -124,28 +143,12 @@ pub async fn run_smart_aem_edit_with_feedback(
     };
     let prompt = format!(
         "{}\n\nThe user reviewed your previous suggestion. They ACCEPTED these changes; keep them:\n{}\n\nThey REJECTED these changes; do NOT apply them again:\n{}{}",
-        build_prompt(plain_images.len(), instructions),
+        build_prompt(ctx.plain_images.len(), instructions),
         fmt(accepted_changes),
         fmt(rejected_changes),
         feedback_section,
     );
-    let user_text = build_user_text(&prompt, &json_context);
-
-    let tools = build_tools(source_pdfs, plain_images, profile).await;
-    let mut history: ChatHistory = Vec::new();
-    let raw = anthropic_agentic_turn(
-        &mut history,
-        &user_text,
-        api_key,
-        model,
-        SMART_AEM_EDIT_MAX_TOKENS,
-        &tools.tools(),
-        |name, input| tools.execute(name, input),
-    )
-    .await?;
-    let mut result = parse_with_repair(&raw, &mut history, api_key, model).await?;
-    ensure_change_list(root, &mut history, &mut result, api_key, model).await;
-    Ok(result)
+    ctx.run(prompt).await
 }
 
 fn build_prompt(image_count: usize, instructions: &str) -> String {

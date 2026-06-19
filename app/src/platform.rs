@@ -1,11 +1,5 @@
 //! Platform-aware helpers: async sleep, file download, HTML preview, file explorer.
 
-/// Platform-agnostic async sleep.
-#[allow(dead_code)]
-pub async fn async_sleep_ms(ms: u32) {
-    tokio::time::sleep(std::time::Duration::from_millis(ms as u64)).await;
-}
-
 // ── File download / preview helpers ──────────────────────────────────
 
 pub fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
@@ -320,15 +314,27 @@ pub fn configure_eviction(
     };
     CFG_KEEP_RECENT.store(keep, Ordering::Relaxed);
     CFG_TEXT_OVER.store(
-        if text_over == 0 { DEFAULT_ELIDE_TEXT_OVER_CHARS } else { text_over },
+        if text_over == 0 {
+            DEFAULT_ELIDE_TEXT_OVER_CHARS
+        } else {
+            text_over
+        },
         Ordering::Relaxed,
     );
     CFG_INPUT_OVER.store(
-        if input_over == 0 { DEFAULT_ELIDE_INPUT_OVER_CHARS } else { input_over },
+        if input_over == 0 {
+            DEFAULT_ELIDE_INPUT_OVER_CHARS
+        } else {
+            input_over
+        },
         Ordering::Relaxed,
     );
     CFG_TRIGGER_BYTES.store(
-        if trigger_bytes == 0 { DEFAULT_EVICT_TRIGGER_BYTES } else { trigger_bytes },
+        if trigger_bytes == 0 {
+            DEFAULT_EVICT_TRIGGER_BYTES
+        } else {
+            trigger_bytes
+        },
         Ordering::Relaxed,
     );
 }
@@ -350,7 +356,9 @@ fn evict_stale_history(history: &mut [serde_json::Value]) {
     let input_over = CFG_INPUT_OVER.load(Ordering::Relaxed);
     let trigger_bytes = CFG_TRIGGER_BYTES.load(Ordering::Relaxed);
 
-    let total = serde_json::to_string(&history).map(|s| s.len()).unwrap_or(0);
+    let total = serde_json::to_string(&history)
+        .map(|s| s.len())
+        .unwrap_or(0);
     if total < trigger_bytes {
         return;
     }
@@ -646,19 +654,17 @@ pub async fn anthropic_stream_turn(
                 continue;
             };
             match event["type"].as_str() {
-                Some("content_block_start") => {
-                    if event["content_block"]["type"] == "tool_use" {
-                        let idx = event["index"].as_u64().unwrap_or(0);
-                        let id = event["content_block"]["id"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_string();
-                        let name = event["content_block"]["name"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_string();
-                        tool_blocks.insert(idx, (id, name, String::new()));
-                    }
+                Some("content_block_start") if event["content_block"]["type"] == "tool_use" => {
+                    let idx = event["index"].as_u64().unwrap_or(0);
+                    let id = event["content_block"]["id"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let name = event["content_block"]["name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    tool_blocks.insert(idx, (id, name, String::new()));
                 }
                 Some("content_block_delta") => match event["delta"]["type"].as_str() {
                     Some("text_delta") => {
@@ -698,7 +704,7 @@ pub async fn anthropic_stream_turn(
         assistant_content.push(serde_json::json!({"type": "text", "text": response_text}));
     }
     let mut tool_calls = Vec::new();
-    for (_idx, (id, name, input_buf)) in &tool_blocks {
+    for (id, name, input_buf) in tool_blocks.values() {
         let input: serde_json::Value =
             serde_json::from_str(input_buf).unwrap_or_else(|_| serde_json::json!({}));
         assistant_content.push(serde_json::json!({
@@ -779,9 +785,7 @@ pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String>
         .map_err(|e| format!("Failed to list models: {e}"))?;
 
     if !status.is_success() {
-        let msg = body["error"]["message"]
-            .as_str()
-            .unwrap_or("unknown error");
+        let msg = body["error"]["message"].as_str().unwrap_or("unknown error");
         return Err(format!("Failed to list models ({status}): {msg}"));
     }
 
@@ -853,20 +857,23 @@ mod tests {
     fn big_history() -> Vec<serde_json::Value> {
         let big_input = json!({"tree": "X".repeat(3000)});
         vec![
-            user_text("SYSTEM PROMPT"),                          // 0 protected
+            user_text("SYSTEM PROMPT"),                             // 0 protected
             assistant_tool_use("tu1", "set_structured", big_input), // 1 evict
-            result_image("tu1", &"A".repeat(250_000)),           // 2 evict (drives size)
-            assistant_tool_use("tu2", "get_xfa", json!({})),     // 3 evict
-            result_text("tu2", &"x".repeat(5000)),               // 4 evict
+            result_image("tu1", &"A".repeat(250_000)),              // 2 evict (drives size)
+            assistant_tool_use("tu2", "get_xfa", json!({})),        // 3 evict
+            result_text("tu2", &"x".repeat(5000)),                  // 4 evict
             assistant_tool_use("tu3", "get_structured", json!({})), // 5 recent
-            result_text("tu3", "small recent result"),           // 6 recent
-            assistant_tool_use("tu4", "finish", json!({})),      // 7 recent
-            result_text("tu4", "done"),                          // 8 recent
+            result_text("tu3", "small recent result"),              // 6 recent
+            assistant_tool_use("tu4", "finish", json!({})),         // 7 recent
+            result_text("tu4", "done"),                             // 8 recent
         ]
     }
 
     fn block_text(msg: &serde_json::Value) -> String {
-        msg["content"][0]["content"][0]["text"].as_str().unwrap_or("").to_string()
+        msg["content"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     }
 
     #[test]

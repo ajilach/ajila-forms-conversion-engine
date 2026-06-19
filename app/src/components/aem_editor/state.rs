@@ -317,10 +317,10 @@ pub fn delete_nodes(root: &mut AemNode, paths: &HashSet<AemPath>) {
     let mut sorted: Vec<AemPath> = paths.iter().filter(|p| !p.is_empty()).cloned().collect();
     sorted.sort();
     for path in sorted.into_iter().rev() {
-        if let Some((children, idx)) = parent_children_mut(root, &path) {
-            if idx < children.len() {
-                children.remove(idx);
-            }
+        if let Some((children, idx)) = parent_children_mut(root, &path)
+            && idx < children.len()
+        {
+            children.remove(idx);
         }
     }
 }

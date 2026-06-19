@@ -242,9 +242,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
         if sel.selected.len() == 1 {
             let p = sel.selected.iter().next().unwrap().clone();
             match get_node(&r, &p) {
-                Some(node) if is_container(node) => {
-                    Some((p, node_short_label(node)))
-                }
+                Some(node) if is_container(node) => Some((p, node_short_label(node))),
                 _ => Some((vec![], "Form root".to_string())),
             }
         } else {
@@ -318,8 +316,8 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             AemEditorAction::ConvertSelected(target) => {
                 let path = selection.read().selected.iter().next().cloned();
                 if let Some(p) = path {
-                    let converted = get_node(&root.read(), &p)
-                        .and_then(|n| convert_node(n, target));
+                    let converted =
+                        get_node(&root.read(), &p).and_then(|n| convert_node(n, target));
                     if let Some(new_node) = converted
                         && let Some(slot) = get_node_mut(&mut root.write(), &p)
                     {
@@ -361,8 +359,15 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
                 rejected_ids.write().clear();
                 feedback_text.set(String::new());
                 spawn(async move {
-                    match smart_edit::run_smart_aem_edit(&current, &images, &pdfs, &api_key, &model, profile.as_deref(), &instructions).await
-                    {
+                    let ctx = smart_edit::SmartAemEditCtx {
+                        root: &current,
+                        plain_images: &images,
+                        source_pdfs: &pdfs,
+                        api_key: &api_key,
+                        model: &model,
+                        profile: profile.as_deref(),
+                    };
+                    match smart_edit::run_smart_aem_edit(&ctx, &instructions).await {
                         Ok(result) => smart_state.set(SmartState::Preview {
                             result,
                             elapsed_ms: started.elapsed().as_millis(),
@@ -382,12 +387,12 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
                 status_msg.set(Some((true, "Uploading to AEM…".into())));
                 spawn(async move {
                     let zip = build_zip(&tree, &cfg, &node_tr);
-                    match crate::aem_client::upload_and_install_package(
-                        &conn, zip, &cfg.form_code,
-                    )
-                    .await
+                    match crate::aem_client::upload_and_install_package(&conn, zip, &cfg.form_code)
+                        .await
                     {
-                        Ok(()) => status_msg.set(Some((true, "Uploaded and installed in AEM.".into()))),
+                        Ok(()) => {
+                            status_msg.set(Some((true, "Uploaded and installed in AEM.".into())))
+                        }
                         Err(e) => status_msg.set(Some((false, e))),
                     }
                 });
@@ -661,26 +666,9 @@ fn render_smart_panel(
                             "No structured change list was returned. Review and accept or dismiss."
                         }
                     } else {
-                        div { class: "smart-edit-change-list",
-                            for change in changes.clone() {
-                                {
-                                    let id = change.id;
-                                    let is_rejected = rejected_ids.read().contains(&id);
-                                    rsx! {
-                                        label { class: if is_rejected { "smart-edit-change-item smart-edit-change-rejected" } else { "smart-edit-change-item" },
-                                            input {
-                                                r#type: "checkbox",
-                                                checked: !is_rejected,
-                                                onchange: move |evt| {
-                                                    if evt.checked() { rejected_ids.write().remove(&id); }
-                                                    else { rejected_ids.write().insert(id); }
-                                                },
-                                            }
-                                            span { "{change.description}" }
-                                        }
-                                    }
-                                }
-                            }
+                        crate::components::change_list::ChangeList {
+                            changes: changes.iter().map(|c| (c.id, c.description.clone())).collect::<Vec<_>>(),
+                            rejected_ids,
                         }
                     }
 
@@ -731,8 +719,16 @@ fn render_smart_panel(
                                             rejected_ids.write().clear();
                                             feedback_text.set(String::new());
                                             spawn(async move {
+                                                let ctx = smart_edit::SmartAemEditCtx {
+                                                    root: &current,
+                                                    plain_images: &images,
+                                                    source_pdfs: &pdfs,
+                                                    api_key: &api_key,
+                                                    model: &model,
+                                                    profile: profile.as_deref(),
+                                                };
                                                 match smart_edit::run_smart_aem_edit_with_feedback(
-                                                    &current, &images, &pdfs, &accepted, &rejected, &user_feedback, &api_key, &model, profile.as_deref(), &instructions,
+                                                    &ctx, &accepted, &rejected, &user_feedback, &instructions,
                                                 ).await {
                                                     Ok(result) => smart_state.set(SmartState::Preview { result, elapsed_ms: started.elapsed().as_millis() }),
                                                     Err(message) => smart_state.set(SmartState::Error { message }),

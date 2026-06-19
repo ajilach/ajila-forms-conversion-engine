@@ -129,7 +129,7 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
     let mut search_index = use_signal(|| 0usize);
 
     // Live HTML preview toggle (controls the external browser preview server)
-    let mut live_preview = use_signal(|| crate::preview_server::is_active());
+    let mut live_preview = use_signal(crate::preview_server::is_active);
 
     // Edit-history state (desktop only; signals are inert when there is no session).
     let session_id = use_signal(|| props.session_id.clone());
@@ -1542,18 +1542,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                 feedback_text.set(String::new());
 
                 spawn(async move {
-                    match smart_edit::run_smart_edit(
-                        &content,
-                        &selected_indices,
-                        &plain_images,
-                        &source_pdfs,
-                        &api_key,
-                        &model,
-                        profile.as_deref(),
-                        &instructions,
-                    )
-                    .await
-                    {
+                    let ctx = smart_edit::SmartEditCtx {
+                        content: &content,
+                        selected_indices: &selected_indices,
+                        plain_images: &plain_images,
+                        source_pdfs: &source_pdfs,
+                        api_key: &api_key,
+                        model: &model,
+                        profile: profile.as_deref(),
+                    };
+                    match smart_edit::run_smart_edit(&ctx, &instructions).await {
                         Ok(result) => {
                             let elapsed_ms = started_at.elapsed().as_millis();
                             smart_edit_state.set(SmartEditState::Preview {
@@ -1790,29 +1788,9 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                         p { class: "smart-edit-hint smart-edit-success",
                                             "Review the proposed changes below. Uncheck any changes you want to reject."
                                         }
-                                        div { class: "smart-edit-change-list",
-                                            for change in result.changes.clone() {
-                                                {
-                                                    let id = change.id;
-                                                    let is_rejected = rejected_ids.read().contains(&id);
-                                                    rsx! {
-                                                        label { class: if is_rejected { "smart-edit-change-item smart-edit-change-rejected" } else { "smart-edit-change-item" },
-                                                            input {
-                                                                r#type: "checkbox",
-                                                                checked: !is_rejected,
-                                                                onchange: move |evt| {
-                                                                    if evt.checked() {
-                                                                        rejected_ids.write().remove(&id);
-                                                                    } else {
-                                                                        rejected_ids.write().insert(id);
-                                                                    }
-                                                                },
-                                                            }
-                                                            span { "{change.description}" }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                        crate::components::change_list::ChangeList {
+                                            changes: result.changes.iter().map(|c| (c.id, c.description.clone())).collect::<Vec<_>>(),
+                                            rejected_ids,
                                         }
                                     }
 
@@ -1914,17 +1892,20 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                             rejected_ids.write().clear();
                                                             feedback_text.set(String::new());
                                                             spawn(async move {
+                                                                let ctx = smart_edit::SmartEditCtx {
+                                                                    content: &content,
+                                                                    selected_indices: &selected_indices,
+                                                                    plain_images: &plain_images,
+                                                                    source_pdfs: &source_pdfs,
+                                                                    api_key: &api_key,
+                                                                    model: &model,
+                                                                    profile: profile.as_deref(),
+                                                                };
                                                                 match smart_edit::run_smart_edit_with_feedback(
-                                                                        &content,
-                                                                        &selected_indices,
-                                                                        &plain_images,
-                                                                        &source_pdfs,
+                                                                        &ctx,
                                                                         &accepted,
                                                                         &rejected,
                                                                         &user_feedback,
-                                                                        &api_key,
-                                                                        &model,
-                                                                        profile.as_deref(),
                                                                         &instructions,
                                                                     )
                                                                     .await
@@ -2036,16 +2017,16 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                                 smart_edit_state.set(SmartEditState::Loading);
                                                 rejected_ids.write().clear();
                                                 spawn(async move {
-                                                    match smart_edit::run_smart_edit(
-                                                            &content,
-                                                            &selected_indices,
-                                                            &plain_images,
-                                                            &source_pdfs,
-                                                            &api_key,
-                                                            &model,
-                                                            profile.as_deref(),
-                                                            &instructions,
-                                                        )
+                                                    let ctx = smart_edit::SmartEditCtx {
+                                                        content: &content,
+                                                        selected_indices: &selected_indices,
+                                                        plain_images: &plain_images,
+                                                        source_pdfs: &source_pdfs,
+                                                        api_key: &api_key,
+                                                        model: &model,
+                                                        profile: profile.as_deref(),
+                                                    };
+                                                    match smart_edit::run_smart_edit(&ctx, &instructions)
                                                         .await
                                                     {
                                                         Ok(result) => {
@@ -2396,11 +2377,6 @@ fn apply_node_metadata(node: &mut StructuredNode, metadata: NodeMetadata) {
             if let StructuredNode::GridLayout(g) = node {
                 g.columns = cols;
             }
-        }
-        NodeMetadata::GridElementSpan(span) => {
-            // For grid element span, we need parent context
-            // This is more complex and would need different handling
-            let _ = span;
         }
         NodeMetadata::FieldInputType(kind) => {
             if let StructuredNode::Field(f) = node {

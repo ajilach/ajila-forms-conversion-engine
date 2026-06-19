@@ -143,7 +143,11 @@ impl ConversionAgent {
     ) -> Self {
         let context = pdfs
             .iter()
-            .find_map(|(_, b)| blueprint::Blueprint::from_pdf_bytes(b).ok().map(|bp| bp.context()))
+            .find_map(|(_, b)| {
+                blueprint::Blueprint::from_pdf_bytes(b)
+                    .ok()
+                    .map(|bp| bp.context())
+            })
             .unwrap_or_else(|| Context::with_language("en"));
         Self {
             profile,
@@ -236,7 +240,10 @@ impl ConversionAgent {
     /// the stored XML. Errors if there is no AEM tree yet.
     fn ensure_aem_xml(&mut self) -> Result<String, String> {
         if self.aem_xml.is_none() {
-            let aem = self.aem.clone().ok_or("No AEM tree yet; call convert_structured_to_aem.")?;
+            let aem = self
+                .aem
+                .clone()
+                .ok_or("No AEM tree yet; call convert_structured_to_aem.")?;
             let cfg = self.config()?;
             self.aem_xml = Some(blueprint::generate_aem_xml(&aem, &cfg));
         }
@@ -268,47 +275,219 @@ impl ConversionAgent {
 
         vec![
             // §1 extraction (source-parameterized)
-            t("get_source_info", "Info about the source PDFs (name, language, state count).", with_source(serde_json::json!({})), serde_json::json!([])),
-            t("explore_states", "Run exhaustive state discovery on the source; returns a count summary.", with_source(serde_json::json!({})), serde_json::json!([])),
-            t("list_states", "List discovered form states (label, pdf, selection count).", with_source(serde_json::json!({})), serde_json::json!([])),
-            t("get_xfa", "Return the source's authoritative XFA XML (all PDFs concatenated).", with_source(serde_json::json!({})), serde_json::json!([])),
-            t("search_xfa", "Regex/substring search within the source's XFA; returns matching snippets.", with_source(serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}})), serde_json::json!(["query"])),
-            t("get_plain_state_image", "Render a state's page image (plain).", with_source(state_label.clone()), serde_json::json!(["state_label"])),
-            t("get_annotated_state_image", "Render a state's page image with field-name overlays.", with_source(state_label.clone()), serde_json::json!(["state_label"])),
-            t("get_flattened_structure_for_state", "Engine structured tree for one state.", with_source(state_label.clone()), serde_json::json!(["state_label"])),
-            t("get_merged_structured", "The engine's full merged structured tree for the source (the usual seed for set_structured).", with_source(serde_json::json!({})), serde_json::json!([])),
+            t(
+                "get_source_info",
+                "Info about the source PDFs (name, language, state count).",
+                with_source(serde_json::json!({})),
+                serde_json::json!([]),
+            ),
+            t(
+                "explore_states",
+                "Run exhaustive state discovery on the source; returns a count summary.",
+                with_source(serde_json::json!({})),
+                serde_json::json!([]),
+            ),
+            t(
+                "list_states",
+                "List discovered form states (label, pdf, selection count).",
+                with_source(serde_json::json!({})),
+                serde_json::json!([]),
+            ),
+            t(
+                "get_xfa",
+                "Return the source's authoritative XFA XML (all PDFs concatenated).",
+                with_source(serde_json::json!({})),
+                serde_json::json!([]),
+            ),
+            t(
+                "search_xfa",
+                "Regex/substring search within the source's XFA; returns matching snippets.",
+                with_source(
+                    serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}),
+                ),
+                serde_json::json!(["query"]),
+            ),
+            t(
+                "get_plain_state_image",
+                "Render a state's page image (plain).",
+                with_source(state_label.clone()),
+                serde_json::json!(["state_label"]),
+            ),
+            t(
+                "get_annotated_state_image",
+                "Render a state's page image with field-name overlays.",
+                with_source(state_label.clone()),
+                serde_json::json!(["state_label"]),
+            ),
+            t(
+                "get_flattened_structure_for_state",
+                "Engine structured tree for one state.",
+                with_source(state_label.clone()),
+                serde_json::json!(["state_label"]),
+            ),
+            t(
+                "get_merged_structured",
+                "The engine's full merged structured tree for the source (the usual seed for set_structured).",
+                with_source(serde_json::json!({})),
+                serde_json::json!([]),
+            ),
             // §2 structured tree
-            t("get_structured", "Return the current working structured tree (JSON).", serde_json::json!({}), serde_json::json!([])),
-            t("set_structured", "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.", serde_json::json!({"nodes": {"type":"array"}}), serde_json::json!(["nodes"])),
+            t(
+                "get_structured",
+                "Return the current working structured tree (JSON).",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "set_structured",
+                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
+                serde_json::json!({"nodes": {"type":"array"}}),
+                serde_json::json!(["nodes"]),
+            ),
             // §3 conversion
-            t("convert_structured_to_aem", "Convert the current structured tree to the AEM tree (replaces it). Invalidates the content XML and package. Versioned.", serde_json::json!({}), serde_json::json!([])),
+            t(
+                "convert_structured_to_aem",
+                "Convert the current structured tree to the AEM tree (replaces it). Invalidates the content XML and package. Versioned.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
             // §4 aem tree
-            t("get_aem", "Return the current working AEM tree (JSON).", serde_json::json!({}), serde_json::json!([])),
-            t("set_aem", "Replace the whole AEM tree. `root` is a JSON object parseable as AemNode. Invalidates the content XML and package. Versioned.", serde_json::json!({"root": {"type":"object"}}), serde_json::json!(["root"])),
-            t("get_aem_content_xml", "Return the AEM .content.xml (the final JCR XML). Materialized from the AEM tree on first access, then reflects any edits made via edit_aem_content_xml.", serde_json::json!({}), serde_json::json!([])),
-            t("edit_aem_content_xml", "Hand-edit the AEM .content.xml with a targeted find/replace (like the Edit tool). `old_string` must occur exactly once unless `replace_all` is true. Materializes the XML from the AEM tree first if needed, then invalidates the package. Expert mode: the edited XML is used verbatim for the package; everything else (XSD, translations, DAM) still derives from the AEM tree, and converting/setting the structured or AEM tree discards these edits. Versioned.", serde_json::json!({"old_string": {"type":"string"}, "new_string": {"type":"string"}, "replace_all": {"type":"boolean"}}), serde_json::json!(["old_string","new_string"])),
+            t(
+                "get_aem",
+                "Return the current working AEM tree (JSON).",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "set_aem",
+                "Replace the whole AEM tree. `root` is a JSON object parseable as AemNode. Invalidates the content XML and package. Versioned.",
+                serde_json::json!({"root": {"type":"object"}}),
+                serde_json::json!(["root"]),
+            ),
+            t(
+                "get_aem_content_xml",
+                "Return the AEM .content.xml (the final JCR XML). Materialized from the AEM tree on first access, then reflects any edits made via edit_aem_content_xml.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "edit_aem_content_xml",
+                "Hand-edit the AEM .content.xml with a targeted find/replace (like the Edit tool). `old_string` must occur exactly once unless `replace_all` is true. Materializes the XML from the AEM tree first if needed, then invalidates the package. Expert mode: the edited XML is used verbatim for the package; everything else (XSD, translations, DAM) still derives from the AEM tree, and converting/setting the structured or AEM tree discards these edits. Versioned.",
+                serde_json::json!({"old_string": {"type":"string"}, "new_string": {"type":"string"}, "replace_all": {"type":"boolean"}}),
+                serde_json::json!(["old_string", "new_string"]),
+            ),
             // §5 output
-            t("build_aem_package", "Build the AEM FileVault package (ZIP) from the current AEM tree. Stores it for upload.", serde_json::json!({}), serde_json::json!([])),
-            t("get_package_info", "Size and file list of the built package.", serde_json::json!({}), serde_json::json!([])),
-            t("read_package_file", "Read a file from the built package by path.", serde_json::json!({"path": {"type":"string"}}), serde_json::json!(["path"])),
-            t("generate_xsd", "Generate the XSD schema for the current structured tree.", serde_json::json!({}), serde_json::json!([])),
-            t("generate_html", "Generate an HTML preview of the current structured tree.", serde_json::json!({}), serde_json::json!([])),
+            t(
+                "build_aem_package",
+                "Build the AEM FileVault package (ZIP) from the current AEM tree. Stores it for upload.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "get_package_info",
+                "Size and file list of the built package.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "read_package_file",
+                "Read a file from the built package by path.",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
+            ),
+            t(
+                "generate_xsd",
+                "Generate the XSD schema for the current structured tree.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "generate_html",
+                "Generate an HTML preview of the current structured tree.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
             // §6 deploy + verify
-            t("upload_to_aem", "Upload and install the built package on the configured AEM instance.", serde_json::json!({}), serde_json::json!([])),
-            t("fetch_aem_form_html", "Fetch the rendered Adaptive Form HTML from AEM (after upload) for verification.", serde_json::json!({}), serde_json::json!([])),
-            t("fetch_aem_dor_pdf", "Fetch the Document-of-Record PDF from AEM and view its first page.", serde_json::json!({}), serde_json::json!([])),
+            t(
+                "upload_to_aem",
+                "Upload and install the built package on the configured AEM instance.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "fetch_aem_form_html",
+                "Fetch the rendered Adaptive Form HTML from AEM (after upload) for verification.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "fetch_aem_dor_pdf",
+                "Fetch the Document-of-Record PDF from AEM and view its first page.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
             // §7 references
-            t("list_reference_forms", "List the profile's reference forms (worked examples).", serde_json::json!({}), serde_json::json!([])),
-            t("search_references", "Regex/substring search over reference descriptions + AEM package XML.", serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}), serde_json::json!(["query"])),
-            t("read_reference_file", "Read a reference's description ('description') or a package file by path.", serde_json::json!({"ref_id": {"type":"string"}, "path": {"type":"string"}, "offset": {"type":"integer"}, "limit": {"type":"integer"}}), serde_json::json!(["ref_id","path"])),
-            t("get_reference_package", "List the package files (known-good output) of a reference.", serde_json::json!({"ref_id": {"type":"string"}}), serde_json::json!(["ref_id"])),
-            t("list_reference_docs", "List the profile's reference documentation (.md/.txt).", serde_json::json!({}), serde_json::json!([])),
-            t("read_reference_doc", "Read a reference documentation doc by id.", serde_json::json!({"doc_id": {"type":"string"}, "offset": {"type":"integer"}, "limit": {"type":"integer"}}), serde_json::json!(["doc_id"])),
-            t("grep_reference_docs", "Regex/substring search over reference documentation.", serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}), serde_json::json!(["query"])),
+            t(
+                "list_reference_forms",
+                "List the profile's reference forms (worked examples).",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "search_references",
+                "Regex/substring search over reference descriptions + AEM package XML.",
+                serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}),
+                serde_json::json!(["query"]),
+            ),
+            t(
+                "read_reference_file",
+                "Read a reference's description ('description') or a package file by path.",
+                serde_json::json!({"ref_id": {"type":"string"}, "path": {"type":"string"}, "offset": {"type":"integer"}, "limit": {"type":"integer"}}),
+                serde_json::json!(["ref_id", "path"]),
+            ),
+            t(
+                "get_reference_package",
+                "List the package files (known-good output) of a reference.",
+                serde_json::json!({"ref_id": {"type":"string"}}),
+                serde_json::json!(["ref_id"]),
+            ),
+            t(
+                "list_reference_docs",
+                "List the profile's reference documentation (.md/.txt).",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "read_reference_doc",
+                "Read a reference documentation doc by id.",
+                serde_json::json!({"doc_id": {"type":"string"}, "offset": {"type":"integer"}, "limit": {"type":"integer"}}),
+                serde_json::json!(["doc_id"]),
+            ),
+            t(
+                "grep_reference_docs",
+                "Regex/substring search over reference documentation.",
+                serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}),
+                serde_json::json!(["query"]),
+            ),
             // §8 control
-            t("get_schema", "Return the JSON schema for the 'structured' or 'aem' tree.", serde_json::json!({"kind": {"type":"string","enum":["structured","aem"]}}), serde_json::json!(["kind"])),
-            t("get_profile_info", "Profile/AEM config: form_code, languages, JCR paths, binding flags.", serde_json::json!({}), serde_json::json!([])),
-            t("finish", "Finalize: persist the structured + AEM trees + package as the result and end.", serde_json::json!({"summary": {"type":"string"}}), serde_json::json!([])),
+            t(
+                "get_schema",
+                "Return the JSON schema for the 'structured' or 'aem' tree.",
+                serde_json::json!({"kind": {"type":"string","enum":["structured","aem"]}}),
+                serde_json::json!(["kind"]),
+            ),
+            t(
+                "get_profile_info",
+                "Profile/AEM config: form_code, languages, JCR paths, binding flags.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "finish",
+                "Finalize: persist the structured + AEM trees + package as the result and end.",
+                serde_json::json!({"summary": {"type":"string"}}),
+                serde_json::json!([]),
+            ),
         ]
     }
 
@@ -381,7 +560,10 @@ impl ConversionAgent {
                 }
             }
             "get_plain_state_image" | "get_annotated_state_image" => {
-                let label = input["state_label"].as_str().unwrap_or_default().to_string();
+                let label = input["state_label"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
                 let annotated = name == "get_annotated_state_image";
                 match self.extractor(input) {
                     Ok(ex) => match ex.find(&label) {
@@ -392,7 +574,8 @@ impl ConversionAgent {
                                 rec.state.render_plain(RENDER_SCALE)
                             };
                             match img.map_err(|e| e.to_string()).and_then(|i| {
-                                crate::pipeline::encode_rgba_to_jpeg(&i, 82).map_err(|e| e.to_string())
+                                crate::pipeline::encode_rgba_to_jpeg(&i, 82)
+                                    .map_err(|e| e.to_string())
                             }) {
                                 Ok(jpeg) => ToolReply::Image {
                                     media_type: "image/jpeg",
@@ -407,12 +590,17 @@ impl ConversionAgent {
                 }
             }
             "get_flattened_structure_for_state" => {
-                let label = input["state_label"].as_str().unwrap_or_default().to_string();
+                let label = input["state_label"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
                 match self.extractor(input) {
                     Ok(ex) => match ex.find(&label) {
                         Some(rec) => {
                             let env = rec.state.structured(rec.context.clone());
-                            ToolReply::Text(serde_json::to_string_pretty(&env.content).unwrap_or_default())
+                            ToolReply::Text(
+                                serde_json::to_string_pretty(&env.content).unwrap_or_default(),
+                            )
                         }
                         None => ToolReply::Error(format!("Unknown state_label: {label:?}")),
                     },
@@ -420,7 +608,9 @@ impl ConversionAgent {
                 }
             }
             "get_merged_structured" => match self.extractor(input) {
-                Ok(ex) => ToolReply::Text(serde_json::to_string_pretty(&ex.merged).unwrap_or_default()),
+                Ok(ex) => {
+                    ToolReply::Text(serde_json::to_string_pretty(&ex.merged).unwrap_or_default())
+                }
                 Err(e) => ToolReply::Error(e),
             },
 
@@ -450,7 +640,9 @@ impl ConversionAgent {
             // §3 conversion
             "convert_structured_to_aem" => {
                 if self.structured.is_empty() {
-                    return ToolReply::Error("Structured tree is empty; set_structured first.".into());
+                    return ToolReply::Error(
+                        "Structured tree is empty; set_structured first.".into(),
+                    );
                 }
                 let cfg = match self.config() {
                     Ok(c) => c,
@@ -462,7 +654,10 @@ impl ConversionAgent {
                 self.aem_xml = None;
                 self.package = None;
                 self.snapshot_aem("AI: convert from structured");
-                ToolReply::Text("OK — AEM tree generated from structured (content XML + package invalidated).".into())
+                ToolReply::Text(
+                    "OK — AEM tree generated from structured (content XML + package invalidated)."
+                        .into(),
+                )
             }
 
             // §4 aem
@@ -536,15 +731,21 @@ impl ConversionAgent {
                     Ok(c) => c,
                     Err(e) => return ToolReply::Error(e),
                 };
-                let translations =
-                    blueprint::aem_translations_from_content(&self.structured, &cfg.master_language);
+                let translations = blueprint::aem_translations_from_content(
+                    &self.structured,
+                    &cfg.master_language,
+                );
                 let (pkg, note) = match self.aem_xml.clone() {
                     Some(xml) => (
                         blueprint::to_aem_package_from_node_with_xml(&aem, &cfg, translations, xml),
                         " (using edited content XML)",
                     ),
                     None => (
-                        blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations),
+                        blueprint::to_aem_package_from_node_with_translations(
+                            &aem,
+                            &cfg,
+                            translations,
+                        ),
                         "",
                     ),
                 };
@@ -615,13 +816,17 @@ impl ConversionAgent {
                     return ToolReply::Error("No AEM connection configured.".into());
                 };
                 let Some(pkg) = self.package.clone() else {
-                    return ToolReply::Error("No package built yet; call build_aem_package.".into());
+                    return ToolReply::Error(
+                        "No package built yet; call build_aem_package.".into(),
+                    );
                 };
                 let cfg = match self.config() {
                     Ok(c) => c,
                     Err(e) => return ToolReply::Error(e),
                 };
-                match crate::aem_client::upload_and_install_package(&conn, pkg, &cfg.form_code).await {
+                match crate::aem_client::upload_and_install_package(&conn, pkg, &cfg.form_code)
+                    .await
+                {
                     Ok(()) => {
                         self.aem_uploaded = true;
                         self.aem_form_path = Some(form_jcr_path(&cfg));
@@ -722,17 +927,24 @@ impl ConversionAgent {
 
             // §8 control
             "get_schema" => match input["kind"].as_str() {
-                Some("aem") => {
-                    ToolReply::Text(serde_json::to_string_pretty(&blueprint::aem_schema()).unwrap_or_default())
-                }
+                Some("aem") => ToolReply::Text(
+                    serde_json::to_string_pretty(&blueprint::aem_schema()).unwrap_or_default(),
+                ),
                 _ => ToolReply::Text(
-                    serde_json::to_string_pretty(&blueprint::structured_schema()).unwrap_or_default(),
+                    serde_json::to_string_pretty(&blueprint::structured_schema())
+                        .unwrap_or_default(),
                 ),
             },
             "get_profile_info" => match self.config() {
                 Ok(c) => ToolReply::Text(format!(
                     "form_code: {}\nlanguages: {:?}\nmaster_language: {}\nform_path: {}\nform_dir: {}\nbind_to_xsd: {}\nuse_fragments: {}",
-                    c.form_code, c.languages, c.master_language, c.form_path, c.form_dir, c.bind_to_xsd, c.use_fragments
+                    c.form_code,
+                    c.languages,
+                    c.master_language,
+                    c.form_path,
+                    c.form_dir,
+                    c.bind_to_xsd,
+                    c.use_fragments
                 )),
                 Err(e) => ToolReply::Error(e),
             },
@@ -863,8 +1075,7 @@ pub async fn run_agent_feedback(
         .and_then(|json| serde_json::from_str::<Vec<StructuredNode>>(&json).ok())
         .unwrap_or_default();
 
-    let mut agent =
-        ConversionAgent::new(profile.clone(), pdfs, conn, structured_session.clone());
+    let mut agent = ConversionAgent::new(profile.clone(), pdfs, conn, structured_session.clone());
     agent.seed_structured(prior);
 
     let intro = format!(
@@ -913,22 +1124,28 @@ async fn drive_agent(
     let tools = agent.tools();
 
     for _ in 0..MAX_ITERATIONS {
-        let turn = match anthropic_stream_turn(&mut history, &tools, &api_key, &model, AGENT_MAX_TOKENS).await {
-            Ok(t) => t,
-            Err(e) => {
-                processing_state.write().error = Some(format!("Agent failed: {e}"));
-                return;
-            }
-        };
+        let turn =
+            match anthropic_stream_turn(&mut history, &tools, &api_key, &model, AGENT_MAX_TOKENS)
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    processing_state.write().error = Some(format!("Agent failed: {e}"));
+                    return;
+                }
+            };
 
         if !turn.text.trim().is_empty() {
-            push_step(&mut processing_state, AgentStep {
-                id: String::new(),
-                kind: AgentStepKind::Thought,
-                label: turn.text.trim().to_string(),
-                detail: String::new(),
-                status: AgentStepStatus::Done,
-            });
+            push_step(
+                &mut processing_state,
+                AgentStep {
+                    id: String::new(),
+                    kind: AgentStepKind::Thought,
+                    label: turn.text.trim().to_string(),
+                    detail: String::new(),
+                    status: AgentStepStatus::Done,
+                },
+            );
         }
 
         if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
@@ -937,16 +1154,27 @@ async fn drive_agent(
 
         let mut results: Vec<(String, ToolReply)> = Vec::new();
         for tc in &turn.tool_calls {
-            push_step(&mut processing_state, AgentStep {
-                id: tc.id.clone(),
-                kind: AgentStepKind::Tool,
-                label: tc.name.clone(),
-                detail: summarize_input(&tc.input),
-                status: AgentStepStatus::Running,
-            });
+            push_step(
+                &mut processing_state,
+                AgentStep {
+                    id: tc.id.clone(),
+                    kind: AgentStepKind::Tool,
+                    label: tc.name.clone(),
+                    detail: summarize_input(&tc.input),
+                    status: AgentStepStatus::Running,
+                },
+            );
             let reply = agent.execute(&tc.name, &tc.input).await;
             let ok = !matches!(reply, ToolReply::Error(_));
-            set_step_status(&mut processing_state, &tc.id, if ok { AgentStepStatus::Done } else { AgentStepStatus::Error });
+            set_step_status(
+                &mut processing_state,
+                &tc.id,
+                if ok {
+                    AgentStepStatus::Done
+                } else {
+                    AgentStepStatus::Error
+                },
+            );
             results.push((tc.id.clone(), reply));
         }
         history.push(tool_result_message(results));
@@ -956,7 +1184,14 @@ async fn drive_agent(
         }
     }
 
-    finalize(&agent, &profile, structured_session, start, &mut processing_state, &mut current_session);
+    finalize(
+        &agent,
+        &profile,
+        structured_session,
+        start,
+        &mut processing_state,
+        &mut current_session,
+    );
 }
 
 /// Build the final `ProcessingState` from the agent's working trees.
@@ -999,7 +1234,11 @@ fn push_step(processing_state: &mut Signal<ProcessingState>, step: AgentStep) {
     processing_state.write().agent_steps.push(step);
 }
 
-fn set_step_status(processing_state: &mut Signal<ProcessingState>, id: &str, status: AgentStepStatus) {
+fn set_step_status(
+    processing_state: &mut Signal<ProcessingState>,
+    id: &str,
+    status: AgentStepStatus,
+) {
     let mut s = processing_state.write();
     if let Some(step) = s.agent_steps.iter_mut().rev().find(|s| s.id == id) {
         step.status = status;
@@ -1029,7 +1268,9 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn line_matches(line: &str, query: &str, regex: bool) -> bool {
     if regex {
-        regex_lite::Regex::new(query).map(|re| re.is_match(line)).unwrap_or(false)
+        regex_lite::Regex::new(query)
+            .map(|re| re.is_match(line))
+            .unwrap_or(false)
     } else {
         line.to_lowercase().contains(&query.to_lowercase())
     }
@@ -1058,10 +1299,13 @@ fn join_form_path(form_path: &str, form_dir: &str) -> String {
 
 /// Render the first page of a PDF (the DoR) to JPEG via the engine.
 fn render_pdf_first_page(pdf: &[u8]) -> Result<Vec<u8>, String> {
-    let mut bp = blueprint::Blueprint::from_pdf_bytes(pdf).map_err(|e| format!("PDF parse: {e}"))?;
+    let mut bp =
+        blueprint::Blueprint::from_pdf_bytes(pdf).map_err(|e| format!("PDF parse: {e}"))?;
     let states = bp.states().map_err(|e| format!("states: {e}"))?;
     let state = states.iter().next().ok_or("no state in DoR PDF")?;
-    let img = state.render_plain(RENDER_SCALE).map_err(|e| format!("render: {e}"))?;
+    let img = state
+        .render_plain(RENDER_SCALE)
+        .map_err(|e| format!("render: {e}"))?;
     crate::pipeline::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("encode: {e}"))
 }
 
@@ -1071,7 +1315,10 @@ mod tests {
 
     #[test]
     fn source_key_defaults_to_current() {
-        assert_eq!(ConversionAgent::source_key(&serde_json::json!({})), "current");
+        assert_eq!(
+            ConversionAgent::source_key(&serde_json::json!({})),
+            "current"
+        );
         assert_eq!(
             ConversionAgent::source_key(&serde_json::json!({"source": {"reference": "abc"}})),
             "reference:abc"
@@ -1090,8 +1337,14 @@ mod tests {
 
     #[test]
     fn form_path_trims_slashes() {
-        assert_eq!(join_form_path("/ubs/all/", "/AF_FORM/"), "/content/forms/af/ubs/all/AF_FORM");
-        assert_eq!(join_form_path("ubs", "AF_FORM"), "/content/forms/af/ubs/AF_FORM");
+        assert_eq!(
+            join_form_path("/ubs/all/", "/AF_FORM/"),
+            "/content/forms/af/ubs/all/AF_FORM"
+        );
+        assert_eq!(
+            join_form_path("ubs", "AF_FORM"),
+            "/content/forms/af/ubs/AF_FORM"
+        );
     }
 
     #[test]

@@ -19,7 +19,6 @@ const PLAIN_JPEG_QUALITY: u8 = 82;
 /// (`tokio::task::spawn_blocking`) so the webview connection stays alive.
 /// Progress updates are streamed through a channel and applied on the async
 /// side between awaits.
-#[allow(dead_code)]
 pub async fn run_blueprint_pipeline(
     files: &[(String, Vec<u8>)],
     profile: Option<String>,
@@ -224,117 +223,9 @@ pub async fn run_blueprint_pipeline(
     }
 }
 
-/// Render the plain (unlabeled) state images for `files`, running the pipeline
-/// up to state rendering but **without labelling** (`render_labelled: false`),
-/// streaming progress via `on_progress` so the AI-processing UI shows the same
-/// staged steps as normal processing.
-///
-/// The displayed step is advanced only through rendering (Parsing → Exhaustive
-/// Searching → Flattening); the pipeline's internal structuring/merging is not
-/// surfaced because AI generation takes over afterwards. JPEG-encodes the
-/// renders (legible but small) and caps count/size to keep the request within
-/// provider limits. Best-effort: an empty list is returned if the pipeline
-/// fails — the AI still has the PDFs and XFA XML to work from.
-#[allow(dead_code)]
-pub async fn render_plain_states(
-    files: &[(String, Vec<u8>)],
-    mut on_progress: impl FnMut(&ProcessingState),
-) -> Vec<(String, String)> {
-    use blueprint::{PipelineConfig, PipelineEvent, PipelineStep as CoreStep};
-
-    const MAX_IMAGES: usize = 12;
-    const MAX_TOTAL_B64_BYTES: usize = 8 * 1024 * 1024; // ~8 MB across all images
-
-    let config = PipelineConfig {
-        render_plain: true,
-        render_labelled: false,
-        render_annotated: false,
-        ..PipelineConfig::default()
-    };
-
-    let files_owned: Vec<(String, Vec<u8>)> = files.to_vec();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<PipelineEvent>();
-    let mut handle = tokio::task::spawn_blocking(move || {
-        let _ = blueprint::run_pipeline(&files_owned, &config, |event| {
-            let _ = tx.send(event);
-        });
-    });
-
-    let mut state = ProcessingState {
-        step: ProcessingStep::Parsing,
-        ai_mode: true,
-        ..ProcessingState::new()
-    };
-    on_progress(&state);
-
-    let mut images: Vec<(String, String)> = Vec::new();
-    let mut total = 0usize;
-
-    loop {
-        tokio::select! {
-            Some(event) = rx.recv() => {
-                match event {
-                    PipelineEvent::StepChanged(step) => {
-                        // Advance the display only through rendering; later steps
-                        // (structuring/merging) are internal and discarded.
-                        let mapped = match step {
-                            CoreStep::Parsing => Some(ProcessingStep::Parsing),
-                            CoreStep::ExhaustiveSearching => Some(ProcessingStep::ExhaustiveSearching),
-                            CoreStep::Flattening => Some(ProcessingStep::Flattening),
-                            _ => None,
-                        };
-                        if let Some(s) = mapped {
-                            state.step = s;
-                            on_progress(&state);
-                        }
-                    }
-                    PipelineEvent::PlainRender { label, image } => {
-                        if images.len() < MAX_IMAGES
-                            && let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY)
-                        {
-                            let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
-                            if total + b64.len() <= MAX_TOTAL_B64_BYTES {
-                                total += b64.len();
-                                state.plain_images.insert(label.clone(), b64.clone());
-                                images.push((label, b64));
-                                on_progress(&state);
-                            }
-                        }
-                    }
-                    PipelineEvent::Warning(msg) => {
-                        state.warnings.push(msg);
-                        on_progress(&state);
-                    }
-                    _ => {}
-                }
-            }
-            _ = &mut handle => {
-                // Pipeline finished — drain any buffered render events.
-                while let Ok(event) = rx.try_recv() {
-                    if let PipelineEvent::PlainRender { label, image } = event
-                        && images.len() < MAX_IMAGES
-                        && let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY)
-                    {
-                        let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
-                        if total + b64.len() <= MAX_TOTAL_B64_BYTES {
-                            total += b64.len();
-                            state.plain_images.insert(label.clone(), b64.clone());
-                            images.push((label, b64));
-                        }
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    images
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Encode an RGBA image to PNG bytes.
-#[allow(dead_code)]
 pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> Result<(), String> {
     use image::ExtendedColorType;
     use image::codecs::png::PngEncoder;
@@ -352,7 +243,6 @@ pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> R
 /// JPEG has no alpha channel; the alpha is dropped (rendered form pages are
 /// opaque). Far smaller than PNG for page renders, which keeps the AI request
 /// payload within provider size limits without sacrificing resolution.
-#[allow(dead_code)]
 pub fn encode_rgba_to_jpeg(img: &blueprint::RgbaImage, quality: u8) -> Result<Vec<u8>, String> {
     use image::ExtendedColorType;
     use image::codecs::jpeg::JpegEncoder;
