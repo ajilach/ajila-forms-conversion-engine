@@ -271,6 +271,7 @@ pub fn ReferencesPage(
                                     let tools = crate::ai_tools::build_describe_tools(
                                         pdf_data.clone(),
                                         files.clone(),
+                                        Some(profile.as_str()),
                                     )
                                     .await;
 

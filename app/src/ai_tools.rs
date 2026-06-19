@@ -49,6 +49,12 @@ pub async fn build_tools(
     let base: Box<dyn ToolExecutor> = if source_pdfs.is_empty() {
         Box::new(ImageToolContext::new(plain_images.clone()))
     } else {
+        // Register the profile's fonts in the global font manager so on-demand
+        // page renders (`get_plain_state_image`) resolve typefaces — otherwise
+        // the render hard-fails when no conversion has loaded fonts this session.
+        if let Some(p) = profile {
+            let _ = blueprint::load_profile_fonts(p);
+        }
         Box::new(FormToolContext::build(source_pdfs).await)
     };
 
@@ -74,7 +80,13 @@ pub async fn build_tools(
 pub async fn build_describe_tools(
     pdfs: Vec<(String, Vec<u8>)>,
     package_files: Vec<(String, String)>,
+    profile: Option<&str>,
 ) -> Box<dyn ToolExecutor> {
+    // Register the profile's fonts before any on-demand render, so the describe
+    // agent's `get_plain_state_image` resolves typefaces instead of failing.
+    if let Some(p) = profile {
+        let _ = blueprint::load_profile_fonts(p);
+    }
     let form = FormToolContext::build(&pdfs).await;
     Box::new(CompositeToolExecutor::new(vec![
         Box::new(form),

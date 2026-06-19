@@ -93,6 +93,71 @@ async fn parse_crx_response(
     Err(format!("AEM {action} failed: {msg}"))
 }
 
+/// Fetch the rendered Adaptive Form HTML from AEM for verification.
+///
+/// `form_jcr_path` is the form's JCR node path (e.g.
+/// `/content/forms/af/<form_path>/<form_dir>`); the form renders at that path
+/// with an `.html` extension. Returns the HTML body.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn fetch_form_html(conn: &AemConnection, form_jcr_path: &str) -> Result<String, String> {
+    let host = conn.host.trim_end_matches('/');
+    let path = form_jcr_path.trim_end_matches('/');
+    let url = format!("{host}{path}.html");
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .basic_auth(&conn.username, Some(&conn.password))
+        .send()
+        .await
+        .map_err(|e| format!("AEM form fetch failed: {e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("AEM form fetch read failed: {e}"))?;
+    if !status.is_success() {
+        let snippet: String = body.chars().take(200).collect();
+        return Err(format!("AEM form fetch failed (HTTP {status}): {snippet}"));
+    }
+    Ok(body)
+}
+
+/// Fetch the Document-of-Record (DoR) PDF for a deployed form from AEM.
+///
+/// Uses the Adaptive Form guide-container DoR selector
+/// (`{form}/jcr:content/guideContainer.af.dor.pdf`). Returns the raw PDF bytes;
+/// errors (with a body snippet) if the response isn't a PDF — e.g. DoR isn't
+/// configured for the form. (Confirm the exact selector against your AEM
+/// version's DoR docs if this 404s.)
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn fetch_dor_pdf(conn: &AemConnection, form_jcr_path: &str) -> Result<Vec<u8>, String> {
+    let host = conn.host.trim_end_matches('/');
+    let path = form_jcr_path.trim_end_matches('/');
+    let url = format!("{host}{path}/jcr:content/guideContainer.af.dor.pdf");
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .basic_auth(&conn.username, Some(&conn.password))
+        .send()
+        .await
+        .map_err(|e| format!("AEM DoR fetch failed: {e}"))?;
+    let status = resp.status();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("AEM DoR read failed: {e}"))?
+        .to_vec();
+    if !status.is_success() {
+        let snippet: String = String::from_utf8_lossy(&bytes).chars().take(200).collect();
+        return Err(format!("AEM DoR fetch failed (HTTP {status}): {snippet}"));
+    }
+    if !bytes.starts_with(b"%PDF") {
+        let snippet: String = String::from_utf8_lossy(&bytes).chars().take(200).collect();
+        return Err(format!(
+            "AEM DoR response was not a PDF (DoR may not be configured for this form): {snippet}"
+        ));
+    }
+    Ok(bytes)
+}
+
 #[cfg(target_arch = "wasm32")]
 pub async fn upload_and_install_package(
     _conn: &AemConnection,
@@ -100,4 +165,14 @@ pub async fn upload_and_install_package(
     _package_name: &str,
 ) -> Result<(), String> {
     Err("AEM upload is only supported in the desktop app.".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn fetch_form_html(_conn: &AemConnection, _form_jcr_path: &str) -> Result<String, String> {
+    Err("AEM fetch is only supported in the desktop app.".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn fetch_dor_pdf(_conn: &AemConnection, _form_jcr_path: &str) -> Result<Vec<u8>, String> {
+    Err("AEM fetch is only supported in the desktop app.".to_string())
 }

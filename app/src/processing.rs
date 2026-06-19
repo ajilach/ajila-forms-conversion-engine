@@ -101,6 +101,7 @@ pub fn finalize_envelope(
 /// Choose the primary language for a generated document: English if it appears
 /// among the content's languages, otherwise the most frequently occurring one.
 /// Falls back to `"en"` when no translated languages are present.
+#[allow(dead_code)]
 pub fn primary_language(nodes: &[blueprint::StructuredNode]) -> String {
     use std::collections::{BTreeSet, HashMap};
 

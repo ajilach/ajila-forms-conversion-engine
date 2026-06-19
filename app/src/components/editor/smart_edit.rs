@@ -21,6 +21,8 @@ use crate::platform::{anthropic_agentic_turn, chat_turn};
 const SMART_EDIT_MAX_TOKENS: u32 = 16000;
 /// Output-token cap for generating a whole document from PDFs. Large, since a
 /// full document can be long; streaming keeps the request from timing out.
+/// Retained for the legacy one-shot `run_ai_generate` (superseded by the agent).
+#[allow(dead_code)]
 const AI_GENERATE_MAX_TOKENS: u32 = 64000;
 
 /// Domain guidance for the AI-processing (whole-document generation) prompt.
@@ -30,6 +32,7 @@ const AI_GENERATE_MAX_TOKENS: u32 = 64000;
 /// automatically and therefore must NOT be emitted. Derived from diffing engine
 /// output against hand-corrected reference forms (UBS Germany `019`, Italy
 /// `033`). See `specs/ai-prompts.md`.
+#[allow(dead_code)]
 const AI_GENERATE_GUIDANCE: &str = "\
 HOW TO MAP THE XFA SOURCE INTO STRUCTURED NODES\n\
 Reproduce text verbatim; your job is to choose the right node KIND, the right \
@@ -355,6 +358,10 @@ async fn parse_with_repair(
 /// shared repair cycle). Skips the deterministic core pipeline entirely.
 ///
 /// `pdfs` is a list of `(filename, raw_bytes)` pairs.
+///
+/// Legacy one-shot path, superseded by the autonomous [`crate::agent`]. Retained
+/// as a fallback; not currently wired into Agent Processing.
+#[allow(dead_code)]
 pub async fn run_ai_generate(
     pdfs: &[(String, Vec<u8>)],
     api_key: &str,

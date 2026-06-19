@@ -664,6 +664,172 @@ mod imp {
             .unwrap_or(0)
     }
 
+    // ── Agent helpers: raw bytes, package files, literal/regex grep, docs ───────
+
+    /// Raw bytes of a stored reference PDF — lets the agent run the engine on a
+    /// reference's input (the §1 extraction tools with `source: reference`).
+    pub fn get_reference_pdf_bytes(ref_id: &str, pdf_index: usize) -> Result<Vec<u8>, String> {
+        let conn = crate::db::open().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT pdf_bytes FROM reference_pdfs WHERE ref_id = ?1 AND pdf_index = ?2",
+            params![ref_id, pdf_index as i64],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("No PDF {pdf_index} for reference {ref_id}"))
+    }
+
+    /// All stored package files `(path, content)` for a reference — the
+    /// known-good output the agent compares its own form against.
+    pub fn get_reference_package_files(ref_id: &str) -> Vec<(String, String)> {
+        let Ok(conn) = crate::db::open() else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) = conn
+            .prepare("SELECT path, content FROM reference_files WHERE ref_id = ?1 ORDER BY path")
+        else {
+            return Vec::new();
+        };
+        stmt.query_map([ref_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map(|it| it.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+    }
+
+    /// Byte offset of the first match of `query` in `content`. Literal
+    /// (case-insensitive) unless `regex` (then `query` is a regex; an invalid
+    /// regex matches nothing).
+    fn find_match(content: &str, query: &str, regex: bool) -> Option<usize> {
+        if regex {
+            regex_lite::Regex::new(query)
+                .ok()
+                .and_then(|re| re.find(content).map(|m| m.start()))
+        } else {
+            content.to_lowercase().find(&query.to_lowercase())
+        }
+    }
+
+    /// One-line snippet around a byte offset (≈160 chars, newlines collapsed).
+    fn snippet_around(text: &str, byte_start: usize) -> String {
+        let prefix_chars = text.get(..byte_start).map(|s| s.chars().count()).unwrap_or(0);
+        let start = prefix_chars.saturating_sub(40);
+        text.chars()
+            .skip(start)
+            .take(160)
+            .collect::<String>()
+            .replace('\n', " ")
+            .trim()
+            .to_string()
+    }
+
+    /// Literal/regex search over reference **descriptions + package XML** — no
+    /// embeddings (the grep-only counterpart to `search_references`).
+    pub fn grep_references(profile: &str, query: &str, regex: bool) -> Vec<SearchHit> {
+        let Ok(conn) = crate::db::open() else {
+            return Vec::new();
+        };
+        let mut hits = Vec::new();
+        if let Ok(mut stmt) =
+            conn.prepare("SELECT ref_id, label, description FROM references_ WHERE profile = ?1")
+        {
+            let rows = stmt
+                .query_map([profile], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                })
+                .map(|it| it.filter_map(Result::ok).collect::<Vec<_>>())
+                .unwrap_or_default();
+            for (ref_id, label, desc) in rows {
+                if let Some(at) = find_match(&desc, query, regex) {
+                    hits.push(SearchHit {
+                        ref_id,
+                        label,
+                        location: "description".into(),
+                        matched: "description",
+                        snippet: snippet_around(&desc, at),
+                        score: None,
+                    });
+                }
+            }
+        }
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT rf.ref_id, r.label, rf.path, rf.content
+             FROM reference_files rf JOIN references_ r ON r.ref_id = rf.ref_id
+             WHERE r.profile = ?1",
+        ) {
+            let rows = stmt
+                .query_map([profile], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                })
+                .map(|it| it.filter_map(Result::ok).collect::<Vec<_>>())
+                .unwrap_or_default();
+            for (ref_id, label, path, content) in rows {
+                if let Some(at) = find_match(&content, query, regex) {
+                    hits.push(SearchHit {
+                        ref_id,
+                        label,
+                        location: path,
+                        matched: "package",
+                        snippet: snippet_around(&content, at),
+                        score: None,
+                    });
+                }
+            }
+        }
+        hits
+    }
+
+    /// Read a slice (by line) of a reference-documentation doc.
+    pub fn read_doc(doc_id: &str, offset: usize, limit: usize) -> Result<String, String> {
+        let conn = crate::db::open().map_err(|e| e.to_string())?;
+        let content: String = conn
+            .query_row(
+                "SELECT content FROM reference_docs WHERE doc_id = ?1",
+                [doc_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("Unknown doc_id: {doc_id}"))?;
+        if offset == 0 && limit == 0 {
+            return Ok(content);
+        }
+        Ok(content
+            .lines()
+            .skip(offset)
+            .take(if limit == 0 { usize::MAX } else { limit })
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    /// Literal/regex search over reference documentation. Returns
+    /// `(doc_id, label, snippet)` per matching doc.
+    pub fn grep_docs(profile: &str, query: &str, regex: bool) -> Vec<(String, String, String)> {
+        let Ok(conn) = crate::db::open() else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) =
+            conn.prepare("SELECT doc_id, label, content FROM reference_docs WHERE profile = ?1")
+        else {
+            return Vec::new();
+        };
+        let rows = stmt
+            .query_map([profile], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            })
+            .map(|it| it.filter_map(Result::ok).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for (doc_id, label, content) in rows {
+            if let Some(at) = find_match(&content, query, regex) {
+                out.push((doc_id, label, snippet_around(&content, at)));
+            }
+        }
+        out
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -776,6 +942,21 @@ mod stub {
     }
     pub fn pdf_state_count(_pdf_bytes: &[u8]) -> u32 {
         0
+    }
+    pub fn get_reference_pdf_bytes(_ref_id: &str, _pdf_index: usize) -> Result<Vec<u8>, String> {
+        Err("References are only available in the desktop app.".to_string())
+    }
+    pub fn get_reference_package_files(_ref_id: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    pub fn grep_references(_profile: &str, _query: &str, _regex: bool) -> Vec<SearchHit> {
+        Vec::new()
+    }
+    pub fn read_doc(_doc_id: &str, _offset: usize, _limit: usize) -> Result<String, String> {
+        Err("References are only available in the desktop app.".to_string())
+    }
+    pub fn grep_docs(_profile: &str, _query: &str, _regex: bool) -> Vec<(String, String, String)> {
+        Vec::new()
     }
     #[allow(clippy::too_many_arguments)]
     pub fn add_reference(

@@ -18,6 +18,36 @@ pub enum ProcessingStep {
     Complete,
 }
 
+/// Kind of an agent activity step.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentStepKind {
+    /// The model's visible text for a turn.
+    Thought,
+    /// A tool call.
+    Tool,
+}
+
+/// Status of an agent activity step (drives the spinner / checkmark).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentStepStatus {
+    Running,
+    Done,
+    Error,
+}
+
+/// One entry in the Agent Processing activity panel.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentStep {
+    /// Tool-call id (for matching start→finish); empty for thoughts.
+    pub id: String,
+    pub kind: AgentStepKind,
+    /// Tool name, or the thought text.
+    pub label: String,
+    /// Short input summary for tool steps.
+    pub detail: String,
+    pub status: AgentStepStatus,
+}
+
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProcessingState {
     pub step: ProcessingStep,
@@ -39,6 +69,13 @@ pub struct ProcessingState {
     /// instead of the full staged pipeline.
     #[serde(default)]
     pub ai_mode: bool,
+    /// Live activity log for the Agent Processing run (thoughts + tool calls).
+    #[serde(default)]
+    pub agent_steps: Vec<AgentStep>,
+    /// Edit-history session id holding the agent's AEM-tree history, so the AEM
+    /// editor can show every step the agent took. `None` outside agent mode.
+    #[serde(default)]
+    pub agent_aem_session: Option<String>,
     /// The merged document envelope for the editor.
     /// This is the structured representation before JSON serialization.
     #[serde(skip)]
@@ -62,6 +99,8 @@ impl PartialEq for ProcessingState {
             && self.error == other.error
             && self.warnings == other.warnings
             && self.ai_mode == other.ai_mode
+            && self.agent_steps == other.agent_steps
+            && self.agent_aem_session == other.agent_aem_session
         // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
     }
 }

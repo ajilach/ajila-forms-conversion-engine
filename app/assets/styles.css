@@ -2784,3 +2784,48 @@ body > div, #main {
     color: var(--color-text-muted, #888);
     margin: 0 0 4px 0;
 }
+
+/* ── Agent Processing activity panel ─────────────────────────────────────── */
+.agent-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+.agent-thought {
+    white-space: pre-wrap;
+    line-height: 1.45;
+    color: var(--color-text, #222);
+    padding: 8px 12px;
+    background: var(--color-surface, #f6f6f7);
+    border-radius: 8px;
+}
+.agent-tool {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 12px;
+    border-left: 3px solid var(--color-border, #d9d9dc);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+}
+.agent-tool-status {
+    display: inline-flex;
+    align-items: center;
+    min-width: 16px;
+}
+.agent-tool-name {
+    font-weight: 600;
+}
+.agent-tool-detail {
+    color: var(--color-text-muted, #888);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-ok {
+    color: #2e9e5b;
+}
+.agent-err {
+    color: #c0392b;
+}

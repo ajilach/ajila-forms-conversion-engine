@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
 use super::spinner::Spinner;
-use crate::models::{ProcessingState, ProcessingStep};
+use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 
 #[component]
 pub fn ProgressDisplay(
@@ -11,76 +11,37 @@ pub fn ProgressDisplay(
     // AI processing shows the staged pipeline up to state rendering, then a
     // single "AI Generation" step takes over (same StepIndicator style, fewer
     // steps).
+    // Agent Processing: a live activity log of the agent's thoughts and tool
+    // calls (spinner while running, ✓/✗ when done) instead of staged steps.
     if state.ai_mode {
-        let step = &state.step;
         return rsx! {
             div { class: "progress-container",
-
-                h2 { "Progress" }
-
-                div { class: "progress-steps",
-
-                    StepIndicator {
-                        name: "1. Parsing",
-                        is_current: *step == ProcessingStep::Parsing,
-                        is_complete: matches!(
-                            step,
-                            ProcessingStep::ExhaustiveSearching
-                            | ProcessingStep::Flattening
-                            | ProcessingStep::AiGenerating
-                            | ProcessingStep::Complete
-                        ),
-                        progress: if *step == ProcessingStep::Parsing { state.step_progress } else { None },
+                h2 { "Agent Processing" }
+                div { class: "agent-activity",
+                    if state.agent_steps.is_empty() {
+                        div { class: "agent-thought", "Starting agent…" }
                     }
-
-                    StepIndicator {
-                        name: "2. Exhaustive Searching",
-                        is_current: *step == ProcessingStep::ExhaustiveSearching,
-                        is_complete: matches!(
-                            step,
-                            ProcessingStep::Flattening
-                            | ProcessingStep::AiGenerating
-                            | ProcessingStep::Complete
-                        ),
-                        progress: if *step == ProcessingStep::ExhaustiveSearching { state.step_progress } else { None },
-                    }
-
-                    StepIndicator {
-                        name: "3. State Rendering",
-                        is_current: *step == ProcessingStep::Flattening,
-                        is_complete: matches!(
-                            step,
-                            ProcessingStep::AiGenerating | ProcessingStep::Complete
-                        ),
-                        progress: if *step == ProcessingStep::Flattening { state.step_progress } else { None },
-                    }
-
-                    // Show the rendered page images once available (same grid
-                    // as normal processing).
-                    if !state.plain_images.is_empty() {
-                        super::image_grid::ImageGrid {
-                            title: "Plain State Images",
-                            images: state.plain_images.clone(),
-                            on_image_click,
-                        }
-                    }
-
-                    StepIndicator {
-                        name: "4. AI Generation",
-                        is_current: *step == ProcessingStep::AiGenerating,
-                        is_complete: *step == ProcessingStep::Complete,
-                        progress: None,
-                    }
-                }
-
-                if !state.warnings.is_empty() {
-                    div { class: "progress-warnings",
-                        strong { "Warnings:" }
-                        ul {
-                            for warning in state.warnings.iter() {
-                                li { "{warning}" }
-                            }
-                        }
+                    for (i, s) in state.agent_steps.iter().enumerate() {
+                        {match s.kind {
+                            AgentStepKind::Thought => rsx! {
+                                div { key: "{i}", class: "agent-thought", "{s.label}" }
+                            },
+                            AgentStepKind::Tool => rsx! {
+                                div { key: "{i}", class: "agent-tool",
+                                    span { class: "agent-tool-status",
+                                        {match s.status {
+                                            AgentStepStatus::Running => rsx! { Spinner { size: "sm" } },
+                                            AgentStepStatus::Done => rsx! { span { class: "agent-ok", "✓" } },
+                                            AgentStepStatus::Error => rsx! { span { class: "agent-err", "✗" } },
+                                        }}
+                                    }
+                                    span { class: "agent-tool-name", "{s.label}" }
+                                    if !s.detail.is_empty() {
+                                        span { class: "agent-tool-detail", "{s.detail}" }
+                                    }
+                                }
+                            },
+                        }}
                     }
                 }
 

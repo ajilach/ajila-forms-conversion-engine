@@ -276,9 +276,9 @@ pub fn FileUploadSection(
                         let title = if !ai_available {
                             "Configure an AI provider and API key in Settings to enable this."
                         } else if !has_pdf {
-                            "Upload at least one PDF to use AI processing."
+                            "Upload at least one PDF to use Agent Processing."
                         } else {
-                            "Generate the structured document from the PDFs using the configured AI model."
+                            "Let the AI agent drive the full conversion (extract → structure → AEM → package), reviewable step by step."
                         };
                         rsx! {
                             button {
@@ -295,7 +295,7 @@ pub fn FileUploadSection(
                                 if is_processing {
                                     "Processing..."
                                 } else {
-                                    "Start AI Processing"
+                                    "Start Agent Processing"
                                 }
                             }
                         }

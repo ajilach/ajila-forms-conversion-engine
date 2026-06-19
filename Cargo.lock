@@ -586,6 +586,7 @@ dependencies = [
  "image",
  "js-sys",
  "pulldown-cmark",
+ "regex-lite",
  "reqwest 0.13.4",
  "rusqlite",
  "serde",

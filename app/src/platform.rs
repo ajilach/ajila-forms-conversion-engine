@@ -342,6 +342,23 @@ pub enum ToolReply {
 /// a model that keeps calling tools without ever producing a final answer.
 const MAX_TOOL_ITERATIONS: usize = 16;
 
+/// A tool call requested by the model in one streamed turn.
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+}
+
+/// The result of one streamed assistant turn ([`anthropic_stream_turn`]).
+pub struct TurnOutput {
+    /// The model's visible text for the turn.
+    pub text: String,
+    /// Tool calls the model requested (empty if it produced a final answer).
+    pub tool_calls: Vec<ToolCall>,
+    /// The turn's `stop_reason` (`"tool_use"` when tools were requested).
+    pub stop_reason: Option<String>,
+}
+
 /// Run an agentic (tool-enabled) conversation turn against the Anthropic
 /// Messages API and return the model's final text once it stops requesting
 /// tools.
@@ -550,6 +567,192 @@ pub async fn anthropic_agentic_turn(
     ))
 }
 
+/// Run **one** streamed assistant turn against the Messages API with `tools`
+/// available, append the assistant message to `history`, and return its text +
+/// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:
+/// it executes the returned tool calls (which may be async) and appends a user
+/// `tool_result` message via [`tool_result_message`] before the next turn.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn anthropic_stream_turn(
+    history: &mut Vec<serde_json::Value>,
+    tools: &[serde_json::Value],
+    api_key: &str,
+    model: &str,
+    max_tokens: u32,
+) -> Result<TurnOutput, String> {
+    use futures_util::StreamExt;
+
+    if api_key.is_empty() {
+        return Err(
+            "Anthropic API key is not configured. Open Settings and paste your API key."
+                .to_string(),
+        );
+    }
+
+    let request = serde_json::json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": history,
+        "tools": tools,
+        "stream": true,
+    });
+
+    let response = reqwest::Client::new()
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let msg = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().map(String::from))
+            .unwrap_or(body);
+        return Err(format!("Anthropic API error ({status}): {msg}"));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut response_text = String::new();
+    let mut tool_blocks: std::collections::BTreeMap<u64, (String, String, String)> =
+        std::collections::BTreeMap::new();
+    let mut stop_reason: Option<String> = None;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
+        buf.extend_from_slice(&chunk);
+
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
+            let Some(data) = line.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() {
+                continue;
+            }
+            let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+            match event["type"].as_str() {
+                Some("content_block_start") => {
+                    if event["content_block"]["type"] == "tool_use" {
+                        let idx = event["index"].as_u64().unwrap_or(0);
+                        let id = event["content_block"]["id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string();
+                        let name = event["content_block"]["name"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string();
+                        tool_blocks.insert(idx, (id, name, String::new()));
+                    }
+                }
+                Some("content_block_delta") => match event["delta"]["type"].as_str() {
+                    Some("text_delta") => {
+                        if let Some(t) = event["delta"]["text"].as_str() {
+                            response_text.push_str(t);
+                        }
+                    }
+                    Some("input_json_delta") => {
+                        let idx = event["index"].as_u64().unwrap_or(0);
+                        if let Some(entry) = tool_blocks.get_mut(&idx)
+                            && let Some(pj) = event["delta"]["partial_json"].as_str()
+                        {
+                            entry.2.push_str(pj);
+                        }
+                    }
+                    _ => {}
+                },
+                Some("message_delta") => {
+                    if let Some(sr) = event["delta"]["stop_reason"].as_str() {
+                        stop_reason = Some(sr.to_string());
+                    }
+                }
+                Some("error") => {
+                    let msg = event["error"]["message"]
+                        .as_str()
+                        .unwrap_or("unknown error");
+                    return Err(format!("Anthropic API error: {msg}"));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Append the assistant message (text + tool_use blocks) to history.
+    let mut assistant_content: Vec<serde_json::Value> = Vec::new();
+    if !response_text.is_empty() {
+        assistant_content.push(serde_json::json!({"type": "text", "text": response_text}));
+    }
+    let mut tool_calls = Vec::new();
+    for (_idx, (id, name, input_buf)) in &tool_blocks {
+        let input: serde_json::Value =
+            serde_json::from_str(input_buf).unwrap_or_else(|_| serde_json::json!({}));
+        assistant_content.push(serde_json::json!({
+            "type": "tool_use",
+            "id": id,
+            "name": name,
+            "input": input,
+        }));
+        tool_calls.push(ToolCall {
+            id: id.clone(),
+            name: name.clone(),
+            input,
+        });
+    }
+    history.push(serde_json::json!({
+        "role": "assistant",
+        "content": assistant_content,
+    }));
+
+    Ok(TurnOutput {
+        text: response_text,
+        tool_calls,
+        stop_reason,
+    })
+}
+
+/// Build the user `tool_result` message for a batch of executed tool calls.
+/// Each entry is `(tool_use_id, ToolReply)`. Append the result to `history`
+/// before the next [`anthropic_stream_turn`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn tool_result_message(results: Vec<(String, ToolReply)>) -> serde_json::Value {
+    let content: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|(id, reply)| match reply {
+            ToolReply::Text(text) => serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": id,
+                "content": [{"type": "text", "text": text}],
+            }),
+            ToolReply::Image { media_type, b64 } => serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": id,
+                "content": [{
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": b64},
+                }],
+            }),
+            ToolReply::Error(msg) => serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": id,
+                "is_error": true,
+                "content": [{"type": "text", "text": msg}],
+            }),
+        })
+        .collect();
+    serde_json::json!({ "role": "user", "content": content })
+}
+
 #[cfg(target_arch = "wasm32")]
 pub async fn anthropic_agentic_turn(
     _history: &mut Vec<serde_json::Value>,
@@ -561,6 +764,22 @@ pub async fn anthropic_agentic_turn(
     _execute: impl FnMut(&str, &serde_json::Value) -> ToolReply,
 ) -> Result<String, String> {
     Err("AI features are only supported in the desktop app. The web version cannot call the Anthropic API directly.".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn anthropic_stream_turn(
+    _history: &mut Vec<serde_json::Value>,
+    _tools: &[serde_json::Value],
+    _api_key: &str,
+    _model: &str,
+    _max_tokens: u32,
+) -> Result<TurnOutput, String> {
+    Err("AI features are only supported in the desktop app.".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn tool_result_message(_results: Vec<(String, ToolReply)>) -> serde_json::Value {
+    serde_json::json!({})
 }
 
 /// Fetch the list of available model IDs from the Anthropic API, sorted
