@@ -3124,3 +3124,289 @@ body > div, #main {
     display: flex;
     justify-content: center;
 }
+
+/* ============================================================
+   Single-page agent flow — one status box that morphs through
+   upload → live activity → done, with a collapsible timeline.
+   ============================================================ */
+
+/* Scroll container: the box scrolls inside the view, never the window. */
+.agent-single {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.agent-page {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: var(--space-7) var(--space-5) var(--space-9);
+}
+
+/* ---- The box ---- */
+.ag-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-soft);
+    padding: var(--space-5);
+}
+.ag-box.done {
+    border-color: color-mix(in srgb, var(--success) 30%, transparent);
+    background: linear-gradient(120deg, var(--success-soft), transparent 55%), var(--surface);
+}
+
+/* ---- Header ---- */
+.ag-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+.ag-top-text { min-width: 0; }
+.ag-badge {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-size: 20px;
+    box-shadow: var(--shadow-soft);
+}
+.ag-badge.upload {
+    background: var(--surface-2);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    box-shadow: none;
+}
+.ag-badge.run {
+    background: var(--accent-soft);
+    color: var(--accent);
+    box-shadow: none;
+}
+.ag-badge.run .spinner {
+    border-color: rgba(6, 37, 68, 0.2);
+    border-top-color: var(--accent);
+}
+.ag-badge.ok {
+    background: var(--success);
+    color: #fff;
+}
+.ag-title {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+.ag-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.ag-meta b { color: var(--text); font-weight: 600; }
+.ag-actions {
+    margin-left: auto;
+    display: flex;
+    gap: var(--space-3);
+}
+
+/* ---- Phase rail ---- */
+.ag-phases {
+    display: flex;
+    align-items: center;
+    margin-top: var(--space-5);
+}
+.ag-phase { display: flex; align-items: center; gap: 9px; }
+.ag-phase .pn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    border: 2px solid var(--border);
+    color: var(--muted);
+    background: var(--surface);
+}
+.ag-phase.done .pn { background: var(--success); border-color: var(--success); color: #fff; }
+.ag-phase.active .pn { border-color: var(--accent); color: var(--accent); }
+.ag-phase .pl { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.ag-phase.done .pl,
+.ag-phase.active .pl { color: var(--text); }
+.ag-pbar {
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+    margin: 0 12px;
+    border-radius: 2px;
+}
+.ag-pbar.done { background: var(--success); }
+
+/* ---- Source files ---- */
+.ag-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+}
+.ag-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-family: var(--font-mono);
+}
+.ag-file-ext {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--accent);
+}
+.ag-file-ext.pdf { background: var(--danger); }
+.ag-file-ext.json { background: #0e6b8c; }
+.ag-file-ext.zip { background: #a96f0d; }
+
+/* ---- Collapsible activity timeline ---- */
+.ag-tl {
+    margin-top: var(--space-5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface);
+}
+.ag-tl-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 11px 14px;
+    cursor: pointer;
+    user-select: none;
+    background: transparent;
+    border: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+}
+.ag-tl-bar:hover { background: var(--accent-soft); }
+.ag-tl-dot {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+}
+.ag-tl-dot.ok { background: var(--success); border-color: var(--success); color: #fff; }
+.ag-tl-dot.ok .af-ok { color: #fff; }
+.ag-tl-latest { display: flex; flex-direction: column; min-width: 0; }
+.ag-tl-latest .nm {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+}
+.ag-tl-latest .nm-thought {
+    font-size: 13px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ag-tl-latest .dt {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ag-tl-title { font-weight: 700; font-size: 13px; color: var(--text); }
+.ag-tl-chevron {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.ag-tl-chevron .chev { transition: transform var(--transition-fast); }
+.ag-tl-chevron .chev-open { transform: rotate(180deg); }
+.ag-tl-full {
+    max-height: 38vh;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    padding: 16px 16px 2px;
+}
+
+/* ---- AEM result + feedback (done) ---- */
+.ag-aem {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: var(--space-5);
+}
+.ag-aem-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.ag-aem-path {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--accent);
+    word-break: break-all;
+}
+.ag-fb {
+    margin-top: var(--space-5);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border);
+}
+.ag-fb-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.ag-fb-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: 10px;
+}
+
+/* ---- Upload state extras ---- */
+.ag-box .profile-selector { margin: var(--space-5) 0 0; }
+.ag-box .upload-dropzone {
+    margin-top: var(--space-5);
+    margin-bottom: 0;
+    background: var(--surface-2);
+    text-align: center;
+}
+.ag-box .upload-actions { justify-content: center; }
+.dz-icon {
+    width: 46px;
+    height: 46px;
+    margin: 0 auto var(--space-3);
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    font-size: 20px;
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+.ag-box .upload-dropzone h3 { margin: 0; font-size: 14.5px; font-weight: 700; color: var(--text); }
+.ag-box .upload-hint { margin-top: 4px; }
+.ag-up-actions {
+    margin-top: var(--space-5);
+    display: flex;
+    justify-content: center;
+}

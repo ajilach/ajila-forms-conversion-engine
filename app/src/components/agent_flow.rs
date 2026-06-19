@@ -1,7 +1,9 @@
-//! Simplified agent-mode UI: a single full-height flow that shows exactly one
-//! phase at a time — upload → live narrative timeline → done — with no extra
-//! buttons. The legacy stacked layout remains available behind a settings
-//! toggle (`AppSettings::legacy_agent_ui`).
+//! Single-page agent-mode UI: one status box that morphs through the whole
+//! run — upload → live activity → done — without swapping screens. The activity
+//! timeline is collapsed to its latest step by default and expands in place to
+//! the full, scrollable history. Feedback lives inside the finished box. The
+//! legacy stacked layout remains available behind a settings toggle
+//! (`AppSettings::legacy_agent_ui`).
 
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;
@@ -11,7 +13,7 @@ use super::spinner::Spinner;
 use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 
 /// Which phase of the agent flow is currently shown.
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum Phase {
     Upload,
     Running,
@@ -24,6 +26,20 @@ fn format_elapsed(secs: u64) -> String {
         format!("{}m {}s", secs / 60, secs % 60)
     } else {
         format!("{secs}s")
+    }
+}
+
+/// Map a file name to a short extension badge: `(css_class, label)`.
+fn ext_badge(name: &str) -> (&'static str, &'static str) {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".pdf") {
+        ("pdf", "PDF")
+    } else if lower.ends_with(".zip") {
+        ("zip", "ZIP")
+    } else if lower.ends_with(".json") {
+        ("json", "JSON")
+    } else {
+        ("", "FILE")
     }
 }
 
@@ -46,6 +62,8 @@ pub fn AgentFlow(
     let is_dragging = use_signal(|| false);
     let drag_depth = use_signal(|| 0usize);
     let mut feedback = use_signal(String::new);
+    // Whether the activity timeline is expanded to its full history.
+    let mut timeline_open = use_signal(|| false);
 
     // Auto-select the first profile if none is chosen yet.
     if selected_profile.read().is_none()
@@ -54,15 +72,18 @@ pub fn AgentFlow(
         selected_profile.set(Some(first.clone()));
     }
 
-    // Keep the timeline pinned to the newest step as the agent works.
+    // Keep the timeline pinned to the newest step as the agent works (only
+    // matters while the history is expanded).
     use_effect(move || {
         let _ = processing_state.read().agent_steps.len();
-        document::eval(
-            r#"setTimeout(() => {
-                const el = document.getElementById('agent-flow-end');
-                if (el) el.scrollIntoView({ block: 'end' });
-            }, 0);"#,
-        );
+        if *timeline_open.read() {
+            document::eval(
+                r#"setTimeout(() => {
+                    const el = document.getElementById('agent-flow-end');
+                    if (el) el.scrollIntoView({ block: 'end' });
+                }, 0);"#,
+            );
+        }
     });
 
     let state = processing_state.read();
@@ -77,42 +98,47 @@ pub fn AgentFlow(
 
     rsx! {
         div { class: "agent-flow",
-            match phase {
-                Phase::Upload => rsx! {
-                    UploadPhase {
-                        profiles,
-                        selected_profile,
-                        ai_available,
-                        uploaded_files,
-                        is_dragging,
-                        drag_depth,
-                        on_start: move |files: Vec<(String, Vec<u8>)>| on_ai_process.call(files),
-                    }
-                },
-                Phase::Running => rsx! {
-                    RunningPhase { state: state.clone() }
-                },
-                Phase::Done => rsx! {
-                    DonePhase {
-                        elapsed: state.elapsed_secs,
-                        aem_uploaded: state.aem_uploaded,
-                        aem_form_path: state.aem_form_path.clone(),
-                        feedback,
-                        on_feedback: move |text: String| on_feedback.call(text),
-                        on_new: move |_| {
-                            uploaded_files.set(Vec::new());
-                            feedback.set(String::new());
-                            on_reset.call(());
+            div { class: "agent-single",
+                div { class: "agent-page",
+                    match phase {
+                        Phase::Upload => rsx! {
+                            UploadBox {
+                                profiles,
+                                selected_profile,
+                                ai_available,
+                                uploaded_files,
+                                is_dragging,
+                                drag_depth,
+                                on_start: move |files: Vec<(String, Vec<u8>)>| on_ai_process.call(files),
+                            }
+                        },
+                        Phase::Running | Phase::Done => rsx! {
+                            RunBox {
+                                phase,
+                                state: state.clone(),
+                                files: uploaded_files.read().clone(),
+                                profile: selected_profile.read().clone(),
+                                timeline_open,
+                                feedback,
+                                on_feedback: move |text: String| on_feedback.call(text),
+                                on_new: move |_| {
+                                    uploaded_files.set(Vec::new());
+                                    feedback.set(String::new());
+                                    timeline_open.set(false);
+                                    on_reset.call(());
+                                },
+                            }
                         },
                     }
-                },
+                }
             }
         }
     }
 }
 
+/// The box in its initial state: profile, dropzone, selected files, Start.
 #[component]
-fn UploadPhase(
+fn UploadBox(
     profiles: Vec<String>,
     mut selected_profile: Signal<Option<String>>,
     ai_available: bool,
@@ -137,213 +163,356 @@ fn UploadPhase(
     };
 
     rsx! {
-        div { class: "agent-flow-center",
-            div { class: "agent-flow-upload",
+        section { class: "ag-box",
+            div { class: "ag-top",
+                div { class: "ag-badge upload", "↑" }
+                div { class: "ag-top-text",
+                    h2 { class: "ag-title", "Convert a form" }
+                    div { class: "ag-meta",
+                        span { "Drop the files and the agent takes it from here." }
+                    }
+                }
+            }
 
-                if !profiles.is_empty() {
-                    div { class: "profile-selector",
-                        label { r#for: "agent-profile-select", "Profile" }
-                        select {
-                            id: "agent-profile-select",
-                            onchange: move |evt: Event<FormData>| selected_profile.set(Some(evt.value())),
-                            for name in profiles.iter() {
-                                option {
-                                    value: "{name}",
-                                    selected: selected_profile.read().as_deref() == Some(name.as_str()),
+            div { class: "ag-phases",
+                div { class: "ag-phase active",
+                    span { class: "pn", "1" }
+                    span { class: "pl", "Upload" }
+                }
+                div { class: "ag-pbar" }
+                div { class: "ag-phase",
+                    span { class: "pn", "2" }
+                    span { class: "pl", "Convert" }
+                }
+                div { class: "ag-pbar" }
+                div { class: "ag-phase",
+                    span { class: "pn", "3" }
+                    span { class: "pl", "Finish" }
+                }
+            }
+
+            if !profiles.is_empty() {
+                div { class: "profile-selector",
+                    label { r#for: "agent-profile-select", "Profile" }
+                    select {
+                        id: "agent-profile-select",
+                        onchange: move |evt: Event<FormData>| selected_profile.set(Some(evt.value())),
+                        for name in profiles.iter() {
+                            option {
+                                value: "{name}",
+                                selected: selected_profile.read().as_deref() == Some(name.as_str()),
+                                "{name}"
+                            }
+                        }
+                    }
+                }
+            }
+
+            div {
+                class: if *is_dragging.read() { "upload-dropzone upload-dropzone-dragging agent-dropzone" } else { "upload-dropzone agent-dropzone" },
+                ondragenter: move |evt: Event<DragData>| {
+                    evt.prevent_default();
+                    let next = *drag_depth.read() + 1;
+                    drag_depth.set(next);
+                    is_dragging.set(true);
+                },
+                ondragover: move |evt: Event<DragData>| evt.prevent_default(),
+                ondragleave: move |evt: Event<DragData>| {
+                    evt.prevent_default();
+                    let next = (*drag_depth.read()).saturating_sub(1);
+                    drag_depth.set(next);
+                    if next == 0 {
+                        is_dragging.set(false);
+                    }
+                },
+                ondrop: move |evt: Event<DragData>| {
+                    evt.prevent_default();
+                    drag_depth.set(0);
+                    is_dragging.set(false);
+                    let dropped = evt.files();
+                    async move {
+                        let data = read_upload_files(dropped).await;
+                        if !data.is_empty() {
+                            uploaded_files.set(data);
+                        }
+                    }
+                },
+
+                div { class: "dz-icon", "↑" }
+                h3 { "Drop files to start the agent" }
+                p { class: "upload-hint", "Upload the PDF forms here." }
+                div { class: "upload-actions",
+                    label {
+                        class: "btn btn-secondary btn-sm",
+                        r#for: "agent-file-input",
+                        "Choose Files"
+                    }
+                }
+                input {
+                    id: "agent-file-input",
+                    class: "upload-input-hidden",
+                    r#type: "file",
+                    multiple: true,
+                    accept: ".pdf,.zip,.json",
+                    onchange: move |evt: Event<FormData>| {
+                        let chosen = evt.files();
+                        async move {
+                            let data = read_upload_files(chosen).await;
+                            if !data.is_empty() {
+                                uploaded_files.set(data);
+                            }
+                        }
+                    },
+                }
+            }
+
+            if !files.is_empty() {
+                ul { class: "file-list-compact",
+                    for (name , _bytes) in files.iter() {
+                        li { "{name}" }
+                    }
+                }
+                div { class: "ag-up-actions",
+                    button {
+                        class: "btn btn-primary",
+                        disabled: start_disabled,
+                        title: start_title,
+                        onclick: {
+                            let files = files.clone();
+                            move |_| on_start.call(files.clone())
+                        },
+                        "Start"
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The box while the agent runs and once it finishes: header, phase rail,
+/// source files, the collapsible activity timeline, and (when done) feedback.
+#[component]
+fn RunBox(
+    phase: Phase,
+    state: ProcessingState,
+    files: Vec<(String, Vec<u8>)>,
+    profile: Option<String>,
+    mut timeline_open: Signal<bool>,
+    mut feedback: Signal<String>,
+    on_feedback: EventHandler<String>,
+    on_new: EventHandler<()>,
+) -> Element {
+    let done = phase == Phase::Done;
+    let open = *timeline_open.read();
+    let steps = &state.agent_steps;
+    let latest = steps.last();
+    let feedback_empty = feedback.read().trim().is_empty();
+
+    rsx! {
+        section { class: if done { "ag-box done" } else { "ag-box" },
+            // ---- Header ----
+            div { class: "ag-top",
+                if done {
+                    div { class: "ag-badge ok", "✓" }
+                } else {
+                    div { class: "ag-badge run",
+                        Spinner { size: "md" }
+                    }
+                }
+                div { class: "ag-top-text",
+                    h2 { class: "ag-title",
+                        if done {
+                            "Finished"
+                        } else {
+                            "Agent is working"
+                        }
+                    }
+                    div { class: "ag-meta",
+                        if let Some(p) = profile.as_ref() {
+                            span {
+                                "Profile "
+                                b { "{p}" }
+                            }
+                        }
+                        if done {
+                            if let Some(secs) = state.elapsed_secs {
+                                span {
+                                    "in "
+                                    b { "{format_elapsed(secs)}" }
+                                }
+                            }
+                        }
+                    }
+                }
+                if done {
+                    div { class: "ag-actions",
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            onclick: move |_| on_new.call(()),
+                            "↻ New form"
+                        }
+                    }
+                }
+            }
+
+            // ---- Phase rail ----
+            div { class: "ag-phases",
+                div { class: "ag-phase done",
+                    span { class: "pn", "✓" }
+                    span { class: "pl", "Upload" }
+                }
+                div { class: "ag-pbar done" }
+                if done {
+                    div { class: "ag-phase done",
+                        span { class: "pn", "✓" }
+                        span { class: "pl", "Convert" }
+                    }
+                    div { class: "ag-pbar done" }
+                    div { class: "ag-phase done",
+                        span { class: "pn", "✓" }
+                        span { class: "pl", "Finish" }
+                    }
+                } else {
+                    div { class: "ag-phase active",
+                        span { class: "pn", "●" }
+                        span { class: "pl", "Convert" }
+                    }
+                    div { class: "ag-pbar" }
+                    div { class: "ag-phase",
+                        span { class: "pn", "3" }
+                        span { class: "pl", "Finish" }
+                    }
+                }
+            }
+
+            // ---- Source files ----
+            if !files.is_empty() {
+                div { class: "ag-files",
+                    for (name , _bytes) in files.iter() {
+                        {
+                            let (cls, label) = ext_badge(name);
+                            rsx! {
+                                span { class: "ag-file",
+                                    span { class: "ag-file-ext {cls}", "{label}" }
                                     "{name}"
                                 }
                             }
                         }
                     }
                 }
-
-                div {
-                    class: if *is_dragging.read() { "upload-dropzone upload-dropzone-dragging agent-dropzone" } else { "upload-dropzone agent-dropzone" },
-                    ondragenter: move |evt: Event<DragData>| {
-                        evt.prevent_default();
-                        let next = *drag_depth.read() + 1;
-                        drag_depth.set(next);
-                        is_dragging.set(true);
-                    },
-                    ondragover: move |evt: Event<DragData>| evt.prevent_default(),
-                    ondragleave: move |evt: Event<DragData>| {
-                        evt.prevent_default();
-                        let next = (*drag_depth.read()).saturating_sub(1);
-                        drag_depth.set(next);
-                        if next == 0 {
-                            is_dragging.set(false);
-                        }
-                    },
-                    ondrop: move |evt: Event<DragData>| {
-                        evt.prevent_default();
-                        drag_depth.set(0);
-                        is_dragging.set(false);
-                        let dropped = evt.files();
-                        async move {
-                            let data = read_upload_files(dropped).await;
-                            if !data.is_empty() {
-                                uploaded_files.set(data);
-                            }
-                        }
-                    },
-
-                    h2 { "Drop a file to start the agent" }
-                    p { class: "upload-hint",
-                        "Upload a PDF form (optionally with an AEM package ZIP or structured JSON) and the agent takes it from here."
-                    }
-
-                    div { class: "upload-actions",
-                        label {
-                            class: "btn btn-secondary btn-sm",
-                            r#for: "agent-file-input",
-                            "Choose File"
-                        }
-                    }
-                    input {
-                        id: "agent-file-input",
-                        class: "upload-input-hidden",
-                        r#type: "file",
-                        multiple: true,
-                        accept: ".pdf,.zip,.json",
-                        onchange: move |evt: Event<FormData>| {
-                            let chosen = evt.files();
-                            async move {
-                                let data = read_upload_files(chosen).await;
-                                if !data.is_empty() {
-                                    uploaded_files.set(data);
-                                }
-                            }
-                        },
-                    }
-                }
-
-                if !files.is_empty() {
-                    div { class: "agent-upload-selected",
-                        ul { class: "file-list-compact",
-                            for (name , _bytes) in files.iter() {
-                                li { "{name}" }
-                            }
-                        }
-                        button {
-                            class: "btn btn-primary",
-                            disabled: start_disabled,
-                            title: start_title,
-                            onclick: {
-                                let files = files.clone();
-                                move |_| on_start.call(files.clone())
-                            },
-                            "Start"
-                        }
-                    }
-                }
             }
-        }
-    }
-}
 
-#[component]
-fn RunningPhase(state: ProcessingState) -> Element {
-    let current = state
-        .agent_steps
-        .iter()
-        .rev()
-        .find(|s| s.kind == AgentStepKind::Tool && s.status == AgentStepStatus::Running)
-        .map(|s| s.label.clone());
-
-    rsx! {
-        div { class: "agent-flow-head",
-            div { class: "agent-flow-col agent-flow-head-row",
-                Spinner { size: "sm" }
-                div { class: "agent-flow-head-text",
-                    span { class: "agent-flow-title", "Agent is working" }
-                    if let Some(label) = current.as_ref() {
-                        span { class: "agent-flow-sub", "{label}" }
-                    }
-                }
-            }
-        }
-        div { class: "agent-flow-timeline",
-            div { class: "agent-flow-col",
-                div { class: "af-timeline",
-                    if state.agent_steps.is_empty() {
-                        div { class: "af-thought", "Starting agent…" }
-                    }
-                    for (i , s) in state.agent_steps.iter().enumerate() {
-                        {match s.kind {
-                            AgentStepKind::Thought => rsx! {
-                                div { key: "{i}", class: "af-thought", "{s.label}" }
-                            },
-                            AgentStepKind::Tool => rsx! {
-                                div { key: "{i}", class: "af-tool",
-                                    span { class: "af-node",
-                                        {match s.status {
-                                            AgentStepStatus::Running => rsx! { Spinner { size: "sm" } },
-                                            AgentStepStatus::Done => rsx! { span { class: "af-ok", "✓" } },
-                                            AgentStepStatus::Error => rsx! { span { class: "af-err", "✗" } },
-                                        }}
-                                    }
-                                    div { class: "af-tool-body",
-                                        span { class: "af-tool-name", "{s.label}" }
-                                        if !s.detail.is_empty() {
-                                            span { class: "af-tool-detail", "{s.detail}" }
-                                        }
+            // ---- Collapsible activity timeline ----
+            div { class: "ag-tl",
+                button {
+                    class: "ag-tl-bar",
+                    onclick: move |_| {
+                        let next = !*timeline_open.read();
+                        timeline_open.set(next);
+                    },
+                    if open {
+                        span { class: "ag-tl-title", "Activity · {steps.len()} steps" }
+                    } else {
+                        // Collapsed: show only the latest step.
+                        match latest {
+                            Some(s) if s.kind == AgentStepKind::Tool => rsx! {
+                                span { class: "ag-tl-dot {tl_dot_class(&s.status)}", {tl_dot_inner(&s.status)} }
+                                span { class: "ag-tl-latest",
+                                    span { class: "nm", "{s.label}" }
+                                    if !s.detail.is_empty() {
+                                        span { class: "dt", "{s.detail}" }
                                     }
                                 }
                             },
-                        }}
-                    }
-
-                    if let Some(error) = &state.error {
-                        div { class: "progress-error",
-                            strong { "Error: " }
-                            "{error}"
+                            Some(s) => rsx! {
+                                span { class: "ag-tl-dot" }
+                                span { class: "ag-tl-latest",
+                                    span { class: "nm-thought", "{s.label}" }
+                                }
+                            },
+                            None => rsx! {
+                                span { class: "ag-tl-dot",
+                                    Spinner { size: "sm" }
+                                }
+                                span { class: "ag-tl-latest",
+                                    span { class: "nm", "Starting agent…" }
+                                }
+                            },
                         }
                     }
-
-                    div { id: "agent-flow-end" }
+                    span { class: "ag-tl-chevron",
+                        if open {
+                            "Collapse"
+                        } else {
+                            "Show full history"
+                        }
+                        span { class: if open { "chev chev-open" } else { "chev" }, "▾" }
+                    }
+                }
+                if open {
+                    div { class: "ag-tl-full",
+                        div { class: "af-timeline",
+                            if steps.is_empty() {
+                                div { class: "af-thought", "Starting agent…" }
+                            }
+                            for (i , s) in steps.iter().enumerate() {
+                                {
+                                    match s.kind {
+                                        AgentStepKind::Thought => rsx! {
+                                            div { key: "{i}", class: "af-thought", "{s.label}" }
+                                        },
+                                        AgentStepKind::Tool => rsx! {
+                                            div { key: "{i}", class: "af-tool",
+                                                span { class: "af-node",
+                                                    {
+                                                        match s.status {
+                                                            AgentStepStatus::Running => rsx! {
+                                                                Spinner { size: "sm" }
+                                                            },
+                                                            AgentStepStatus::Done => rsx! {
+                                                                span { class: "af-ok", "✓" }
+                                                            },
+                                                            AgentStepStatus::Error => rsx! {
+                                                                span { class: "af-err", "✗" }
+                                                            },
+                                                        }
+                                                    }
+                                                }
+                                                div { class: "af-tool-body",
+                                                    span { class: "af-tool-name", "{s.label}" }
+                                                    if !s.detail.is_empty() {
+                                                        span { class: "af-tool-detail", "{s.detail}" }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                            if let Some(error) = &state.error {
+                                div { class: "progress-error",
+                                    strong { "Error: " }
+                                    "{error}"
+                                }
+                            }
+                            div { id: "agent-flow-end" }
+                        }
+                    }
                 }
             }
-        }
-    }
-}
 
-#[component]
-fn DonePhase(
-    elapsed: Option<u64>,
-    aem_uploaded: bool,
-    aem_form_path: Option<String>,
-    mut feedback: Signal<String>,
-    on_feedback: EventHandler<String>,
-    on_new: EventHandler<()>,
-) -> Element {
-    let feedback_empty = feedback.read().trim().is_empty();
-
-    rsx! {
-        div { class: "agent-flow-center",
-            div { class: "agent-flow-done",
-                div { class: "af-check", "✓" }
-                div { class: "af-done-title",
-                    span { class: "af-done-finished", "Finished" }
-                    if let Some(secs) = elapsed {
-                        span { class: "af-done-time", "{format_elapsed(secs)}" }
+            // ---- Result + feedback (done only) ----
+            if done {
+                if state.aem_uploaded && let Some(path) = state.aem_form_path.as_ref() {
+                    div { class: "ag-aem",
+                        span { class: "ag-aem-label", "Uploaded to AEM" }
+                        span { class: "ag-aem-path", "{path}" }
                     }
                 }
-
-                if aem_uploaded {
-                    div { class: "af-done-aem",
-                        span { class: "af-done-aem-label", "Uploaded to AEM" }
-                        if let Some(path) = aem_form_path.as_ref() {
-                            span { class: "af-done-aem-path", "{path}" }
-                        }
+                div { class: "ag-fb",
+                    div { class: "ag-fb-label",
+                        "Not quite right? Tell the agent what to change — it re-runs in the same session."
                     }
-                } else {
-                    div { class: "af-done-aem",
-                        span { class: "af-done-aem-label", "Blueprint generated" }
-                    }
-                }
-
-                div { class: "af-feedback",
-                    label { class: "af-feedback-label", "Not quite right? Tell the agent what to change:" }
                     textarea {
                         class: "af-feedback-input",
                         rows: "3",
@@ -351,28 +520,46 @@ fn DonePhase(
                         value: "{feedback}",
                         oninput: move |evt| feedback.set(evt.value()),
                     }
-                    button {
-                        class: "btn btn-primary",
-                        disabled: feedback_empty,
-                        onclick: move |_| {
-                            let text = feedback.read().trim().to_string();
-                            if !text.is_empty() {
-                                feedback.set(String::new());
-                                on_feedback.call(text);
-                            }
-                        },
-                        "Send feedback"
-                    }
-                }
-
-                div { class: "af-done-actions",
-                    button {
-                        class: "btn btn-secondary btn-sm",
-                        onclick: move |_| on_new.call(()),
-                        "Convert new form"
+                    div { class: "ag-fb-row",
+                        button {
+                            class: "btn btn-primary",
+                            disabled: feedback_empty,
+                            onclick: move |_| {
+                                let text = feedback.read().trim().to_string();
+                                if !text.is_empty() {
+                                    feedback.set(String::new());
+                                    on_feedback.call(text);
+                                }
+                            },
+                            "Send feedback"
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/// CSS modifier class for the collapsed-bar status dot.
+fn tl_dot_class(status: &AgentStepStatus) -> &'static str {
+    match status {
+        AgentStepStatus::Done => "ok",
+        AgentStepStatus::Error => "err",
+        AgentStepStatus::Running => "",
+    }
+}
+
+/// Inner glyph/spinner for the collapsed-bar status dot.
+fn tl_dot_inner(status: &AgentStepStatus) -> Element {
+    match status {
+        AgentStepStatus::Running => rsx! {
+            Spinner { size: "sm" }
+        },
+        AgentStepStatus::Done => rsx! {
+            span { class: "af-ok", "✓" }
+        },
+        AgentStepStatus::Error => rsx! {
+            span { class: "af-err", "✗" }
+        },
     }
 }

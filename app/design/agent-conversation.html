@@ -5,207 +5,159 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Agent — Single Page · Conversation</title>
 <style>
-    :root {
-        --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-        --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", monospace;
+/* ============================================================
+   Real app theme (Graphite · Ajila) — tokens + components
+   copied from app/assets/styles.css. Only the LAYOUT below is
+   new (single-page); components are reused verbatim.
+   ============================================================ */
+:root {
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --bg: #f2f2f2; --surface: #ffffff; --surface-2: #f4f4f4;
+    --text: #111111; --muted: #5b6168;
+    --border: rgba(6, 37, 68, 0.12); --border-strong: rgba(6, 37, 68, 0.28);
+    --accent: #062544; --accent-grad: linear-gradient(135deg, #062544 0%, #0e3a5c 55%, #155378 100%);
+    --accent-soft: rgba(6, 37, 68, 0.10); --accent-ring: rgba(6, 37, 68, 0.26);
+    --on-accent: #ffffff; --gold: #dc9e26;
+    --success: #1f9d57; --success-soft: rgba(31, 157, 87, 0.12);
+    --warn: #dc9e26; --warn-soft: rgba(220, 158, 38, 0.14);
+    --danger: #c2185b;
+    --radius: 10px; --radius-sm: 8px; --radius-pill: 999px;
+    --shadow: 0 1px 0 rgba(255,255,255,.6), 0 12px 32px rgba(6,37,68,.10);
+    --shadow-soft: 0 6px 20px rgba(6,37,68,.08);
+    --space-2: 6px; --space-3: 10px; --space-4: 14px; --space-5: 20px; --space-7: 32px; --space-9: 56px;
+    --header-h: 56px; --header-bg: var(--accent); --header-border: rgba(255,255,255,.14); --header-text: #fff;
+    --color-text-muted: var(--muted); --color-bg-light: var(--surface-2);
+    --color-bg-success: var(--success-soft); --color-border: var(--border); --color-primary: var(--accent);
+    --primary: var(--gold); --transition-fast: .15s;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font-family: var(--font); font-size: 13.5px; line-height: 1.5;
+    color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+h1,h2,h3,p { margin: 0; } button, textarea, select { font-family: inherit; }
 
-        --bg: #f4f5f8;
-        --surface: #ffffff;
-        --surface-2: #f7f8fb;
-        --text: #1c2030;
-        --muted: #6b7186;
-        --faint: #9aa0b4;
+/* ---- Header (real .app-header) ---- */
+.app-header { background: var(--header-bg); padding: 0 var(--space-5); display: flex; align-items: center;
+    gap: var(--space-4); min-height: var(--header-h); flex-shrink: 0; border-bottom: 1px solid var(--header-border);
+    color: var(--header-text); }
+.app-header-logo { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    background: var(--gold); color: var(--accent); font-weight: 800; font-size: 15px; flex-shrink: 0; }
+.app-header-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; color: var(--header-text); white-space: nowrap; }
+.app-header-version { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.45); }
+.app-header-spacer { flex: 1; }
+.app-header-tag { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.8);
+    border: 1px solid rgba(255,255,255,.2); padding: 3px 9px; border-radius: var(--radius-pill); }
 
-        --border: #e6e8ef;
-        --border-strong: #d3d7e2;
+/* ---- Buttons (real .btn) ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: 38px;
+    padding: 0 var(--space-4); font-family: var(--font); font-size: 13.5px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text);
+    cursor: pointer; white-space: nowrap; transition: filter var(--transition-fast), background var(--transition-fast); }
+.btn:hover { filter: brightness(1.04); }
+.btn-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+.btn-sm { height: 32px; padding: 0 var(--space-3); font-size: 12.5px; }
 
-        --accent: #5b5bd6;
-        --accent-grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-        --accent-soft: rgba(99, 102, 241, 0.10);
-        --accent-ring: rgba(99, 102, 241, 0.22);
-        --on-accent: #fff;
+/* ---- Spinner (real) ---- */
+@keyframes spinner-spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; border-width: 2px; border-style: solid; border-color: var(--color-border);
+    border-top-color: var(--color-primary); border-radius: 50%; animation: spinner-spin .8s linear infinite; vertical-align: middle; }
+.spinner-sm { width: 14px; height: 14px; }
 
-        --success: #16a34a;
-        --success-soft: rgba(22, 163, 74, 0.10);
-        --warn: #d97706;
+/* ---- Agent timeline (real .af-*) ---- */
+.af-timeline { position: relative; padding-left: 30px; }
+.af-timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 14px; width: 2px; background: var(--border); }
+.af-thought { position: relative; white-space: pre-wrap; line-height: 1.5; color: var(--text); padding: 10px 13px;
+    margin-bottom: 14px; background: var(--color-bg-light); border: 1px solid var(--border); border-radius: 10px; }
+.af-tool { position: relative; display: flex; gap: 10px; align-items: flex-start; padding-bottom: 18px; }
+.af-node { position: absolute; left: -30px; top: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
+    border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.af-tool-body { display: flex; flex-direction: column; min-width: 0; }
+.af-tool-name { font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--text); }
+.af-tool-detail { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.af-ok { color: #2e9e5b; } .af-err { color: #c0392b; }
 
-        --radius: 16px;
-        --radius-sm: 10px;
-        --radius-pill: 999px;
-        --shadow: 0 8px 30px rgba(30, 35, 70, 0.08);
-        --shadow-sm: 0 2px 8px rgba(30, 35, 70, 0.06);
+/* ---- Feedback input (real .af-feedback-input) ---- */
+.af-feedback-input { width: 100%; box-sizing: border-box; resize: none; font-family: var(--font); font-size: 14px;
+    line-height: 1.5; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); }
+.af-feedback-input:focus { outline: none; border-color: var(--primary); }
 
-        --s2: 6px; --s3: 10px; --s4: 14px; --s5: 20px; --s6: 26px; --s7: 32px;
-    }
+/* ============================================================
+   NEW: single-page conversation layout
+   ============================================================ */
+.app { min-height: 100%; display: flex; flex-direction: column; }
+.thread { flex: 1; width: 100%; max-width: 680px; margin: 0 auto; padding: var(--space-7) var(--space-5) 132px;
+    display: flex; flex-direction: column; gap: var(--space-5); }
 
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-        margin: 0; font-family: var(--font); font-size: 14px; line-height: 1.5;
-        color: var(--text); background: var(--bg);
-        -webkit-font-smoothing: antialiased;
-    }
-    h1,h2,h3,p { margin: 0; }
-    button, textarea, select { font-family: inherit; }
+/* Source card = the old upload phase, collapsed to context */
+.source { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-soft); padding: var(--space-5); }
+.source-top { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.source-top h2 { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
+.source-prof { margin-left: auto; font-size: 12px; color: var(--muted); }
+.source-prof b { color: var(--text); font-weight: 600; }
+.files { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.file { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-mono); }
+.file .ext { font-size: 10px; font-weight: 700; color: var(--on-accent); background: var(--accent); padding: 2px 6px; border-radius: 4px; }
+.file .pdf { background: var(--danger); } .file .json { background: #0e6b8c; } .file .zip { background: #a96f0d; }
 
-    /* ---- Shell ---- */
-    .app { min-height: 100%; display: flex; flex-direction: column; }
-    .topbar {
-        position: sticky; top: 0; z-index: 20; height: 60px;
-        display: flex; align-items: center; gap: var(--s4);
-        padding: 0 var(--s5);
-        background: rgba(255,255,255,0.82);
-        backdrop-filter: saturate(180%) blur(14px);
-        -webkit-backdrop-filter: saturate(180%) blur(14px);
-        border-bottom: 1px solid var(--border);
-    }
-    .brand { display: flex; align-items: center; gap: var(--s3); }
-    .brand-mark {
-        width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
-        font-weight: 800; font-size: 15px; color: var(--on-accent);
-        background: var(--accent-grad); box-shadow: 0 4px 12px rgba(99,102,241,.4);
-    }
-    .brand-text { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
-    .ver { font-family: var(--font-mono); font-size: 11px; padding: 2px 8px;
-        border-radius: var(--radius-pill); color: var(--muted); background: var(--surface-2);
-        border: 1px solid var(--border); }
-    .spacer { flex: 1; }
-    .tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-        color: var(--accent); background: var(--accent-soft); padding: 4px 10px; border-radius: var(--radius-pill); }
-    .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px;
-        border: 1px solid transparent; background: transparent; color: var(--muted); font-size: 17px; cursor: pointer; }
-    .icon-btn:hover { background: var(--surface-2); border-color: var(--border); }
+/* Agent turn */
+.turn { display: flex; gap: var(--space-4); }
+.turn .gutter { flex: 0 0 28px; display: flex; flex-direction: column; align-items: center; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px;
+    color: var(--gold); background: var(--accent); flex: 0 0 auto; }
+.turn .body { flex: 1; min-width: 0; }
 
-    /* ---- Single-page conversation column ---- */
-    .thread {
-        flex: 1; width: 100%; max-width: 760px; margin: 0 auto;
-        padding: var(--s7) var(--s5) 140px;
-        display: flex; flex-direction: column; gap: var(--s5);
-    }
+/* Done card = the old finish phase, inline */
+.done { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-5);
+    border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); background: var(--success-soft); border-radius: var(--radius); }
+.done .check { width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #2e9e5b;
+    display: grid; place-items: center; font-size: 20px; flex: 0 0 auto; box-shadow: var(--shadow-soft); }
+.done .dt { display: flex; align-items: baseline; gap: 10px; }
+.done .dt b { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.done .dt .t { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.done .path { margin-top: 2px; font-family: var(--font-mono); font-size: 12px; color: var(--accent); word-break: break-all; }
 
-    /* Source card (= upload phase, collapsed to context) */
-    .source {
-        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-        box-shadow: var(--shadow-sm); padding: var(--s5);
-    }
-    .source-top { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
-    .source-top h2 { font-size: 15px; font-weight: 700; }
-    .source-prof { margin-left: auto; display: flex; align-items: center; gap: 8px;
-        font-size: 12px; color: var(--muted); }
-    .source-prof b { color: var(--text); font-weight: 600; }
-    .files { display: flex; flex-wrap: wrap; gap: var(--s3); }
-    .file {
-        display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
-        background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-        font-size: 12.5px;
-    }
-    .file .ext { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--on-accent);
-        background: var(--accent); padding: 2px 6px; border-radius: 5px; }
-    .file .pdf { background: #dc2626; }
-    .file .json { background: #0891b2; }
-    .file .zip { background: #b45309; }
+/* Sticky composer = the old feedback box */
+.composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    background: linear-gradient(to top, var(--bg) 62%, transparent); padding: var(--space-5); }
+.composer-inner { max-width: 680px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px 8px 8px var(--space-4);
+    display: flex; align-items: flex-end; gap: var(--space-3); }
+.composer textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; font-size: 14px;
+    line-height: 1.5; color: var(--text); padding: 8px 0; max-height: 120px; font-family: var(--font); }
+.composer textarea::placeholder { color: var(--muted); }
+.composer .hint { max-width: 680px; margin: 8px auto 0; font-size: 11.5px; color: var(--muted); display: flex; gap: 14px; padding: 0 2px; }
+.composer .hint a { color: var(--muted); text-decoration: none; cursor: pointer; }
+.composer .hint a:hover { color: var(--accent); }
 
-    /* Transcript */
-    .turn { display: flex; gap: var(--s4); }
-    .turn .gutter { flex: 0 0 30px; display: flex; flex-direction: column; align-items: center; }
-    .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
-        font-size: 13px; color: var(--on-accent); background: var(--accent-grad); flex: 0 0 auto;
-        box-shadow: 0 3px 10px rgba(99,102,241,.35); }
-    .spine { flex: 1; width: 2px; background: var(--border); margin: 6px 0 0; border-radius: 2px; }
-    .turn .body { flex: 1; min-width: 0; padding-bottom: var(--s5); }
-    .think { color: var(--muted); font-size: 13.5px; line-height: 1.55; }
-    .think + .think { margin-top: 8px; }
-
-    .tool {
-        display: flex; align-items: flex-start; gap: var(--s3); margin-top: var(--s3);
-        padding: var(--s3) var(--s4); border: 1px solid var(--border); border-radius: var(--radius-sm);
-        background: var(--surface);
-    }
-    .tool .node { flex: 0 0 18px; height: 18px; margin-top: 1px; display: grid; place-items: center; }
-    .tick { width: 18px; height: 18px; border-radius: 50%; background: var(--success); color: #fff;
-        display: grid; place-items: center; font-size: 11px; font-weight: 800; }
-    .tool-name { font-weight: 600; font-size: 13.5px; }
-    .tool-detail { display: block; margin-top: 2px; color: var(--muted); font-size: 12px;
-        font-family: var(--font-mono); }
-
-    .running-tool .node .spin {
-        width: 16px; height: 16px; border: 2px solid var(--border-strong); border-top-color: var(--accent);
-        border-radius: 50%; animation: spin .8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .running-tool { border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
-
-    /* Done card */
-    .done {
-        border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
-        background: var(--success-soft); border-radius: var(--radius); padding: var(--s5);
-        display: flex; flex-direction: column; gap: var(--s4);
-    }
-    .done-head { display: flex; align-items: center; gap: var(--s3); }
-    .done-check { width: 34px; height: 34px; border-radius: 50%; background: var(--success); color: #fff;
-        display: grid; place-items: center; font-size: 17px; font-weight: 800; }
-    .done-head h3 { font-size: 15.5px; font-weight: 700; }
-    .done-head .t { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
-    .done-aem { font-size: 13px; color: var(--text); }
-    .done-aem .path { font-family: var(--font-mono); font-size: 12px; color: var(--accent);
-        background: var(--surface); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
-
-    /* Sticky composer (= feedback) */
-    .composer {
-        position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
-        background: linear-gradient(to top, var(--bg) 60%, transparent);
-        padding: var(--s5);
-    }
-    .composer-inner {
-        max-width: 760px; margin: 0 auto; background: var(--surface);
-        border: 1px solid var(--border-strong); border-radius: var(--radius);
-        box-shadow: var(--shadow); padding: 10px 10px 10px var(--s4);
-        display: flex; align-items: flex-end; gap: var(--s3);
-    }
-    .composer textarea {
-        flex: 1; border: none; outline: none; resize: none; background: transparent;
-        font-size: 14px; line-height: 1.5; color: var(--text); padding: 8px 0; max-height: 120px;
-    }
-    .composer textarea::placeholder { color: var(--faint); }
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-        height: 40px; padding: 0 var(--s4); font-size: 13.5px; font-weight: 600; border-radius: var(--radius-sm);
-        border: 1px solid transparent; cursor: pointer; white-space: nowrap; transition: filter .15s; }
-    .btn:hover { filter: brightness(1.05); }
-    .btn-primary { background: var(--accent-grad); color: var(--on-accent); box-shadow: 0 4px 12px rgba(99,102,241,.35); }
-    .btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
-    .composer .hint { max-width: 760px; margin: 8px auto 0; font-size: 11.5px; color: var(--faint);
-        display: flex; gap: 12px; padding: 0 4px; }
-    .composer .hint a { color: var(--muted); text-decoration: none; cursor: pointer; }
-    .composer .hint a:hover { color: var(--accent); }
-
-    /* switcher */
-    .switch { position: fixed; right: 18px; top: 74px; z-index: 50; display: flex; flex-direction: column; gap: 6px;
-        padding: 8px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
-    .switch span { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 0 6px 2px; }
-    .switch a { text-decoration: none; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 8px; color: var(--muted); }
-    .switch a.active { background: var(--accent-grad); color: var(--on-accent); }
+/* preview switcher */
+.switch { position: fixed; right: 18px; top: 70px; z-index: 50; display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.switch span { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 6px 2px; }
+.switch a { text-decoration: none; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 7px; color: var(--muted); }
+.switch a.active { background: var(--accent); color: var(--on-accent); }
 </style>
 </head>
 <body>
 <div class="app">
-    <header class="topbar">
-        <div class="brand">
-            <div class="brand-mark">B</div>
-            <span class="brand-text">Blueprint</span>
-        </div>
-        <span class="ver">v0.9.0</span>
-        <div class="spacer"></div>
-        <span class="tag">Agent</span>
-        <button class="icon-btn" title="Settings">⚙</button>
+    <header class="app-header">
+        <div class="app-header-logo">B</div>
+        <span class="app-header-title">Blueprint</span>
+        <span class="app-header-version">v0.9.0</span>
+        <div class="app-header-spacer"></div>
+        <span class="app-header-tag">agent</span>
     </header>
 
     <main class="thread">
-
-        <!-- ===== Source (upload, now context) ===== -->
+        <!-- Source (upload → context) -->
         <section class="source">
             <div class="source-top">
                 <h2>Converting form</h2>
-                <div class="source-prof">Profile <b>UBS · Adaptive Forms</b></div>
+                <span class="source-prof">Profile <b>UBS · Adaptive Forms</b></span>
             </div>
             <div class="files">
                 <span class="file"><span class="ext pdf">PDF</span> AAHA_019_DE.pdf</span>
@@ -214,53 +166,36 @@
             </div>
         </section>
 
-        <!-- ===== Agent transcript ===== -->
+        <!-- Agent transcript (reuses .af-* timeline) -->
         <section class="turn">
-            <div class="gutter">
-                <div class="avatar">✦</div>
-                <div class="spine"></div>
-            </div>
+            <div class="gutter"><div class="avatar">✦</div></div>
             <div class="body">
-                <p class="think">Reading the PDF and the supplied structure to understand the form layout and field groupings.</p>
-
-                <div class="tool">
-                    <span class="node"><span class="tick">✓</span></span>
-                    <div><span class="tool-name">Parsed PDF form</span><span class="tool-detail">42 fields across 8 sections</span></div>
-                </div>
-                <div class="tool">
-                    <span class="node"><span class="tick">✓</span></span>
-                    <div><span class="tool-name">Built semantic model</span><span class="tool-detail">mapped 40 / 42 fields to AEM components</span></div>
-                </div>
-
-                <p class="think">Two widgets did not map cleanly — a signature pad and a repeating address block. Generating equivalents and wiring up validation rules.</p>
-
-                <div class="tool">
-                    <span class="node"><span class="tick">✓</span></span>
-                    <div><span class="tool-name">Generated Adaptive Form HTML</span><span class="tool-detail">5 pages rendered</span></div>
-                </div>
-                <div class="tool running-tool">
-                    <span class="node"><span class="spin"></span></span>
-                    <div><span class="tool-name">Uploading to AEM</span><span class="tool-detail">/content/forms/af/ubs/aaha-019</span></div>
+                <div class="af-timeline">
+                    <div class="af-thought">Reading the PDF and supplied structure to understand the form layout and field groupings.</div>
+                    <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">parse_pdf</span><span class="af-tool-detail">42 fields across 8 sections</span></div></div>
+                    <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">build_model</span><span class="af-tool-detail">mapped 40 / 42 fields to AEM components</span></div></div>
+                    <div class="af-thought">A signature pad and a repeating address block didn't map cleanly — generating equivalents and wiring up validation rules.</div>
+                    <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">generate_html</span><span class="af-tool-detail">5 pages rendered</span></div></div>
+                    <div class="af-tool"><span class="af-node"><span class="spinner spinner-sm"></span></span><div class="af-tool-body"><span class="af-tool-name">upload_to_aem</span><span class="af-tool-detail">/content/forms/af/ubs/aaha-019</span></div></div>
                 </div>
             </div>
         </section>
 
-        <!-- ===== Done (finish) ===== -->
+        <!-- Done (finish) -->
         <section class="done">
-            <div class="done-head">
-                <div class="done-check">✓</div>
-                <h3>Finished</h3>
-                <span class="t">1m 18s</span>
+            <div class="check">✓</div>
+            <div>
+                <div class="dt"><b>Finished</b><span class="t">1m 18s</span></div>
+                <div class="path">Uploaded to /content/forms/af/ubs/aaha-019</div>
             </div>
-            <div class="done-aem">Uploaded to AEM &nbsp;<span class="path">/content/forms/af/ubs/aaha-019</span></div>
         </section>
     </main>
 
-    <!-- ===== Sticky composer (feedback) ===== -->
+    <!-- Sticky composer (feedback) -->
     <div class="composer">
         <div class="composer-inner">
             <textarea rows="1" placeholder="Not quite right? Tell the agent what to change…">The phone number field should be optional.</textarea>
-            <button class="btn btn-primary">Send ↑</button>
+            <button class="btn btn-primary">Send</button>
         </div>
         <div class="hint">
             <a>↻ Convert new form</a>
@@ -275,6 +210,7 @@
     <a href="agent-conversation.html" class="active">Conversation</a>
     <a href="agent-workspace.html">Workspace</a>
     <a href="agent-timeline.html">Timeline</a>
+    <a href="agent-timeline-collapsible.html">Collapsible</a>
 </nav>
 </body>
 </html>
