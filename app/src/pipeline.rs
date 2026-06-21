@@ -7,7 +7,6 @@
 use crate::models::{ProcessingState, ProcessingStep};
 
 use base64::Engine;
-use image::ImageEncoder;
 
 /// JPEG quality for plain page renders attached to AI requests / shown in the
 /// UI. Balances legibility against payload size.
@@ -225,33 +224,6 @@ pub async fn run_blueprint_pipeline(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Encode an RGBA image to PNG bytes.
-pub fn encode_rgba_to_png(img: &blueprint::RgbaImage, output: &mut Vec<u8>) -> Result<(), String> {
-    use image::ExtendedColorType;
-    use image::codecs::png::PngEncoder;
-
-    let (width, height) = img.dimensions();
-    let encoder = PngEncoder::new(output);
-
-    encoder
-        .write_image(img.as_raw(), width, height, ExtendedColorType::Rgba8)
-        .map_err(|e| format!("PNG encoding error: {}", e))
-}
-
-/// Encode an RGBA image to JPEG bytes at the given quality (1–100).
-///
-/// JPEG has no alpha channel; the alpha is dropped (rendered form pages are
-/// opaque). Far smaller than PNG for page renders, which keeps the AI request
-/// payload within provider size limits without sacrificing resolution.
-pub fn encode_rgba_to_jpeg(img: &blueprint::RgbaImage, quality: u8) -> Result<Vec<u8>, String> {
-    use image::ExtendedColorType;
-    use image::codecs::jpeg::JpegEncoder;
-
-    let rgb = image::DynamicImage::ImageRgba8(img.clone()).into_rgb8();
-    let (width, height) = rgb.dimensions();
-    let mut output = Vec::new();
-    JpegEncoder::new_with_quality(&mut output, quality)
-        .write_image(rgb.as_raw(), width, height, ExtendedColorType::Rgb8)
-        .map_err(|e| format!("JPEG encoding error: {e}"))?;
-    Ok(output)
-}
+// Image encoding lives in the headless `agent` crate; re-export so the
+// historical `crate::pipeline::encode_*` paths keep working across the app.
+pub use agent::image_encode::{encode_rgba_to_jpeg, encode_rgba_to_png};

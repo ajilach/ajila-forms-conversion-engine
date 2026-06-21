@@ -255,19 +255,9 @@ pub async fn anthropic_chat_turn(
 
 // ── Agentic tool loop (Anthropic) ────────────────────────────────────
 
-/// The result of executing one tool call, to be returned to the model as a
-/// `tool_result` content block.
-pub enum ToolReply {
-    /// A textual result (JSON, plain text, …).
-    Text(String),
-    /// An image result (base64 + media type), e.g. a rendered page.
-    Image {
-        media_type: &'static str,
-        b64: String,
-    },
-    /// The tool failed; the message is surfaced to the model as an error result.
-    Error(String),
-}
+// `ToolReply` is the engine executor's return type; it lives in the headless
+// `agent` crate. Re-export so `crate::platform::ToolReply` keeps resolving.
+pub use agent::ToolReply;
 
 /// Maximum number of tool round-trips before the loop bails out. Guards against
 /// a model that keeps calling tools without ever producing a final answer.

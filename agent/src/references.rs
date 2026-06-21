@@ -443,7 +443,7 @@ mod imp {
         let img = state
             .render_plain(RENDER_SCALE)
             .map_err(|e| format!("Render failed: {e}"))?;
-        crate::pipeline::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("Encode failed: {e}"))
+        crate::image_encode::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("Encode failed: {e}"))
     }
 
     // ── Import / export ──────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ members = [
     "core",
     "cli",
     "app",
+    "agent",
+    "mcp",
     "judge",
     "teacher",
 ]

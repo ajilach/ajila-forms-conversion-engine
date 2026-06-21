@@ -1,8 +1,6 @@
-mod aem_client;
-mod agent;
+mod agent_runner;
 mod ai_tools;
 mod components;
-mod db;
 mod local_inference;
 mod markdown;
 mod models;
@@ -10,8 +8,12 @@ mod pipeline;
 mod platform;
 mod preview_server;
 mod processing;
-mod references;
 mod settings;
+
+// The headless engine layer (edit-history store, reference store, AEM client)
+// lives in the `agent` crate. Re-export it under the historical `crate::*`
+// paths so the rest of the app is unchanged.
+pub use agent::{aem_client, db, references};
 
 use dioxus::prelude::*;
 
@@ -163,7 +165,7 @@ fn App() -> Element {
             // Hand the whole conversion to the autonomous agent: it drives the
             // engine via tools (extract → structure → convert → AEM → package →
             // upload/verify), versioning each step, and finalizes the result.
-            crate::agent::run_agent(
+            crate::agent_runner::run_agent(
                 pdfs,
                 profile,
                 settings,
@@ -202,7 +204,7 @@ fn App() -> Element {
         });
 
         spawn(async move {
-            crate::agent::run_agent_feedback(
+            crate::agent_runner::run_agent_feedback(
                 feedback,
                 pdfs,
                 profile,

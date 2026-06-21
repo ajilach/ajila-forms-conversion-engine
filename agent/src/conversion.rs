@@ -1,31 +1,75 @@
-//! Autonomous conversion agent — the LLM drives the whole conversion engine via
-//! tools, replacing manual interaction. It extracts from the source PDF, builds
-//! and edits a **structured** node tree, converts to an **AEM** node tree, edits
-//! that, packages it, optionally uploads to AEM and verifies, and can consult
-//! reference forms / documentation. Every tree change is snapshotted into an
-//! edit-history session so the user can review the agent's full history in the
-//! structured / AEM editors.
+//! The conversion agent's engine surface — the tool catalog and the executor
+//! that drives the form-conversion engine.
 //!
-//! Tree mutations use a **whole-tree replace** model: the model reads a tree
+//! The agent extracts from the source PDF, builds and edits a **structured**
+//! node tree, converts to an **AEM** node tree, edits that, packages it,
+//! optionally uploads to AEM and verifies, and can consult reference forms /
+//! documentation. Every tree change is snapshotted into an edit-history session
+//! ([`crate::db`]) so a UI can review the full history.
+//!
+//! Tree mutations use a **whole-tree replace** model: the caller reads a tree
 //! (`get_*`) and writes the whole tree back (`set_*`); each write is versioned.
 //!
-//! Desktop-only (engine + network + SQLite).
+//! This type holds no LLM and no UI state: an external loop streams turns,
+//! calls [`ConversionAgent::tools`] / [`ConversionAgent::execute`], and surfaces
+//! the results. Network tools hit the engine's AEM client.
 
 use std::collections::HashMap;
 
-use dioxus::prelude::*;
-
 use blueprint::{AemConfig, AemConnection, AemNode, Context, DocumentEnvelope, StructuredNode};
 
-use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
-use crate::platform::{ToolReply, tool_result_message};
-
-/// Output-token cap per agent turn.
-const AGENT_MAX_TOKENS: u32 = 16000;
-/// Max streamed turns before the loop bails out (the agent makes many calls).
-const MAX_ITERATIONS: usize = 200;
 /// Render scale for on-demand page images.
 const RENDER_SCALE: f32 = 1.5;
+
+/// The workflow guidance that teaches a driving model how to operate the
+/// conversion tools. Shared by every consumer so the app's autonomous loop and
+/// the standalone MCP server present one source of truth: the app injects it as
+/// the agent's opening message, and the MCP server advertises it as its server
+/// `instructions`. Consumer-specific bits (e.g. the MCP-only `start_conversion`
+/// / `write_package` bootstrap) are appended by the consumer.
+pub const SYSTEM_PROMPT: &str = "\
+You are an autonomous conversion agent operating the form-conversion engine via tools, \
+replacing manual interaction. Goal: produce a correct AEM Adaptive Form from the uploaded \
+PDF(s).\n\n\
+Typical workflow (call tools as needed; each step is a separate call):\n\
+1. Inspect the input: get_source_info, list_states, get_xfa (authoritative text/fields), \
+get_plain_state_image / get_annotated_state_image, get_flattened_structure_for_state.\n\
+2. Seed the structured tree: get_merged_structured, then set_structured (whole tree). Call \
+get_schema('structured') for the exact JSON shape. Fix field types and grouping.\n\
+3. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
+with set_aem (get_schema('aem') for the shape).\n\
+3b. Optional, last-resort tuning: once the AEM tree is settled, hand-edit the final JCR XML \
+with edit_aem_content_xml (targeted find/replace). Prefer fixing the structured or AEM tree \
+when possible — XML edits are discarded the moment you re-run set_structured / \
+convert_structured_to_aem / set_aem.\n\
+4. Package: build_aem_package, get_package_info, read_package_file to verify.\n\
+Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
+downward: editing the structured tree resets the AEM tree, content XML and package; updating \
+the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
+package. After any edit, re-run the downstream steps.\n\
+5. If an AEM connection is configured: upload_to_aem, then fetch_aem_form_html / \
+fetch_aem_dor_pdf to verify the deployed result.\n\
+Consult reference forms and documentation when unsure: list_reference_forms, \
+search_references, read_reference_file, get_reference_package, list_reference_docs, \
+read_reference_doc, grep_reference_docs. You may run the engine on a reference's input by \
+passing source={\"reference\":\"<ref_id>\"} to the §1 tools, and compare with its known-good \
+package.\n\n\
+Do not invent text content; take labels/options verbatim from the XFA. When done, call finish. \
+Keep tool inputs minimal and valid JSON.";
+
+/// The result of executing one tool call, to be returned to the model as a
+/// `tool_result` content block.
+pub enum ToolReply {
+    /// A textual result (JSON, plain text, …).
+    Text(String),
+    /// An image result (base64 + media type), e.g. a rendered page.
+    Image {
+        media_type: &'static str,
+        b64: String,
+    },
+    /// The tool failed; the message is surfaced to the model as an error result.
+    Error(String),
+}
 
 // ── Per-source extraction (sync; cached) ─────────────────────────────────────
 
@@ -170,8 +214,50 @@ impl ConversionAgent {
 
     /// Seed the working structured tree (used when resuming a session to apply
     /// user feedback to a prior result).
-    fn seed_structured(&mut self, nodes: Vec<StructuredNode>) {
+    pub fn seed_structured(&mut self, nodes: Vec<StructuredNode>) {
         self.structured = nodes;
+    }
+
+    // ── Public accessors (for the driving loop's result finalization) ─────────
+
+    /// `true` once the agent has called the `finish` tool.
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    /// The detected document context (language, …).
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
+    /// The current working structured tree.
+    pub fn structured(&self) -> &[StructuredNode] {
+        &self.structured
+    }
+
+    /// The most recently built AEM package (ZIP), if any.
+    pub fn package(&self) -> Option<Vec<u8>> {
+        self.package.clone()
+    }
+
+    /// The resolved form code, if the AEM config has been loaded.
+    pub fn form_code(&self) -> Option<String> {
+        self.aem_config.as_ref().map(|c| c.form_code.clone())
+    }
+
+    /// The derived AEM edit-history session id, if any AEM snapshot was taken.
+    pub fn aem_session(&self) -> Option<String> {
+        self.aem_session.clone()
+    }
+
+    /// Whether the package has been uploaded + installed on AEM.
+    pub fn aem_uploaded(&self) -> bool {
+        self.aem_uploaded
+    }
+
+    /// The JCR path of the uploaded form, once uploaded.
+    pub fn aem_form_path(&self) -> Option<String> {
+        self.aem_form_path.clone()
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -347,7 +433,7 @@ impl ConversionAgent {
             // §3 conversion
             t(
                 "convert_structured_to_aem",
-                "Convert the current structured tree to the AEM tree (replaces it). Invalidates the content XML and package. Versioned.",
+                "Convert the current structured tree to the AEM tree (replaces it). Requires a non-empty structured tree (seed it with set_structured first). Invalidates the content XML and package. Versioned.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -379,7 +465,7 @@ impl ConversionAgent {
             // §5 output
             t(
                 "build_aem_package",
-                "Build the AEM FileVault package (ZIP) from the current AEM tree. Stores it for upload.",
+                "Build the AEM FileVault package (ZIP) from the current AEM tree. Requires an AEM tree (run convert_structured_to_aem first). Stores it for upload/export.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -484,7 +570,7 @@ impl ConversionAgent {
             ),
             t(
                 "finish",
-                "Finalize: persist the structured + AEM trees + package as the result and end.",
+                "Terminal step — call this once, last, after the package is built (and uploaded if an AEM connection is configured) to persist the structured + AEM trees + package as the result and end the run.",
                 serde_json::json!({"summary": {"type":"string"}}),
                 serde_json::json!([]),
             ),
@@ -574,7 +660,7 @@ impl ConversionAgent {
                                 rec.state.render_plain(RENDER_SCALE)
                             };
                             match img.map_err(|e| e.to_string()).and_then(|i| {
-                                crate::pipeline::encode_rgba_to_jpeg(&i, 82)
+                                crate::image_encode::encode_rgba_to_jpeg(&i, 82)
                                     .map_err(|e| e.to_string())
                             }) {
                                 Ok(jpeg) => ToolReply::Image {
@@ -958,284 +1044,6 @@ impl ConversionAgent {
     }
 }
 
-// ── Orchestration ────────────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT: &str = "\
-You are an autonomous conversion agent operating the form-conversion engine via tools, \
-replacing manual interaction. Goal: produce a correct AEM Adaptive Form from the uploaded \
-PDF(s).\n\n\
-Typical workflow (call tools as needed; each step is a separate call):\n\
-1. Inspect the input: get_source_info, list_states, get_xfa (authoritative text/fields), \
-get_plain_state_image / get_annotated_state_image, get_flattened_structure_for_state.\n\
-2. Seed the structured tree: get_merged_structured, then set_structured (whole tree). Call \
-get_schema('structured') for the exact JSON shape. Fix field types and grouping.\n\
-3. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
-with set_aem (get_schema('aem') for the shape).\n\
-3b. Optional, last-resort tuning: once the AEM tree is settled, hand-edit the final JCR XML \
-with edit_aem_content_xml (targeted find/replace). Prefer fixing the structured or AEM tree \
-when possible — XML edits are discarded the moment you re-run set_structured / \
-convert_structured_to_aem / set_aem.\n\
-4. Package: build_aem_package, get_package_info, read_package_file to verify.\n\
-Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
-downward: editing the structured tree resets the AEM tree, content XML and package; updating \
-the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
-package. After any edit, re-run the downstream steps.\n\
-5. If an AEM connection is configured: upload_to_aem, then fetch_aem_form_html / \
-fetch_aem_dor_pdf to verify the deployed result.\n\
-Consult reference forms and documentation when unsure: list_reference_forms, \
-search_references, read_reference_file, get_reference_package, list_reference_docs, \
-read_reference_doc, grep_reference_docs. You may run the engine on a reference's input by \
-passing source={\"reference\":\"<ref_id>\"} to the §1 tools, and compare with its known-good \
-package.\n\n\
-Do not invent text content; take labels/options verbatim from the XFA. When done, call finish. \
-Keep tool inputs minimal and valid JSON.";
-
-/// Run the autonomous agent end-to-end, streaming activity into
-/// `processing_state.agent_steps` and finalizing the result on completion.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_agent(
-    pdfs: Vec<(String, Vec<u8>)>,
-    profile: Option<String>,
-    settings: crate::settings::AppSettings,
-    session_label: String,
-    mut processing_state: Signal<ProcessingState>,
-    current_session: Signal<Option<String>>,
-) {
-    let start = std::time::Instant::now();
-
-    // Structured history session (seeded empty); shown in the structured editor.
-    let doc_hash = crate::db::document_hash(&pdfs);
-    crate::db::upsert_document(&doc_hash, &session_label);
-    let Some(structured_session) =
-        crate::db::create_session(&doc_hash, profile.as_deref(), &session_label)
-    else {
-        processing_state.set(ProcessingState {
-            step: ProcessingStep::AiGenerating,
-            ai_mode: true,
-            error: Some("Could not create an edit-history session.".into()),
-            ..ProcessingState::new()
-        });
-        return;
-    };
-    crate::db::insert_edit(&structured_session, "Initial (empty)", "[]");
-
-    let agent = ConversionAgent::new(
-        profile.clone(),
-        pdfs.clone(),
-        settings.aem_connection(),
-        structured_session.clone(),
-    );
-
-    let intro = format!(
-        "{SYSTEM_PROMPT}{}",
-        crate::settings::extra_instructions_block(&settings.agent_instructions)
-    );
-    let mut history: Vec<serde_json::Value> = Vec::new();
-    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
-
-    drive_agent(
-        agent,
-        history,
-        settings,
-        profile,
-        structured_session,
-        start,
-        processing_state,
-        current_session,
-    )
-    .await;
-}
-
-/// Resume the agent on an existing session to refine the result based on the
-/// user's feedback. The agent is seeded with the prior structured tree and
-/// asked to apply the feedback, then re-convert / package / upload and finish.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_agent_feedback(
-    feedback: String,
-    pdfs: Vec<(String, Vec<u8>)>,
-    profile: Option<String>,
-    settings: crate::settings::AppSettings,
-    structured_session: String,
-    processing_state: Signal<ProcessingState>,
-    current_session: Signal<Option<String>>,
-) {
-    let start = std::time::Instant::now();
-
-    // Seed the agent with the latest structured tree from the continuing
-    // session so feedback applies to the prior result, not a blank slate.
-    let prior: Vec<StructuredNode> = crate::db::latest_seq(&structured_session)
-        .and_then(|seq| crate::db::snapshot_at(&structured_session, seq))
-        .and_then(|json| serde_json::from_str::<Vec<StructuredNode>>(&json).ok())
-        .unwrap_or_default();
-
-    let mut agent = ConversionAgent::new(profile.clone(), pdfs, settings.aem_connection(), structured_session.clone());
-    agent.seed_structured(prior);
-
-    let intro = format!(
-        "{SYSTEM_PROMPT}{}\n\n--- REFINEMENT ---\n\
-A prior conversion already exists in your working structured tree (inspect it with \
-get_structured). The user reviewed the result and gave this feedback:\n\n{feedback}\n\n\
-Apply the requested changes to the structured tree, then re-convert to AEM \
-(convert_structured_to_aem), rebuild the package (build_aem_package), and \
-re-upload (upload_to_aem) if an AEM connection is configured, verifying as needed. \
-Then call finish.",
-        crate::settings::extra_instructions_block(&settings.agent_instructions)
-    );
-
-    let mut history: Vec<serde_json::Value> = Vec::new();
-    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
-
-    drive_agent(
-        agent,
-        history,
-        settings,
-        profile,
-        structured_session,
-        start,
-        processing_state,
-        current_session,
-    )
-    .await;
-}
-
-/// Drive the agent loop to completion: stream turns, execute tools, version
-/// each step, and finalize the result. Shared by [`run_agent`] and
-/// [`run_agent_feedback`].
-#[allow(clippy::too_many_arguments)]
-async fn drive_agent(
-    mut agent: ConversionAgent,
-    mut history: Vec<serde_json::Value>,
-    settings: crate::settings::AppSettings,
-    profile: Option<String>,
-    structured_session: String,
-    start: std::time::Instant,
-    mut processing_state: Signal<ProcessingState>,
-    mut current_session: Signal<Option<String>>,
-) {
-    let tools = agent.tools();
-
-    for _ in 0..MAX_ITERATIONS {
-        let turn =
-            match crate::platform::stream_turn(&mut history, &tools, &settings, AGENT_MAX_TOKENS)
-                .await
-            {
-                Ok(t) => t,
-                Err(e) => {
-                    processing_state.write().error = Some(format!("Agent failed: {e}"));
-                    return;
-                }
-            };
-
-        if !turn.text.trim().is_empty() {
-            push_step(
-                &mut processing_state,
-                AgentStep {
-                    id: String::new(),
-                    kind: AgentStepKind::Thought,
-                    label: turn.text.trim().to_string(),
-                    detail: String::new(),
-                    status: AgentStepStatus::Done,
-                },
-            );
-        }
-
-        if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
-            break;
-        }
-
-        let mut results: Vec<(String, ToolReply)> = Vec::new();
-        for tc in &turn.tool_calls {
-            push_step(
-                &mut processing_state,
-                AgentStep {
-                    id: tc.id.clone(),
-                    kind: AgentStepKind::Tool,
-                    label: tc.name.clone(),
-                    detail: summarize_input(&tc.input),
-                    status: AgentStepStatus::Running,
-                },
-            );
-            let reply = agent.execute(&tc.name, &tc.input).await;
-            let ok = !matches!(reply, ToolReply::Error(_));
-            set_step_status(
-                &mut processing_state,
-                &tc.id,
-                if ok {
-                    AgentStepStatus::Done
-                } else {
-                    AgentStepStatus::Error
-                },
-            );
-            results.push((tc.id.clone(), reply));
-        }
-        history.push(tool_result_message(results));
-
-        if agent.finished {
-            break;
-        }
-    }
-
-    finalize(
-        &agent,
-        &profile,
-        structured_session,
-        start,
-        &mut processing_state,
-        &mut current_session,
-    );
-}
-
-/// Build the final `ProcessingState` from the agent's working trees.
-fn finalize(
-    agent: &ConversionAgent,
-    profile: &Option<String>,
-    structured_session: String,
-    start: std::time::Instant,
-    processing_state: &mut Signal<ProcessingState>,
-    current_session: &mut Signal<Option<String>>,
-) {
-    let envelope = DocumentEnvelope {
-        context: agent.context.clone(),
-        content: agent.structured.clone(),
-        state_count: 1,
-    };
-    let merged_json = serde_json::to_string_pretty(&envelope).ok();
-    let form_code = agent.aem_config.as_ref().map(|c| c.form_code.clone());
-
-    let mut state = processing_state.write();
-    state.step = ProcessingStep::Complete;
-    state.ai_mode = true;
-    state.envelope = Some(envelope);
-    state.merged_json = merged_json;
-    state.aem_package = agent.package.clone();
-    state.form_code = form_code;
-    state.agent_aem_session = agent.aem_session.clone();
-    state.aem_uploaded = agent.aem_uploaded;
-    state.aem_form_path = agent.aem_form_path.clone();
-    state.elapsed_secs = Some(start.elapsed().as_secs());
-    drop(state);
-
-    let _ = profile;
-    current_session.set(Some(structured_session));
-}
-
-// ── UI step helpers ──────────────────────────────────────────────────────────
-
-fn push_step(processing_state: &mut Signal<ProcessingState>, step: AgentStep) {
-    processing_state.write().agent_steps.push(step);
-}
-
-fn set_step_status(
-    processing_state: &mut Signal<ProcessingState>,
-    id: &str,
-    status: AgentStepStatus,
-) {
-    let mut s = processing_state.write();
-    if let Some(step) = s.agent_steps.iter_mut().rev().find(|s| s.id == id) {
-        step.status = status;
-    }
-}
-
 // ── Small helpers ────────────────────────────────────────────────────────────
 
 fn base64_encode(bytes: &[u8]) -> String {
@@ -1267,14 +1075,6 @@ fn line_matches(line: &str, query: &str, regex: bool) -> bool {
     }
 }
 
-fn summarize_input(input: &serde_json::Value) -> String {
-    let s = match input {
-        serde_json::Value::Object(m) if m.is_empty() => String::new(),
-        _ => input.to_string(),
-    };
-    truncate(&s, 120)
-}
-
 /// The form's JCR node path from its AEM config.
 fn form_jcr_path(cfg: &AemConfig) -> String {
     join_form_path(&cfg.form_path, &cfg.form_dir)
@@ -1297,7 +1097,7 @@ fn render_pdf_first_page(pdf: &[u8]) -> Result<Vec<u8>, String> {
     let img = state
         .render_plain(RENDER_SCALE)
         .map_err(|e| format!("render: {e}"))?;
-    crate::pipeline::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("encode: {e}"))
+    crate::image_encode::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("encode: {e}"))
 }
 
 #[cfg(test)]
@@ -1336,12 +1136,5 @@ mod tests {
             join_form_path("ubs", "AF_FORM"),
             "/content/forms/af/ubs/AF_FORM"
         );
-    }
-
-    #[test]
-    fn summarize_input_truncates() {
-        assert_eq!(summarize_input(&serde_json::json!({})), "");
-        let long = serde_json::json!({"q": "x".repeat(500)});
-        assert!(summarize_input(&long).chars().count() <= 121);
     }
 }
