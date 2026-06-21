@@ -181,17 +181,28 @@ impl Blueprint {
             .unwrap_or_else(|| format!("mcp-{doc_hash}"));
         agent::db::insert_edit(&session, "Initial (empty)", "[]");
 
-        // No live AEM connection over MCP: profile-derived config/packaging still
-        // works; `upload_to_aem` and the fetch tools report no connection.
+        // Reuse the AEM connection the desktop app is configured with (read from
+        // the shared history.db settings). When present, upload_to_aem and the
+        // fetch/verify tools work; otherwise they report no connection.
+        let connection = agent::aem_connection_from_settings();
+        let aem_note = match &connection {
+            Some(c) => format!(
+                "upload_to_aem and the fetch/verify tools are available (AEM: {}).",
+                c.host
+            ),
+            None => "upload_to_aem and the fetch/verify tools are unavailable (no AEM connection \
+                     configured in the desktop app settings); profile-derived config and \
+                     packaging still work."
+                .to_string(),
+        };
         let count = pdfs.len();
-        let new_agent = ConversionAgent::new(profile, pdfs, None, session.clone());
+        let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone());
         *self.agent.lock().await = Some(new_agent);
 
         CallToolResult::success(vec![Content::text(format!(
             "Loaded {count} PDF(s) [{label}] (session {session}). Call list_states / \
              get_source_info to inspect the source, then convert. When done, build_aem_package \
-             then write_package to export the ZIP to a path. Note: upload_to_aem is unavailable \
-             over MCP (no live connection)."
+             then write_package to export the ZIP to a path. Note: {aem_note}"
         ))])
     }
 
@@ -241,9 +252,11 @@ impl ServerHandler for Blueprint {
              {SYSTEM_PROMPT}\n\n\
              MCP specifics: all file inputs/outputs are local file paths, never inlined bytes. \
              Instead of `finish`, export the finished package with `write_package` (writes the \
-             built ZIP to a path) after build_aem_package. `upload_to_aem` and the fetch tools \
-             are unavailable over MCP (no live AEM connection); profile-derived config and \
-             packaging still work.",
+             built ZIP to a path) after build_aem_package. `upload_to_aem` and the fetch/verify \
+             tools work only when AEM host/credentials are configured in the desktop app \
+             settings (shared history.db); otherwise they report no connection while \
+             profile-derived config and packaging still work. `start_conversion` reports which \
+             applies for the loaded session.",
             SYSTEM_PROMPT = agent::SYSTEM_PROMPT,
         ));
         info

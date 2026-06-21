@@ -17,4 +17,4 @@ pub mod db;
 pub mod image_encode;
 pub mod references;
 
-pub use conversion::{ConversionAgent, SYSTEM_PROMPT, ToolReply};
+pub use conversion::{ConversionAgent, SYSTEM_PROMPT, ToolReply, aem_connection_from_settings};

@@ -71,6 +71,33 @@ pub enum ToolReply {
     Error(String),
 }
 
+/// Settings key under which the desktop app persists its serialized settings
+/// blob in the shared `history.db` (see `app`'s `AppSettings`).
+const APP_SETTINGS_KEY: &str = "app";
+
+/// Build an AEM connection from the app settings stored in the shared
+/// `history.db`, so a conversion driven headlessly (e.g. over MCP) can
+/// upload/verify against the same instance the desktop app is configured for.
+///
+/// Reads the `aem_host` / `aem_username` / `aem_password` fields out of the
+/// settings blob — mirroring `AppSettings::aem_connection` — and returns `None`
+/// when no settings are stored or host/username are blank.
+pub fn aem_connection_from_settings() -> Option<AemConnection> {
+    let json = crate::db::get_setting(APP_SETTINGS_KEY)?;
+    let v: serde_json::Value = serde_json::from_str(&json).ok()?;
+    let host = v.get("aem_host").and_then(|h| h.as_str()).unwrap_or_default().trim();
+    let username = v.get("aem_username").and_then(|u| u.as_str()).unwrap_or_default().trim();
+    if host.is_empty() || username.is_empty() {
+        return None;
+    }
+    let password = v.get("aem_password").and_then(|p| p.as_str()).unwrap_or_default();
+    Some(AemConnection {
+        host: host.trim_end_matches('/').to_string(),
+        username: username.to_string(),
+        password: password.to_string(),
+    })
+}
+
 // ── Per-source extraction (sync; cached) ─────────────────────────────────────
 
 struct StateRec {
