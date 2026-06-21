@@ -1,6 +1,10 @@
 /target
 .DS_Store
 
+# Staged mcp sidecar binary for `dx bundle` (built in CI, see release.yml).
+# Repo-root, because dx resolves [bundle].external_bin relative to its CWD.
+/sidecar
+
 /cli/*.png
 /cli/*.json
 /cli/*.html

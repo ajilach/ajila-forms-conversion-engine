@@ -57,6 +57,12 @@ pub fn SettingsPage(
     // Bumped after a download/delete to force the downloaded-models list to re-read.
     let mut models_refresh: Signal<u32> = use_signal(|| 0u32);
 
+    // Whether the Blueprint MCP server is registered in Claude Desktop, and the
+    // last install error (shown below the row). Checked once on mount; flipped
+    // to `true` after a successful install.
+    let mut mcp_installed = use_signal(crate::mcp_install::is_installed);
+    let mut mcp_install_error: Signal<Option<String>> = use_signal(|| None);
+
     // Keep the selected local model valid. If it points at a model that isn't
     // downloaded (e.g. a stale value persisted from before, or a since-deleted
     // model), fall back to the first downloaded model — otherwise the <select>
@@ -236,6 +242,37 @@ pub fn SettingsPage(
                                     }
                                 },
                             }
+                        }
+                    }
+                    div { class: "settings-section",
+                        h3 { class: "settings-section-title", "Claude Desktop" }
+                        div { class: "settings-row",
+                            div { class: "settings-row-info",
+                                span { class: "settings-row-label", "Blueprint MCP server" }
+                                span { class: "settings-row-desc",
+                                    "Register Blueprint's conversion tools with Claude Desktop so you can drive conversions from Claude. Restart Claude Desktop after installing."
+                                }
+                            }
+                            if *mcp_installed.read() {
+                                span { class: "local-model-downloaded", "Installed ✓" }
+                            } else {
+                                button {
+                                    class: "btn btn-primary btn-sm",
+                                    onclick: move |_| {
+                                        match crate::mcp_install::install() {
+                                            Ok(()) => {
+                                                mcp_install_error.set(None);
+                                                mcp_installed.set(true);
+                                            }
+                                            Err(e) => mcp_install_error.set(Some(e)),
+                                        }
+                                    },
+                                    "Install"
+                                }
+                            }
+                        }
+                        if let Some(err) = mcp_install_error.read().as_ref() {
+                            div { class: "local-model-error", "{err}" }
                         }
                     }
                 }
