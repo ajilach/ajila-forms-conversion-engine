@@ -175,7 +175,8 @@ pub use aem::{
     detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
     generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
     generate_aem_xml, parse_aem_zip,
-    parse_fragment_content, scan_fragments,
+    parse_fragment_content, scan_fragments, validate_aem_dam_xml, validate_aem_form_xml,
+    validate_xml_wellformed,
 };
 
 // GraphViz decision-flow output

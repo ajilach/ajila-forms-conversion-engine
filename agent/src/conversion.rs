@@ -509,6 +509,12 @@ impl ConversionAgent {
                 serde_json::json!(["path"]),
             ),
             t(
+                "validate_aem_package",
+                "Validate the built package: checks the required FileVault structure (META-INF + jcr_root boilerplate) and validates the form and DAM .content.xml against the AEM contract (well-formedness, escaping, JCR/CQ/FD/Sling structure). Run after build_aem_package, before upload_to_aem.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
                 "generate_xsd",
                 "Generate the XSD schema for the current structured tree.",
                 serde_json::json!({}),
@@ -889,6 +895,100 @@ impl ConversionAgent {
                         Err(e) => ToolReply::Error(e),
                     },
                     None => ToolReply::Error("No package built yet.".into()),
+                }
+            }
+            "validate_aem_package" => {
+                let Some(pkg) = self.package.clone() else {
+                    return ToolReply::Error(
+                        "No package built yet; call build_aem_package.".into(),
+                    );
+                };
+                let files = match crate::references::unzip_package(&pkg) {
+                    Ok(files) => files,
+                    Err(e) => return ToolReply::Error(format!("Could not read package: {e}")),
+                };
+
+                let mut problems: Vec<String> = Vec::new();
+
+                // 1. Required FileVault package structure.
+                const REQUIRED: &[&str] = &[
+                    "META-INF/MANIFEST.MF",
+                    "META-INF/vault/config.xml",
+                    "META-INF/vault/nodetypes.cnd",
+                    "META-INF/vault/filter.xml",
+                    "META-INF/vault/properties.xml",
+                    "META-INF/vault/definition/.content.xml",
+                    "jcr_root/.content.xml",
+                    "jcr_root/content/.content.xml",
+                    "jcr_root/content/forms/.content.xml",
+                    "jcr_root/content/forms/af/.content.xml",
+                    "jcr_root/content/dam/.content.xml",
+                    "jcr_root/content/dam/formsanddocuments/.content.xml",
+                ];
+                for path in REQUIRED {
+                    if !files.iter().any(|(p, _)| p == path) {
+                        problems.push(format!("missing required package entry: {path}"));
+                    }
+                }
+
+                // 2. Validate the form content XML (the cq:Page under forms/af).
+                let form_xml = files.iter().find(|(p, c)| {
+                    p.starts_with("jcr_root/content/forms/af/")
+                        && p.ends_with("/.content.xml")
+                        && c.contains("\"cq:Page\"")
+                });
+                match form_xml {
+                    Some((path, xml)) => {
+                        if let Err(violations) = blueprint::validate_aem_form_xml(xml) {
+                            problems.push(format!(
+                                "form {path} failed {} validation check(s):\n    - {}",
+                                violations.len(),
+                                violations.join("\n    - ")
+                            ));
+                        }
+                    }
+                    None => problems.push(
+                        "no form .content.xml (jcr:primaryType cq:Page) found under \
+                         jcr_root/content/forms/af/"
+                            .into(),
+                    ),
+                }
+
+                // 3. Validate the DAM content XML (the dam:Asset).
+                let dam_xml = files.iter().find(|(p, c)| {
+                    p.starts_with("jcr_root/content/dam/formsanddocuments/")
+                        && p.ends_with("/.content.xml")
+                        && c.contains("\"dam:Asset\"")
+                });
+                match dam_xml {
+                    Some((path, xml)) => {
+                        if let Err(violations) = blueprint::validate_aem_dam_xml(xml) {
+                            problems.push(format!(
+                                "DAM {path} failed {} validation check(s):\n    - {}",
+                                violations.len(),
+                                violations.join("\n    - ")
+                            ));
+                        }
+                    }
+                    None => problems.push(
+                        "no DAM .content.xml (jcr:primaryType dam:Asset) found under \
+                         jcr_root/content/dam/formsanddocuments/"
+                            .into(),
+                    ),
+                }
+
+                if problems.is_empty() {
+                    ToolReply::Text(format!(
+                        "✓ Package valid: {} entries; required FileVault structure present; \
+                         form and DAM content XML pass AEM validation.",
+                        files.len()
+                    ))
+                } else {
+                    ToolReply::Error(format!(
+                        "Package validation found {} problem(s):\n- {}",
+                        problems.len(),
+                        problems.join("\n- ")
+                    ))
                 }
             }
             "generate_xsd" => {

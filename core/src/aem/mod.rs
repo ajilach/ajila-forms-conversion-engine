@@ -30,6 +30,7 @@ pub mod script_engine;
 pub mod template;
 pub mod to_structured;
 mod xml_writer;
+pub mod xml_validation;
 
 pub use converter::convert_to_aem;
 pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
@@ -45,6 +46,9 @@ pub use parser::{
 pub use profile::{AemConnectionProfile, AemProfile};
 pub use script_engine::AemScriptEngine;
 pub use to_structured::aem_to_structured;
+pub use xml_validation::{
+    validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
+};
 pub use xml_writer::generate_aem_xml;
 
 use regex_lite::Regex;
