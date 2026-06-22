@@ -547,6 +547,15 @@ mod imp {
         out_path: &str,
         profile: Option<&str>,
     ) -> Result<(usize, usize), String> {
+        // Start from a truly fresh destination: re-exporting to the same path
+        // (the UI uses a fixed `references-{profile}.db` filename) would otherwise
+        // leave the previous rows in place — `SCHEMA_SQL` is `IF NOT EXISTS` — and
+        // the INSERTs below would collide on the `ref_id` primary key.
+        if std::path::Path::new(out_path).exists() {
+            std::fs::remove_file(out_path)
+                .map_err(|e| format!("Cannot overwrite export file: {e}"))?;
+        }
+
         // Create the destination with the shared schema first.
         {
             let out = Connection::open(out_path)
