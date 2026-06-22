@@ -61,14 +61,14 @@ sequenceDiagram
     Mgr->>C: context_update.py → status=in_progress
     Mgr->>Wkr: spawn parallel (1 form each)
 
-    Wkr->>Wkr: aem_inspect.py --json (baseline)
+    Wkr->>Wkr: blueprint:start_conversion + get_aem (baseline)
 
     loop for each feedback item
         Wkr->>R: feedback_match.py → lookup known fix
-        Wkr->>Wkr: apply fix (XML patch only — no engine re-run)
-        Wkr->>Wkr: aem_install.py
-        Wkr->>Wkr: aem_inspect.py --json (verify)
-        Wkr->>Wkr: compare result vs feedback item
+        Wkr->>Wkr: blueprint:search_references (if no match)
+        Wkr->>Wkr: blueprint:edit_aem_content_xml (fix)
+        Wkr->>Wkr: blueprint:validate + build + upload_to_aem
+        Wkr->>Wkr: blueprint:fetch_aem_form_html (verify)
     end
 
     Wkr-->>Mgr: { fixed[], unfixed[], new_patterns[] }
@@ -102,14 +102,18 @@ sequenceDiagram
 - Routes `unfixed[]` items back up to Main for escalation
 
 ### Worker (one per form, ~3 per Manager → ~9 total in parallel)
-- Spawned by Manager; receives: form code + feedback items
-- Takes a **baseline snapshot**: `aem_inspect.py --json` before any changes
+- Spawned by Manager; receives: form code + issue number + feedback items
+- `blueprint:start_conversion` — load form from `forms/<form>_merged.zip` into MCP session
+- `blueprint:get_aem` — baseline AEM tree for analysis
 - For each feedback item:
   1. `feedback_match.py --query "<item>"` → apply known fix if high-confidence match
-  2. Otherwise: diagnose from baseline snapshot + ZIP/JSON, devise fix
-  3. Apply fix: XML patch only — unzip → edit XML → rezip (engine is never re-run in the feedback flow)
-  4. `aem_install.py <form>_merged.zip`
-  5. `aem_inspect.py --json` → compare result against this feedback item — mark fixed or unfixed
+  2. Otherwise: `blueprint:search_references` / `blueprint:grep_references` → look for matching pattern in known-good reference forms
+  3. Otherwise: diagnose from AEM tree, devise fix
+  4. `blueprint:edit_aem_content_xml` — targeted XML fix (versioned; no unzip/rezip)
+  5. `blueprint:validate_aem_package` → `blueprint:build_aem_package` → `blueprint:upload_to_aem`
+  6. `blueprint:fetch_aem_form_html` — verify form renders correctly post-upload
+  7. `gh issue comment <number> --body "Fixed: ..."` per resolved item
+- `blueprint:write_package path=forms/<form>_merged.zip` — export updated ZIP
 - Writes result to `feedback/output/<form>_report.md` (own file — no conflicts)
 - Returns `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
@@ -169,20 +173,25 @@ feedback/
 4. Collect results; write final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
-1. `curl ... | aem_inspect.py --json` — baseline snapshot before any changes
-2. For each feedback item:
-   a. `feedback_match.py --query "<item>" --top 3` — check for known resolution
-   b. Apply fix (known or freshly diagnosed): XML patch only — unzip → edit → rezip
-   c. `aem_install.py <form>_merged.zip`
-   d. `curl ... | aem_inspect.py --json` — verify this item is resolved; mark fixed or unfixed
-3. Write `feedback/output/<form>_report.md`
-4. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
+1. `blueprint:start_conversion path=forms/<form>_merged.zip` — load session
+2. `blueprint:get_aem` — baseline AEM tree for analysis
+3. For each feedback item:
+   a. `feedback_match.py --query "<item>" --top 3` — check `resolved.md` for known resolution
+   b. Otherwise: `blueprint:search_references` / `blueprint:grep_references` — scan reference forms for matching pattern
+   c. Otherwise: diagnose from AEM tree, devise fix
+   d. `blueprint:edit_aem_content_xml` — apply targeted XML fix (versioned, no unzip/rezip)
+   e. `blueprint:validate_aem_package` + `blueprint:build_aem_package` + `blueprint:upload_to_aem`
+   f. `blueprint:fetch_aem_form_html` — verify renders correctly; mark fixed or unfixed
+   g. `gh issue comment <number> --body "Fixed: ..."` per resolved item
+4. `blueprint:write_package path=forms/<form>_merged.zip` — export updated ZIP back to repo
+5. Write `feedback/output/<form>_report.md`
+6. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
 ---
 
 ## New scripts
 
-Four scripts to give agents reliable, reusable primitives instead of ad-hoc bash:
+Two scripts to give agents reliable, reusable primitives for things the MCP does not cover:
 
 ### `feedback_match.py`
 
@@ -208,39 +217,34 @@ python3 .claude/scripts/context_update.py \
   --set AAFB_019.fixes_applied="maxOccur corrected"
 ```
 
-### `aem_inspect.py --json`
-
-Extend the existing `aem_inspect.py` with a `--json` flag that outputs a machine-readable JSON object instead of the current human-readable text. Workers can pipe the output to `jq` or parse it directly for automated decision-making.
-
-```bash
-curl -s ... | python3 .claude/scripts/aem_inspect.py --json
-# → { "panels": [...], "issues": [...] }
-```
-
-The default text output is unchanged — `--json` is additive.
-
-### `aem_install.py`
-
-Wraps the AEM package install curl call + XML response parsing into a single script that exits `0` on success and `1` on failure, printing a clean one-line result. Removes the need for every agent to re-implement XML grep on the curl response.
-
-```bash
-python3 .claude/scripts/aem_install.py AAFB_019_merged.zip
-# → Installed: AAFB (200 OK)
-# or: Error: package upload failed — <reason>
-```
+All AEM interaction (XML editing, package building, upload, verification) is handled by the `blueprint` MCP server — no additional scripts needed for those operations.
 
 ---
 
 ## Tooling summary
 
+### `blueprint` MCP server (Workers)
+
+| MCP tool | Purpose |
+|----------|---------|
+| `start_conversion` | Load form ZIP into session |
+| `get_aem` | Structured AEM tree — baseline + analysis |
+| `edit_aem_content_xml` | Targeted XML fix, versioned (replaces unzip/rezip) |
+| `validate_aem_package` | Validate FileVault structure pre/post fix |
+| `build_aem_package` | Rebuild ZIP after edits |
+| `upload_to_aem` | Install to AEM (replaces `aem_install.py`) |
+| `fetch_aem_form_html` | Visual verify form renders post-upload |
+| `write_package` | Export updated ZIP back to `forms/` |
+| `search_references` | Semantic search of known-good reference forms |
+| `grep_references` | Literal/regex search of reference forms |
+
+### Scripts (no MCP equivalent)
+
 | Script | Used by | Purpose |
 |--------|---------|---------|
 | `feedback_match.py` | Worker | Match feedback text → known resolution in `resolved.md` |
 | `context_update.py` | Manager | Atomic read-modify-write on `context.json` |
-| `aem_inspect.py --json` | Worker | Structured form state from AEM (diagnose + verify) |
-| `aem_install.py` | Worker | Install ZIP, clean exit code, no XML parsing |
-| XML patch cycle (bash) | Worker | unzip → edit → rezip for XML-only fixes |
-| `fragment_coverage.json` | Worker | ENGINE DUPLICATE detection during diagnosis |
+| `gh` CLI | Main + Worker + Manager | Read issues, post comments, set labels, close issues |
 
 `engine-bugs.md` is **not** used in this pipeline — it belongs to the conversion flow only.
 
@@ -251,12 +255,10 @@ python3 .claude/scripts/aem_install.py AAFB_019_merged.zip
 Build bottom-up — each layer depends on the one below it.
 
 1. **File templates** — `feedback/knowledge/resolved.md` + `feedback/run/context.json`; defines the data formats everything else reads/writes
-2. **Scripts** (leaf primitives, no skill dependencies):
-   a. Extend `aem_inspect.py` with `--json` flag
-   b. Write `aem_install.py`
-   c. Write `feedback_match.py` (needs `resolved.md` format from step 1)
-   d. Write `context_update.py` (needs `context.json` format from step 1)
-3. **Worker skill** (`feedback-worker.md`) — uses all scripts from step 2
+2. **Scripts** (only 2 needed — MCP covers the rest):
+   a. Write `feedback_match.py` (needs `resolved.md` format from step 1)
+   b. Write `context_update.py` (needs `context.json` format from step 1)
+3. **Worker skill** (`feedback-worker.md`) — uses scripts + `blueprint` MCP tools
 4. **Manager skill** (`feedback-manager.md`) — coordinates Workers, uses `context_update.py`
 5. **Main skill** (`feedback.md`) — entry point, spawns Managers
 6. **Input format** — define `feedback/input/*.md` schema when first real feedback arrives
