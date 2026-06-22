@@ -35,7 +35,81 @@ pub fn generate_aem_package(
     config: &AemConfig,
     content: &[StructuredNode],
 ) -> Vec<u8> {
-    let form_xml = generate_aem_xml(root, config);
+    // Form-content translations come from the structured source tree.
+    let translations = extract_translations(content, &config.master_language);
+
+    // XSD schema is only emitted when binding is enabled and configured.
+    let xsd_content = if config.bind_to_xsd && config.xsd_path.is_some() {
+        config
+            .xsd_config
+            .as_ref()
+            .map(|xsd_config| crate::xsd::generate_xsd(content, xsd_config))
+    } else {
+        None
+    };
+
+    assemble_package(root, config, translations, xsd_content, None)
+}
+
+/// Generate a package directly from an edited [`AemNode`] tree, without an
+/// originating structured-node source.
+///
+/// Used by the AEM editor, where the `AemNode` tree is the source of truth.
+/// Because the node tree only carries master-language strings, no form-content
+/// translation dictionary is derived here (only the profile's
+/// `default_translations` are emitted); XSD generation is skipped.
+pub fn generate_aem_package_from_node(root: &AemNode, config: &AemConfig) -> Vec<u8> {
+    assemble_package(root, config, I18nDictionary::new(), None, None)
+}
+
+/// Like [`generate_aem_package_from_node`] but with an explicit form-content
+/// translation dictionary (master-text → { lang → translation }), e.g. the
+/// per-language labels edited in the AEM editor.
+pub fn generate_aem_package_from_node_with_translations(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+) -> Vec<u8> {
+    assemble_package(root, config, translations, None, None)
+}
+
+/// Like [`generate_aem_package_from_node_with_translations`] but uses a
+/// pre-generated `.content.xml` string verbatim instead of rendering it from
+/// the `AemNode` tree.
+///
+/// Used when the form XML has been hand-edited (expert mode): the supplied
+/// `form_xml` becomes the package's `.content.xml`, while everything else
+/// (XSD, translations, DAM metadata) is still derived from the node tree.
+pub fn generate_aem_package_from_node_with_xml(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    form_xml: String,
+) -> Vec<u8> {
+    assemble_package(root, config, translations, None, Some(form_xml))
+}
+
+/// Extract the form-content translation dictionary from structured nodes.
+///
+/// Exposed so the AEM editor can seed its per-language label overlay from the
+/// originating structured document.
+pub fn aem_translations_from_content(
+    content: &[StructuredNode],
+    master_lang: &str,
+) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
+    extract_translations(content, master_lang)
+}
+
+/// Assemble the FileVault ZIP from a node tree plus pre-computed
+/// form-content translations and optional XSD content.
+fn assemble_package(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: I18nDictionary,
+    xsd_content: Option<String>,
+    custom_form_xml: Option<String>,
+) -> Vec<u8> {
+    let form_xml = custom_form_xml.unwrap_or_else(|| generate_aem_xml(root, config));
     let dam_xml = generate_dam_xml(config);
 
     let package_name = config.form_code.clone();
@@ -186,7 +260,7 @@ pub fn generate_aem_package(
     write_entry(&mut zip, &opts, &mut written, &dam_content_path, &dam_xml);
 
     // ── Translation dictionaries ────────────────────────────────────────
-    let mut translations = extract_translations(content, &config.master_language);
+    let mut translations = translations;
 
     // Merge default translations from the profile (toolbar buttons, messages, etc.).
     // Form-content translations take precedence over defaults.
@@ -241,8 +315,7 @@ pub fn generate_aem_package(
 
     // ── XSD schema (when bind_to_xsd = true and xsd_path is set) ──────
     if config.bind_to_xsd && config.xsd_path.is_some() {
-        if let Some(ref xsd_config) = config.xsd_config {
-            let xsd_content = crate::xsd::generate_xsd(content, xsd_config);
+        if let Some(xsd_content) = xsd_content.as_deref() {
             let xsd_zip_path = config.xsd_zip_path().unwrap();
 
             // Write intermediate .content.xml files for the XSD directory
@@ -266,7 +339,7 @@ pub fn generate_aem_package(
                 }
             }
 
-            write_entry(&mut zip, &opts, &mut written, &xsd_zip_path, &xsd_content);
+            write_entry(&mut zip, &opts, &mut written, &xsd_zip_path, xsd_content);
         }
     }
 
@@ -1306,6 +1379,38 @@ mod tests {
         assert!(
             dam_folder_xml.contains("lcFolder"),
             "DAM folder must have lcFolder"
+        );
+    }
+
+    #[test]
+    fn custom_form_xml_is_used_verbatim() {
+        let config = AemConfig::test_default("TEST");
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        let sentinel = "<!-- HAND EDITED SENTINEL 12345 -->";
+        let custom = format!("<?xml version=\"1.0\"?>\n{sentinel}\n");
+
+        let zip_bytes = generate_aem_package_from_node_with_xml(
+            &root,
+            &config,
+            std::collections::HashMap::new(),
+            custom.clone(),
+        );
+        let reader = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(reader).expect("valid zip");
+
+        let form_path = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .find(|n| n.contains("content/forms/af/") && n.ends_with("TEST/.content.xml"))
+            .expect("form .content.xml entry");
+        let mut form = archive.by_name(&form_path).unwrap();
+        let mut form_xml = String::new();
+        form.read_to_string(&mut form_xml).unwrap();
+        assert_eq!(
+            form_xml, custom,
+            "injected form XML must be used verbatim, got: {form_xml}"
         );
     }
 

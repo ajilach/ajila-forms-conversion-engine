@@ -31,7 +31,7 @@ regex-lite = "0.1"
 uuid = { version = "1", features = ["v4", "v5", "serde", "js"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-schemars = "1.0"
+schemars = { version = "1.0", features = ["uuid1"] }
 base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tera = "1"

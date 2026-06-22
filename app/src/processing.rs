@@ -51,10 +51,20 @@ pub fn load_envelope_from_json(
         profile.as_deref(),
         processing_state,
         current_session,
-        &label,
-        "Imported from JSON",
+        SessionLabels {
+            session: &label,
+            edit: "Imported from JSON",
+        },
         false,
     );
+}
+
+/// Labels for the initial editing session recorded by [`finalize_envelope`].
+pub struct SessionLabels<'a> {
+    /// Names the session.
+    pub session: &'a str,
+    /// Labels the initial snapshot.
+    pub edit: &'a str,
 }
 
 /// Finalize a structured [`DocumentEnvelope`] that was loaded outside the PDF
@@ -62,16 +72,15 @@ pub fn load_envelope_from_json(
 /// derived outputs, mark processing complete, and record an initial editing
 /// session (desktop only; the `db` calls are no-ops on web).
 ///
-/// `files` are the source bytes used to compute the document hash; `session_label`
-/// names the session and `edit_label` labels the initial snapshot.
+/// `files` are the source bytes used to compute the document hash; `labels`
+/// names the session and its initial snapshot.
 pub fn finalize_envelope(
     envelope: &DocumentEnvelope,
     files: &[(String, Vec<u8>)],
     profile: Option<&str>,
     mut processing_state: Signal<ProcessingState>,
     mut current_session: Signal<Option<String>>,
-    session_label: &str,
-    edit_label: &str,
+    labels: SessionLabels<'_>,
     ai_mode: bool,
 ) {
     // Load profile fonts so derived outputs render with the right typefaces.
@@ -90,37 +99,12 @@ pub fn finalize_envelope(
     // Record the initial snapshot as a new editing session (desktop only).
     if let Ok(json) = serde_json::to_string(envelope) {
         let doc_hash = crate::db::document_hash(files);
-        crate::db::upsert_document(&doc_hash, session_label);
-        if let Some(session_id) = crate::db::create_session(&doc_hash, profile, session_label) {
-            crate::db::insert_edit(&session_id, edit_label, &json);
+        crate::db::upsert_document(&doc_hash, labels.session);
+        if let Some(session_id) = crate::db::create_session(&doc_hash, profile, labels.session) {
+            crate::db::insert_edit(&session_id, labels.edit, &json);
             current_session.set(Some(session_id));
         }
     }
-}
-
-/// Choose the primary language for a generated document: English if it appears
-/// among the content's languages, otherwise the most frequently occurring one.
-/// Falls back to `"en"` when no translated languages are present.
-pub fn primary_language(nodes: &[blueprint::StructuredNode]) -> String {
-    use std::collections::{BTreeSet, HashMap};
-
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for node in nodes {
-        let mut langs = BTreeSet::new();
-        node.collect_languages(&mut langs);
-        for lang in langs {
-            *counts.entry(lang).or_default() += 1;
-        }
-    }
-
-    if counts.contains_key("en") {
-        return "en".to_string();
-    }
-    counts
-        .into_iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(lang, _)| lang)
-        .unwrap_or_else(|| "en".to_string())
 }
 
 /// Run the blueprint pipeline and stream progress updates into the signal.

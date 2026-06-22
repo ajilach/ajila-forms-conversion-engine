@@ -19,6 +19,16 @@ title = "{{ xfa.formrange_code }}"
 
 master_language = "en"
 
+# =============================================================================
+# AEM upload connection (optional) — used by "Edit AEM" → Upload to AEM and the
+# Smart AEM Edit auto-upload. AEM 6.5, HTTP basic auth. Prefer `password_env` so
+# the secret is not committed.
+# =============================================================================
+# [connection]
+# host = "http://localhost:4502"
+# username = "admin"
+# password_env = "AEM_PASSWORD"   # or: password = "admin"
+
 # XSD path can be disabled as we currently dont want the schema included in the package.
 # xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{{ variables.form_code }}.xsd"
 bind_to_xsd = false

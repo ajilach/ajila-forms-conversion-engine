@@ -3,12 +3,12 @@ use dioxus::prelude::*;
 
 use crate::db::{self, SessionInfo};
 
-fn is_supported_upload_file(name: &str) -> bool {
+pub(crate) fn is_supported_upload_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name.ends_with(".pdf") || name.ends_with(".zip") || name.ends_with(".json")
 }
 
-async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
+pub(crate) async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
     let mut files_data = Vec::new();
     for file in files {
         let name = file.name();
@@ -276,9 +276,9 @@ pub fn FileUploadSection(
                         let title = if !ai_available {
                             "Configure an AI provider and API key in Settings to enable this."
                         } else if !has_pdf {
-                            "Upload at least one PDF to use AI processing."
+                            "Upload at least one PDF to use Agent Processing."
                         } else {
-                            "Generate the structured document from the PDFs using the configured AI model."
+                            "Let the AI agent drive the full conversion (extract → structure → AEM → package), reviewable step by step."
                         };
                         rsx! {
                             button {
@@ -295,7 +295,7 @@ pub fn FileUploadSection(
                                 if is_processing {
                                     "Processing..."
                                 } else {
-                                    "Start AI Processing"
+                                    "Start Agent Processing"
                                 }
                             }
                         }
@@ -343,7 +343,7 @@ pub fn FileUploadSection(
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use dioxus::html::{NativeFileData, bytes::Bytes};

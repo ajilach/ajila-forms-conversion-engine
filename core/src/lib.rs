@@ -76,6 +76,7 @@ pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
+pub mod reference_db;
 #[cfg(feature = "semantic-matching")]
 pub mod semantic;
 pub mod structured;
@@ -95,9 +96,9 @@ pub use context::Context;
 
 // Embedded profile loading
 pub use profiles::{
-    has_aem_config, has_html_config, has_xsd_config, list_profiles, load_aem_config,
-    load_aem_fragments, load_aem_profile, load_html_custom_styles, load_profile_fonts,
-    load_xsd_config,
+    AemConnection, has_aem_config, has_html_config, has_xsd_config, list_profiles,
+    load_aem_config, load_aem_connection, load_aem_fragments, load_aem_profile,
+    load_html_custom_styles, load_profile_fonts, load_xsd_config,
 };
 
 // Flattened layer
@@ -156,11 +157,26 @@ pub fn structured_schema() -> serde_json::Value {
         .expect("StructuredNode schema serializes")
 }
 
+/// JSON Schema for a single AEM node tree (`AemNode`).
+///
+/// Generated from the AEM intermediate model via `schemars`. Intended to be
+/// embedded as text in LLM prompts (Smart AEM Edit) so the model knows the
+/// exact shape to emit — like [`structured_schema`], it is not used as a
+/// structured-output constraint.
+pub fn aem_schema() -> serde_json::Value {
+    serde_json::to_value(schemars::schema_for!(AemNode)).expect("AemNode schema serializes")
+}
+
 // AEM generation
 pub use aem::{
-    AemConfig, AemNode, AemProfile, AemScriptEngine, ParsedAemPackage, ParsedFragment,
-    ResolvedCustomElement, aem_to_structured, collect_languages, convert_to_aem, detect_aem_zip,
-    generate_aem_package, generate_aem_xml, parse_aem_zip, parse_fragment_content, scan_fragments,
+    AemConfig, AemConnectionProfile, AemNode, AemOption, AemProfile, AemScriptEngine,
+    ConditionRule, OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement,
+    aem_to_structured, aem_translations_from_content, collect_languages, convert_to_aem,
+    detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
+    generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
+    generate_aem_xml, parse_aem_zip,
+    parse_fragment_content, scan_fragments, validate_aem_dam_xml, validate_aem_form_xml,
+    validate_xml_wellformed,
 };
 
 // GraphViz decision-flow output
@@ -1160,6 +1176,40 @@ pub fn to_aem_package(content: &[StructuredNode], config: &AemConfig) -> Vec<u8>
     let config = resolve_aem_languages(content, config);
     let root = convert_to_aem(content, &config);
     generate_aem_package(&root, &config, content)
+}
+
+/// Generate a complete AEM FileVault content package (ZIP) directly from an
+/// edited [`AemNode`] tree.
+///
+/// Unlike [`to_aem_package`], this takes the AEM node tree as the source of
+/// truth (e.g. after editing in the AEM editor) rather than re-deriving it from
+/// structured nodes. No form-content translation dictionary or XSD is emitted.
+pub fn to_aem_package_from_node(root: &AemNode, config: &AemConfig) -> Vec<u8> {
+    generate_aem_package_from_node(root, config)
+}
+
+/// Like [`to_aem_package_from_node`] but emits an explicit per-language
+/// translation dictionary (e.g. labels edited in the AEM editor).
+pub fn to_aem_package_from_node_with_translations(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+) -> Vec<u8> {
+    generate_aem_package_from_node_with_translations(root, config, translations)
+}
+
+/// Like [`to_aem_package_from_node_with_translations`] but uses a pre-generated
+/// `.content.xml` string verbatim instead of rendering it from the node tree.
+///
+/// Used when the form XML has been hand-edited (expert mode). The XSD,
+/// translations and DAM metadata are still derived from `root`/`translations`.
+pub fn to_aem_package_from_node_with_xml(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    form_xml: String,
+) -> Vec<u8> {
+    generate_aem_package_from_node_with_xml(root, config, translations, form_xml)
 }
 
 fn ensure_aem_bind_config(config: &AemConfig) {

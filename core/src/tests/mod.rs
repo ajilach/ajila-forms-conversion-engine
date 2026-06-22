@@ -1,6 +1,88 @@
 pub mod helpers;
 
 #[test]
+fn aem_schema_is_object_with_defs() {
+    let schema = crate::aem_schema();
+    let obj = schema.as_object().expect("schema is a JSON object");
+    let defs = obj
+        .get("$defs")
+        .and_then(|d| d.as_object())
+        .expect("schema has $defs");
+    assert!(
+        defs.contains_key("AemOption"),
+        "$defs should contain nested AemOption type"
+    );
+}
+
+#[test]
+fn aem_node_json_round_trips() {
+    use crate::{AemNode, AemOption, OptionAlignment};
+    use uuid::Uuid;
+
+    let root = AemNode::Root {
+        title: "Test Form".into(),
+        children: vec![AemNode::Panel {
+            uuid: Uuid::nil(),
+            name: "p1".into(),
+            title: "Panel 1".into(),
+            children: vec![
+                AemNode::TextField {
+                    uuid: Uuid::nil(),
+                    name: "tf".into(),
+                    label: "Name".into(),
+                    mandatory: true,
+                    visible: true,
+                    max_chars: Some(50),
+                    colspan: 6,
+                    dor_colspan: None,
+                    bind_ref: None,
+                },
+                AemNode::RadioButton {
+                    uuid: Uuid::nil(),
+                    name: "rb".into(),
+                    label: "Type".into(),
+                    options: vec![AemOption {
+                        label: "A".into(),
+                        value: "a".into(),
+                    }],
+                    alignment: OptionAlignment::Vertical,
+                    mandatory: false,
+                    visible: true,
+                    colspan: 12,
+                    dor_colspan: None,
+                    field_id: None,
+                    conditions: vec![],
+                    bind_ref: None,
+                },
+            ],
+            is_page: true,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        }],
+    };
+
+    let json = serde_json::to_string(&root).expect("serialize AemNode");
+    let back: AemNode = serde_json::from_str(&json).expect("deserialize AemNode");
+    assert_eq!(
+        json,
+        serde_json::to_string(&back).expect("re-serialize AemNode"),
+        "AemNode JSON should round-trip"
+    );
+}
+
+#[test]
+fn load_aem_connection_none_when_absent() {
+    // The UBS profile ships its [connection] block commented out.
+    let conn = crate::load_aem_connection("ubs").expect("load_aem_connection ok");
+    assert!(conn.is_none(), "UBS profile has no active [connection]");
+}
+
+#[test]
 fn structured_schema_is_object_with_defs() {
     let schema = crate::structured_schema();
     let obj = schema.as_object().expect("schema is a JSON object");

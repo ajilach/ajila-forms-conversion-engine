@@ -1,8 +1,6 @@
 //! Local SQLite store for application settings and edit history.
 //!
-//! On desktop the data lives in `<config_dir>/blueprint/history.db`. The whole
-//! module degrades to no-ops on `wasm32`, where persistence is not available
-//! (mirroring the previous settings behaviour).
+//! The data lives in `<config_dir>/blueprint/history.db`.
 //!
 //! Schema:
 //! - `settings(key TEXT PRIMARY KEY, value TEXT)` — key/value store (the whole
@@ -44,7 +42,6 @@ pub fn format_timestamp(ts: &str) -> String {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::{EditInfo, SessionInfo};
     use rusqlite::{Connection, OptionalExtension};
@@ -61,7 +58,10 @@ mod imp {
     }
 
     /// Open the database connection, creating the file and schema if needed.
-    fn open() -> rusqlite::Result<Connection> {
+    ///
+    /// Public so the reference store ([`crate::references`]) can share the same
+    /// single `history.db` connection rather than opening a second database.
+    pub fn open() -> rusqlite::Result<Connection> {
         let path = db_path();
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -100,6 +100,10 @@ mod imp {
             CREATE INDEX IF NOT EXISTS idx_edits_session ON edits(session_id, seq);
             CREATE INDEX IF NOT EXISTS idx_sessions_doc ON sessions(doc_hash, created_at);",
         )?;
+        // Reference-form tables (shared schema with the `reference-builder`
+        // crate, so dataset exports import without drift). Stored in the same
+        // `history.db`; only these tables are written by reference import/export.
+        conn.execute_batch(blueprint::reference_db::SCHEMA_SQL)?;
         Ok(())
     }
 
@@ -474,61 +478,6 @@ mod imp {
     }
 }
 
-// ── Public API (delegates to `imp` on desktop, no-ops on wasm) ───────────────
+// ── Public API ───────────────────────────────────────────────────────────────
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use imp::*;
-
-#[cfg(target_arch = "wasm32")]
-mod stub {
-    use super::{EditInfo, SessionInfo};
-
-    pub fn get_setting(_key: &str) -> Option<String> {
-        None
-    }
-    pub fn set_setting(_key: &str, _value: &str) {}
-    pub fn document_hash(_files: &[(String, Vec<u8>)]) -> String {
-        String::new()
-    }
-    pub fn upsert_document(_doc_hash: &str, _label: &str) {}
-    pub fn create_session(_doc_hash: &str, _profile: Option<&str>, _label: &str) -> Option<String> {
-        None
-    }
-    pub fn list_sessions(_doc_hash: &str) -> Vec<SessionInfo> {
-        Vec::new()
-    }
-    pub fn list_all_sessions() -> Vec<SessionInfo> {
-        Vec::new()
-    }
-    pub fn delete_session(_session_id: &str) {}
-    pub fn session_profile(_session_id: &str) -> Option<String> {
-        None
-    }
-    pub fn insert_edit(
-        _session_id: &str,
-        _action_label: &str,
-        _structure_json: &str,
-    ) -> Option<usize> {
-        None
-    }
-    pub fn record_edit(
-        _session_id: &str,
-        _after_seq: usize,
-        _action_label: &str,
-        _structure_json: &str,
-    ) -> Option<usize> {
-        None
-    }
-    pub fn snapshot_at(_session_id: &str, _seq: usize) -> Option<String> {
-        None
-    }
-    pub fn latest_seq(_session_id: &str) -> Option<usize> {
-        None
-    }
-    pub fn list_edits(_session_id: &str) -> Vec<EditInfo> {
-        Vec::new()
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub use stub::*;

@@ -9,6 +9,7 @@
     dorExclusion="true"
     dorFieldStyling="{{ variables.dor_field_styling }}"
     fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"
+    summaryExclusion="true"
     guideNodeClass="guidePanel"
     name="PN_BankingRelationship"
     textIsRich="true"
@@ -25,5 +26,5 @@
         jcr:primaryType="nt:unstructured"
         sling:resourceType="{{ variables.default_layout }}"/>
     <fd:rules jcr:primaryType="nt:unstructured"/>
-    <fd:scripts jcr:primaryType="nt:unstructured"/>imp
+    <fd:scripts jcr:primaryType="nt:unstructured"/>
 </{{ element_name }}>

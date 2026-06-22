@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent — Single Page · Workspace</title>
+<style>
+/* ============================================================
+   Real app theme (Graphite · Ajila) — tokens + components
+   from app/assets/styles.css. Only the LAYOUT below is new.
+   ============================================================ */
+:root {
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --bg: #f2f2f2; --surface: #ffffff; --surface-2: #f4f4f4;
+    --text: #111111; --muted: #5b6168;
+    --border: rgba(6, 37, 68, 0.12); --border-strong: rgba(6, 37, 68, 0.28);
+    --accent: #062544; --accent-soft: rgba(6, 37, 68, 0.10); --accent-ring: rgba(6, 37, 68, 0.26);
+    --on-accent: #ffffff; --gold: #dc9e26;
+    --success: #1f9d57; --success-soft: rgba(31, 157, 87, 0.12);
+    --warn: #dc9e26; --danger: #c2185b;
+    --radius: 10px; --radius-sm: 8px; --radius-pill: 999px;
+    --shadow: 0 1px 0 rgba(255,255,255,.6), 0 12px 32px rgba(6,37,68,.10);
+    --shadow-soft: 0 6px 20px rgba(6,37,68,.08);
+    --space-2: 6px; --space-3: 10px; --space-4: 14px; --space-5: 20px; --space-7: 32px;
+    --header-h: 56px; --header-bg: var(--accent); --header-border: rgba(255,255,255,.14); --header-text: #fff;
+    --color-text-muted: var(--muted); --color-bg-light: var(--surface-2);
+    --color-border: var(--border); --color-primary: var(--accent); --primary: var(--gold); --transition-fast: .15s;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font-family: var(--font); font-size: 13.5px; line-height: 1.5; color: var(--text);
+    background: var(--bg); -webkit-font-smoothing: antialiased; }
+h1,h2,h3,p { margin: 0; } button, textarea, select { font-family: inherit; }
+
+/* ---- Header (real .app-header) ---- */
+.app-header { background: var(--header-bg); padding: 0 var(--space-5); display: flex; align-items: center;
+    gap: var(--space-4); min-height: var(--header-h); flex-shrink: 0; border-bottom: 1px solid var(--header-border); color: var(--header-text); }
+.app-header-logo { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    background: var(--gold); color: var(--accent); font-weight: 800; font-size: 15px; }
+.app-header-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; color: var(--header-text); }
+.app-header-version { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.45); }
+.app-header-spacer { flex: 1; }
+.app-header-tag { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.8);
+    border: 1px solid rgba(255,255,255,.2); padding: 3px 9px; border-radius: var(--radius-pill); }
+
+/* ---- Buttons (real .btn) ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: 38px;
+    padding: 0 var(--space-4); font-family: var(--font); font-size: 13.5px; font-weight: 600; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); cursor: pointer; white-space: nowrap;
+    transition: filter var(--transition-fast); }
+.btn:hover { filter: brightness(1.04); }
+.btn-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+.btn-sm { height: 32px; padding: 0 var(--space-3); font-size: 12.5px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Spinner (real) ---- */
+@keyframes spinner-spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; border-width: 2px; border-style: solid; border-color: var(--color-border);
+    border-top-color: var(--color-primary); border-radius: 50%; animation: spinner-spin .8s linear infinite; vertical-align: middle; }
+.spinner-sm { width: 14px; height: 14px; } .spinner-md { width: 20px; height: 20px; }
+
+/* ---- Agent timeline (real .af-*) ---- */
+.af-timeline { position: relative; padding-left: 30px; }
+.af-timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 14px; width: 2px; background: var(--border); }
+.af-thought { position: relative; white-space: pre-wrap; line-height: 1.5; color: var(--text); padding: 10px 13px;
+    margin-bottom: 14px; background: var(--color-bg-light); border: 1px solid var(--border); border-radius: 10px; }
+.af-tool { position: relative; display: flex; gap: 10px; align-items: flex-start; padding-bottom: 18px; }
+.af-node { position: absolute; left: -30px; top: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
+    border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.af-tool-body { display: flex; flex-direction: column; min-width: 0; }
+.af-tool-name { font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--text); }
+.af-tool-detail { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.af-ok { color: #2e9e5b; } .af-err { color: #c0392b; }
+
+/* ============================================================
+   NEW: single-page two-pane workspace layout
+   ============================================================ */
+.app { height: 100%; display: flex; flex-direction: column; }
+.work { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
+
+/* Left rail = persistent inputs + status */
+.rail { border-right: 1px solid var(--border); background: var(--surface); padding: var(--space-5);
+    overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-7); }
+.block-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: var(--space-3); }
+
+.rail select { width: 100%; height: 38px; padding: 0 34px 0 var(--space-4); font-size: 13.5px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23062544' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 13px center; cursor: pointer; }
+
+.filebox { display: flex; flex-direction: column; gap: var(--space-2); }
+.file { display: flex; align-items: center; gap: 9px; padding: 8px 11px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-mono); }
+.file .ext { font-size: 10px; font-weight: 700; color: var(--on-accent); background: var(--accent); padding: 2px 6px; border-radius: 4px; }
+.file .pdf { background: var(--danger); } .file .json { background: #0e6b8c; } .file .zip { background: #a96f0d; }
+.file .sz { margin-left: auto; color: var(--muted); font-size: 11px; }
+.dropmini { margin-top: var(--space-2); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+    padding: var(--space-4); text-align: center; font-size: 12px; color: var(--muted); cursor: pointer; }
+.dropmini:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+/* progress checklist (built from af node styling) */
+.checklist { display: flex; flex-direction: column; gap: 2px; }
+.ck { display: flex; align-items: center; gap: var(--space-3); padding: 7px 6px; font-size: 13px; border-radius: 7px; }
+.ck .dot { flex: 0 0 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    border: 2px solid var(--border); color: var(--muted); background: var(--surface); }
+.ck.done .dot { background: var(--success); border-color: var(--success); color: #fff; }
+.ck.done .lbl { color: var(--text); }
+.ck.active { background: var(--accent-soft); }
+.ck.active .lbl { font-weight: 700; }
+.ck.pending { color: var(--muted); }
+
+/* Main = live activity feed */
+.main { display: flex; flex-direction: column; min-height: 0; }
+.main-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--border); background: var(--surface); }
+.main-head h2 { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
+.main-head .sub { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+.main-head .elapsed { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+    background: var(--surface-2); border: 1px solid var(--border); padding: 4px 10px; border-radius: var(--radius-pill); }
+
+.stream { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5); }
+.stream .af-timeline { max-width: 640px; }
+
+/* feedback docked in main (disabled until done) */
+.composer { flex: 0 0 auto; border-top: 1px solid var(--border); padding: var(--space-4) var(--space-5); background: var(--surface); }
+.composer-inner { max-width: 640px; display: flex; align-items: flex-end; gap: var(--space-3); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 6px 6px var(--space-4); background: var(--surface-2); opacity: .55; }
+.composer textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; font-size: 14px; color: var(--text);
+    padding: 8px 0; font-family: var(--font); }
+.composer .note { max-width: 640px; margin-top: 8px; font-size: 11.5px; color: var(--muted); }
+
+.switch { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.switch span { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 6px 2px; }
+.switch a { text-decoration: none; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 7px; color: var(--muted); }
+.switch a.active { background: var(--accent); color: var(--on-accent); }
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="app-header">
+        <div class="app-header-logo">B</div>
+        <span class="app-header-title">Blueprint</span>
+        <span class="app-header-version">v0.9.0</span>
+        <div class="app-header-spacer"></div>
+        <span class="app-header-tag">agent</span>
+    </header>
+
+    <div class="work">
+        <!-- Left rail: source + status -->
+        <aside class="rail">
+            <div>
+                <div class="block-label">Profile</div>
+                <select>
+                    <option>UBS · Adaptive Forms</option>
+                    <option>Generic AEM</option>
+                    <option>HTML preview only</option>
+                </select>
+            </div>
+            <div>
+                <div class="block-label">Source files</div>
+                <div class="filebox">
+                    <div class="file"><span class="ext pdf">PDF</span> AAHA_019_DE.pdf <span class="sz">248 KB</span></div>
+                    <div class="file"><span class="ext zip">ZIP</span> ubs-package.zip <span class="sz">1.2 MB</span></div>
+                    <div class="file"><span class="ext json">JSON</span> structure.json <span class="sz">18 KB</span></div>
+                </div>
+                <div class="dropmini">+ Drop or choose more files</div>
+            </div>
+            <div>
+                <div class="block-label">Progress</div>
+                <div class="checklist">
+                    <div class="ck done"><span class="dot">✓</span><span class="lbl">Parse PDF</span></div>
+                    <div class="ck done"><span class="dot">✓</span><span class="lbl">Build model</span></div>
+                    <div class="ck done"><span class="dot">✓</span><span class="lbl">Generate HTML</span></div>
+                    <div class="ck active"><span class="dot"><span class="spinner spinner-sm"></span></span><span class="lbl">Upload to AEM</span></div>
+                    <div class="ck pending"><span class="dot">5</span><span class="lbl">Verify form</span></div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main: live timeline -->
+        <section class="main">
+            <div class="main-head">
+                <span class="spinner spinner-md"></span>
+                <div>
+                    <h2>Agent is working</h2>
+                    <div class="sub">upload_to_aem</div>
+                </div>
+                <span class="elapsed">0:54</span>
+            </div>
+
+            <div class="stream">
+                <div class="af-timeline">
+                    <div class="af-thought">Reading the PDF and supplied structure to understand layout and field groupings.</div>
+                    <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">parse_pdf</span><span class="af-tool-detail">42 fields across 8 sections</span></div></div>
+                    <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">build_model</span><span class="af-tool-detail">mapped 40 / 42 fields</span></div></div>
+                    <div class="af-thought">A signature pad and a repeating address block didn't map cleanly — generating equivalents and wiring validation rules.</div>
+                    <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">generate_html</span><span class="af-tool-detail">5 pages rendered</span></div></div>
+                    <div class="af-tool"><span class="af-node"><span class="spinner spinner-sm"></span></span><div class="af-tool-body"><span class="af-tool-name">upload_to_aem</span><span class="af-tool-detail">/content/forms/af/ubs/aaha-019</span></div></div>
+                </div>
+            </div>
+
+            <div class="composer">
+                <div class="composer-inner">
+                    <textarea rows="1" placeholder="Feedback unlocks once the agent finishes…" disabled></textarea>
+                    <button class="btn btn-primary" disabled>Send</button>
+                </div>
+                <div class="note">When the run completes, the result summary appears here and you can send feedback to re-run.</div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<nav class="switch">
+    <span>Single-page</span>
+    <a href="agent-conversation.html">Conversation</a>
+    <a href="agent-workspace.html" class="active">Workspace</a>
+    <a href="agent-timeline.html">Timeline</a>
+    <a href="agent-timeline-collapsible.html">Collapsible</a>
+</nav>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent — Single Page · Timeline</title>
+<style>
+/* ============================================================
+   Real app theme (Graphite · Ajila) — tokens + components
+   from app/assets/styles.css. Only the LAYOUT below is new.
+   ============================================================ */
+:root {
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --bg: #f2f2f2; --surface: #ffffff; --surface-2: #f4f4f4;
+    --text: #111111; --muted: #5b6168;
+    --border: rgba(6, 37, 68, 0.12); --border-strong: rgba(6, 37, 68, 0.28);
+    --accent: #062544; --accent-soft: rgba(6, 37, 68, 0.10); --accent-ring: rgba(6, 37, 68, 0.26);
+    --on-accent: #ffffff; --gold: #dc9e26;
+    --success: #1f9d57; --success-soft: rgba(31, 157, 87, 0.12);
+    --warn: #dc9e26; --danger: #c2185b;
+    --radius: 10px; --radius-sm: 8px; --radius-pill: 999px;
+    --shadow: 0 1px 0 rgba(255,255,255,.6), 0 12px 32px rgba(6,37,68,.10);
+    --shadow-soft: 0 6px 20px rgba(6,37,68,.08);
+    --space-2: 6px; --space-3: 10px; --space-4: 14px; --space-5: 20px; --space-7: 32px; --space-9: 56px;
+    --header-h: 56px; --header-bg: var(--accent); --header-border: rgba(255,255,255,.14); --header-text: #fff;
+    --color-text-muted: var(--muted); --color-bg-light: var(--surface-2); --color-bg-success: var(--success-soft);
+    --color-border: var(--border); --color-primary: var(--accent); --primary: var(--gold); --transition-fast: .15s;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font-family: var(--font); font-size: 13.5px; line-height: 1.5; color: var(--text);
+    background: var(--bg); -webkit-font-smoothing: antialiased; }
+h1,h2,h3,p { margin: 0; } button, textarea, select { font-family: inherit; }
+
+/* ---- Header (real .app-header) ---- */
+.app-header { background: var(--header-bg); padding: 0 var(--space-5); display: flex; align-items: center;
+    gap: var(--space-4); min-height: var(--header-h); flex-shrink: 0; border-bottom: 1px solid var(--header-border); color: var(--header-text); }
+.app-header-logo { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    background: var(--gold); color: var(--accent); font-weight: 800; font-size: 15px; }
+.app-header-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; color: var(--header-text); }
+.app-header-version { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.45); }
+.app-header-spacer { flex: 1; }
+.app-header-tag { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.8);
+    border: 1px solid rgba(255,255,255,.2); padding: 3px 9px; border-radius: var(--radius-pill); }
+
+/* ---- Buttons (real .btn) ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: 38px;
+    padding: 0 var(--space-4); font-family: var(--font); font-size: 13.5px; font-weight: 600; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); cursor: pointer; white-space: nowrap; transition: filter var(--transition-fast); }
+.btn:hover { filter: brightness(1.04); }
+.btn-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+.btn-sm { height: 32px; padding: 0 var(--space-3); font-size: 12.5px; }
+
+/* ---- Agent timeline (real .af-*) ---- */
+.af-timeline { position: relative; padding-left: 30px; }
+.af-timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 14px; width: 2px; background: var(--border); }
+.af-thought { position: relative; white-space: pre-wrap; line-height: 1.5; color: var(--text); padding: 10px 13px;
+    margin-bottom: 14px; background: var(--color-bg-light); border: 1px solid var(--border); border-radius: 10px; }
+.af-tool { position: relative; display: flex; gap: 10px; align-items: flex-start; padding-bottom: 18px; }
+.af-node { position: absolute; left: -30px; top: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
+    border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.af-tool-body { display: flex; flex-direction: column; min-width: 0; }
+.af-tool-name { font-family: var(--font-mono); font-weight: 600; font-size: 13px; color: var(--text); }
+.af-tool-detail { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.af-ok { color: #2e9e5b; } .af-err { color: #c0392b; }
+
+/* ---- Feedback (real .af-feedback-input) ---- */
+.af-feedback-input { width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--font); font-size: 14px;
+    line-height: 1.5; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); }
+.af-feedback-input:focus { outline: none; border-color: var(--primary); }
+
+/* ============================================================
+   NEW: single-page hero + timeline layout
+   ============================================================ */
+.app { min-height: 100%; display: flex; flex-direction: column; }
+.page { width: 100%; max-width: 760px; margin: 0 auto; padding: var(--space-7) var(--space-5) var(--space-9); }
+
+/* Hero status: one head that spans all three phases */
+.hero { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-soft); padding: var(--space-5); }
+.hero.done { border-color: color-mix(in srgb, var(--success) 30%, transparent);
+    background: linear-gradient(120deg, var(--success-soft), transparent 55%), var(--surface); }
+.hero-top { display: flex; align-items: center; gap: var(--space-4); }
+.hero-badge { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; color: #fff;
+    background: var(--success); box-shadow: var(--shadow-soft); flex: 0 0 auto; }
+.hero h1 { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+.hero .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.hero .meta b { color: var(--text); font-weight: 600; }
+.hero-actions { margin-left: auto; display: flex; gap: var(--space-3); }
+
+/* horizontal phase rail */
+.phases { display: flex; align-items: center; margin-top: var(--space-5); }
+.phase { display: flex; align-items: center; gap: 9px; }
+.phase .pn { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    border: 2px solid var(--border); color: var(--muted); background: var(--surface); }
+.phase.done .pn { background: var(--success); border-color: var(--success); color: #fff; }
+.phase .pl { font-size: 12.5px; font-weight: 600; }
+.phase.done .pl { color: var(--text); } .phase:not(.done) .pl { color: var(--muted); }
+.pbar { flex: 1; height: 2px; background: var(--border); margin: 0 12px; border-radius: 2px; }
+.pbar.done { background: var(--success); }
+
+.files { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-5); }
+.file { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-mono); }
+.file .ext { font-size: 10px; font-weight: 700; color: #fff; padding: 2px 6px; border-radius: 4px; background: var(--accent); }
+.file .pdf { background: var(--danger); } .file .json { background: #0e6b8c; } .file .zip { background: #a96f0d; }
+
+.section-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: var(--space-7) 0 var(--space-5); }
+.af-tool .meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--muted); align-self: flex-start; }
+
+/* inline feedback card */
+.feedback { margin-top: var(--space-7); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-soft); padding: var(--space-5); }
+.feedback h3 { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+.feedback p { font-size: 12.5px; color: var(--muted); margin-bottom: var(--space-4); }
+.feedback .row { display: flex; gap: var(--space-3); margin-top: var(--space-4); }
+
+.switch { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.switch span { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 6px 2px; }
+.switch a { text-decoration: none; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 7px; color: var(--muted); }
+.switch a.active { background: var(--accent); color: var(--on-accent); }
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="app-header">
+        <div class="app-header-logo">B</div>
+        <span class="app-header-title">Blueprint</span>
+        <span class="app-header-version">v0.9.0</span>
+        <div class="app-header-spacer"></div>
+        <span class="app-header-tag">agent</span>
+    </header>
+
+    <main class="page">
+        <!-- Hero status = upload + run + done collapsed to one head -->
+        <section class="hero done">
+            <div class="hero-top">
+                <div class="hero-badge">✓</div>
+                <div>
+                    <h1>Finished</h1>
+                    <div class="meta">
+                        <span><b>AAHA_019_DE.pdf</b></span>
+                        <span>Profile <b>UBS · Adaptive Forms</b></span>
+                        <span>in <b>1m 18s</b></span>
+                    </div>
+                </div>
+                <div class="hero-actions">
+                    <button class="btn btn-primary btn-sm">↗ Open in AEM</button>
+                    <button class="btn btn-secondary btn-sm">↻ New form</button>
+                </div>
+            </div>
+
+            <div class="phases">
+                <div class="phase done"><span class="pn">✓</span><span class="pl">Upload</span></div>
+                <div class="pbar done"></div>
+                <div class="phase done"><span class="pn">✓</span><span class="pl">Convert</span></div>
+                <div class="pbar done"></div>
+                <div class="phase done"><span class="pn">✓</span><span class="pl">Finish</span></div>
+            </div>
+
+            <div class="files">
+                <span class="file"><span class="ext pdf">PDF</span> AAHA_019_DE.pdf</span>
+                <span class="file"><span class="ext zip">ZIP</span> ubs-package.zip</span>
+                <span class="file"><span class="ext json">JSON</span> structure.json</span>
+            </div>
+        </section>
+
+        <!-- Detailed activity (reuses .af-* timeline) -->
+        <div class="section-label">What the agent did</div>
+        <div class="af-timeline">
+            <div class="af-thought">Reading the PDF and supplied structure to understand layout and field groupings.</div>
+            <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">parse_pdf</span><span class="af-tool-detail">42 fields across 8 sections</span></div><span class="meta">0.4s</span></div>
+            <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">build_model</span><span class="af-tool-detail">mapped 40 / 42 fields to AEM components</span></div><span class="meta">1.1s</span></div>
+            <div class="af-thought">A signature pad and a repeating address block didn't map cleanly — generating equivalents and wiring up validation rules.</div>
+            <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">generate_html</span><span class="af-tool-detail">5 pages rendered</span></div><span class="meta">42s</span></div>
+            <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">upload_to_aem</span><span class="af-tool-detail">/content/forms/af/ubs/aaha-019</span></div><span class="meta">9s</span></div>
+            <div class="af-tool"><span class="af-node af-ok">✓</span><div class="af-tool-body"><span class="af-tool-name">verify_form</span><span class="af-tool-detail">all required fields present</span></div><span class="meta">3s</span></div>
+        </div>
+
+        <!-- Inline feedback (reuses .af-feedback-input) -->
+        <section class="feedback">
+            <h3>Not quite right?</h3>
+            <p>Tell the agent what to change — it re-runs in the same session.</p>
+            <textarea class="af-feedback-input" rows="3" placeholder="e.g. The phone number field should be optional.">The phone number field should be optional.</textarea>
+            <div class="row">
+                <button class="btn btn-primary">Send feedback</button>
+                <button class="btn btn-secondary">↻ Convert new form</button>
+            </div>
+        </section>
+    </main>
+</div>
+
+<nav class="switch">
+    <span>Single-page</span>
+    <a href="agent-conversation.html">Conversation</a>
+    <a href="agent-workspace.html">Workspace</a>
+    <a href="agent-timeline.html" class="active">Timeline</a>
+    <a href="agent-timeline-collapsible.html">Collapsible</a>
+</nav>
+</body>
+</html>
