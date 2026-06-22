@@ -264,36 +264,23 @@ Build bottom-up — each layer depends on the one below it.
 
 ---
 
-## Appendix A — ZIP storage options (TBD, discuss with team)
+## Appendix — Scaling to multiple developers
 
-Where to store the `*_merged.zip` form packages that Workers need to read and patch:
+The pipeline is designed to scale to a whole team with no coordination overhead. Three things make this work:
 
-| Option | Pros | Cons |
-|--------|------|------|
-| **Git LFS in the repo** (`forms/` directory) | Versioned, accessible via `git pull`, fully automatable | Requires LFS setup; ZIPs grow the repo |
-| **GitHub issue attachment** | Contextual (feedback + ZIP together) | Not versioned; must download via GitHub API; harder to automate |
-| **External storage (S3/Azure Blob)** | Scalable for large files | Extra infrastructure, not worth it at current scale |
+**1. Everything in the repo**
+Form ZIPs live in `forms/` tracked via Git LFS (the repo already has LFS enabled). Skills, scripts, and the knowledge base (`resolved.md`) live in `.claude/`. A developer joins the team, runs `git pull`, and has everything — the forms to fix, the tools to fix them with, and all the accumulated knowledge from every previous run. No per-machine setup beyond AEM.
 
-**Recommendation:** Git LFS. The repo already has LFS enabled. Add to `.gitattributes`:
 ```
-forms/*_merged.zip filter=lfs diff=lfs merge=lfs -text
+forms/*_merged.zip filter=lfs diff=lfs merge=lfs -text   ← add to .gitattributes
 ```
-Workers just `git pull` and the files are there — no download step needed.
 
----
+**2. GitHub issues as the work queue**
+QA submits feedback as a GitHub issue. The GitHub Action labels it `claude-pending`. When a developer runs `/feedback`, Main reads all `claude-pending` issues and immediately labels each one `claude-in-progress`. A second developer running `/feedback` at the same time sees none of those issues — the label is the lock. No two agents ever work the same form. When done, Manager labels the issue `claude-done` and closes it, or `claude-blocked` and leaves it open. The issue is the full audit trail: feedback in, fix comments during processing, final status on close.
 
-## Appendix B — Future idea: distributed multi-developer operation
-
-> **Status: idea only — discuss with team before implementing.** No changes needed to the current design; these are two small additions on top of what is already planned.
-
-Once multiple developers are running `/feedback`, two additions would make concurrent runs safe and self-improving:
-
-**GitHub issue labels as distributed locks**
-Main immediately labels each picked-up issue `claude-in-progress` after reading it. A second developer running `/feedback` concurrently will not see those issues (they filter by `claude-pending`) — the label is the lock. No coordination required; no two agents ever touch the same form.
-
-**Manager commits `resolved.md` back to the repo**
-After writing new patterns to `resolved.md`, Manager does:
+**3. Knowledge grows with every run**
+After processing a batch, Manager commits and pushes `resolved.md`:
 ```bash
 git add feedback/knowledge/resolved.md && git commit -m "feedback: add N resolved patterns" && git push
 ```
-Every future `/feedback` run by anyone starts with the latest knowledge. Since `.claude/` is already in the repo, pulling it gives every developer the same skills, scripts, and accumulated knowledge base automatically.
+Every subsequent `/feedback` run by anyone, on any machine, starts with the latest patterns. The more forms are processed, the fewer items require fresh diagnosis.
