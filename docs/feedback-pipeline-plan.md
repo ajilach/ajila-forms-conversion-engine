@@ -26,8 +26,8 @@ QA submits feedback using the structured issue template (`.github/ISSUE_TEMPLATE
 Label lifecycle:
 - `feedback` — set by QA when creating the issue; marks it as ready to process
 - `claude-in-progress` — set by Main when picked up; acts as a distributed lock
-- `claude-done` — set by Manager when all items fixed; issue is closed
-- `claude-blocked` — set by Manager when items remain unfixed; issue stays open
+- `claude-done` — set by Manager when all items fixed; **issue stays open** pending PR review; auto-closes when the fix PR is merged
+- `claude-blocked` — set by Manager when items remain unfixed; issue stays open for manual intervention
 
 ---
 
@@ -110,7 +110,9 @@ sequenceDiagram
         Mgr->>Mgr: sanity check — all input items in fixed[]∪unfixed[]
         Mgr->>R: append new_patterns[] (sequential)
         Mgr->>C: context_update.py → status=done/blocked
-        Mgr->>GH: summary comment + claude-done/claude-blocked + close
+        Mgr->>Mgr: git checkout -b fix/<form>-N && git push
+        Mgr->>GH: gh pr create (Closes #N)
+        Mgr->>GH: comment PR link + claude-done (issue stays open)
         Mgr-->>Main: batch report
     end
 
@@ -126,6 +128,7 @@ sequenceDiagram
 - Reads `feedback/knowledge/resolved.md` + `feedback/run/context.json` once at start
 - **Does NOT read `engine-bugs.md`** — that is conversion-only knowledge
 - Each iteration: `gh issue list --label feedback --state open` (excluding `claude-in-progress`, `claude-done`) → pick next batch of up to 3
+- Verifies `forms/issued/<form>_merged.zip` exists for each issue — skips and comments on the issue if the ZIP is missing
 - Labels the batch `claude-in-progress`
 - **Re-reads each issue** to confirm it now has `claude-in-progress` and not already had it before this agent applied it — drops any issue already claimed by another concurrent agent
 - Spawns **3 Managers in parallel** (one per form in confirmed batch); waits for all to complete
@@ -139,12 +142,16 @@ sequenceDiagram
 - Collects all Worker results; **sanity-checks that every input feedback item appears in either `fixed[]` or `unfixed[]`**
 - Sequentially appends `new_patterns[]` to `resolved.md` — Manager is the only writer (no concurrent write conflicts)
 - Marks form done/blocked: `context_update.py --set <form>.status=done|blocked`
-- Posts summary comment on the issue; labels `claude-done` + closes, or labels `claude-blocked` + leaves open
+- If all items fixed:
+  1. Create branch `fix/<form>-<issue-number>`, commit fixed ZIP (`forms/issued/<form>_merged.zip`), push
+  2. `gh pr create` — title "Fix: `<form>`", body includes `Closes #<issue-number>` + fix summary
+  3. Post comment on issue with PR link; label `claude-done` — **leave issue open** (auto-closes when PR is merged)
+- If items remain unfixed: label `claude-blocked`, leave open, route unfixed items to Main
 - Returns result to Main
 
 ### Worker (one per form, up to ~3 per Manager)
 - Spawned by Manager; receives: form code + issue number + feedback items
-- `blueprint:start_conversion` — load form from `forms/<form>_merged.zip` into MCP session
+- `blueprint:start_conversion` — load form from `forms/issued/<form>_merged.zip` into MCP session
 - `blueprint:get_aem` — baseline AEM tree for analysis
 - For each feedback item:
   1. `feedback_match.py --query "<item>"` → apply known fix if high-confidence match
@@ -154,7 +161,7 @@ sequenceDiagram
   5. `blueprint:validate_aem_package` → `blueprint:build_aem_package` → `blueprint:upload_to_aem`
   6. `blueprint:fetch_aem_form_html` — verify form renders correctly post-upload
   7. `gh issue comment <number> --body "Fixed: ..."` per resolved item
-- `blueprint:write_package path=forms/<form>_merged.zip` — export updated ZIP
+- `blueprint:write_package path=forms/issued/<form>_merged.zip` — export updated ZIP (Manager will commit this on the fix branch)
 - Writes result to `feedback/output/<form>_report.md` (own file — no conflicts)
 - Returns `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
@@ -182,7 +189,9 @@ This shrinks the race window to near-zero. In the unlikely event two agents labe
     feedback.yml               ← structured issue template (Form + Feedback fields)
 
 forms/
-  <form>_merged.zip            ← form packages (Git LFS); Workers read and write back here
+  issued/
+    <form>_merged.zip          ← input ZIPs (Git LFS); committed by developer after conversion
+                                  Fixed ZIPs land back here when their fix branch is merged
 
 feedback/
   knowledge/
@@ -227,13 +236,14 @@ GitHub issues are the input source — there is no `feedback/input/` directory.
 2. Loop:
    a. `gh issue list --label feedback --state open` (exclude `claude-in-progress`, `claude-done`) → take next batch of up to 3
    b. If empty → exit loop
-   c. Label batch `claude-in-progress`
-   d. Re-read each issue: if it already had `claude-in-progress` before this agent applied it, drop it from the batch (claimed by another concurrent agent)
-   e. Spawn Managers in parallel for confirmed batch; wait for all to complete
+   c. Verify `forms/issued/<form>_merged.zip` exists for each issue — skip and comment if missing
+   d. Label batch `claude-in-progress`
+   e. Re-read each issue: if it already had `claude-in-progress` before this agent applied it, drop it (claimed by another concurrent agent)
+   f. Spawn Managers in parallel for confirmed batch; wait for all to complete
 3. Present final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
-1. `blueprint:start_conversion path=forms/<form>_merged.zip` — load session
+1. `blueprint:start_conversion path=forms/issued/<form>_merged.zip` — load session
 2. `blueprint:get_aem` — baseline AEM tree for analysis
 3. For each feedback item:
    a. `feedback_match.py --query "<item>" --top 3` — check `resolved.md` for known resolution
@@ -243,7 +253,7 @@ GitHub issues are the input source — there is no `feedback/input/` directory.
    e. `blueprint:validate_aem_package` + `blueprint:build_aem_package` + `blueprint:upload_to_aem`
    f. `blueprint:fetch_aem_form_html` — verify renders correctly; mark fixed or unfixed
    g. `gh issue comment <number> --body "Fixed: ..."` per resolved item
-4. `blueprint:write_package path=forms/<form>_merged.zip` — export updated ZIP back to repo
+4. `blueprint:write_package path=forms/issued/<form>_merged.zip` — export updated ZIP (Manager commits this on the fix branch)
 5. Write `feedback/output/<form>_report.md`
 6. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
 
@@ -251,8 +261,10 @@ GitHub issues are the input source — there is no `feedback/input/` directory.
 1. Spawn Workers in parallel (one per form in batch)
 2. Collect results; sanity-check all input items appear in `fixed[] ∪ unfixed[]`
 3. Append `new_patterns[]` to `resolved.md` (sequential — Manager is sole writer)
-4. Post final summary comment on the issue via `gh issue comment`
-5. Label issue `claude-done` + close, OR label `claude-blocked` and leave open
+4. Create branch `fix/<form>-<issue-number>`, commit fixed ZIP, push
+5. `gh pr create` with `Closes #<issue-number>` in body
+6. Post comment on issue with PR link; label `claude-done` — leave open until PR merges
+7. OR label `claude-blocked` if items remain unfixed
 
 ---
 
@@ -338,10 +350,10 @@ Build bottom-up — each layer depends on the one below it.
 The pipeline is designed to scale to a whole team with no coordination overhead. Three things make this work:
 
 **1. Everything in the repo**
-Form ZIPs live in `forms/` tracked via Git LFS (the repo already has LFS enabled). Skills, scripts, and the knowledge base (`resolved.md`) live in `.claude/`. A developer joins the team, runs `git pull`, and has everything — the forms to fix, the tools to fix them with, and all the accumulated knowledge from every previous run. No per-machine setup beyond AEM.
+Form ZIPs live in `forms/issued/` tracked via Git LFS (the repo already has LFS enabled). Skills, scripts, and the knowledge base (`resolved.md`) live in `.claude/`. A developer joins the team, runs `git pull`, and has everything — the forms to fix, the tools to fix them with, and all the accumulated knowledge from every previous run. No per-machine setup beyond AEM.
 
 ```
-forms/*_merged.zip filter=lfs diff=lfs merge=lfs -text   ← add to .gitattributes
+forms/issued/*_merged.zip filter=lfs diff=lfs merge=lfs -text   ← add to .gitattributes
 ```
 
 **2. GitHub issues as the work queue**
