@@ -196,13 +196,33 @@ impl Blueprint {
                 .to_string(),
         };
         let count = pdfs.len();
+        // How many reference forms / docs are available for this profile. Many
+        // MCP clients drop the server `instructions`, so the workflow (and the
+        // "consult references before building" step in particular) is repeated
+        // here, in the one surface the client always delivers to the model: the
+        // tool result. The count also distinguishes "no references exist" from a
+        // profile mismatch returning an empty list.
+        let ref_count = agent::references::count(profile.as_deref().unwrap_or_default());
         let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone());
         *self.agent.lock().await = Some(new_agent);
 
+        let ref_note = if ref_count > 0 {
+            format!(
+                "{ref_count} reference form(s) are available for this profile — BEFORE building, \
+                 consult them (search_references, then get_reference_package / read_reference_file) \
+                 and match their structure rather than inventing your own."
+            )
+        } else {
+            "No reference forms are available for this profile.".to_string()
+        };
+
         CallToolResult::success(vec![Content::text(format!(
-            "Loaded {count} PDF(s) [{label}] (session {session}). Call list_states / \
-             get_source_info to inspect the source, then convert. When done, build_aem_package \
-             then write_package to export the ZIP to a path. Note: {aem_note}"
+            "Loaded {count} PDF(s) [{label}] (session {session}).\n\n\
+             {SYSTEM_PROMPT}\n\n\
+             {ref_note}\n\n\
+             MCP: export the finished package with write_package (after build_aem_package), not \
+             finish. Note: {aem_note}",
+            SYSTEM_PROMPT = agent::SYSTEM_PROMPT,
         ))])
     }
 

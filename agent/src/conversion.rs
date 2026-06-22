@@ -38,9 +38,11 @@ binding flags), list_states, explore_states, get_xfa (authoritative text/fields)
 get_flattened_structure_for_state. If get_profile_info reports more than one language the form \
 is multilingual: its translations ride along in the merged structured content and are bundled \
 into the package automatically — don't invent translations.\n\
-2. Find precedents (do this before building): search the reference forms for ones whose \
-sections/elements resemble your input — search_references, grep_reference_docs, \
-list_reference_forms. Study how those known-good forms were built: inspect their package XML \
+2. Find precedents (do this before building): work through the input section by section and, \
+for EACH section, search the reference forms for ones whose sections/elements resemble it — \
+search_references, grep_reference_docs, list_reference_forms. Different sections will often match \
+different reference forms; find the closest precedent for each so every section is built as \
+accurately as possible. Study how those known-good forms were built: inspect their package XML \
 with get_reference_package / read_reference_file, and optionally run the engine on a \
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
@@ -69,8 +71,11 @@ package. After any edit, re-run the downstream steps (including validate_aem_pac
 then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result.\n\
 Consult reference documentation when unsure: list_reference_docs, read_reference_doc, \
 grep_reference_docs.\n\n\
-Do not invent text content; take labels/options verbatim from the XFA. When done, call finish. \
-Keep tool inputs minimal and valid JSON.";
+Never invent text content: take all labels/options/help text verbatim from the XFA, and never \
+write copy of your own. Likewise, only ever produce translations for the languages that actually \
+exist in the input document(s) (get_profile_info reports them) — never invent a translation for a \
+language the source does not contain. When done, call finish. Keep tool inputs minimal and valid \
+JSON.";
 
 /// The result of executing one tool call, to be returned to the model as a
 /// `tool_result` content block.
@@ -563,25 +568,33 @@ impl ConversionAgent {
             // §7 references
             t(
                 "list_reference_forms",
-                "List the profile's reference forms (worked examples).",
+                "List the profile's reference forms (hand-built, known-good worked examples). \
+                 Consult references BEFORE building: they show the expected JCR structure, \
+                 dictionary setup and DoR conventions for this profile's forms.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
             t(
                 "search_references",
-                "Regex/substring search over reference descriptions + AEM package XML.",
+                "Regex/substring search over reference descriptions + AEM package XML. Run this \
+                 first (before building) to find a precedent form resembling your input; each hit \
+                 carries a ref_id to pass to get_reference_package / read_reference_file.",
                 serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}),
                 serde_json::json!(["query"]),
             ),
             t(
                 "read_reference_file",
-                "Read a reference's description ('description') or a package file by path.",
+                "Read a reference's description ('description') or a package file by path (get the \
+                 path from get_reference_package). Use it to study how a known-good form was built \
+                 and mirror its structure.",
                 serde_json::json!({"ref_id": {"type":"string"}, "path": {"type":"string"}, "offset": {"type":"integer"}, "limit": {"type":"integer"}}),
                 serde_json::json!(["ref_id", "path"]),
             ),
             t(
                 "get_reference_package",
-                "List the package files (known-good output) of a reference.",
+                "List the package files (known-good output) of a reference by its ref_id (from \
+                 list_reference_forms / search_references), then read individual files with \
+                 read_reference_file.",
                 serde_json::json!({"ref_id": {"type":"string"}}),
                 serde_json::json!(["ref_id"]),
             ),
