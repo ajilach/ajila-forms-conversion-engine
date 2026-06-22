@@ -23,4 +23,12 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["clock"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 regex-lite = "0.1"
+
+# Local inference backend. The Metal GPU backend is Apple-only; on other
+# platforms fall back to the default (CPU) backend. The runtime picks the
+# device via mistralrs::best_device(), so no source changes are needed.
+[target.'cfg(target_vendor = "apple")'.dependencies]
 mistralrs = { version = "0.8", default-features = false, features = ["metal"] }
+
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+mistralrs = { version = "0.8", default-features = false }

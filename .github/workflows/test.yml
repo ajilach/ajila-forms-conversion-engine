@@ -24,10 +24,13 @@ jobs:
         lfs: true
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
+    # blueprint-app is the desktop (dioxus + mistralrs/metal) crate; it pulls in
+    # Linux GTK system libs and the Apple-only Metal backend, neither of which is
+    # available on the bare test runner. It's exercised by release.yml instead.
     - name: Build
-      run: cargo build --verbose --release
+      run: cargo build --verbose --release --workspace --exclude blueprint-app
     - name: Run tests
-      run: cargo test --verbose --release
+      run: cargo test --verbose --release --workspace --exclude blueprint-app
 
     - name: Tag commit as tested
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
