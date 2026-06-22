@@ -19,8 +19,8 @@ use dioxus::prelude::*;
 
 use components::{
     AemConfigWrapper, AemConnWrapper, AemEditor, AemPreview, AemPreviewEnvelope, AemRootWrapper,
-    AgentFlow, EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay, ReferencesPage,
-    ResultsSection, SettingsPage, StructuredEditor,
+    AemXmlEditor, AgentFlow, EnvelopeWrapper, FileUploadSection, ImageModal, ProgressDisplay,
+    ReferencesPage, ResultsSection, SettingsPage, StructuredEditor, TranslationsWrapper,
 };
 use models::{DocumentEnvelope, ProcessingState, ProcessingStep};
 use processing::run_and_track;
@@ -66,6 +66,7 @@ fn App() -> Element {
     let mut app_settings = use_signal(AppSettings::load);
     let mut aem_preview_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut aem_editor_envelope = use_signal(|| None::<DocumentEnvelope>);
+    let mut aem_xml_editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     // Edit-history session id for the currently loaded document (desktop only).
     let mut current_session = use_signal(|| None::<String>);
     // Source PDF bytes of the currently loaded document, retained so Smart Edit
@@ -77,6 +78,7 @@ fn App() -> Element {
     // generated package; editing the structured view regenerates that package
     // and discards them, so we warn before that happens.
     let mut aem_modified = use_signal(|| false);
+    let mut aem_xml_modified = use_signal(|| false);
 
     let profiles = blueprint::list_profiles();
 
@@ -85,6 +87,7 @@ fn App() -> Element {
         is_processing.set(true);
         current_session.set(None);
         aem_modified.set(false);
+        aem_xml_modified.set(false);
 
         let profile = selected_profile.read().clone();
 
@@ -137,6 +140,7 @@ fn App() -> Element {
         is_processing.set(true);
         current_session.set(None);
         aem_modified.set(false);
+        aem_xml_modified.set(false);
         // Retain the PDF sources so Smart Edit gets the same tools as AI processing.
         source_pdfs.set(pdfs.clone());
 
@@ -196,6 +200,7 @@ fn App() -> Element {
 
         is_processing.set(true);
         aem_modified.set(false);
+        aem_xml_modified.set(false);
         // Return to the running phase with a fresh activity log.
         processing_state.set(ProcessingState {
             step: ProcessingStep::Parsing,
@@ -248,6 +253,7 @@ fn App() -> Element {
         // back to the rendered page images only.
         source_pdfs.set(Vec::new());
         aem_modified.set(false);
+        aem_xml_modified.set(false);
         current_session.set(Some(session_id));
         editor_envelope.set(Some(envelope));
     };
@@ -262,8 +268,9 @@ fn App() -> Element {
         drop(state);
 
         // The AEM package was just regenerated from the structure, so any prior
-        // AEM-editor changes are gone — clear the modified flag.
+        // AEM-tree or content-XML edits are gone — clear the modified flags.
         aem_modified.set(false);
+        aem_xml_modified.set(false);
 
         // Close the editor
         editor_envelope.set(None);
@@ -403,8 +410,11 @@ fn App() -> Element {
                                         state.form_code = Some(form_code.clone());
                                         drop(state);
                                         // AEM edits now diverge from the structure; warn before a
-                                        // structured edit regenerates (and discards) them.
+                                        // structured edit regenerates (and discards) them. The
+                                        // package was rebuilt from the tree, so any raw content-XML
+                                        // edits are gone — clear that flag.
                                         aem_modified.set(true);
+                                        aem_xml_modified.set(false);
                                         aem_editor_envelope.set(None);
                                     },
                                     on_cancel: move |_| aem_editor_envelope.set(None),
@@ -418,6 +428,61 @@ fn App() -> Element {
                             button {
                                 class: "btn btn-secondary",
                                 onclick: move |_| aem_editor_envelope.set(None),
+                                "Close"
+                            }
+                        }
+                    },
+                }
+            }
+        } else if let Some(envelope) = aem_xml_editor_envelope.read().clone() {
+            // AEM content-XML plain-text editor (full page view)
+            {
+                let profile = selected_profile.read().clone();
+                let config = profile
+                    .as_deref()
+                    .filter(|p| blueprint::has_aem_config(p))
+                    .and_then(|p| blueprint::load_aem_config(p, &envelope.context).ok());
+                match config {
+                    Some(cfg) => {
+                        let root = blueprint::convert_to_aem(&envelope.content, &cfg);
+                        let translations = blueprint::aem_translations_from_content(
+                            &envelope.content,
+                            &cfg.master_language,
+                        );
+                        let initial_xml = blueprint::generate_aem_xml(&root, &cfg);
+                        let form_code = cfg.form_code.clone();
+                        rsx! {
+                            div { class: "editor-page",
+                                AemXmlEditor {
+                                    root: AemRootWrapper(root),
+                                    aem_config: AemConfigWrapper(cfg),
+                                    translations: TranslationsWrapper(translations),
+                                    initial_xml,
+                                    // Shares the agent's XML history session, so manual
+                                    // and agent edits land on one timeline.
+                                    session_id: current_session.read().clone().map(|s| format!("{s}#aem-xml")),
+                                    on_apply: move |zip: Vec<u8>| {
+                                        let mut state = processing_state.write();
+                                        state.aem_package = Some(zip);
+                                        state.form_code = Some(form_code.clone());
+                                        drop(state);
+                                        // The package now uses raw content-XML edits that diverge
+                                        // from the AEM tree; warn before an AEM-tree or structured
+                                        // edit regenerates (and discards) them.
+                                        aem_xml_modified.set(true);
+                                        aem_xml_editor_envelope.set(None);
+                                    },
+                                    on_cancel: move |_| aem_xml_editor_envelope.set(None),
+                                }
+                            }
+                        }
+                    }
+                    None => rsx! {
+                        div { class: "editor-page",
+                            p { "This profile has no AEM configuration." }
+                            button {
+                                class: "btn btn-secondary",
+                                onclick: move |_| aem_xml_editor_envelope.set(None),
                                 "Close"
                             }
                         }
@@ -443,6 +508,7 @@ fn App() -> Element {
                     current_session.set(None);
                     source_pdfs.set(Vec::new());
                     aem_modified.set(false);
+                    aem_xml_modified.set(false);
                     processing_state.set(ProcessingState::new());
                 },
             }
@@ -483,6 +549,7 @@ fn App() -> Element {
                             state: processing_state.read().clone(),
                             aem_connection: app_settings.read().aem_connection(),
                             aem_modified: *aem_modified.read(),
+                            aem_xml_modified: *aem_xml_modified.read(),
                             on_edit: move |envelope| {
                                 editor_envelope.set(Some(envelope));
                             },
@@ -491,6 +558,9 @@ fn App() -> Element {
                             },
                             on_aem_edit: move |envelope| {
                                 aem_editor_envelope.set(Some(envelope));
+                            },
+                            on_aem_xml_edit: move |envelope| {
+                                aem_xml_editor_envelope.set(Some(envelope));
                             },
                         }
                     }

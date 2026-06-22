@@ -2653,6 +2653,26 @@ body > div, #main {
     padding: 12px;
 }
 
+/* Plain-text content-XML editor: a monospace textarea filling the left pane. */
+.aem-xml-textarea {
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    border: none;
+    outline: none;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    tab-size: 2;
+    white-space: pre;
+    overflow: auto;
+    color: var(--color-text, #1a1a1a);
+    background: var(--color-surface, #fff);
+}
+
 .aem-node-item {
     border: 1px solid var(--color-border);
     border-radius: 6px;

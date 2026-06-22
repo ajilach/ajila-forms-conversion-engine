@@ -13,6 +13,16 @@ enum UploadState {
     Error(String),
 }
 
+/// Which edit the user is about to make when a "discard downstream edits"
+/// confirmation is showing. Each regenerates the layer below it.
+#[derive(Clone, Copy, PartialEq)]
+enum PendingEdit {
+    /// Edit the structured view — regenerates the AEM tree and the content XML.
+    Structure,
+    /// Edit the AEM tree — regenerates the content XML.
+    Aem,
+}
+
 fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
     match form_code {
         Some(code) => format!("{prefix}-{code}.{ext}"),
@@ -26,9 +36,13 @@ pub struct ResultsSectionProps {
     pub state: ProcessingState,
     /// AEM upload connection from settings, or `None` if not configured.
     pub aem_connection: Option<blueprint::AemConnection>,
-    /// Whether the AEM structure has unsaved edits that a structured-view edit
-    /// would discard. Drives a confirmation prompt on "Edit Structure".
+    /// Whether the AEM tree has unsaved edits that a structured-view edit would
+    /// discard. Drives a confirmation prompt on "Edit Structure".
     pub aem_modified: bool,
+    /// Whether the raw content XML has unsaved edits that editing the AEM tree
+    /// (or the structured view) would discard. Drives a confirmation prompt on
+    /// "Edit AEM" and "Edit Structure".
+    pub aem_xml_modified: bool,
     /// Callback when the Edit Structure button is clicked.
     /// Passes the envelope to edit.
     pub on_edit: EventHandler<DocumentEnvelope>,
@@ -36,6 +50,8 @@ pub struct ResultsSectionProps {
     pub on_aem_preview: EventHandler<DocumentEnvelope>,
     /// Callback when the Edit AEM button is clicked.
     pub on_aem_edit: EventHandler<DocumentEnvelope>,
+    /// Callback when the Edit content XML button is clicked.
+    pub on_aem_xml_edit: EventHandler<DocumentEnvelope>,
 }
 
 #[component]
@@ -43,8 +59,8 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
     let state = &props.state;
     // Lifecycle of the on-demand AEM upload, reported inside the button.
     let mut upload_state = use_signal(|| UploadState::Idle);
-    // Whether the "editing structure resets AEM changes" confirmation is showing.
-    let mut show_aem_warning = use_signal(|| false);
+    // Which edit (if any) is awaiting "discard downstream edits" confirmation.
+    let mut pending_edit = use_signal(|| None::<PendingEdit>);
 
     let has_edit_group = state.envelope.is_some() || state.html_preview.is_some();
     let has_download_group =
@@ -67,9 +83,13 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                                     let on_edit = props.on_edit;
                                     let envelope_clone = envelope.clone();
                                     let aem_modified = props.aem_modified;
+                                    let aem_xml_modified = props.aem_xml_modified;
                                     move |_| {
-                                        if aem_modified {
-                                            show_aem_warning.set(true);
+                                        // Editing the structure regenerates both the AEM
+                                        // tree and the content XML, so warn if either has
+                                        // unsaved edits.
+                                        if aem_modified || aem_xml_modified {
+                                            pending_edit.set(Some(PendingEdit::Structure));
                                         } else {
                                             on_edit.call(envelope_clone.clone());
                                         }
@@ -82,9 +102,27 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                                 onclick: {
                                     let on_aem_edit = props.on_aem_edit;
                                     let envelope_clone = envelope.clone();
-                                    move |_| on_aem_edit.call(envelope_clone.clone())
+                                    let aem_xml_modified = props.aem_xml_modified;
+                                    move |_| {
+                                        // Editing the AEM tree regenerates the content XML,
+                                        // so warn if the raw XML has unsaved edits.
+                                        if aem_xml_modified {
+                                            pending_edit.set(Some(PendingEdit::Aem));
+                                        } else {
+                                            on_aem_edit.call(envelope_clone.clone());
+                                        }
+                                    }
                                 },
                                 "✎ Edit AEM"
+                            }
+                            button {
+                                class: "btn btn-secondary btn-lg",
+                                onclick: {
+                                    let on_aem_xml_edit = props.on_aem_xml_edit;
+                                    let envelope_clone = envelope.clone();
+                                    move |_| on_aem_xml_edit.call(envelope_clone.clone())
+                                },
+                                "✎ Edit content XML"
                             }
                             button {
                                 class: "btn btn-secondary btn-lg",
@@ -219,37 +257,65 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                 }
             }
 
-            // Warn before a structured edit discards AEM-editor changes.
-            if show_aem_warning() {
-                div { class: "modal-overlay", onclick: move |_| show_aem_warning.set(false),
-                    div {
-                        class: "modal-content confirm-dialog",
-                        onclick: move |evt| evt.stop_propagation(),
-                        div { class: "modal-title", "Discard AEM changes?" }
-                        p { class: "confirm-dialog-text",
-                            "You edited the AEM structure. Editing the structured view regenerates \
-                             the AEM package from the structure, which will reset those AEM changes. \
-                             Continue?"
+            // Warn before an edit regenerates a lower layer and discards its edits.
+            if let Some(kind) = pending_edit() {
+                {
+                    // What the pending edit would discard, and the message to show.
+                    let (title, body): (&str, String) = match kind {
+                        PendingEdit::Structure => {
+                            let lost = match (props.aem_modified, props.aem_xml_modified) {
+                                (true, true) => "AEM tree and content XML edits",
+                                (true, false) => "AEM tree edits",
+                                _ => "content XML edits",
+                            };
+                            (
+                                "Discard downstream edits?",
+                                format!(
+                                    "Editing the structured view regenerates the AEM tree and the \
+                                     content XML from the structure, which will reset your {lost}. \
+                                     Continue?"
+                                ),
+                            )
                         }
-                        div { class: "confirm-dialog-actions",
-                            button {
-                                class: "btn btn-secondary",
-                                onclick: move |_| show_aem_warning.set(false),
-                                "Cancel"
-                            }
-                            button {
-                                class: "btn btn-primary",
-                                onclick: {
-                                    let on_edit = props.on_edit;
-                                    let envelope = state.envelope.clone();
-                                    move |_| {
-                                        show_aem_warning.set(false);
-                                        if let Some(env) = envelope.clone() {
-                                            on_edit.call(env);
-                                        }
+                        PendingEdit::Aem => (
+                            "Discard content XML edits?",
+                            "Editing the AEM tree regenerates the content XML from the tree, which \
+                             will reset your raw content XML edits. Continue?"
+                                .to_string(),
+                        ),
+                    };
+                    rsx! {
+                        div { class: "modal-overlay", onclick: move |_| pending_edit.set(None),
+                            div {
+                                class: "modal-content confirm-dialog",
+                                onclick: move |evt| evt.stop_propagation(),
+                                div { class: "modal-title", "{title}" }
+                                p { class: "confirm-dialog-text", "{body}" }
+                                div { class: "confirm-dialog-actions",
+                                    button {
+                                        class: "btn btn-secondary",
+                                        onclick: move |_| pending_edit.set(None),
+                                        "Cancel"
                                     }
-                                },
-                                "Edit anyway"
+                                    button {
+                                        class: "btn btn-primary",
+                                        onclick: {
+                                            let on_edit = props.on_edit;
+                                            let on_aem_edit = props.on_aem_edit;
+                                            let envelope = state.envelope.clone();
+                                            move |_| {
+                                                pending_edit.set(None);
+                                                if let Some(env) = envelope.clone() {
+                                                    match kind {
+                                                        PendingEdit::Structure => on_edit.call(env),
+                                                        PendingEdit::Aem => on_aem_edit.call(env),
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "Edit anyway"
+                                    }
+                                }
                             }
                         }
                     }
