@@ -58,10 +58,16 @@ against the XFA (get_xfa / search_xfa) and the reference forms, and fix field ty
 options and grouping before converting.\n\
 4. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
 with set_aem (get_schema('aem') for the shape).\n\
-4b. You can also hand-edit the final JCR content XML directly with edit_aem_content_xml \
-(targeted find/replace) — useful for tweaks the trees can't express. Last-resort tuning: prefer \
-fixing the structured or AEM tree, because XML edits are discarded the moment you re-run \
-set_structured / convert_structured_to_aem / set_aem.\n\
+4b. You can also hand-edit the final JCR content XML directly with structure-aware tools — \
+useful for tweaks the trees can't express. First map it with get_aem_xml_outline (node paths + \
+key attributes) and inspect a node with get_aem_xml_node; then edit by path with \
+set_aem_xml_attribute / remove_aem_xml_attribute (attribute values are taken verbatim, so pass \
+JCR-typed values like {Boolean}true), remove_aem_xml_node, replace_aem_xml_node and \
+insert_aem_xml_node. Nodes are addressed by a /-separated path of element names from the root \
+(e.g. jcr:root/guideContainer/panel_<uuid>/textbox_<uuid>); add a 1-based index like default[2] \
+only when sibling names repeat. Every edit is validated (rejected if it would produce malformed \
+XML) and versioned. Last-resort tuning: prefer fixing the structured or AEM tree, because XML \
+edits are discarded the moment you re-run set_structured / convert_structured_to_aem / set_aem.\n\
 5. Package & validate: build_aem_package, then ALWAYS run validate_aem_package — it checks the \
 required package structure and validates the form and DAM content XML against the AEM contract. \
 If it reports problems, fix them (structured/AEM tree, or the content XML directly) and re-run \
@@ -402,6 +408,35 @@ impl ConversionAgent {
         Ok(self.aem_xml.clone().unwrap())
     }
 
+    /// Apply a structure-aware edit to the materialized content XML: run `f` on
+    /// the current XML, and on success store the result, invalidate the package,
+    /// and snapshot it under `label`. The core editor rejects edits that would
+    /// produce non-well-formed XML, so a returned `Err` leaves `self.aem_xml`
+    /// untouched.
+    fn apply_aem_xml_edit(
+        &mut self,
+        label: &str,
+        f: impl FnOnce(&str) -> Result<String, String>,
+    ) -> ToolReply {
+        let xml = match self.ensure_aem_xml() {
+            Ok(xml) => xml,
+            Err(e) => return ToolReply::Error(e),
+        };
+        match f(&xml) {
+            Ok(updated) => {
+                let len = updated.len();
+                self.aem_xml = Some(updated);
+                // Editing the content XML invalidates the package.
+                self.package = None;
+                self.snapshot_aem_xml(label);
+                ToolReply::Text(format!(
+                    "OK — content XML is now {len} bytes (package invalidated)."
+                ))
+            }
+            Err(e) => ToolReply::Error(e),
+        }
+    }
+
     // ── Tool definitions ───────────────────────────────────────────────────────
 
     pub fn tools(&self) -> Vec<serde_json::Value> {
@@ -518,15 +553,61 @@ impl ConversionAgent {
             ),
             t(
                 "get_aem_content_xml",
-                "Return the AEM .content.xml (the final JCR XML). Materialized from the AEM tree on first access, then reflects any edits made via edit_aem_content_xml.",
+                "Return the whole AEM .content.xml (the final JCR XML). Materialized from the AEM tree on first access, then reflects any structure-aware XML edits. For a map of node paths use get_aem_xml_outline; to read one node use get_aem_xml_node.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            // Structure-aware editing of the final JCR content XML. Nodes are
+            // addressed by a `/`-separated path of element names from the root,
+            // e.g. `jcr:root/guideContainer/panel_<uuid>/textbox_<uuid>`; add a
+            // 1-based index like `default[2]` only when sibling names repeat.
+            // Every edit materializes the XML from the AEM tree first if needed,
+            // is rejected if it would produce non-well-formed XML, invalidates the
+            // package, and is versioned. These edits are expert-mode escape
+            // hatches: the edited XML is used verbatim for the package while
+            // everything else (XSD, translations, DAM) still derives from the AEM
+            // tree, and converting/setting the structured or AEM tree discards them.
+            t(
+                "get_aem_xml_outline",
+                "Map the content XML: one line per element with its full node path and key attributes (name, jcr:title, jcr:primaryType, guideNodeClass). Use it to find the path to edit before calling the set/remove/replace/insert tools.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
             t(
-                "edit_aem_content_xml",
-                "Hand-edit the AEM .content.xml with a targeted find/replace (like the Edit tool). `old_string` must occur exactly once unless `replace_all` is true. Materializes the XML from the AEM tree first if needed, then invalidates the package. Expert mode: the edited XML is used verbatim for the package; everything else (XSD, translations, DAM) still derives from the AEM tree, and converting/setting the structured or AEM tree discards these edits. Versioned.",
-                serde_json::json!({"old_string": {"type":"string"}, "new_string": {"type":"string"}, "replace_all": {"type":"boolean"}}),
-                serde_json::json!(["old_string", "new_string"]),
+                "get_aem_xml_node",
+                "Return just one element's subtree (start tag through end tag) from the content XML, addressed by its node `path`.",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
+            ),
+            t(
+                "set_aem_xml_attribute",
+                "Set (or add) an attribute on the content-XML node at `path`. `value` is used verbatim — pass JCR-typed values such as `{Boolean}true` directly. Rejected if the result is not well-formed (e.g. an unescaped `&`).",
+                serde_json::json!({"path": {"type":"string"}, "attribute": {"type":"string"}, "value": {"type":"string"}}),
+                serde_json::json!(["path", "attribute", "value"]),
+            ),
+            t(
+                "remove_aem_xml_attribute",
+                "Remove an attribute from the content-XML node at `path`. Errors if the node has no such attribute.",
+                serde_json::json!({"path": {"type":"string"}, "attribute": {"type":"string"}}),
+                serde_json::json!(["path", "attribute"]),
+            ),
+            t(
+                "remove_aem_xml_node",
+                "Delete the content-XML node at `path` (its whole subtree). The document root cannot be removed.",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
+            ),
+            t(
+                "replace_aem_xml_node",
+                "Replace the content-XML node at `path` (its whole subtree) with `xml`, a well-formed XML fragment. The document root cannot be replaced.",
+                serde_json::json!({"path": {"type":"string"}, "xml": {"type":"string"}}),
+                serde_json::json!(["path", "xml"]),
+            ),
+            t(
+                "insert_aem_xml_node",
+                "Insert `xml` (a well-formed fragment) as a child of the content-XML node at `parent_path`. `position` is \"first\", \"last\", {\"before\":\"<child_segment>\"} or {\"after\":\"<child_segment>\"}, where child_segment is a direct child's name (e.g. textbox_<uuid> or default[2]).",
+                serde_json::json!({"parent_path": {"type":"string"}, "xml": {"type":"string"}, "position": {"type":["string","object"]}}),
+                serde_json::json!(["parent_path", "xml", "position"]),
             ),
             // §5 output
             t(
@@ -864,43 +945,86 @@ impl ConversionAgent {
                 Ok(xml) => ToolReply::Text(xml),
                 Err(e) => ToolReply::Error(e),
             },
-            "edit_aem_content_xml" => {
-                let old = input["old_string"].as_str().unwrap_or_default();
-                let new = input["new_string"].as_str().unwrap_or_default();
-                let replace_all = input["replace_all"].as_bool().unwrap_or(false);
-                if old.is_empty() {
-                    return ToolReply::Error("`old_string` must not be empty.".into());
+            "get_aem_xml_outline" => {
+                let xml = match self.ensure_aem_xml() {
+                    Ok(xml) => xml,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                match blueprint::outline_aem_xml(&xml) {
+                    Ok(outline) => ToolReply::Text(outline),
+                    Err(e) => ToolReply::Error(e),
                 }
-                if old == new {
-                    return ToolReply::Error("`old_string` and `new_string` are identical.".into());
+            }
+            "get_aem_xml_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() {
+                    return ToolReply::Error("`path` must not be empty.".into());
                 }
                 let xml = match self.ensure_aem_xml() {
                     Ok(xml) => xml,
                     Err(e) => return ToolReply::Error(e),
                 };
-                let count = xml.matches(old).count();
-                if count == 0 {
-                    return ToolReply::Error("`old_string` not found in the content XML.".into());
+                match blueprint::read_aem_xml_node(&xml, &path) {
+                    Ok(node) => ToolReply::Text(node),
+                    Err(e) => ToolReply::Error(e),
                 }
-                if count > 1 && !replace_all {
-                    return ToolReply::Error(format!(
-                        "`old_string` occurs {count} times; pass replace_all:true or make it unique."
-                    ));
+            }
+            "set_aem_xml_attribute" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let attr = input["attribute"].as_str().unwrap_or_default().to_string();
+                let value = input["value"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() || attr.is_empty() {
+                    return ToolReply::Error("`path` and `attribute` must not be empty.".into());
                 }
-                let updated = if replace_all {
-                    xml.replace(old, new)
-                } else {
-                    xml.replacen(old, new, 1)
+                let label = format!("AI: set @{attr} on {path}");
+                self.apply_aem_xml_edit(&label, |xml| {
+                    blueprint::set_aem_xml_attribute(xml, &path, &attr, &value)
+                })
+            }
+            "remove_aem_xml_attribute" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let attr = input["attribute"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() || attr.is_empty() {
+                    return ToolReply::Error("`path` and `attribute` must not be empty.".into());
+                }
+                let label = format!("AI: remove @{attr} on {path}");
+                self.apply_aem_xml_edit(&label, |xml| {
+                    blueprint::remove_aem_xml_attribute(xml, &path, &attr)
+                })
+            }
+            "remove_aem_xml_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() {
+                    return ToolReply::Error("`path` must not be empty.".into());
+                }
+                let label = format!("AI: remove node {path}");
+                self.apply_aem_xml_edit(&label, |xml| blueprint::remove_aem_xml_node(xml, &path))
+            }
+            "replace_aem_xml_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let frag = input["xml"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() || frag.is_empty() {
+                    return ToolReply::Error("`path` and `xml` must not be empty.".into());
+                }
+                let label = format!("AI: replace node {path}");
+                self.apply_aem_xml_edit(&label, |xml| {
+                    blueprint::replace_aem_xml_node(xml, &path, &frag)
+                })
+            }
+            "insert_aem_xml_node" => {
+                let parent = input["parent_path"].as_str().unwrap_or_default().to_string();
+                let frag = input["xml"].as_str().unwrap_or_default().to_string();
+                if parent.is_empty() || frag.is_empty() {
+                    return ToolReply::Error("`parent_path` and `xml` must not be empty.".into());
+                }
+                let position = match parse_insert_pos(&input["position"]) {
+                    Ok(p) => p,
+                    Err(e) => return ToolReply::Error(e),
                 };
-                let len = updated.len();
-                self.aem_xml = Some(updated);
-                // Editing the content XML invalidates the package.
-                self.package = None;
-                self.snapshot_aem_xml("AI: edit AEM content XML");
-                ToolReply::Text(format!(
-                    "OK — replaced {} occurrence(s); content XML is now {len} bytes (package invalidated).",
-                    if replace_all { count } else { 1 }
-                ))
+                let label = format!("AI: insert node into {parent}");
+                self.apply_aem_xml_edit(&label, |xml| {
+                    blueprint::insert_aem_xml_node(xml, &parent, &frag, position)
+                })
             }
 
             // §5 output
@@ -1266,6 +1390,29 @@ fn dedup(mut v: Vec<&str>) -> Vec<String> {
     v.sort();
     v.dedup();
     v.into_iter().map(String::from).collect()
+}
+
+/// Parse the `position` argument of `insert_aem_xml_node` into an [`InsertPos`].
+/// Accepts the strings `"first"` / `"last"`, or an object
+/// `{"before": "<child>"}` / `{"after": "<child>"}`.
+fn parse_insert_pos(value: &serde_json::Value) -> Result<blueprint::InsertPos, String> {
+    use blueprint::InsertPos;
+    if let Some(s) = value.as_str() {
+        return match s {
+            "first" => Ok(InsertPos::First),
+            "last" => Ok(InsertPos::Last),
+            other => Err(format!(
+                "invalid position '{other}'; use \"first\", \"last\", {{\"before\":...}} or {{\"after\":...}}"
+            )),
+        };
+    }
+    if let Some(s) = value.get("before").and_then(|v| v.as_str()) {
+        return Ok(InsertPos::Before(s.to_string()));
+    }
+    if let Some(s) = value.get("after").and_then(|v| v.as_str()) {
+        return Ok(InsertPos::After(s.to_string()));
+    }
+    Err("`position` must be \"first\", \"last\", {\"before\":\"<child>\"} or {\"after\":\"<child>\"}".into())
 }
 
 fn truncate(s: &str, max: usize) -> String {
