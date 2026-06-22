@@ -103,10 +103,15 @@ pub fn AemXmlEditor(props: AemXmlEditorProps) -> Element {
     let on_cancel = props.on_cancel;
 
     // Commit the live buffer into `content` and snapshot it, if it changed.
+    // `local_text` is intentionally never read in the render body, so typing
+    // into it triggers no re-render — that is what keeps the textarea from
+    // being reset to `content` (the previous value) on every keystroke.
     let mut commit = move || {
         let new = local_text.read().clone();
         if new != *content.read() {
             content.set(new.clone());
+            // A fresh edit clears any stale "cannot apply" error.
+            status_msg.set(None);
             if let Some(sid) = session_id.read().clone() {
                 let after_seq = *undo_seq.read();
                 if let Some(seq) = db::record_edit(&sid, after_seq, "Edit content XML", &new) {
@@ -230,10 +235,13 @@ pub fn AemXmlEditor(props: AemXmlEditorProps) -> Element {
                     class: "aem-xml-textarea",
                     spellcheck: false,
                     autocomplete: "off",
+                    // `value` is bound to the committed text, which only changes
+                    // on commit (blur) and undo/redo/history — never mid-typing —
+                    // so the buffer below can collect keystrokes without the DOM
+                    // value being reset under the cursor.
                     value: "{content}",
                     oninput: move |evt: Event<FormData>| {
                         local_text.set(evt.value());
-                        status_msg.set(None);
                     },
                     onblur: move |_| commit(),
                 }

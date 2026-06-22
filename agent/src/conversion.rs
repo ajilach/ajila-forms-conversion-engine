@@ -80,6 +80,11 @@ required package structure and validates the form and DAM content XML against th
 If it reports problems, fix them (structured/AEM tree, or the content XML directly) and re-run \
 the downstream steps; never upload or export an invalid package. Use get_package_info / \
 read_package_file to inspect.\n\
+5b. Review fidelity: once the package validates, call review_output to compare the input against \
+the converted AEM tree. It lists input text and elements missing from the output plus a coverage \
+score. For EVERY miss, either fix it (edit the structured/AEM tree and re-run the downstream \
+steps) or satisfy yourself it was an intentional drop; spot-check other languages with search_xfa, \
+since review_output only compares the master language. Do not finish with unexplained misses.\n\
 Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
 downward: editing the structured tree resets the AEM tree, content XML and package; updating \
 the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
@@ -657,6 +662,12 @@ impl ConversionAgent {
                 serde_json::json!([]),
             ),
             t(
+                "review_output",
+                "Fidelity review: compare the input (the engine's merged structured parse) against the converted AEM tree and report input text/elements missing from the output, with a coverage score. Compares the master language only (spot-check other languages with search_xfa). Reads the AEM tree, so edits made only to the content XML are not reflected. Run after convert_structured_to_aem and before finish; investigate every miss (fix the tree, or confirm it was intentionally dropped) and re-run.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
                 "generate_xsd",
                 "Generate the XSD schema for the current structured tree.",
                 serde_json::json!({}),
@@ -768,7 +779,7 @@ impl ConversionAgent {
             ),
             t(
                 "finish",
-                "Terminal step — call this once, last, after the package is built (and uploaded if an AEM connection is configured) to persist the structured + AEM trees + package as the result and end the run.",
+                "Terminal step — call this once, last, after the package is built, validated and reviewed (review_output) — and uploaded if an AEM connection is configured — to persist the structured + AEM trees + package as the result and end the run.",
                 serde_json::json!({"summary": {"type":"string"}}),
                 serde_json::json!([]),
             ),
@@ -1198,6 +1209,23 @@ impl ConversionAgent {
                         problems.join("\n- ")
                     ))
                 }
+            }
+            "review_output" => {
+                let Some(aem) = self.aem.clone() else {
+                    return ToolReply::Error(
+                        "No AEM tree yet; call convert_structured_to_aem first.".into(),
+                    );
+                };
+                let merged = match self.extractor(&serde_json::Value::Null) {
+                    Ok(ex) => ex.merged.clone(),
+                    Err(e) => return ToolReply::Error(e),
+                };
+                let master = self
+                    .config()
+                    .map(|c| c.master_language)
+                    .unwrap_or_else(|_| "en".into());
+                let report = blueprint::review_output(&merged, &aem, &master);
+                ToolReply::Text(serde_json::to_string_pretty(&report).unwrap_or_default())
             }
             "generate_xsd" => {
                 let p = match self.profile.clone() {

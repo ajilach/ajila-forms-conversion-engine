@@ -77,6 +77,7 @@ pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
 pub mod reference_db;
+pub mod review;
 #[cfg(feature = "semantic-matching")]
 pub mod semantic;
 pub mod structured;
@@ -180,6 +181,9 @@ pub use aem::{
     InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
     remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,
 };
+
+// Post-conversion fidelity review
+pub use review::{ReviewReport, review_output};
 
 // GraphViz decision-flow output
 pub use graphviz::{
