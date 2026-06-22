@@ -2,11 +2,44 @@
 
 ## Context
 
-Converted AEM forms are receiving QA feedback. Rather than fixing forms one by one manually, we want an agent pipeline that reads all pending feedback, recognises known patterns, and fixes each form in parallel — with humans only needed for edge cases.
+QA feedback on converted AEM forms arrives as **GitHub issues**. Rather than fixing forms one by one manually, we want an agent pipeline that reads all `claude-pending` issues, recognises known patterns, and fixes each form in parallel — posting progress back to the issue as it goes.
 
-The diagram shows a 3-tier architecture: **Main** (orchestrator / user-facing) → **Manager** (coordinator, spawns workers) → **Multiple Workers** (one per form, parallel). Two shared knowledge stores bridge them:
-- **Feedback known errors** — persistent log of past feedback + how it was resolved. Format: "feedback said X → root cause was Y → fix applied was Z." Grows over time; workers read it before solving to reuse known resolutions.
-- **Context** — ephemeral per-run state: which forms are pending/done/blocked, errors found, fixes applied.
+Architecture: **Main** (orchestrator / user-facing) → **Manager** (batch coordinator) → **Workers** (one per form, parallel). Two persistent stores:
+- **`resolved.md`** — growing log of feedback patterns + how they were resolved; Workers consult it before diagnosing so known fixes are applied instantly
+- **`context.json`** — ephemeral per-run state: which forms are in progress, done, or blocked
+
+AEM runs at `localhost:4502` — the developer runs `/feedback` locally when AEM is up. Everything else (GitHub issue queue, knowledge sync, status updates) is fully automated.
+
+---
+
+## GitHub issue format
+
+QA submits feedback using the structured issue template (`.github/ISSUE_TEMPLATE/feedback.yml`):
+
+```
+**Form:** AAMQ_019
+**Feedback:**
+- Page 2: Formular Adressat shows wrong options (should have 4, only shows 2)
+- Page 3: Missing required marker on Unterschrift field
+```
+
+Label lifecycle:
+- `feedback` — set by QA when creating the issue; triggers the GitHub Action
+- `claude-pending` — added by GitHub Action after validation; means ready to process
+- `claude-in-progress` — set by Main when picked up; acts as a distributed lock
+- `claude-done` — set by Manager when all items fixed; issue is closed
+- `claude-blocked` — set by Manager when items remain unfixed; issue stays open
+
+---
+
+## GitHub Action (`.github/workflows/feedback-label.yml`)
+
+Triggers on `issues.opened` where label `feedback` is present:
+1. Validates issue body has a `**Form:**` line + at least one `**Feedback:**` item — comments with an error and stops if malformed
+2. Adds label `claude-pending`
+3. Posts comment: "Feedback logged — run `/feedback` locally to process (AEM must be running)"
+
+This is the only cloud-side step. Everything from here runs locally.
 
 ---
 
@@ -22,11 +55,12 @@ graph TD
     W3["Worker\nForm C"]
     Resolved[("feedback/knowledge\nresolved.md\n(persistent)")]
     Context[("feedback/run\ncontext.json\n(ephemeral)")]
-    Input[("feedback/input\n*.md")]
+    Issues[("GitHub Issues\nclaude-pending")]
 
     User -- "questions / approval" --> Main
-    Main -- "reads" --> Input
+    Main -- "reads pending" --> Issues
     Main -- "reads" --> Resolved
+    Main -- "reads" --> Context
     Main -- "spawns" --> Mgr
 
     Mgr -- "spawns parallel" --> W1
@@ -37,8 +71,13 @@ graph TD
     W2 -- "reads (snapshot)" --> Resolved
     W3 -- "reads (snapshot)" --> Resolved
 
+    W1 -- "comments" --> Issues
+    W2 -- "comments" --> Issues
+    W3 -- "comments" --> Issues
+
     Mgr -- "writes new patterns" --> Resolved
     Mgr -- "updates" --> Context
+    Mgr -- "summary + label + close" --> Issues
 ```
 
 ## Data flow
@@ -46,6 +85,7 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant U as User
+    participant GH as GitHub Issues
     participant Main
     participant Mgr as Manager
     participant Wkr as Worker (per form)
@@ -53,8 +93,10 @@ sequenceDiagram
     participant C as context.json
 
     U->>Main: /feedback
+    Main->>GH: gh issue list --label claude-pending
     Main->>R: read known resolutions
     Main->>C: read context.json
+    Main->>GH: label each issue claude-in-progress
     Main->>Mgr: spawn (parallel batches)
 
     Mgr->>R: read known resolutions
@@ -69,6 +111,7 @@ sequenceDiagram
         Wkr->>Wkr: blueprint:edit_aem_content_xml (fix)
         Wkr->>Wkr: blueprint:validate + build + upload_to_aem
         Wkr->>Wkr: blueprint:fetch_aem_form_html (verify)
+        Wkr->>GH: gh issue comment → progress update
     end
 
     Wkr-->>Mgr: { fixed[], unfixed[], new_patterns[] }
@@ -76,6 +119,7 @@ sequenceDiagram
     Mgr->>Mgr: sanity check — all input items in fixed[]∪unfixed[]
     Mgr->>R: append new_patterns[] (sequential)
     Mgr->>C: context_update.py → status=done/blocked
+    Mgr->>GH: summary comment + claude-done/claude-blocked + close
     Mgr-->>Main: batch report
 
     Main-->>U: final summary
@@ -86,19 +130,22 @@ sequenceDiagram
 ## Agent roles
 
 ### Main
-- Entry point: reads all feedback input files + `feedback/knowledge/resolved.md`
+- Entry point: `gh issue list --label claude-pending --json number,title,body` — reads all pending issues
+- Reads `feedback/knowledge/resolved.md` + `feedback/run/context.json`
 - **Does NOT read `engine-bugs.md`** — that is conversion-only knowledge
-- Splits all forms with pending feedback into batches; spawns **~3 Managers in parallel**
+- Labels each issue `claude-in-progress`, removes `claude-pending` — acts as a distributed lock
+- Splits forms into batches; spawns **~3 Managers in parallel**
 - Answers questions from Managers when human context is needed
 - Collects all Manager results; presents final summary to user
 
 ### Manager (~3 in parallel, each handling a batch of forms)
-- Spawned by Main; receives a batch of N forms
-- Marks forms in progress: `context_update.py --set <form>.status=in_progress`
+- Spawned by Main; receives a batch of N forms (each with issue number + feedback items)
+- Reads `feedback/knowledge/resolved.md` and `feedback/run/context.json`
 - Spawns **~3 Workers in parallel** (one per form in its batch)
-- Collects all Worker results; **sanity-checks that every input feedback item appears in either `fixed[]` or `unfixed[]`** — catches Workers that silently dropped an item
+- Collects all Worker results; **sanity-checks that every input feedback item appears in either `fixed[]` or `unfixed[]`**
 - Sequentially appends `new_patterns[]` to `resolved.md` — Manager is the only writer (no concurrent write conflicts)
 - Marks forms done/blocked: `context_update.py --set <form>.status=done|blocked`
+- Posts summary comment on each issue; labels `claude-done` + closes, or labels `claude-blocked` + leaves open
 - Routes `unfixed[]` items back up to Main for escalation
 
 ### Worker (one per form, ~3 per Manager → ~9 total in parallel)
@@ -123,15 +170,23 @@ sequenceDiagram
 
 Workers never write to shared files. All writes to `resolved.md` and `context.json` go through the Manager, which processes Worker results sequentially after all Workers in its batch complete. Each Worker writes only to its own `feedback/output/<form>_report.md`.
 
+GitHub issue labels prevent concurrent work on the same form: Main labels each issue `claude-in-progress` before spawning Managers, so a second developer running `/feedback` at the same time will not pick up the same issues.
+
 ---
 
 ## File structure
 
 ```
-feedback/
-  input/
-    <form>.md                  ← feedback per form; format TBD, pluggable
+.github/
+  ISSUE_TEMPLATE/
+    feedback.yml               ← structured issue template (Form + Feedback fields)
+  workflows/
+    feedback-label.yml         ← validates issue + adds claude-pending label
 
+forms/
+  <form>_merged.zip            ← form packages (Git LFS); Workers read and write back here
+
+feedback/
   knowledge/
     resolved.md                ← PERSISTENT: feedback → resolution log
                                   Written only by Manager; read by all
@@ -145,6 +200,8 @@ feedback/
 .claude/references/
   engine-bugs.md               ← existing, conversion-only, unchanged
 ```
+
+GitHub issues are the input source — there is no `feedback/input/` directory.
 
 **`resolved.md` entry format:**
 ```markdown
@@ -160,17 +217,20 @@ feedback/
 
 ## New files to create
 
-1. `feedback/knowledge/resolved.md` — empty template (ready to grow)
-2. `feedback/run/context.json` — empty template
-3. `.claude/skills/feedback-worker.md` — Worker skill (one per form)
-4. `.claude/skills/feedback-manager.md` — Manager skill (coordinates workers per batch)
-5. `.claude/skills/feedback.md` — Main skill (`/feedback` command, entry point)
+1. `.github/ISSUE_TEMPLATE/feedback.yml` — structured issue template
+2. `.github/workflows/feedback-label.yml` — validates + labels new `feedback` issues
+3. `feedback/knowledge/resolved.md` — empty template (ready to grow)
+4. `feedback/run/context.json` — empty template
+5. `.claude/skills/feedback-worker.md` — Worker skill (one per form)
+6. `.claude/skills/feedback-manager.md` — Manager skill (coordinates workers per batch)
+7. `.claude/skills/feedback.md` — Main skill (`/feedback` command, entry point)
 
 **Main skill steps (`feedback.md`):**
-1. Read all `feedback/input/*.md` files → group by form code
-2. Read `feedback/knowledge/resolved.md`
-3. Split forms into batches of ~3; spawn Managers in parallel
-4. Collect results; write final summary to user
+1. `gh issue list --label claude-pending --json number,title,body` → parse into form batches
+2. Read `feedback/knowledge/resolved.md` + `feedback/run/context.json`
+3. Label all fetched issues `claude-in-progress`, remove `claude-pending`
+4. Split forms into batches of ~3; spawn Managers in parallel
+5. Collect results; write final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
 1. `blueprint:start_conversion path=forms/<form>_merged.zip` — load session
@@ -186,6 +246,13 @@ feedback/
 4. `blueprint:write_package path=forms/<form>_merged.zip` — export updated ZIP back to repo
 5. Write `feedback/output/<form>_report.md`
 6. Return `{ fixed[], unfixed[], new_patterns[] }` to Manager
+
+**Manager skill steps (`feedback-manager.md`):**
+1. Spawn Workers in parallel (one per form in batch)
+2. Collect results; sanity-check all input items appear in `fixed[] ∪ unfixed[]`
+3. Append `new_patterns[]` to `resolved.md` (sequential — Manager is sole writer)
+4. Post final summary comment on each issue via `gh issue comment`
+5. Label issue `claude-done` + close, OR label `claude-blocked` and leave open
 
 ---
 
@@ -232,7 +299,7 @@ All AEM interaction (XML editing, package building, upload, verification) is han
 | `edit_aem_content_xml` | Targeted XML fix, versioned (replaces unzip/rezip) |
 | `validate_aem_package` | Validate FileVault structure pre/post fix |
 | `build_aem_package` | Rebuild ZIP after edits |
-| `upload_to_aem` | Install to AEM (replaces `aem_install.py`) |
+| `upload_to_aem` | Install to AEM |
 | `fetch_aem_form_html` | Visual verify form renders post-upload |
 | `write_package` | Export updated ZIP back to `forms/` |
 | `search_references` | Semantic search of known-good reference forms |
@@ -254,15 +321,15 @@ All AEM interaction (XML editing, package building, upload, verification) is han
 
 Build bottom-up — each layer depends on the one below it.
 
-1. **File templates** — `feedback/knowledge/resolved.md` + `feedback/run/context.json`; defines the data formats everything else reads/writes
-2. **Scripts** (only 2 needed — MCP covers the rest):
-   a. Write `feedback_match.py` (needs `resolved.md` format from step 1)
-   b. Write `context_update.py` (needs `context.json` format from step 1)
-3. **Worker skill** (`feedback-worker.md`) — uses scripts + `blueprint` MCP tools
-4. **Manager skill** (`feedback-manager.md`) — coordinates Workers, uses `context_update.py`
-5. **Main skill** (`feedback.md`) — entry point, spawns Managers
-6. **Input format** — define `feedback/input/*.md` schema when first real feedback arrives
-7. **End-to-end test** on 1 form → then scale to 3 × 3
+1. **GitHub issue template + Action** — `.github/ISSUE_TEMPLATE/feedback.yml` + `feedback-label.yml`; lets QA submit real feedback immediately
+2. **File templates** — `feedback/knowledge/resolved.md` + `feedback/run/context.json`
+3. **Scripts** (only 2 needed — MCP covers the rest):
+   a. Write `feedback_match.py` (needs `resolved.md` format from step 2)
+   b. Write `context_update.py` (needs `context.json` format from step 2)
+4. **Worker skill** (`feedback-worker.md`) — uses scripts + `blueprint` MCP tools
+5. **Manager skill** (`feedback-manager.md`) — coordinates Workers, posts to GitHub issues
+6. **Main skill** (`feedback.md`) — reads GitHub issues; drives Managers
+7. **End-to-end test** on 1 real issue → then scale to 3 × 3
 
 ---
 
