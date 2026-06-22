@@ -19,7 +19,9 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 |---|---|
 | `core` | Core library — PDF parsing, XFA processing, analysis pipeline, and all output renderers. |
 | `cli` | Command-line interface for processing PDFs. |
-| `app` | Dioxus desktop application with drag-and-drop upload and live preview. |
+| `app` | Dioxus desktop application with drag-and-drop upload, live preview, and an AI conversion agent. |
+| `agent` | Headless conversion-agent engine — the tool catalog/executor, edit-history store, and AEM client. No UI or LLM dependency, shared by the app and the MCP server. |
+| `mcp` | Model Context Protocol (stdio) server that exposes the conversion tools so an external LLM client (Claude Desktop, Claude Code, Cursor) can drive a conversion. |
 | `judge` | Evaluates translation quality of multi-language PDF forms and writes scores to CSV. |
 | `teacher` | Runs the pipeline and an LLM smart-edit pass, then prints suggested changes. |
 
@@ -104,6 +106,8 @@ cargo run --release -p blueprint-cli -- path/to/form.pdf --dump-xfa
 
 The app is built with [Dioxus](https://dioxuslabs.com/) and targets the desktop. This is the recommended way of running the migration engine.
 
+It bundles an AI conversion agent that drives the engine's tools turn by turn to convert a form interactively. The agent uses the Anthropic API — set the API key and model (default `claude-opus-4-8`) in the app's settings. Every tree change is versioned into a local edit-history SQLite database, so conversions can be reviewed and resumed.
+
 ### Development
 
 ```sh
@@ -117,6 +121,17 @@ dx serve --platform desktop
 cd app
 dx build --release --platform desktop
 ```
+
+## MCP Server
+
+The `mcp` crate is a [Model Context Protocol](https://modelcontextprotocol.io/) server that exposes the conversion tools over stdio, so an external LLM client (Claude Desktop, Claude Code, Cursor, …) can drive a conversion step by step. The client supplies the reasoning; the server supplies the tools, backed by the headless `agent` engine. It shares the same edit-history SQLite as the desktop app, so a conversion driven over MCP can later be reviewed in the app.
+
+```sh
+# Build the server binary
+cargo build --release -p mcp
+```
+
+Register the built binary (`target/release/mcp`) in the client's MCP config with `command` pointing at it. The desktop app can also install the bundled server into Claude Desktop's config automatically. A call to `start_conversion` (with a `pdf_path` or `pdf_base64`, and an optional `profile`) loads a source PDF; every other tool then operates on that loaded conversion.
 
 ## Library Documentation
 
