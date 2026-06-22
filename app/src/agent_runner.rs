@@ -145,8 +145,14 @@ async fn drive_agent(
 
     for _ in 0..MAX_ITERATIONS {
         let turn =
-            match crate::platform::stream_turn(&mut history, &tools, &settings, AGENT_MAX_TOKENS)
-                .await
+            match crate::platform::anthropic_stream_turn(
+                &mut history,
+                &tools,
+                &settings.anthropic_api_key,
+                &settings.anthropic_model,
+                AGENT_MAX_TOKENS,
+            )
+            .await
             {
                 Ok(t) => t,
                 Err(e) => {

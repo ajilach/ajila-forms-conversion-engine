@@ -562,42 +562,6 @@ pub async fn anthropic_agentic_turn(
     ))
 }
 
-/// Provider-dispatching wrapper for one streamed agent turn.
-/// Routes to the local model when `settings.local_mode` is enabled,
-/// otherwise calls `anthropic_stream_turn`.
-pub async fn stream_turn(
-    history: &mut Vec<serde_json::Value>,
-    tools: &[serde_json::Value],
-    settings: &crate::settings::AppSettings,
-    max_tokens: u32,
-) -> Result<TurnOutput, String> {
-    if settings.local_mode {
-        if settings.local_model.is_empty() {
-            return Err(
-                "Local mode is enabled but no model is selected. \
-                 Please download a model and select it in Settings → Local Model."
-                    .to_string(),
-            );
-        }
-        crate::local_inference::local_stream_turn(
-            history,
-            tools,
-            &settings.local_model,
-            max_tokens,
-        )
-        .await
-    } else {
-        anthropic_stream_turn(
-            history,
-            tools,
-            &settings.anthropic_api_key,
-            &settings.anthropic_model,
-            max_tokens,
-        )
-        .await
-    }
-}
-
 /// Run **one** streamed assistant turn against the Messages API with `tools`
 /// available, append the assistant message to `history`, and return its text +
 /// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:

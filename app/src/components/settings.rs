@@ -3,8 +3,6 @@
 //! Renders a full-page settings view (toggled from the header gear button),
 //! organized into tabs (reusing the reference-page tab styling).
 
-use std::collections::HashMap;
-
 use dioxus::prelude::*;
 
 use crate::settings::AppSettings;
@@ -47,53 +45,12 @@ pub fn SettingsPage(
     let settings_for_agent_instr = settings.clone();
     let settings_for_se_instr = settings.clone();
     let settings_for_aem_instr = settings.clone();
-    let settings_for_local_mode = settings.clone();
-    let settings_for_local_model = settings.clone();
-
-    // Per-model download state, keyed by model name, so each model downloads
-    // independently and concurrently with its own progress and error.
-    let mut download_progress: Signal<HashMap<String, f32>> = use_signal(HashMap::new);
-    let mut download_error: Signal<HashMap<String, String>> = use_signal(HashMap::new);
-    // Bumped after a download/delete to force the downloaded-models list to re-read.
-    let mut models_refresh: Signal<u32> = use_signal(|| 0u32);
 
     // Whether the Blueprint MCP server is registered in Claude Desktop, and the
     // last install error (shown below the row). Checked once on mount; flipped
     // to `true` after a successful install.
     let mut mcp_installed = use_signal(crate::mcp_install::is_installed);
     let mut mcp_install_error: Signal<Option<String>> = use_signal(|| None);
-
-    // Keep the selected local model valid. If it points at a model that isn't
-    // downloaded (e.g. a stale value persisted from before, or a since-deleted
-    // model), fall back to the first downloaded model — otherwise the <select>
-    // displays the first option while the saved value still points at the missing
-    // model, and re-picking the shown option fires no change event, so inference
-    // would keep trying to load the wrong/absent model. Mirror `local_model` into
-    // a signal so the effect re-runs with the current value (not a mount snapshot)
-    // whenever the selection or the downloaded set changes.
-    let mut local_model_dep = use_signal(|| settings.local_model.clone());
-    if *local_model_dep.peek() != settings.local_model {
-        local_model_dep.set(settings.local_model.clone());
-    }
-    {
-        let settings_for_reconcile = settings.clone();
-        use_effect(move || {
-            let _ = models_refresh.read();
-            let current = local_model_dep();
-            let downloaded = crate::local_inference::downloaded_models();
-            if !downloaded.iter().any(|m| *m == current) {
-                // Current selection isn't downloaded (stale, removed, or empty):
-                // fall back to the first downloaded model, or empty if none. Also
-                // auto-selects a freshly downloaded model when none was selected.
-                let replacement = downloaded.first().cloned().unwrap_or_default();
-                if replacement != current {
-                    let mut new_s = settings_for_reconcile.clone();
-                    new_s.local_model = replacement;
-                    on_settings_changed.call(new_s);
-                }
-            }
-        });
-    }
 
     let active_api_key = settings.active_api_key().to_string();
     let active_model = settings.active_model().to_string();
@@ -153,11 +110,6 @@ pub fn SettingsPage(
                     class: if *tab.read() == 3 { "references-tab active" } else { "references-tab" },
                     onclick: move |_| tab.set(3),
                     "References"
-                }
-                button {
-                    class: if *tab.read() == 4 { "references-tab active" } else { "references-tab" },
-                    onclick: move |_| tab.set(4),
-                    "Local Model"
                 }
             }
 
@@ -602,152 +554,6 @@ pub fn SettingsPage(
                                     on_open_references.call(());
                                 },
                                 "Open…"
-                            }
-                        }
-                    }
-                }
-
-                // ── Local Model ──────────────────────────────────────────────
-                else {
-                    div { class: "settings-section",
-                        h3 { class: "settings-section-title", "Local Model Inference" }
-
-                        // Enable local mode toggle
-                        div { class: "settings-row",
-                            div { class: "settings-row-info",
-                                span { class: "settings-row-label", "Local Mode" }
-                                span { class: "settings-row-desc",
-                                    "Use a locally downloaded model instead of the Claude API."
-                                }
-                            }
-                            label { class: "toggle-switch",
-                                input {
-                                    r#type: "checkbox",
-                                    checked: settings.local_mode,
-                                    onchange: move |e: Event<FormData>| {
-                                        let mut new_s = settings_for_local_mode.clone();
-                                        new_s.local_mode = e.checked();
-                                        on_settings_changed.call(new_s);
-                                    },
-                                }
-                                span { class: "toggle-slider" }
-                            }
-                        }
-
-                        // Model selector dropdown
-                        div { class: "settings-row",
-                            div { class: "settings-row-info",
-                                span { class: "settings-row-label", "Active model" }
-                                span { class: "settings-row-desc",
-                                    "Select from your downloaded models."
-                                }
-                            }
-                            {
-                                let _ = models_refresh.read();
-                                let downloaded = crate::local_inference::downloaded_models();
-                                rsx! {
-                                    select {
-                                        class: "settings-select-model",
-                                        disabled: downloaded.is_empty(),
-                                        value: settings.local_model.clone(),
-                                        onchange: move |e| {
-                                            let mut new_s = settings_for_local_model.clone();
-                                            new_s.local_model = e.value();
-                                            on_settings_changed.call(new_s);
-                                        },
-                                        if downloaded.is_empty() {
-                                            option { value: "", "— no models downloaded —" }
-                                        }
-                                        for m in &downloaded {
-                                            option { value: "{m}", selected: *m == settings.local_model, "{m}" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Available models list
-                        h3 { class: "settings-section-title", style: "margin-top: 24px;", "Available Models" }
-                        for spec in crate::local_inference::AVAILABLE_MODELS {
-                            {
-                                let _ = models_refresh.read();
-                                let name = spec.name.to_string();
-                                let dl_name = name.clone();
-                                let del_name = name.clone();
-                                // This model's own download state — independent of the others.
-                                let progress = download_progress.read().get(&name).copied();
-                                let downloading = progress.is_some();
-                                let is_dl = crate::local_inference::is_downloaded(&name) && !downloading;
-                                let err = download_error.read().get(&name).cloned();
-                                rsx! {
-                                    div { class: "settings-row",
-                                        div { class: "settings-row-info",
-                                            span { class: "settings-row-label", "{spec.name}" }
-                                            span { class: "settings-row-desc", "{spec.hf_repo}" }
-                                        }
-                                        if downloading {
-                                            {
-                                                let pct = (progress.unwrap_or(0.0) * 100.0) as u32;
-                                                rsx! {
-                                                    div { class: "local-model-progress-wrap",
-                                                        div { class: "download-progress-bar",
-                                                            div {
-                                                                class: "download-progress-fill",
-                                                                style: "width: {pct}%",
-                                                            }
-                                                        }
-                                                        span { class: "local-model-progress-label", "{pct}%" }
-                                                    }
-                                                }
-                                            }
-                                        } else if is_dl {
-                                            div { class: "local-model-actions",
-                                                span { class: "local-model-downloaded", "Downloaded ✓" }
-                                                button {
-                                                    class: "btn btn-secondary btn-sm",
-                                                    onclick: move |_| {
-                                                        let name = del_name.clone();
-                                                        download_error.with_mut(|m| { m.remove(&name); });
-                                                        dioxus::prelude::spawn(async move {
-                                                            if let Err(e) = crate::local_inference::delete_model(&name).await {
-                                                                download_error.with_mut(|m| { m.insert(name.clone(), e); });
-                                                            }
-                                                            models_refresh.with_mut(|n| *n += 1);
-                                                        });
-                                                    },
-                                                    "Delete"
-                                                }
-                                            }
-                                        } else {
-                                            button {
-                                                class: "btn btn-primary btn-sm",
-                                                onclick: move |_| {
-                                                    let name = dl_name.clone();
-                                                    download_error.with_mut(|m| { m.remove(&name); });
-                                                    download_progress.with_mut(|m| { m.insert(name.clone(), 0.0); });
-                                                    dioxus::prelude::spawn(async move {
-                                                        let progress_name = name.clone();
-                                                        let result = crate::local_inference::download_model(
-                                                            &name,
-                                                            move |p| {
-                                                                download_progress.with_mut(|m| { m.insert(progress_name.clone(), p); });
-                                                            },
-                                                        ).await;
-                                                        download_progress.with_mut(|m| { m.remove(&name); });
-                                                        if let Err(e) = result {
-                                                            download_error.with_mut(|m| { m.insert(name.clone(), e); });
-                                                        }
-                                                        models_refresh.with_mut(|n| *n += 1);
-                                                    });
-                                                },
-                                                "Download"
-                                            }
-                                        }
-                                    }
-                                    if let Some(err) = err {
-                                        div { class: "local-model-error", "{err}" }
-                                    }
-                                }
                             }
                         }
                     }

@@ -1,7 +1,6 @@
 mod agent_runner;
 mod ai_tools;
 mod components;
-mod local_inference;
 mod markdown;
 mod mcp_install;
 mod models;

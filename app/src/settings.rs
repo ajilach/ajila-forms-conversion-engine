@@ -71,12 +71,6 @@ pub struct AppSettings {
     /// Empty = none.
     #[serde(default)]
     pub aem_smart_edit_instructions: String,
-    /// Use local model inference instead of the Anthropic API.
-    #[serde(default)]
-    pub local_mode: bool,
-    /// Name of the locally downloaded model to use (e.g. "Qwen3-VL-32B-Instruct-FP8").
-    #[serde(default)]
-    pub local_model: String,
 }
 
 impl Default for AppSettings {
@@ -97,8 +91,6 @@ impl Default for AppSettings {
             agent_instructions: String::new(),
             smart_edit_instructions: String::new(),
             aem_smart_edit_instructions: String::new(),
-            local_mode: false,
-            local_model: String::new(),
         }
     }
 }
