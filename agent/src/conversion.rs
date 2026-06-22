@@ -35,9 +35,12 @@ Typical workflow (call tools as needed; each step is a separate call):\n\
 1. Inspect the input: get_source_info, get_profile_info (form_code, languages, JCR paths, \
 binding flags), list_states, explore_states, get_xfa (authoritative text/fields), search_xfa \
 (find specific fields/labels), get_plain_state_image / get_annotated_state_image, \
-get_flattened_structure_for_state. If get_profile_info reports more than one language the form \
-is multilingual: its translations ride along in the merged structured content and are bundled \
-into the package automatically — don't invent translations.\n\
+get_flattened_structure_for_state. A form is multilingual whenever get_source_info (or the \
+merged structured content) lists more than one language — trust that over get_profile_info if \
+they disagree. For a multilingual form the translations ride along in the merged structured \
+content and are bundled into the package automatically: you MUST carry every one of those \
+languages through to the final tree — don't invent translations, and never drop a language the \
+source contains.\n\
 2. Find precedents (do this before building): work through the input section by section. For \
 EACH section, do NOT search by form name or a single keyword — instead write a short \
 natural-language DESCRIPTION of that section (its purpose, the kinds of fields it has and how \
@@ -51,11 +54,15 @@ with get_reference_package / read_reference_file, and optionally run the engine 
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
 references' structure and patterns rather than inventing your own.\n\
-3. Seed the structured tree: get_merged_structured, then set_structured (whole tree); re-read \
-the working tree with get_structured. Call get_schema('structured') for the exact JSON shape. \
-The seeded tree is a best-effort heuristic guess and is NOT guaranteed accurate — review it \
-against the XFA (get_xfa / search_xfa) and the reference forms, and fix field types, labels, \
-options and grouping before converting.\n\
+3. Seed the structured tree: ALWAYS start from get_merged_structured, then set_structured (whole \
+tree); re-read the working tree with get_structured. Call get_schema('structured') for the exact \
+JSON shape. The merged tree carries every language present in the source (each translatable label/ \
+option holds all languages) — preserve ALL of them through set_structured and every later edit; \
+never reduce the tree to a single language. The seeded tree is a best-effort heuristic guess and \
+is NOT guaranteed accurate — review it against the XFA (get_xfa / search_xfa) and the reference \
+forms, and fix field types, labels, options and grouping before converting. On a refinement run, \
+if the working tree is missing a language that get_merged_structured still has, re-seed from the \
+merged tree to restore it before applying your changes.\n\
 4. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
 with set_aem (get_schema('aem') for the shape).\n\
 4b. You can also hand-edit the final JCR content XML directly with structure-aware tools — \
@@ -82,10 +89,10 @@ then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result.\n\
 Consult reference documentation when unsure: list_reference_docs, read_reference_doc, \
 grep_reference_docs.\n\n\
 Never invent text content: take all labels/options/help text verbatim from the XFA, and never \
-write copy of your own. Likewise, only ever produce translations for the languages that actually \
-exist in the input document(s) (get_profile_info reports them) — never invent a translation for a \
-language the source does not contain. When done, call finish. Keep tool inputs minimal and valid \
-JSON.";
+write copy of your own. Likewise, the final form must contain EVERY language present in the \
+source (get_source_info / the merged structured content list them) and ONLY those: never drop a \
+language the source contains, and never invent a translation for a language it does not. When \
+done, call finish. Keep tool inputs minimal and valid JSON.";
 
 /// The result of executing one tool call, to be returned to the model as a
 /// `tool_result` content block.
@@ -365,7 +372,22 @@ impl ConversionAgent {
                 .ok_or("No profile selected — AEM conversion needs a profile.")?;
             self.aem_config = Some(blueprint::load_aem_config(&p, &self.context)?);
         }
-        Ok(self.aem_config.clone().unwrap())
+        let cfg = self.aem_config.clone().unwrap();
+        // Reflect the languages actually present in the document so
+        // get_profile_info and the package builder never misreport a
+        // multilingual form as en-only. `resolve_aem_languages` only overrides
+        // when it detects ≥1 language, so monolingual flows keep the default.
+        // Resolved per-call (not cached) because set_structured mutates
+        // self.structured without touching self.aem_config. Prefer the working
+        // tree once seeded; otherwise fall back to the merged source extraction
+        // so the languages are reported even before the tree is seeded.
+        if !self.structured.is_empty() {
+            Ok(blueprint::resolve_aem_languages(&self.structured, &cfg))
+        } else if let Ok(ex) = self.extractor(&serde_json::Value::Null) {
+            Ok(blueprint::resolve_aem_languages(&ex.merged, &cfg))
+        } else {
+            Ok(cfg)
+        }
     }
 
     fn snapshot_structured(&mut self, label: &str) {
@@ -1482,6 +1504,49 @@ mod tests {
         assert!(!line_matches("field_x", r"field_\d+", true));
         // invalid regex → no match (not a panic)
         assert!(!line_matches("anything", "(", true));
+    }
+
+    #[test]
+    fn config_reflects_languages_in_seeded_structured_tree() {
+        use blueprint::{InlineText, ParagraphNode, StructuredNode, TranslatedText};
+
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-config-languages".into(),
+        );
+        // The ubs profile templates reference a couple of xfa vars; supply the
+        // minimal context so load_aem_config succeeds without a real PDF.
+        let mut vars = HashMap::new();
+        vars.insert("formrange_code".to_string(), "TESTFORM".to_string());
+        vars.insert("formrange_entity".to_string(), "TEST".to_string());
+        agent.context = blueprint::Context::new("en".to_string(), vars);
+
+        // With no content the config falls back to the profile default.
+        let before = agent.config().expect("config loads for ubs profile");
+        assert_eq!(before.languages, vec!["en".to_string()]);
+
+        // Seed a bilingual (de + en) working tree.
+        let mut content = TranslatedText::empty();
+        content.insert("en", InlineText::plain("Hello"));
+        content.insert("de", InlineText::plain("Hallo"));
+        agent.seed_structured(vec![StructuredNode::Paragraph(ParagraphNode {
+            content,
+            som_path: None,
+            source_name: None,
+        })]);
+
+        // config() must now reflect the languages present in the tree so
+        // get_profile_info and the package builder treat the form as
+        // multilingual instead of collapsing it to the en-only default.
+        let after = agent.config().expect("config loads");
+        assert!(after.languages.contains(&"en".to_string()));
+        assert!(
+            after.languages.contains(&"de".to_string()),
+            "config.languages must include every language in the seeded tree, got {:?}",
+            after.languages
+        );
     }
 
     #[test]
