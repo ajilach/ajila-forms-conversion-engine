@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "blueprint-app"
-version = "0.1.37"
+version = "0.2.0"
 dependencies = [
  "agent",
  "base64 0.22.1",
