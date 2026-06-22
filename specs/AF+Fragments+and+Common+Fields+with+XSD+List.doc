@@ -1,0 +1,2544 @@
+Date: Mon, 22 Jun 2026 07:20:48 +0100 (BST)
+Message-ID: <724244139.19.1782109248432@a329-8052-5427.zur.swissbank.com>
+Subject: Exported From Confluence
+MIME-Version: 1.0
+Content-Type: multipart/related; 
+	boundary="----=_Part_18_1298508987.1782109248432"
+
+------=_Part_18_1298508987.1782109248432
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+Content-Location: file:///C:/exported.html
+
+<html xmlns:o=3D'urn:schemas-microsoft-com:office:office'
+      xmlns:w=3D'urn:schemas-microsoft-com:office:word'
+      xmlns:v=3D'urn:schemas-microsoft-com:vml'
+      xmlns=3D'urn:w3-org-ns:HTML'>
+<head>
+    <meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dutf-8=
+">
+    <title>AF Fragments and Common Fields with XSD List</title>
+    <!--[if gte mso 9]>
+    <xml>
+        <o:OfficeDocumentSettings>
+            <o:TargetScreenSize>1024x640</o:TargetScreenSize>
+            <o:PixelsPerInch>72</o:PixelsPerInch>
+            <o:AllowPNG/>
+        </o:OfficeDocumentSettings>
+        <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>90</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+    </xml>
+    <![endif]-->
+    <style>
+                <!--
+        @page Section1 {
+            size: 8.5in 11.0in;
+            margin: 1.0in;
+            mso-header-margin: .5in;
+            mso-footer-margin: .5in;
+            mso-paper-source: 0;
+        }
+
+        table {
+            border: solid 1px;
+            border-collapse: collapse;
+        }
+
+        table td, table th {
+            border: solid 1px;
+            padding: 5px;
+        }
+
+        td {
+            page-break-inside: avoid;
+        }
+
+        tr {
+            page-break-after: avoid;
+        }
+
+        div.Section1 {
+            page: Section1;
+        }
+
+        /* Confluence print stylesheet. Common to all themes for print medi=
+a */
+/* Full of !important until we improve batching for print CSS */
+
+@media print {
+    #main {
+        padding-bottom: 1em !important; /* The default padding of 6em is to=
+o much for printouts */
+    }
+
+    body {
+        font-family: Arial, Helvetica, FreeSans, sans-serif;
+        font-size: 10pt;
+        line-height: 1.2;
+    }
+
+    body, #full-height-container, #main, #page, #content, .has-personal-sid=
+ebar #content {
+        background: #fff !important;
+        color: #000 !important;
+        border: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    a, a:link, a:visited, a:focus, a:hover, a:active {
+        color: #000;
+    }
+
+    #content h1,
+    #content h2,
+    #content h3,
+    #content h4,
+    #content h5,
+    #content h6 {
+        font-family: Arial, Helvetica, FreeSans, sans-serif;
+        page-break-after: avoid;
+    }
+
+    pre {
+        font-family: Monaco, "Courier New", monospace;
+    }
+
+    #header,
+    .aui-header-inner,
+    #navigation,
+    #sidebar,
+    .sidebar,
+    #personal-info-sidebar,
+    .ia-fixed-sidebar,
+    .page-actions,
+    .navmenu,
+    .ajs-menu-bar,
+    .noprint,
+    .inline-control-link,
+    .inline-control-link a,
+    a.show-labels-editor,
+    .global-comment-actions,
+    .comment-actions,
+    .quick-comment-container,
+    #addcomment {
+        display: none !important;
+    }
+
+    /* CONF-28544 cannot print multiple pages in IE */
+    #splitter-content {
+        position: relative !important;
+    }
+
+    .comment .date::before {
+        content: none !important; /* remove middot for print view */
+    }
+
+    h1.pagetitle img {
+        height: auto;
+        width: auto;
+    }
+
+    .print-only {
+        display: block;
+    }
+
+    #footer {
+        position: relative !important; /* CONF-17506 Place the footer at en=
+d of the content */
+        margin: 0;
+        padding: 0;
+        background: none;
+        clear: both;
+    }
+
+    #poweredby {
+        border-top: none;
+        background: none;
+    }
+
+    #poweredby li.print-only {
+        display: list-item;
+        font-style: italic;
+    }
+
+    #poweredby li.noprint {
+        display: none;
+    }
+
+    /* no width controls in print */
+    .wiki-content .table-wrap,
+    .wiki-content p,
+    .panel .codeContent,
+    .panel .codeContent pre,
+    .image-wrap {
+        overflow: visible !important;
+    }
+
+    /* TODO - should this work? */
+    #children-section,
+    #comments-section .comment,
+    #comments-section .comment .comment-body,
+    #comments-section .comment .comment-content,
+    #comments-section .comment p {
+        page-break-inside: avoid;
+    }
+
+    #page-children a {
+        text-decoration: none;
+    }
+
+    /**
+     hide twixies
+
+     the specificity here is a hack because print styles
+     are getting loaded before the base styles. */
+    #comments-section.pageSection .section-header,
+    #comments-section.pageSection .section-title,
+    #children-section.pageSection .section-header,
+    #children-section.pageSection .section-title,
+    .children-show-hide {
+        padding-left: 0;
+        margin-left: 0;
+    }
+
+    .children-show-hide.icon {
+        display: none;
+    }
+
+    /* personal sidebar */
+    .has-personal-sidebar #content {
+        margin-right: 0px;
+    }
+
+    .has-personal-sidebar #content .pageSection {
+        margin-right: 0px;
+    }
+
+    .no-print, .no-print * {
+        display: none !important;
+    }
+}
+-->
+    </style>
+</head>
+<body>
+    <h1>AF Fragments and Common Fields with XSD List</h1>
+    <div class=3D"Section1">
+        <p><style type=3D"text/css">/*<![CDATA[*/
+div.rbtoc1782109248405 {padding: 0px;}
+div.rbtoc1782109248405 ul {margin-left: 0px;}
+div.rbtoc1782109248405 li {margin-left: 0px;padding-left: 0px;}
+
+/*]]>*/</style></p>
+<div class=3D"toc-macro rbtoc1782109248405">
+<ul class=3D"toc-indentation">
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-FragmentFolderLinks">=
+Fragment Folder Links</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Bankingrelationship,P=
+roduct">Banking relationship, Product</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Individual,LegalEntit=
+y,Address">Individual, Legal Entity, Address</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Partner">Partner</a><=
+/li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Signature">Signature<=
+/a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-AFComponent>XSDElemen=
+tType">AF Component &gt; XSD Element Type</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-CardBankingFragments"=
+>Card Banking Fragments</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Bankingrelationship,P=
+roduct.1">Banking relationship, Product</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Individual,LegalEntit=
+y,Address.1">Individual, Legal Entity, Address</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Partner.1">Partner</a=
+></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-Signature.1">Signatur=
+e</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-AFComponent>XSDElemen=
+tType.1">AF Component &gt; XSD Element Type</a></li>
+<li><a href=3D"#AFFragmentsandCommonFieldswithXSDList-CardBankingFragments.=
+1">Card Banking Fragments</a></li>
+</ul>
+</div>
+<p></p>
+<h3 id=3D"AFFragmentsandCommonFieldswithXSDList-FragmentFolderLinks">Fragme=
+nt Folder Links</h3>
+<ul>
+<li><span style=3D"color: rgb(0,0,255);"><a class=3D"external-link" href=3D=
+"https://a302-6991-0117.gdzd.ubs.net/app/LS4/aem/forms.html/content/dam/for=
+msanddocuments/afforms_ubs_fragmentlib" rel=3D"nofollow">Global Fragment Fo=
+lder</a></span></li>
+<li><span style=3D"color: rgb(0,0,255);"><span style=3D"color: rgb(0,0,0);"=
+><span style=3D"color: rgb(0,0,255);"><a class=3D"external-link" href=3D"ht=
+tps://a302-6991-0117.gdzd.ubs.net/app/LS4/aem/forms.html/content/dam/formsa=
+nddocuments/afforms_ch_fragmentlib" rel=3D"nofollow">CH Fragment Folder</a>=
+</span></span></span></li>
+</ul>
+<div class=3D"table-wrap">
+<table class=3D"wrapped confluenceTable">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<tbody>
+<tr>
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"5" data-highlight-c=
+olour=3D"#b3d4ff" title=3D"Background color : Light blue 100%"><h3 title=3D=
+"" id=3D"AFFragmentsandCommonFieldswithXSDList-Bankingrelationship,Product"=
+>Banking relationship, Product</h3></th>
+</tr>
+<tr>
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr>
+<td class=3D"confluenceTd">UBS Fragment - Banking Relationship 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_BankingRelationship1</td>
+<td class=3D"confluenceTd">BankingRelationship.xsd</td>
+<td class=3D"confluenceTd">BankingRelationshipType</td>
+<td style=3D"text-align: center;vertical-align: middle;" class=3D"confluenc=
+eTd">&nbsp;</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">UBS Fragment - Custody Account 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_CustodyAccount1</td>
+<td class=3D"confluenceTd">Products.xsd</td>
+<td class=3D"confluenceTd">CustodyAccountType</td>
+<td style=3D"text-align: center;" class=3D"confluenceTd">&nbsp;</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">UBS Fragment - Safe Deposit Box 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_SafeDepositBox1</td>
+<td class=3D"confluenceTd">Products.xsd</td>
+<td class=3D"confluenceTd">SafeDepositBoxType</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">UBS Fragment - IBAN 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_IBAN1</td>
+<td class=3D"confluenceTd">IBAN.xsd</td>
+<td class=3D"confluenceTd">IBANNumberType</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"wrapped confluenceTable">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<tbody>
+<tr>
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"6" data-highlight-c=
+olour=3D"#b3d4ff" title=3D"Background color : Light blue 100%"><h3 title=3D=
+"" id=3D"AFFragmentsandCommonFieldswithXSDList-Individual,LegalEntity,Addre=
+ss">Individual, Legal Entity, Address</h3></th>
+</tr>
+<tr>
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Remarks</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr>
+<td class=3D"confluenceTd">UBS Fragment - Individual Basic 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_IndividualBasic1</td>
+<td class=3D"confluenceTd">Individual.xsd</td>
+<td class=3D"confluenceTd">IndividualBasicType</td>
+<td class=3D"confluenceTd">Name fields only</td>
+<td class=3D"confluenceTd">(indirectly via other fragments)</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Entity Basic 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_EntityBasic1</td>
+<td class=3D"confluenceTd">LegalEntity.xsd</td>
+<td class=3D"confluenceTd">LegalEntityBasicType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: left;" class=3D"confluenceTd">(indirectly via othe=
+r fragments)</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Address Generic 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_AddressGeneric1</td>
+<td class=3D"confluenceTd">Address.xsd</td>
+<td class=3D"confluenceTd">AddressType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;" class=3D"confluenceTd"></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Form of Address</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_FormofAddress</td>
+<td class=3D"confluenceTd">Individual.xsd</td>
+<td class=3D"confluenceTd">IndividualBasicType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;" class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">UBS Fragment - DOB and Nationality</span></span></t=
+d>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_DOBandNationality</td>
+<td class=3D"confluenceTd">Individual.xsd</td>
+<td class=3D"confluenceTd">IndividualBasicType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;" class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">UBS Fragment - Date and Country Incorporation</span=
+></span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_DateandCountryIncorporation</td>
+<td class=3D"confluenceTd">LegalEntity.xsd</td>
+<td class=3D"confluenceTd">LegalEntityBasicType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;" class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"wrapped relative-table confluenceTable" style=3D"width: 103=
+.065%;">
+<colgroup>
+<col style=3D"width: 10.5324%;">
+<col style=3D"width: 7.16666%;">
+<col style=3D"width: 7.13764%;">
+<col style=3D"width: 22.5735%;">
+<col style=3D"width: 7.31173%;">
+<col style=3D"width: 7.48582%;">
+<col style=3D"width: 30.8137%;">
+<col style=3D"width: 6.99257%;">
+</colgroup>
+<tbody>
+<tr>
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"8" data-highlight-c=
+olour=3D"#b3d4ff" title=3D"Background color : Light blue 100%"><h3 title=3D=
+"" id=3D"AFFragmentsandCommonFieldswithXSDList-Partner">Partner</h3></th>
+</tr>
+<tr>
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">XSD Element name</th>
+<th class=3D"confluenceTh"><p>Partner Class</p><p>(Individual or Company/En=
+tity)</p></th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Remarks</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">C=
+ontractual Partner </span></strong><span style=3D"color: rgb(0,0,0);" title=
+=3D"">(ContractualPartnerGenericType)</span></span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">&=
+nbsp;</span></strong></span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><br></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">&=
+nbsp;</span></strong></span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">&=
+nbsp;</span></strong></span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">&=
+nbsp;</span></strong></span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">&=
+nbsp;</span></strong></span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><span style=3D"color: rgb(=
+0,0,0);" title=3D""><strong><span style=3D"color: rgb(0,0,0);" title=3D"">&=
+nbsp;</span></strong></span></td>
+</tr>
+<tr>
+<td rowspan=3D"3" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Contractual Partner Generic 1</span><br><span style=3D"colo=
+r: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br></span></=
+td>
+<td class=3D"confluenceTd">AccountHolder</td>
+<td class=3D"confluenceTd"><strong>AccountHolderPartnerClass</strong></td>
+<td rowspan=3D"3" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_ContractualPartnerGeneric1</td>
+<td rowspan=3D"3" class=3D"confluenceTd">ContractualPartnerGeneric.xsd</td>
+<td rowspan=3D"3" class=3D"confluenceTd">ContractualPartnerGenericType</td>
+<td rowspan=3D"3" class=3D"confluenceTd"><p><strong>Radio button name: </st=
+rong>RB_CPType</p><p><strong>Contractual Panel naming convention:</strong><=
+/p><p><strong>Non repeating:</strong> PN_CPG</p><p><strong>Repeating:</stro=
+ng> PN_CPGRP</p><p><strong>Signature panel naming covention:&nbsp;</strong>=
+</p><p><strong>Non repeating:</strong> PN_SGN_CPG</p><p><strong>Repeating:<=
+/strong> PN_SGN_CPGRP</p></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Lessee</td>
+<td class=3D"confluenceTd"><strong>LesseePartnerClass</strong></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">ContractingPartner</td>
+<td class=3D"confluenceTd"><strong>ContractingPartnerClass</strong></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td rowspan=3D"3" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - <span style=3D"color: rgb(0,0,0);">Contractual Partner</spa=
+n> Generic <strong>Basic</strong> 1</span><br><span style=3D"color: rgb(0,0=
+,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br></span></td>
+<td class=3D"confluenceTd">AccountHolder</td>
+<td class=3D"confluenceTd"><strong>AccountHolderPartnerClass</strong></td>
+<td rowspan=3D"3" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_ContractualPartnerGenericBasic1</td>
+<td rowspan=3D"3" class=3D"confluenceTd">ContractualPartnerGeneric.xsd</td>
+<td rowspan=3D"3" class=3D"confluenceTd">ContractualPartnerGenericType</td>
+<td rowspan=3D"3" class=3D"confluenceTd"><p><strong>Radio button name: </st=
+rong>RB_CPType</p><p><strong>Contractual Panel naming convention:</strong><=
+/p><p><strong>Non repeating: </strong>PN_CPGB</p><p><strong>Repeating: </st=
+rong>PN_CPGBRP</p><p><strong>Signature panel naming covention:</strong></p>=
+<p><strong>Non repeating:</strong> PN_SGN_CPG</p><p><strong>Repeating:</str=
+ong> PN_SGN_CPGRP</p></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Lessee</td>
+<td class=3D"confluenceTd"><strong>LesseePartnerClass</strong></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">ContractingPartner</td>
+<td class=3D"confluenceTd"><strong>ContractingPartnerClass</strong></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">Beneficial Owner </span></strong><sp=
+an style=3D"color: rgb(0,0,0);" title=3D"">(BeneficialOwnerGenericType)</sp=
+an></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">BOPartnerClass</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+</tr>
+<tr>
+<td rowspan=3D"2" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Beneficial Owner Generic 1</span><br><span style=3D"color: =
+rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br></span></td>
+<td class=3D"confluenceTd">BeneficialOwner</td>
+<td class=3D"confluenceTd"><br></td>
+<td rowspan=3D"2" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_BeneficialOwnerGeneric1</td>
+<td rowspan=3D"2" class=3D"confluenceTd">BeneficialOwnerGeneric.xsd</td>
+<td rowspan=3D"2" class=3D"confluenceTd">BeneficialOwnerGenericType</td>
+<td rowspan=3D"2" class=3D"confluenceTd"><p><strong>Panel naming convention=
+:</strong></p><p><strong>Non repeating:</strong> PN_BOG</p><p><strong>Repea=
+ting:</strong> PN_BOGRP</p><p><strong>Radio button name:</strong> RB_BOType=
+</p><p><strong>Signature: </strong>PN_SGN_BOGRP</p></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Trustee</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td rowspan=3D"2" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Beneficial Owner Generic <strong>Basic</strong> 1</span><br=
+><span style=3D"color: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,=
+0,0);"><br></span></td>
+<td class=3D"confluenceTd">BeneficialOwner</td>
+<td class=3D"confluenceTd"><br></td>
+<td rowspan=3D"2" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_BeneficialOwnerGenericBasic1</td>
+<td rowspan=3D"2" class=3D"confluenceTd">BeneficialOwnerGeneric.xsd</td>
+<td rowspan=3D"2" class=3D"confluenceTd">BeneficialOwnerGenericType</td>
+<td rowspan=3D"2" class=3D"confluenceTd"><p><strong>Panel naming convention=
+:</strong></p><p><strong>Non repeating:</strong> PN_BOG</p><p><strong>Repea=
+ting:</strong> PN_BOGRP</p><p><strong>Radio button name:</strong> RB_BOType=
+</p><p><strong>Signature: </strong>PN_SGN_BOGRP</p></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Trustee</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">Power of Attorney </span></strong><s=
+pan style=3D"color: rgb(0,0,0);" title=3D"">(PowerOfAttorneyGenericType)</s=
+pan></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">POAPartnerClass</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+</tr>
+<tr>
+<td rowspan=3D"4" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Power of Attorney Generic 1</span><br><span style=3D"color:=
+ rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br></span><spa=
+n style=3D"color: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);=
+"><br></span></td>
+<td class=3D"confluenceTd">AuthorizedSigner</td>
+<td class=3D"confluenceTd"><br></td>
+<td rowspan=3D"4" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_PowerofAttorneyGeneric1</td>
+<td rowspan=3D"4" class=3D"confluenceTd">PowerOfAttorneyGeneric.xsd</td>
+<td rowspan=3D"4" class=3D"confluenceTd">PowerOfAttorneyGenericType</td>
+<td rowspan=3D"4" class=3D"confluenceTd"><p><strong>Radio button name: </st=
+rong>RB_PAType</p><p><strong>Contractual Panel naming convention:</strong><=
+/p><p><strong>Non repeating:</strong> PN_PAG</p><p><strong>Repeating:</stro=
+ng> PN_PAGRP</p><p><strong>Signature panel naming covention:&nbsp;</strong>=
+</p><p><strong>Non repeating:</strong> PN_SGN_PAG</p><p><strong>Repeating:<=
+/strong> PN_SGN_PAGRP</p></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">GeneralPOA</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">LimitedPOA</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">EBankingUser</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td rowspan=3D"4" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Power of Attorney Generic <strong>Basic</strong> 1</span><b=
+r><span style=3D"color: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0=
+,0,0);"><br></span><span style=3D"color: rgb(0,0,0);">&nbsp;</span><br><spa=
+n style=3D"color: rgb(0,0,0);">&nbsp;</span></td>
+<td class=3D"confluenceTd">AuthorizedSigner</td>
+<td class=3D"confluenceTd"><br></td>
+<td rowspan=3D"4" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_PowerofAttorneyGenericBasic1</td>
+<td rowspan=3D"4" class=3D"confluenceTd">PowerOfAttorneyGeneric.xsd</td>
+<td rowspan=3D"4" class=3D"confluenceTd">PowerOfAttorneyGenericType</td>
+<td rowspan=3D"4" class=3D"confluenceTd"><p><strong>Radio button name: </st=
+rong>RB_PAType</p><p><strong>Contractual Panel naming convention:</strong><=
+/p><p><strong>Non repeating:</strong> PN_PAGB</p><p><strong>Repeating:</str=
+ong> PN_PAGBRP</p><p><strong>Signature panel naming covention:&nbsp;</stron=
+g></p><p><strong>Non repeating:</strong> PN_SGN_PAG</p><p><strong>Repeating=
+:</strong> PN_SGN_PAGRP</p></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">GeneralPOA</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">LimitedPOA</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">EBankingUser</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">Partner To Partner </span></strong><=
+span style=3D"color: rgb(0,0,0);" title=3D"">(PartnerToPartnerGenericType)<=
+/span></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">PToPPartnerClass</span></strong></td=
+>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+<td class=3D"highlight-#f4f5f7 confluenceTd" data-highlight-colour=3D"#f4f5=
+f7" title=3D"Background color : Light grey 100%"><strong title=3D""><span s=
+tyle=3D"color: rgb(0,0,0);" title=3D"">&nbsp;</span></strong></td>
+</tr>
+<tr>
+<td rowspan=3D"5" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Power of Attorney Generic 1</span><br><span style=3D"color:=
+ rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br></span><spa=
+n style=3D"color: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);=
+"><br></span><span style=3D"color: rgb(0,0,0);"><br></span></td>
+<td class=3D"confluenceTd">FIM</td>
+<td class=3D"confluenceTd"><br></td>
+<td rowspan=3D"5" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_PartnertoPartnerGeneric1</td>
+<td rowspan=3D"5" class=3D"confluenceTd">PartnerToPartnerGeneric.xsd</td>
+<td rowspan=3D"5" class=3D"confluenceTd">PartnerToPartnerGenericType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">ControllingPerson</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">ConnectedParty</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">AuthRep</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">FIMAuthRep</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td rowspan=3D"5" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>UBS Fragment - Power of Attorney Generic <strong>Basic</strong> 1</span><b=
+r><span style=3D"color: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0=
+,0,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br></span><span styl=
+e=3D"color: rgb(0,0,0);"><br></span><span style=3D"color: rgb(0,0,0);"><br>=
+</span></td>
+<td class=3D"confluenceTd">FIM</td>
+<td class=3D"confluenceTd"><br></td>
+<td rowspan=3D"5" class=3D"confluenceTd">/content/dam/formsanddocuments/aff=
+orms_ubs_fragmentlib/affrg_PartnertoPartnerGenericBasic1</td>
+<td rowspan=3D"5" class=3D"confluenceTd">PartnerToPartnerGeneric.xsd</td>
+<td rowspan=3D"5" class=3D"confluenceTd">PartnerToPartnerGenericType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">ControllingPerson</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">ConnectedParty</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">AuthRep</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">FIMAuthRep</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"wrapped confluenceTable">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<tbody>
+<tr>
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"7" data-highlight-c=
+olour=3D"#b3d4ff" title=3D"Background color : Light blue 100%"><h3 title=3D=
+"" id=3D"AFFragmentsandCommonFieldswithXSDList-Signature">Signature</h3></t=
+h>
+</tr>
+<tr>
+<th class=3D"confluenceTh">Signature of</th>
+<th class=3D"confluenceTh">Element name</th>
+<th class=3D"confluenceTh">Fragment Title (if fragment)</th>
+<th class=3D"confluenceTh">Fragment Path (if fragment)</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Remarks</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Authorized=
+ representative</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AuthRepSignat=
+ure</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Legal repr=
+esentative (ACAL)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">LegalRepSigna=
+ture</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Authorized=
+ agent</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AuthAgentSign=
+ature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Account ho=
+lder</span></p></td>
+<td rowspan=3D"7" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>AccountHolderSignature</span><br><span style=3D"color: rgb(0,0,0);">&nbsp;=
+</span><br><span style=3D"color: rgb(0,0,0);"><br></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p><span style=3D"letter-spacing: 0.0px;">/conte=
+nt/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1</s=
+pan></p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;vertical-align: middle;" class=3D"confluenc=
+eTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);"><span styl=
+e=3D"color: rgb(0,0,0);">Account holder</span></span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Client</sp=
+an></p></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Fragme=
+nt - Signature Generic 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"vertical-align: middle;text-align: center;" class=3D"confluenc=
+eTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Pension ho=
+lder</span></p></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Fragme=
+nt - Signature Generic 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Principal<=
+/span></p></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Fragme=
+nt - Signature Generic 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">End Client=
+</span></p></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Fragme=
+nt - Signature Generic 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);"><span styl=
+e=3D"color: rgb(0,0,0);">Recipient of the Risk Information</span></span></p=
+></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Fragme=
+nt - Signature Generic 1</span></p><p>AAZE</p></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Co-owner</=
+span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CoOwnerSignat=
+ure</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Attorney</=
+span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AttorneySigna=
+ture</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Client adv=
+isor</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CASignature</=
+span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><strong>&nbsp;</strong></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Desk head<=
+/span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">DeskHeadSigna=
+ture</span></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Fragme=
+nt - Signature Generic 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Supervisor=
+</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">SupervisorSig=
+nature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Financial =
+intermediary</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">FIMSignature<=
+/span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><strong>&nbsp;</strong></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Sales mana=
+ger (ABMS-to correct)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">OPSMSignature=
+ &gt; SalesMgrSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;<span s=
+tyle=3D"color: rgb(0,0,0);">UBS Fragment - Signature Generic 1</span></span=
+></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Relevant p=
+erson</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">RelevantPerso=
+nSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Responsibl=
+e person (ABYT)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">ResponsiblePe=
+rsonSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;<span s=
+tyle=3D"color: rgb(0,0,0);">UBS Fragment - Signature Generic 1</span></span=
+></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Borrower (=
+ABYT, ACAM)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BorrowerSigna=
+ture</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Beneficial=
+ Owner (AAXN)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">BeneficialOwnerSignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Contractin=
+g Partner</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">ContractingPartnerSignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">&lt;Hybrid=
+ Cases or Unknown type&gt;</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">Signature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">AAZE</span></span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Cardholder=
+</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">CardholderSignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">ABME, ABLS</span></span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Bahrai=
+n BRO</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">BahrainBROSignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">BBEE</span></span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Bahrai=
+n CEO / co-CEO</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">BahrainCEOSignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">BBEE</span></span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Company</s=
+pan></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">CompanySignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">ABLS</span></span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Pledgor</s=
+pan></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">PledgorSignature</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">AAZB (Formset)</span></span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ubs_fr=
+agmentlib/affrg_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Custody Ac=
+count Holder</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"><span style=
+=3D"color: rgb(0,0,0);">CAHSignature1</span></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Signature Generic 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_SignatureGeneric1</td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"wrapped relative-table confluenceTable" style=3D"width: 50.=
+1972%;">
+<colgroup>
+<col style=3D"width: 21.9464%;">
+<col style=3D"width: 31.8683%;">
+<col style=3D"width: 46.2583%;">
+</colgroup>
+<tbody>
+<tr>
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"3" data-highlight-c=
+olour=3D"#b3d4ff" scope=3D"colgroup" title=3D"Background color : Light blue=
+ 100%"><h3 title=3D"" id=3D"AFFragmentsandCommonFieldswithXSDList-AFCompone=
+nt>XSDElementType">AF Component &gt; XSD Element Type</h3></th>
+</tr>
+<tr>
+<th scope=3D"col" class=3D"confluenceTh">AF Component</th>
+<th scope=3D"col" class=3D"confluenceTh">XSD Complex/Simple Type Element</t=
+h>
+<th scope=3D"col" class=3D"confluenceTh">Note</th>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Email</td>
+<td class=3D"confluenceTd">EmailType</td>
+<td class=3D"confluenceTd">include Address.xsd</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Telephone</td>
+<td class=3D"confluenceTd">PhoneType</td>
+<td class=3D"confluenceTd">include Address.xsd</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Text Box</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Text Box Multiline</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Dropdown List</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Check Box</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td rowspan=3D"2" class=3D"confluenceTd">Even the schema data type is strin=
+g, please use numeric value as key for each option starting from 1.</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Radio Button</td>
+<td class=3D"confluenceTd">xs:string</td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Numeric Box</td>
+<td class=3D"confluenceTd">xs:decimal</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd">Date Picker</td>
+<td class=3D"confluenceTd">xs:date</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><br></p>
+<div class=3D"table-wrap">
+<table class=3D"wrapped relative-table confluenceTable" data-snooker-col-se=
+ries=3D"numbers" data-snooker-locked-cols=3D"0" style=3D"width: 112.56%;">
+<colgroup>
+<col style=3D"width: 3.43971%;">
+<col style=3D"width: 5.54767%;">
+<col style=3D"width: 12.147%;">
+<col style=3D"width: 40.7241%;">
+<col style=3D"width: 12.0066%;">
+<col style=3D"width: 13.0598%;">
+<col style=3D"width: 6.5299%;">
+<col style=3D"width: 6.5299%;">
+</colgroup>
+<tbody>
+<tr>
+<th class=3D"numberingColumn confluenceTh" contenteditable=3D"false" data-m=
+ce-resize=3D"false"><br></th>
+<th class=3D"highlight-#00a3bf confluenceTh" colspan=3D"7" data-highlight-c=
+olour=3D"#00a3bf" scope=3D"colgroup" title=3D"Background color : Dark teal =
+85%"><h3 id=3D"AFFragmentsandCommonFieldswithXSDList-CardBankingFragments">=
+Card Banking Fragments</h3></th>
+</tr>
+<tr>
+<th class=3D"numberingColumn confluenceTh" contenteditable=3D"false" data-m=
+ce-resize=3D"false" scope=3D"col"><br></th>
+<th scope=3D"col" class=3D"confluenceTh">Fragment Title</th>
+<th scope=3D"col" class=3D"confluenceTh">Element name</th>
+<th scope=3D"col" class=3D"confluenceTh">Fragment Path</th>
+<th scope=3D"col" class=3D"confluenceTh">Schema</th>
+<th scope=3D"col" class=3D"confluenceTh">Complex Type</th>
+<th scope=3D"col" class=3D"confluenceTh">Formcodes</th>
+<th scope=3D"col" class=3D"confluenceTh">Remarks</th>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">1</td>
+<td class=3D"confluenceTd">CH Fragment - CC Card Holder 1</td>
+<td class=3D"confluenceTd">CardHolder</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_cc_CardHolder1</td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardHolderType</td>
+<td class=3D"confluenceTd">BAXE, BAXF</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">2</td>
+<td class=3D"confluenceTd">CH Fragment - CC Additional Services 1</td>
+<td class=3D"confluenceTd">CardAdditionalService</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_AdditionalServices1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardAdditionalServiceType</td>
+<td class=3D"confluenceTd">BAXE, BAXF</td>
+<td class=3D"confluenceTd">amount differs per type of card/form</td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">3</td>
+<td class=3D"confluenceTd">CH Fragment - CC Employment 1</td>
+<td class=3D"confluenceTd">CardEmployment</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_Employment1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardEmploymentType</td>
+<td class=3D"confluenceTd">BAXE</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">4</td>
+<td class=3D"confluenceTd">CH Fragment - CC Training 1</td>
+<td class=3D"confluenceTd">CardTraining</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_Training1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardTrainingType</td>
+<td class=3D"confluenceTd">BAXE</td>
+<td class=3D"confluenceTd">not in BAXF</td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">5</td>
+<td class=3D"confluenceTd">CH Fragment - CC Banking Details 1</td>
+<td class=3D"confluenceTd">CardBank</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_BankingDetails</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardBankType</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">6</td>
+<td class=3D"confluenceTd">CH Fragment - CC Individual Address 1</td>
+<td class=3D"confluenceTd"><p>CardMailingAddress /</p><p>CardInvoiceAddress=
+ /</p><p>CardPartnerAddress</p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_IndividualAddress1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardAddressType</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">7</td>
+<td class=3D"confluenceTd">CH Fragment - CC Legal Representative 1</td>
+<td class=3D"confluenceTd">CardLegalRep</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_LegalRepresentative1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardLegalRepType</td>
+<td class=3D"confluenceTd">BAXC</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">8</td>
+<td class=3D"confluenceTd">CH Fragment - CC Signature Generic 1</td>
+<td class=3D"confluenceTd">CardHolderSignature / CardHolderPartnerSignature=
+ / CardLegalRepSignature</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">Signature.xsd</td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">9</td>
+<td class=3D"confluenceTd">CH Fragment - CC For internal bank use only 1</t=
+d>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_ForInternalBankUse1</p></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXF</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">10</td>
+<td class=3D"confluenceTd">CH Fragment - CC Annual Credit Interest Text 1</=
+td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_AnnualCreditInterestText1</p></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p>Static Text only.</p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">11</td>
+<td class=3D"confluenceTd"><span>CH Fragment - CC Signature Text <strong>(#=
+)</strong></span></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p><span>/content/dam/formsanddocuments/afforms_=
+ch_fragmentlib/affrg_cc_SignatureText<strong>(#)</strong></span></p></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><span>Static Text fragment. Simply change the=
+ value of <strong>(#)</strong> to 1,2,3...</span></p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">12</td>
+<td class=3D"confluenceTd"><span>CH Fragment - CC Prepaid Signature Text <s=
+trong>(#)</strong></span></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p><span>/content/dam/formsanddocuments/afforms_=
+ch_fragmentlib/affrg_cc_PrepaidSignatureText<strong>(#)</strong></span></p>=
+</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><span>Static Text fragment. Simply change the=
+ value of <strong>(#)</strong> to 1,2,3...</span></p></td>
+</tr>
+<tr>
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">13</td>
+<td class=3D"confluenceTd"><span>CH Fragment - CC Clause Prepaid Signature =
+Text <strong>(#)</strong></span></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p><span>/content/dam/formsanddocuments/afforms_=
+ch_fragmentlib/affrg_cc_ClausePrepaidSignatureText<strong>(#)</strong></spa=
+n></p></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">BAXB,BAXC</td>
+<td class=3D"confluenceTd"><p><span>Static Text fragment. Simply change the=
+ value of <strong>(#)</strong> to 1,2,3...</span></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><br></p>
+<div id=3D"expander-416382340" class=3D"expand-container">
+<div role=3D"heading" aria-level=3D"6" id=3D"expander-control-416382340" cl=
+ass=3D"expand-control"><button type=3D"button" id=3D"expand-button-41638234=
+0" class=3D"aui-button aui-button-link aui-button-link-icon-text" aria-expa=
+nded=3D"true" aria-controls=3D"expander-content-416382340"><span class=3D"e=
+xpand-icon aui-icon aui-icon-small aui-iconfont-chevron-down" aria-hidden=
+=3D"true"></span><span class=3D"expand-control-text conf-macro-render">Old =
+Data Model</span></button>
+</div>
+<div role=3D"region" id=3D"expander-content-416382340" class=3D"expand-cont=
+ent" aria-labelledby=3D"expand-button-416382340">
+<div class=3D"table-wrap">
+<table class=3D"wrapped confluenceTable">
+<tbody class=3D"">
+<tr class=3D"">
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"5" data-highlight-c=
+olour=3D"#b3d4ff"><h3 title=3D"" id=3D"AFFragmentsandCommonFieldswithXSDLis=
+t-Bankingrelationship,Product.1">Banking relationship, Product</h3></th>
+</tr>
+<tr class=3D"">
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">UBS Fragment - Banking Relationship 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_BankingRelationship1</td>
+<td class=3D"confluenceTd">BankingRelationship.xsd</td>
+<td class=3D"confluenceTd">BankingRelationshipType</td>
+<td style=3D"text-align: center;vertical-align: middle;" class=3D"confluenc=
+eTd">&nbsp;</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">UBS Fragment - Custody Account 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_CustodyAccount1</td>
+<td class=3D"confluenceTd">Products.xsd</td>
+<td class=3D"confluenceTd">CustodyAccountType</td>
+<td style=3D"text-align: center;" class=3D"confluenceTd">&nbsp;</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">UBS Fragment - Safe Deposit Box 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_SafeDepositBox1</td>
+<td class=3D"confluenceTd">Products.xsd</td>
+<td class=3D"confluenceTd">SafeDepositBoxType</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">UBS Fragment - IBAN 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_IBAN1</td>
+<td class=3D"confluenceTd">IBAN.xsd</td>
+<td class=3D"confluenceTd">IBANNumberType</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"wrapped confluenceTable">
+<colgroup class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+</colgroup>
+<tbody class=3D"">
+<tr class=3D"">
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"6" data-highlight-c=
+olour=3D"#b3d4ff"><h3 title=3D"" id=3D"AFFragmentsandCommonFieldswithXSDLis=
+t-Individual,LegalEntity,Address.1">Individual, Legal Entity, Address</h3><=
+/th>
+</tr>
+<tr class=3D"">
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Remarks</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">CH Fragment - Individual Basic 1</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_IndividualBasic1</td>
+<td class=3D"confluenceTd">Individual.xsd</td>
+<td class=3D"confluenceTd">IndividualBasicType</td>
+<td class=3D"confluenceTd">Name fields only</td>
+<td class=3D"confluenceTd">(indirectly via other fragments)</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">CH Fragment - Individual Basic 2</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_IndividualBasic2</td>
+<td class=3D"confluenceTd">Individual.xsd</td>
+<td class=3D"confluenceTd">IndividualBasicType</td>
+<td class=3D"confluenceTd"><p><span>Name fields + Other common fields for i=
+ndividual case</span></p><p><span>Please use below script to hide whatever =
+value(s) not required for Form of address field on your form:<br><strong>wi=
+ndow.forms.ubs.components.hideOptions(["3", "4"], DD_FOA);</strong></span><=
+/p></td>
+<td class=3D"confluenceTd"><p><span>&nbsp; (indirectly via other fragments)=
+</span></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">UBS Fragment =
+- Entity Basic 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ubs_fragm=
+entlib/affrg_EntityBasic1</td>
+<td class=3D"confluenceTd">LegalEntity.xsd</td>
+<td class=3D"confluenceTd">LegalEntityBasicType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: left;" class=3D"confluenceTd">(indirectly via othe=
+r fragments)</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Address 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_Address1</td>
+<td class=3D"confluenceTd">Address.xsd</td>
+<td class=3D"confluenceTd">AddressType</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;" class=3D"confluenceTd"></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Adress Vested Benefits Foundation 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AddressVestBenFound1</td>
+<td class=3D"confluenceTd">Address.xsd</td>
+<td class=3D"confluenceTd">Address.xsd</td>
+<td class=3D"confluenceTd"><br></td>
+<td style=3D"text-align: center;" class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"relative-table wrapped confluenceTable" style=3D"width: 103=
+.065%;">
+<colgroup class=3D"">
+<col class=3D"" style=3D"width: 10.5267%;">
+<col class=3D"" style=3D"width: 7.1709%;">
+<col class=3D"" style=3D"width: 7.13558%;">
+<col class=3D"" style=3D"width: 22.5724%;">
+<col class=3D"" style=3D"width: 7.3122%;">
+<col class=3D"" style=3D"width: 7.48882%;">
+<col class=3D"" style=3D"width: 30.8031%;">
+<col class=3D"" style=3D"width: 6.99428%;">
+</colgroup>
+<tbody class=3D"">
+<tr class=3D"">
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"8" data-highlight-c=
+olour=3D"#b3d4ff"><h3 title=3D"" id=3D"AFFragmentsandCommonFieldswithXSDLis=
+t-Partner.1">Partner</h3></th>
+</tr>
+<tr class=3D"">
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">Element name</th>
+<th class=3D"confluenceTh"><br></th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Remarks</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Account Holder 1</span></td>
+<td class=3D"confluenceTd">AccountHolder</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AccountHolder1</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderType</td>
+<td class=3D"confluenceTd"><p>For existing hide/show and name reflection sc=
+ript to work as is, please use below field names.&nbsp;</p>
+<ul>
+<li>RB_ClientType - Individual/Company radio button's for hide/show of name=
+s in initialize &amp; save draft case, you still need to add the script in =
+value commit event</li>
+<li>PN_AHRP - Repeating panel fragment for signature name reflection</li>
+</ul></td>
+<td style=3D"vertical-align: middle;" class=3D"confluenceTd"><p style=3D"te=
+xt-align: center;">&nbsp;</p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Account Holder Depot 1</span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AccountHolder1</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderType</td>
+<td class=3D"confluenceTd"><p>Same as above fragment but with different DE =
+translation for Account holder =3D Depotinhaber (use case ABSD)</p></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Client 1</span></td>
+<td class=3D"confluenceTd">AccountHolder</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_Client1</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderType</td>
+<td class=3D"confluenceTd"><p>For existing hide/show and name reflection sc=
+ript to work as is, please use below field names.&nbsp;</p>
+<ul>
+<li>PN_AHRP - Repeating panel fragment for signature name reflection</li>
+</ul></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Account Holder Basic 1</span></td>
+<td class=3D"confluenceTd">AccountHolderBasic</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AccountHolderBasic1</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderBasicType</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+<td style=3D"vertical-align: middle;" class=3D"confluenceTd"><p style=3D"te=
+xt-align: center;">&nbsp;</p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Account Holder Basic 2</span></td>
+<td class=3D"confluenceTd">AccountHolderBasic</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AccountHolderBasic2</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderBasicType</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+<td class=3D"confluenceTd"><p style=3D"text-align: center;"></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Partner (Individual) 1</span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_PartnerIndividual1</td>
+<td class=3D"confluenceTd">Partner.xsd</td>
+<td class=3D"confluenceTd">PartnerType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Attorney 1</span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_Attorney1</td>
+<td class=3D"confluenceTd">PowerOfAttorney.xsd</td>
+<td class=3D"confluenceTd">GeneralPOAType</td>
+<td class=3D"confluenceTd"><p>For existing hide/show and name reflection sc=
+ript to work as is, please use below field names.&nbsp;</p>
+<ul>
+<li>PN_ATRP - Repeating panel fragment for signature name reflection<br>
+ (Sample form: AAVV)</li>
+</ul><p><br></p><p>Unchecked "Required field" on properties for Nationality=
+ to fix issue while activating Print Incomplete</p></td>
+<td style=3D"vertical-align: middle;" class=3D"confluenceTd"><p style=3D"te=
+xt-align: center;"></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Authorized Representative 1</span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AuthRep1</td>
+<td class=3D"confluenceTd">PartnerToPartner.xsd</td>
+<td class=3D"confluenceTd">AuthRepType</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ FIM 1</span></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_FIM1</td>
+<td class=3D"confluenceTd">PartnerToPartner.xsd</td>
+<td class=3D"confluenceTd">FIMType</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ FIM 2</span></td>
+<td class=3D"confluenceTd">FIM</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_FIM2</td>
+<td class=3D"confluenceTd">PartnerToPartner.xsd</td>
+<td class=3D"confluenceTd">FIMType</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Custody Account Holder Basic 2</span></td>
+<td class=3D"confluenceTd">CustodyAccountHolderBasic2</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_CustodyAccountHolderBasic2</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderType</td>
+<td class=3D"confluenceTd"><p>Fragment is designed with latest IC-Core-scri=
+pt (Feb 2026)</p></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Account Holder Vested Benefits Foundation 1</span></td>
+<td class=3D"confluenceTd">AccountHolderVestBenFound1</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_AccountHolderVestBenFound1</td>
+<td class=3D"confluenceTd">ContractualPartner.xsd</td>
+<td class=3D"confluenceTd">AccountHolderType</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"wrapped confluenceTable">
+<colgroup class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+<col class=3D"">
+</colgroup>
+<tbody class=3D"">
+<tr class=3D"">
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"7" data-highlight-c=
+olour=3D"#b3d4ff"><h3 title=3D"" id=3D"AFFragmentsandCommonFieldswithXSDLis=
+t-Signature.1">Signature</h3></th>
+</tr>
+<tr class=3D"">
+<th class=3D"confluenceTh">Signature of</th>
+<th class=3D"confluenceTh">Element name</th>
+<th class=3D"confluenceTh">Fragment Title (if fragment)</th>
+<th class=3D"confluenceTh">Fragment Path (if fragment)</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Remarks</th>
+<th class=3D"confluenceTh">Auto form conversion support</th>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Authorized=
+ representative</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AuthRepSignat=
+ure</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Authorized Representative) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_ARSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Legal repr=
+esentative (ACAL)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">LegalRepSigna=
+ture</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Authorized=
+ agent</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AuthAgentSign=
+ature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Account ho=
+lder</span></p></td>
+<td rowspan=3D"7" class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);"=
+>AccountHolderSignature</span><br><span style=3D"color: rgb(0,0,0);">&nbsp;=
+</span><br><span style=3D"color: rgb(0,0,0);"><br></span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Account Holder) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_AHSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Automatic name reflection script is added and sh=
+ould work as is for repeating instance case as long as the Account Holder R=
+epeating Panel Fragment name is PN_AHRP. For single instance case, a hidden=
+ field needs to be added as a temporary workaround.&nbsp;</td>
+<td style=3D"text-align: center;vertical-align: middle;" class=3D"confluenc=
+eTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Account ho=
+lder</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Account Holder Depot) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_AHSignatureDepot1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Same as above fragment but with different DE tra=
+nslation for Account holder =3D Depotinhaber (use case ABSD)</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Client</sp=
+an></p></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">CH Fragmen=
+t - Signature (Client) 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_ClientSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Automatic name reflection script is added and sh=
+ould work as is for repeating instance case as long as the Client Repeating=
+ Panel Fragment name is PN_AHRP. For single instance case, a hidden field n=
+eeds to be added as a temporary workaround.&nbsp;</td>
+<td style=3D"text-align: center;vertical-align: middle;" class=3D"confluenc=
+eTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Pension ho=
+lder</span></p></td>
+<td class=3D"confluenceTd"><p>CH Fragment - Signature (Pension Holder) 1</p=
+></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_PensionHSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Principal<=
+/span></p></td>
+<td class=3D"confluenceTd"><p>CH Fragment - Signature (Principal) 1</p></td=
+>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_PrincipalSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">End Client=
+</span></p></td>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(75,75,75);">CH Frag=
+ment - Signature (End Client) 1</span></p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_EndClientSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Recipient =
+of the Risk Information</span></p></td>
+<td class=3D"confluenceTd"><p>AAZE</p></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Automatic name reflection script is added and sh=
+ould work as is for repeating instance case as long as the Account Holder R=
+epeating Panel Fragment name is PN_AHRP. For single instance case, a hidden=
+ field needs to be added as a temporary workaround.&nbsp;</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Co-owner</=
+span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CoOwnerSignat=
+ure</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Attorney</=
+span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AttorneySigna=
+ture</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Attorney) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_AttySignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Automatic name reflection script is added and sh=
+ould work as is for repeating instance case as long as the Panel Fragment n=
+ame is PN_AttyRP. For single instance case, a hidden field needs to be adde=
+d as a temporary workaround.&nbsp;</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Client adv=
+isor</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CASignature</=
+span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Client Advisor) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_CASignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><strong>In the fragment panel's DoR config, use =
+6 number of columns for the DoR layout.</strong></td>
+<td class=3D"confluenceTd"><strong>&nbsp;</strong></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Desk head<=
+/span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">DeskHeadSigna=
+ture</span></td>
+<td class=3D"confluenceTd"><p>CH Fragment - Signature (Desk Head) 1</p></td=
+>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_DeskHeadSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Supervisor=
+</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">SupervisorSig=
+nature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Supervisor) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_SupervisorSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><p>To confirm where to bind OURef field and if c=
+an be considered common field in Signature</p><p><strong>In the fragment pa=
+nel's DoR config, use 6 number of columns for the DoR layout.</strong></p><=
+/td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Financial =
+intermediary</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">FIMSignature<=
+/span></td>
+<td class=3D"confluenceTd">CH Fragment - Signature (FIM) 1</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_FIMSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><strong>In the fragment panel's DoR config, use =
+6 number of columns for the DoR layout.</strong></td>
+<td class=3D"confluenceTd"><strong>&nbsp;</strong></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Sales mana=
+ger (ABMS-to correct)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">OPSMSignature=
+ &gt; SalesMgrSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Relevant p=
+erson</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">RelevantPerso=
+nSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Relevant Person) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_RelevantPSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><p>For automatic name reflection, use below path=
+s for name fields</p>
+<ul>
+<li>PN_RelevantP.TXT_LastName_RelP</li>
+<li>PN_RelevantP.TXT_FirstName_RelP</li>
+</ul></td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Responsibl=
+e person (ABYT)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">ResponsiblePe=
+rsonSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;</span>=
+</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Borrower (=
+ABYT, ACAM)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BorrowerSigna=
+ture</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;CH Frag=
+ment - Signature (Borrower) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_BRSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Beneficial=
+ Owner (AAXN)</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BeneficialOwn=
+erSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Beneficial Owner) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_BOSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Automatic name reflection script is added and sh=
+ould work as is for repeating instance case as long as the Account Holder R=
+epeating Panel Fragment name is PN_BORP.</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Contractin=
+g Partner</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">ContractingPa=
+rtnerSignature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">&nbsp;CH Frag=
+ment - Signature (Contracting Partner) 1</span></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_ContractingPartnerSignature1</p></td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">&lt;Hybrid=
+ Cases or Unknown type&gt;</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">Signature</sp=
+an></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AAZE</span></=
+td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Cardholder=
+</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CardholderSig=
+nature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">ABME, ABLS</s=
+pan></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Bahrai=
+n BRO</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BahrainBROSig=
+nature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BBEE</span></=
+td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">UBS Bahrai=
+n CEO / co-CEO</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BahrainCEOSig=
+nature</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">BBEE</span></=
+td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Company</s=
+pan></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CompanySignat=
+ure</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">ABLS</span></=
+td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Pledgor</s=
+pan></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">PledgorSignat=
+ure</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">AAZB (Formset=
+)</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_Signature-Pledgor</td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Custody Ac=
+count Holder</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CAHSignature1=
+</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (CustodyAccount Holder) 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_CAHSignature1</td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">Fragment is designed with latest IC-Core-script =
+(Feb 2026)</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr>
+<td class=3D"confluenceTd"><p><span style=3D"color: rgb(0,0,0);">Authorized=
+ Representative Fisca</span></p></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">ARSignatureFi=
+sca1</span></td>
+<td class=3D"confluenceTd"><span style=3D"color: rgb(0,0,0);">CH Fragment -=
+ Signature (Authorized RepresentativeFisca) 1</span></td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_ARSignatureFisca1</td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"table-wrap">
+<table class=3D"relative-table wrapped confluenceTable" style=3D"width: 50.=
+1972%;">
+<colgroup class=3D"">
+<col class=3D"" style=3D"width: 21.9464%;">
+<col class=3D"" style=3D"width: 31.8683%;">
+<col class=3D"" style=3D"width: 46.2583%;">
+</colgroup>
+<tbody class=3D"">
+<tr class=3D"">
+<th class=3D"highlight-#b3d4ff confluenceTh" colspan=3D"3" data-highlight-c=
+olour=3D"#b3d4ff"><h3 title=3D"" id=3D"AFFragmentsandCommonFieldswithXSDLis=
+t-AFComponent>XSDElementType.1">AF Component &gt; XSD Element Type</h3></th=
+>
+</tr>
+<tr class=3D"">
+<th class=3D"confluenceTh">AF Component</th>
+<th class=3D"confluenceTh">XSD Complex/Simple Type Element</th>
+<th class=3D"confluenceTh">Note</th>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Email</td>
+<td class=3D"confluenceTd">EmailType</td>
+<td class=3D"confluenceTd">include Address.xsd</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Telephone</td>
+<td class=3D"confluenceTd">PhoneType</td>
+<td class=3D"confluenceTd">include Address.xsd</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Text Box</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Text Box Multiline</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Dropdown List</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Check Box</td>
+<td class=3D"confluenceTd">xs:string</td>
+<td rowspan=3D"2" class=3D"confluenceTd">Even the schema data type is strin=
+g, please use numeric value as key for each option starting from 1.</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Radio Button</td>
+<td class=3D"confluenceTd">xs:string</td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Numeric Box</td>
+<td class=3D"confluenceTd">xs:decimal</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"confluenceTd">Date Picker</td>
+<td class=3D"confluenceTd">xs:date</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><br></p>
+<div class=3D"table-wrap">
+<table class=3D"relative-table wrapped confluenceTable" data-snooker-col-se=
+ries=3D"numbers" data-snooker-locked-cols=3D"0" style=3D"width: 112.56%;">
+<colgroup class=3D"">
+<col class=3D"" style=3D"width: 3.43971%;">
+<col class=3D"" style=3D"width: 5.54767%;">
+<col class=3D"" style=3D"width: 12.147%;">
+<col class=3D"" style=3D"width: 40.7241%;">
+<col class=3D"" style=3D"width: 12.0066%;">
+<col class=3D"" style=3D"width: 13.0598%;">
+<col class=3D"" style=3D"width: 6.5299%;">
+<col class=3D"" style=3D"width: 6.5299%;">
+</colgroup>
+<tbody class=3D"">
+<tr class=3D"">
+<th class=3D"numberingColumn confluenceTh" contenteditable=3D"false" data-m=
+ce-resize=3D"false"><br></th>
+<th class=3D"highlight-#00a3bf confluenceTh" colspan=3D"7" data-highlight-c=
+olour=3D"#00a3bf"><h3 id=3D"AFFragmentsandCommonFieldswithXSDList-CardBanki=
+ngFragments.1">Card Banking Fragments</h3></th>
+</tr>
+<tr class=3D"">
+<th class=3D"numberingColumn confluenceTh" contenteditable=3D"false" data-m=
+ce-resize=3D"false"><br></th>
+<th class=3D"confluenceTh">Fragment Title</th>
+<th class=3D"confluenceTh">Element name</th>
+<th class=3D"confluenceTh">Fragment Path</th>
+<th class=3D"confluenceTh">Schema</th>
+<th class=3D"confluenceTh">Complex Type</th>
+<th class=3D"confluenceTh">Formcodes</th>
+<th class=3D"confluenceTh">Remarks</th>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">1</td>
+<td class=3D"confluenceTd">CH Fragment - CC Card Holder 1</td>
+<td class=3D"confluenceTd">CardHolder</td>
+<td class=3D"confluenceTd">/content/dam/formsanddocuments/afforms_ch_fragme=
+ntlib/affrg_cc_CardHolder1</td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardHolderType</td>
+<td class=3D"confluenceTd">BAXE, BAXF</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">2</td>
+<td class=3D"confluenceTd">CH Fragment - CC Additional Services 1</td>
+<td class=3D"confluenceTd">CardAdditionalService</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_AdditionalServices1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardAdditionalServiceType</td>
+<td class=3D"confluenceTd">BAXE, BAXF</td>
+<td class=3D"confluenceTd">amount differs per type of card/form</td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">3</td>
+<td class=3D"confluenceTd">CH Fragment - CC Employment 1</td>
+<td class=3D"confluenceTd">CardEmployment</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_Employment1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardEmploymentType</td>
+<td class=3D"confluenceTd">BAXE</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">4</td>
+<td class=3D"confluenceTd">CH Fragment - CC Training 1</td>
+<td class=3D"confluenceTd">CardTraining</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_Training1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardTrainingType</td>
+<td class=3D"confluenceTd">BAXE</td>
+<td class=3D"confluenceTd">not in BAXF</td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">5</td>
+<td class=3D"confluenceTd">CH Fragment - CC Banking Details 1</td>
+<td class=3D"confluenceTd">CardBank</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_BankingDetails</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardBankType</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><br></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">6</td>
+<td class=3D"confluenceTd">CH Fragment - CC Individual Address 1</td>
+<td class=3D"confluenceTd"><p>CardMailingAddress /</p><p>CardInvoiceAddress=
+ /</p><p>CardPartnerAddress</p></td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_IndividualAddress1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardAddressType</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">7</td>
+<td class=3D"confluenceTd">CH Fragment - CC Legal Representative 1</td>
+<td class=3D"confluenceTd">CardLegalRep</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_LegalRepresentative1</p></td>
+<td class=3D"confluenceTd">CardBanking.xsd</td>
+<td class=3D"confluenceTd">CardLegalRepType</td>
+<td class=3D"confluenceTd">BAXC</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">8</td>
+<td class=3D"confluenceTd">CH Fragment - CC Signature Generic 1</td>
+<td class=3D"confluenceTd">CardHolderSignature / CardHolderPartnerSignature=
+ / CardLegalRepSignature</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_SignatureGeneric1</p></td>
+<td class=3D"confluenceTd">Signature.xsd</td>
+<td class=3D"confluenceTd">SignatureType</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">9</td>
+<td class=3D"confluenceTd">CH Fragment - CC For internal bank use only 1</t=
+d>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_ForInternalBankUse1</p></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXF</td>
+<td class=3D"confluenceTd"><p><br></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">10</td>
+<td class=3D"confluenceTd">CH Fragment - CC Annual Credit Interest Text 1</=
+td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p>/content/dam/formsanddocuments/afforms_ch_fra=
+gmentlib/affrg_cc_AnnualCreditInterestText1</p></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p>Static Text only.</p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">11</td>
+<td class=3D"confluenceTd"><span>CH Fragment - CC Signature Text <strong>(#=
+)</strong></span></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p><span>/content/dam/formsanddocuments/afforms_=
+ch_fragmentlib/affrg_cc_SignatureText<strong>(#)</strong></span></p></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><span>Static Text fragment. Simply change the=
+ value of <strong>(#)</strong> to 1,2,3...</span></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">12</td>
+<td class=3D"confluenceTd"><span>CH Fragment - CC Prepaid Signature Text <s=
+trong>(#)</strong></span></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p><span>/content/dam/formsanddocuments/afforms_=
+ch_fragmentlib/affrg_cc_PrepaidSignatureText<strong>(#)</strong></span></p>=
+</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd">BAXD,BAXE</td>
+<td class=3D"confluenceTd"><p><span>Static Text fragment. Simply change the=
+ value of <strong>(#)</strong> to 1,2,3...</span></p></td>
+</tr>
+<tr class=3D"">
+<td class=3D"numberingColumn confluenceTd" contenteditable=3D"false" data-m=
+ce-resize=3D"false">13</td>
+<td class=3D"confluenceTd"><span>CH Fragment - CC Clause Prepaid Signature =
+Text <strong>(#)</strong></span></td>
+<td class=3D"confluenceTd">n/a</td>
+<td class=3D"confluenceTd"><p><span>/content/dam/formsanddocuments/afforms_=
+ch_fragmentlib/affrg_cc_ClausePrepaidSignatureText<strong>(#)</strong></spa=
+n></p></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd"><br></td>
+<td class=3D"confluenceTd">BAXB,BAXC</td>
+<td class=3D"confluenceTd"><p><span>Static Text fragment. Simply change the=
+ value of <strong>(#)</strong> to 1,2,3...</span></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<p><br></p>
+    </div>
+</body>
+</html>
+------=_Part_18_1298508987.1782109248432--

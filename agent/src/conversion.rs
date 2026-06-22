@@ -38,11 +38,15 @@ binding flags), list_states, explore_states, get_xfa (authoritative text/fields)
 get_flattened_structure_for_state. If get_profile_info reports more than one language the form \
 is multilingual: its translations ride along in the merged structured content and are bundled \
 into the package automatically — don't invent translations.\n\
-2. Find precedents (do this before building): work through the input section by section and, \
-for EACH section, search the reference forms for ones whose sections/elements resemble it — \
-search_references, grep_reference_docs, list_reference_forms. Different sections will often match \
-different reference forms; find the closest precedent for each so every section is built as \
-accurately as possible. Study how those known-good forms were built: inspect their package XML \
+2. Find precedents (do this before building): work through the input section by section. For \
+EACH section, do NOT search by form name or a single keyword — instead write a short \
+natural-language DESCRIPTION of that section (its purpose, the kinds of fields it has and how \
+they're grouped) and pass that description to search_references, which matches it semantically \
+against the reference forms' descriptions. Use grep_references only when you need a specific \
+string (a field name, label, or AEM resource type) verbatim. Also consult grep_reference_docs / \
+list_reference_forms. Different sections will often match different reference forms; find the \
+closest precedent for each so every section is built as accurately as possible. Study how those \
+known-good forms were built: inspect their package XML \
 with get_reference_package / read_reference_file, and optionally run the engine on a \
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
@@ -222,6 +226,10 @@ pub struct ConversionAgent {
     /// JCR path of the uploaded form on AEM (for the "done" screen).
     aem_form_path: Option<String>,
 
+    /// Sentence-embedding model backing semantic `search_references`. Loaded
+    /// lazily on first use (~200ms) and reused for the rest of the run.
+    matcher: Option<blueprint::semantic::SemanticMatcher>,
+
     finished: bool,
 }
 
@@ -255,8 +263,19 @@ impl ConversionAgent {
             aem_session: None,
             aem_uploaded: false,
             aem_form_path: None,
+            matcher: None,
             finished: false,
         }
+    }
+
+    /// Lazily load (and cache) the sentence-embedding model used by semantic
+    /// `search_references`.
+    fn matcher(&mut self) -> Result<&blueprint::semantic::SemanticMatcher, String> {
+        if self.matcher.is_none() {
+            self.matcher =
+                Some(blueprint::semantic::SemanticMatcher::new().map_err(|e| e.to_string())?);
+        }
+        Ok(self.matcher.as_ref().unwrap())
     }
 
     /// Seed the working structured tree (used when resuming a session to apply
@@ -576,9 +595,24 @@ impl ConversionAgent {
             ),
             t(
                 "search_references",
-                "Regex/substring search over reference descriptions + AEM package XML. Run this \
-                 first (before building) to find a precedent form resembling your input; each hit \
-                 carries a ref_id to pass to get_reference_package / read_reference_file.",
+                "Semantic search for precedent forms by MEANING, not by name. The query must be a \
+                 natural-language DESCRIPTION of the input you are building — the form's (or the \
+                 current section's) purpose, the kinds of fields it contains and how they are \
+                 grouped — NOT a form name or a single keyword. References are matched by embedding \
+                 this description against each reference's stored description (a literal substring \
+                 fallback over descriptions + package XML is folded in). Run this first (before \
+                 building), section by section; each hit carries a ref_id to pass to \
+                 get_reference_package / read_reference_file. Optional top_k caps hits per signal \
+                 (default 3).",
+                serde_json::json!({"query": {"type":"string"}, "top_k": {"type":"integer"}}),
+                serde_json::json!(["query"]),
+            ),
+            t(
+                "grep_references",
+                "Literal/regex substring search over reference descriptions + AEM package XML — the \
+                 grep counterpart to search_references. Use it to find a specific string (a field \
+                 name, label, or AEM resource type) verbatim; use search_references when looking \
+                 for a form that resembles your input by meaning.",
                 serde_json::json!({"query": {"type":"string"}, "regex": {"type":"boolean"}}),
                 serde_json::json!(["query"]),
             ),
@@ -1113,6 +1147,28 @@ impl ConversionAgent {
                 ToolReply::Text(serde_json::to_string_pretty(&list).unwrap_or_default())
             }
             "search_references" => {
+                let profile = self.profile.clone().unwrap_or_default();
+                let query = input["query"].as_str().unwrap_or_default().to_string();
+                if query.trim().is_empty() {
+                    return ToolReply::Error(
+                        "search_references requires a non-empty query — pass a description of the \
+                         input form/section, not an empty string."
+                            .into(),
+                    );
+                }
+                let top_k = input["top_k"].as_u64().unwrap_or(3).max(1) as usize;
+                let matcher = match self.matcher() {
+                    Ok(m) => m,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                let hits: Vec<_> =
+                    crate::references::search_references(&profile, &query, matcher, top_k)
+                        .into_iter()
+                        .map(|h| serde_json::json!({"ref_id": h.ref_id, "label": h.label, "where": h.location, "matched": h.matched, "score": h.score, "snippet": h.snippet}))
+                        .collect();
+                ToolReply::Text(serde_json::to_string_pretty(&hits).unwrap_or_default())
+            }
+            "grep_references" => {
                 let profile = self.profile.clone().unwrap_or_default();
                 let query = input["query"].as_str().unwrap_or_default();
                 let regex = input["regex"].as_bool().unwrap_or(false);
