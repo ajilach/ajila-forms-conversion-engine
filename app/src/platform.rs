@@ -472,7 +472,7 @@ fn cache_marked_messages(history: &[serde_json::Value]) -> Vec<serde_json::Value
     {
         last_block.insert(
             "cache_control".to_string(),
-            serde_json::json!({"type": "ephemeral", "ttl": "1h"}),
+            serde_json::json!({"type": "ephemeral"}),
         );
     }
     messages
@@ -486,7 +486,7 @@ fn cache_marked_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
     if let Some(last_tool) = tools_cached.last_mut().and_then(|t| t.as_object_mut()) {
         last_tool.insert(
             "cache_control".to_string(),
-            serde_json::json!({"type": "ephemeral", "ttl": "1h"}),
+            serde_json::json!({"type": "ephemeral"}),
         );
     }
     tools_cached
