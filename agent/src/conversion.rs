@@ -80,17 +80,17 @@ required package structure and validates the form and DAM content XML against th
 If it reports problems, fix them (structured/AEM tree, or the content XML directly) and re-run \
 the downstream steps; never upload or export an invalid package. Use get_package_info / \
 read_package_file to inspect.\n\
-5b. Review fidelity: once the package validates, call review_output to compare the input against \
-the converted AEM tree. It lists input text and elements missing from the output plus a coverage \
-score. For EVERY miss, either fix it (edit the structured/AEM tree and re-run the downstream \
-steps) or satisfy yourself it was an intentional drop; spot-check other languages with search_xfa, \
-since review_output only compares the master language. Do not finish with unexplained misses.\n\
+6. Review: once the package validates, verify the result end to end. (a) Call review_output to \
+compare the input against the converted AEM tree — it lists input text and elements missing from \
+the output plus a coverage score. For EVERY miss, either fix it (edit the structured/AEM tree and \
+re-run the downstream steps) or satisfy yourself it was an intentional drop; spot-check other \
+languages with search_xfa, since review_output only compares the master language. (b) If an AEM \
+connection is configured, upload_to_aem, then fetch_aem_form_html / fetch_aem_dor_pdf to verify \
+the deployed result. Do not finish with unexplained misses.\n\
 Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
 downward: editing the structured tree resets the AEM tree, content XML and package; updating \
 the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
 package. After any edit, re-run the downstream steps (including validate_aem_package).\n\
-6. Only after validate_aem_package passes: if an AEM connection is configured, upload_to_aem, \
-then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result.\n\
 Consult reference documentation when unsure: list_reference_docs, read_reference_doc, \
 grep_reference_docs.\n\n\
 Never invent text content: take all labels/options/help text verbatim from the XFA, and never \
