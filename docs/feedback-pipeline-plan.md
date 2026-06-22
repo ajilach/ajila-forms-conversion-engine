@@ -87,7 +87,8 @@ sequenceDiagram
     loop while open feedback issues exist
         Main->>GH: gh issue list --label feedback (open, not in-progress)
         Main->>GH: label batch of 3 claude-in-progress
-        Main->>Mgr: spawn 3 Managers in parallel
+        Main->>GH: re-read each issue — drop any already claimed
+        Main->>Mgr: spawn Managers for confirmed batch
 
         Mgr->>R: read known resolutions
         Mgr->>C: context_update.py → status=in_progress
@@ -125,8 +126,9 @@ sequenceDiagram
 - Reads `feedback/knowledge/resolved.md` + `feedback/run/context.json` once at start
 - **Does NOT read `engine-bugs.md`** — that is conversion-only knowledge
 - Each iteration: `gh issue list --label feedback --state open` (excluding `claude-in-progress`, `claude-done`) → pick next batch of up to 3
-- Labels the batch `claude-in-progress` before spawning — acts as a distributed lock
-- Spawns **3 Managers in parallel** (one per form in batch); waits for all to complete
+- Labels the batch `claude-in-progress`
+- **Re-reads each issue** to confirm it now has `claude-in-progress` and not already had it before this agent applied it — drops any issue already claimed by another concurrent agent
+- Spawns **3 Managers in parallel** (one per form in confirmed batch); waits for all to complete
 - After batch: checks for remaining open issues; repeats or exits
 - Collects all results; presents final summary to user
 
@@ -162,7 +164,13 @@ sequenceDiagram
 
 Workers never write to shared files. All writes to `resolved.md` and `context.json` go through the Manager, which processes Worker results sequentially after all Workers in its batch complete. Each Worker writes only to its own `feedback/output/<form>_report.md`.
 
-GitHub issue labels prevent concurrent work on the same form: Main labels each issue `claude-in-progress` before spawning Managers, so a second developer running `/feedback` at the same time will not pick up the same issues.
+GitHub issue labels are used as a best-effort distributed lock, with a re-check step to handle the race window:
+
+1. Main labels the batch `claude-in-progress`
+2. Main immediately re-reads each issue — if the label was already present before this agent applied it, another concurrent agent claimed it first; drop it from the batch
+3. Only confirmed issues (where this agent was the one that added the label) are passed to Managers
+
+This shrinks the race window to near-zero. In the unlikely event two agents label the same issue simultaneously, the re-check catches it and one agent simply skips that issue on this iteration — it will not be picked up again since it is already `claude-in-progress`.
 
 ---
 
@@ -220,7 +228,8 @@ GitHub issues are the input source — there is no `feedback/input/` directory.
    a. `gh issue list --label feedback --state open` (exclude `claude-in-progress`, `claude-done`) → take next batch of up to 3
    b. If empty → exit loop
    c. Label batch `claude-in-progress`
-   d. Spawn 3 Managers in parallel; wait for all to complete
+   d. Re-read each issue: if it already had `claude-in-progress` before this agent applied it, drop it from the batch (claimed by another concurrent agent)
+   e. Spawn Managers in parallel for confirmed batch; wait for all to complete
 3. Present final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
