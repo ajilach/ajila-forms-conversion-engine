@@ -77,13 +77,54 @@ fn write_package_spec() -> serde_json::Value {
     })
 }
 
+/// Spec for the MCP-only `validate_aem_package_from_file` tool: validate a
+/// FileVault package ZIP that already exists on disk, without a conversion
+/// session. For the feedback flow, where a form's `_merged.zip` is edited
+/// directly and then re-validated.
+fn validate_from_file_spec() -> serde_json::Value {
+    serde_json::json!({
+        "name": "validate_aem_package_from_file",
+        "description": "Validate an AEM FileVault package ZIP from a local file path (same checks as validate_aem_package: required FileVault structure, form and DAM content-XML validation). Operates on an external file — no conversion session or build_aem_package needed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zip_path": {"type": "string", "description": "Absolute path to the .zip package file to validate."}
+            },
+            "required": ["zip_path"]
+        }
+    })
+}
+
+/// Spec for the MCP-only `upload_aem_package_from_file` tool: upload and install
+/// a FileVault package ZIP from disk on the configured AEM instance, without a
+/// conversion session.
+fn upload_from_file_spec() -> serde_json::Value {
+    serde_json::json!({
+        "name": "upload_aem_package_from_file",
+        "description": "Upload and install an AEM FileVault package ZIP from a local file path on the configured AEM instance (credentials from the shared desktop-app settings). Operates on an external file — no conversion session needed. Reports an error if no AEM connection is configured.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zip_path": {"type": "string", "description": "Absolute path to the .zip package file to upload."},
+                "package_name": {"type": "string", "description": "Optional CRX package name (defaults to the file stem, e.g. \"AAMQ_019_merged\")."}
+            },
+            "required": ["zip_path"]
+        }
+    })
+}
+
 /// The full advertised catalog: the MCP-only bootstrap/export tools plus the
 /// engine tools.
 ///
 /// The engine tools are static (independent of conversion state), so they are
 /// read from a throwaway agent.
 fn tool_catalog() -> Vec<serde_json::Value> {
-    let mut specs = vec![start_conversion_spec(), write_package_spec()];
+    let mut specs = vec![
+        start_conversion_spec(),
+        write_package_spec(),
+        validate_from_file_spec(),
+        upload_from_file_spec(),
+    ];
     let probe = ConversionAgent::new(None, Vec::new(), None, String::new());
     specs.extend(probe.tools());
     specs
@@ -253,6 +294,65 @@ impl Blueprint {
             ))]),
         }
     }
+
+    /// Handle the MCP-only `validate_aem_package_from_file` tool: read a ZIP
+    /// from disk and run the package validation checks on it. Session-agnostic.
+    async fn validate_aem_package_from_file(&self, args: &serde_json::Value) -> CallToolResult {
+        let Some(zip_path) = args.get("zip_path").and_then(|v| v.as_str()) else {
+            return CallToolResult::error(vec![Content::text(
+                "validate_aem_package_from_file requires `zip_path`.",
+            )]);
+        };
+        match std::fs::read(zip_path) {
+            Ok(bytes) => match agent::validate_package_bytes(&bytes) {
+                Ok(msg) => CallToolResult::success(vec![Content::text(msg)]),
+                Err(e) => CallToolResult::error(vec![Content::text(e)]),
+            },
+            Err(e) => CallToolResult::error(vec![Content::text(format!(
+                "Could not read {zip_path:?}: {e}"
+            ))]),
+        }
+    }
+
+    /// Handle the MCP-only `upload_aem_package_from_file` tool: read a ZIP from
+    /// disk and upload+install it on the configured AEM instance. The AEM
+    /// connection comes from the shared settings (no session needed).
+    async fn upload_aem_package_from_file(&self, args: &serde_json::Value) -> CallToolResult {
+        let Some(zip_path) = args.get("zip_path").and_then(|v| v.as_str()) else {
+            return CallToolResult::error(vec![Content::text(
+                "upload_aem_package_from_file requires `zip_path`.",
+            )]);
+        };
+        let name = args
+            .get("package_name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                std::path::Path::new(zip_path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "package".to_string())
+            });
+        let Some(conn) = agent::aem_connection_from_settings() else {
+            return CallToolResult::error(vec![Content::text(
+                "No AEM connection configured (set host/credentials in the desktop app settings).",
+            )]);
+        };
+        let host = conn.host.clone();
+        match std::fs::read(zip_path) {
+            Ok(bytes) => {
+                match agent::aem_client::upload_and_install_package(&conn, bytes, &name).await {
+                    Ok(()) => CallToolResult::success(vec![Content::text(format!(
+                        "Uploaded and installed {name}.zip on AEM ({host})."
+                    ))]),
+                    Err(e) => CallToolResult::error(vec![Content::text(e)]),
+                }
+            }
+            Err(e) => CallToolResult::error(vec![Content::text(format!(
+                "Could not read {zip_path:?}: {e}"
+            ))]),
+        }
+    }
 }
 
 impl ServerHandler for Blueprint {
@@ -304,6 +404,12 @@ impl ServerHandler for Blueprint {
         }
         if name == "write_package" {
             return Ok(self.write_package(&input).await);
+        }
+        if name == "validate_aem_package_from_file" {
+            return Ok(self.validate_aem_package_from_file(&input).await);
+        }
+        if name == "upload_aem_package_from_file" {
+            return Ok(self.upload_aem_package_from_file(&input).await);
         }
 
         let mut guard = self.agent.lock().await;
