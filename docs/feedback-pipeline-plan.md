@@ -261,3 +261,39 @@ Build bottom-up — each layer depends on the one below it.
 5. **Main skill** (`feedback.md`) — entry point, spawns Managers
 6. **Input format** — define `feedback/input/*.md` schema when first real feedback arrives
 7. **End-to-end test** on 1 form → then scale to 3 × 3
+
+---
+
+## Appendix A — ZIP storage options (TBD, discuss with team)
+
+Where to store the `*_merged.zip` form packages that Workers need to read and patch:
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **Git LFS in the repo** (`forms/` directory) | Versioned, accessible via `git pull`, fully automatable | Requires LFS setup; ZIPs grow the repo |
+| **GitHub issue attachment** | Contextual (feedback + ZIP together) | Not versioned; must download via GitHub API; harder to automate |
+| **External storage (S3/Azure Blob)** | Scalable for large files | Extra infrastructure, not worth it at current scale |
+
+**Recommendation:** Git LFS. The repo already has LFS enabled. Add to `.gitattributes`:
+```
+forms/*_merged.zip filter=lfs diff=lfs merge=lfs -text
+```
+Workers just `git pull` and the files are there — no download step needed.
+
+---
+
+## Appendix B — Future idea: distributed multi-developer operation
+
+> **Status: idea only — discuss with team before implementing.** No changes needed to the current design; these are two small additions on top of what is already planned.
+
+Once multiple developers are running `/feedback`, two additions would make concurrent runs safe and self-improving:
+
+**GitHub issue labels as distributed locks**
+Main immediately labels each picked-up issue `claude-in-progress` after reading it. A second developer running `/feedback` concurrently will not see those issues (they filter by `claude-pending`) — the label is the lock. No coordination required; no two agents ever touch the same form.
+
+**Manager commits `resolved.md` back to the repo**
+After writing new patterns to `resolved.md`, Manager does:
+```bash
+git add feedback/knowledge/resolved.md && git commit -m "feedback: add N resolved patterns" && git push
+```
+Every future `/feedback` run by anyone starts with the latest knowledge. Since `.claude/` is already in the repo, pulling it gives every developer the same skills, scripts, and accumulated knowledge base automatically.
