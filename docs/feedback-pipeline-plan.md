@@ -25,7 +25,7 @@ QA submits feedback using the structured issue template (`.github/ISSUE_TEMPLATE
 
 Label lifecycle:
 - `feedback` — set by QA when creating the issue; marks it as ready to process
-- `claude-in-progress` — set by Main when picked up; acts as a distributed lock
+- `claude-in-progress:<github-username>` — set by Main when picked up (e.g. `claude-in-progress:patrice`); username-scoped so each agent knows exactly which issues it claimed
 - `claude-done` — set by Manager when all items fixed; **issue stays open** pending PR review; auto-closes when the fix PR is merged
 - `claude-blocked` — set by Manager when items remain unfixed; issue stays open for manual intervention
 
@@ -86,8 +86,8 @@ sequenceDiagram
 
     loop while open feedback issues exist
         Main->>GH: gh issue list --label feedback (open, not in-progress)
-        Main->>GH: label batch of 3 claude-in-progress
-        Main->>GH: re-read each issue — drop any already claimed
+        Main->>GH: label batch claude-in-progress:<username>
+        Main->>GH: re-read each issue — drop any with a different claude-in-progress:*
         Main->>Mgr: spawn Managers for confirmed batch
 
         Mgr->>R: read known resolutions
@@ -125,12 +125,13 @@ sequenceDiagram
 
 ### Main
 - Entry point: runs a loop until no open `feedback` issues remain
+- Reads own GitHub username once: `gh api user --jq .login` → e.g. `patrice`
 - Reads `feedback/knowledge/resolved.md` + `feedback/run/context.json` once at start
 - **Does NOT read `engine-bugs.md`** — that is conversion-only knowledge
-- Each iteration: `gh issue list --label feedback --state open` (excluding `claude-in-progress`, `claude-done`) → pick next batch of up to 3
+- Each iteration: `gh issue list --label feedback --state open` (excluding any `claude-in-progress:*`, `claude-done`) → pick next batch of up to 3
 - Verifies `forms/issued/<form>_merged.zip` exists for each issue — skips and comments on the issue if the ZIP is missing
-- Labels the batch `claude-in-progress`
-- **Re-reads each issue** to confirm it now has `claude-in-progress` and not already had it before this agent applied it — drops any issue already claimed by another concurrent agent
+- Labels the batch `claude-in-progress:<username>` (e.g. `claude-in-progress:patrice`)
+- **Re-reads each issue** to confirm `claude-in-progress:<username>` is present — if a different `claude-in-progress:*` label is already there, another agent claimed it first; drop it from the batch
 - Spawns **3 Managers in parallel** (one per form in confirmed batch); waits for all to complete
 - After batch: checks for remaining open issues; repeats or exits
 - Collects all results; presents final summary to user
@@ -171,13 +172,14 @@ sequenceDiagram
 
 Workers never write to shared files. All writes to `resolved.md` and `context.json` go through the Manager, which processes Worker results sequentially after all Workers in its batch complete. Each Worker writes only to its own `feedback/output/<form>_report.md`.
 
-GitHub issue labels are used as a best-effort distributed lock, with a re-check step to handle the race window:
+GitHub issue labels are used as a best-effort distributed lock, with a username-scoped label and a re-check step to handle the race window:
 
-1. Main labels the batch `claude-in-progress`
-2. Main immediately re-reads each issue — if the label was already present before this agent applied it, another concurrent agent claimed it first; drop it from the batch
-3. Only confirmed issues (where this agent was the one that added the label) are passed to Managers
+1. Main reads its own GitHub username: `gh api user --jq .login` (e.g. `patrice`)
+2. Main labels the batch `claude-in-progress:patrice`
+3. Main immediately re-reads each issue — if the issue carries a `claude-in-progress:*` label with a **different** username, another agent claimed it first; drop it from the batch
+4. Only confirmed issues (where own username-scoped label is present) are passed to Managers
 
-This shrinks the race window to near-zero. In the unlikely event two agents label the same issue simultaneously, the re-check catches it and one agent simply skips that issue on this iteration — it will not be picked up again since it is already `claude-in-progress`.
+The username scope means each agent can unambiguously distinguish its own claims from another developer's agent. This shrinks the race window to near-zero. In the unlikely event two agents label the same issue simultaneously, the re-check catches it — one agent drops the issue and it will not be re-picked since `claude-in-progress:*` is already set.
 
 ---
 
@@ -234,12 +236,13 @@ GitHub issues are the input source — there is no `feedback/input/` directory.
 **Main skill steps (`feedback.md`):**
 1. Read `feedback/knowledge/resolved.md` + `feedback/run/context.json`
 2. Loop:
-   a. `gh issue list --label feedback --state open` (exclude `claude-in-progress`, `claude-done`) → take next batch of up to 3
-   b. If empty → exit loop
-   c. Verify `forms/issued/<form>_merged.zip` exists for each issue — skip and comment if missing
-   d. Label batch `claude-in-progress`
-   e. Re-read each issue: if it already had `claude-in-progress` before this agent applied it, drop it (claimed by another concurrent agent)
-   f. Spawn Managers in parallel for confirmed batch; wait for all to complete
+   a. `gh api user --jq .login` → get own GitHub username (e.g. `patrice`)
+   b. `gh issue list --label feedback --state open` (exclude any `claude-in-progress:*`, `claude-done`) → take next batch of up to 3
+   c. If empty → exit loop
+   d. Verify `forms/issued/<form>_merged.zip` exists for each issue — skip and comment if missing
+   e. Label batch `claude-in-progress:<username>` (e.g. `claude-in-progress:patrice`)
+   f. Re-read each issue: if a different `claude-in-progress:*` label is already present, drop it (claimed by another agent)
+   g. Spawn Managers in parallel for confirmed batch; wait for all to complete
 3. Present final summary to user
 
 **Worker skill steps (`feedback-worker.md`):**
