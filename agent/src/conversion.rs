@@ -140,6 +140,100 @@ pub fn aem_connection_from_settings() -> Option<AemConnection> {
     })
 }
 
+/// Validate FileVault package bytes (session-agnostic).
+///
+/// Runs the same checks as the `validate_aem_package` tool: required FileVault
+/// structure, form `.content.xml` (`cq:Page`) validation, and DAM
+/// `.content.xml` (`dam:Asset`) validation. Returns `Ok(success message)` when
+/// the package is valid, or `Err(problem report)` listing every violation.
+pub fn validate_package_bytes(pkg: &[u8]) -> Result<String, String> {
+    let files = crate::references::unzip_package(pkg)
+        .map_err(|e| format!("Could not read package: {e}"))?;
+
+    let mut problems: Vec<String> = Vec::new();
+
+    // 1. Required FileVault package structure.
+    const REQUIRED: &[&str] = &[
+        "META-INF/MANIFEST.MF",
+        "META-INF/vault/config.xml",
+        "META-INF/vault/nodetypes.cnd",
+        "META-INF/vault/filter.xml",
+        "META-INF/vault/properties.xml",
+        "META-INF/vault/definition/.content.xml",
+        "jcr_root/.content.xml",
+        "jcr_root/content/.content.xml",
+        "jcr_root/content/forms/.content.xml",
+        "jcr_root/content/forms/af/.content.xml",
+        "jcr_root/content/dam/.content.xml",
+        "jcr_root/content/dam/formsanddocuments/.content.xml",
+    ];
+    for path in REQUIRED {
+        if !files.iter().any(|(p, _)| p == path) {
+            problems.push(format!("missing required package entry: {path}"));
+        }
+    }
+
+    // 2. Validate the form content XML (the cq:Page under forms/af).
+    let form_xml = files.iter().find(|(p, c)| {
+        p.starts_with("jcr_root/content/forms/af/")
+            && p.ends_with("/.content.xml")
+            && c.contains("\"cq:Page\"")
+    });
+    match form_xml {
+        Some((path, xml)) => {
+            if let Err(violations) = blueprint::validate_aem_form_xml(xml) {
+                problems.push(format!(
+                    "form {path} failed {} validation check(s):\n    - {}",
+                    violations.len(),
+                    violations.join("\n    - ")
+                ));
+            }
+        }
+        None => problems.push(
+            "no form .content.xml (jcr:primaryType cq:Page) found under \
+             jcr_root/content/forms/af/"
+                .into(),
+        ),
+    }
+
+    // 3. Validate the DAM content XML (the dam:Asset).
+    let dam_xml = files.iter().find(|(p, c)| {
+        p.starts_with("jcr_root/content/dam/formsanddocuments/")
+            && p.ends_with("/.content.xml")
+            && c.contains("\"dam:Asset\"")
+    });
+    match dam_xml {
+        Some((path, xml)) => {
+            if let Err(violations) = blueprint::validate_aem_dam_xml(xml) {
+                problems.push(format!(
+                    "DAM {path} failed {} validation check(s):\n    - {}",
+                    violations.len(),
+                    violations.join("\n    - ")
+                ));
+            }
+        }
+        None => problems.push(
+            "no DAM .content.xml (jcr:primaryType dam:Asset) found under \
+             jcr_root/content/dam/formsanddocuments/"
+                .into(),
+        ),
+    }
+
+    if problems.is_empty() {
+        Ok(format!(
+            "✓ Package valid: {} entries; required FileVault structure present; \
+             form and DAM content XML pass AEM validation.",
+            files.len()
+        ))
+    } else {
+        Err(format!(
+            "Package validation found {} problem(s):\n- {}",
+            problems.len(),
+            problems.join("\n- ")
+        ))
+    }
+}
+
 // ── Per-source extraction (sync; cached) ─────────────────────────────────────
 
 struct StateRec {
@@ -1122,92 +1216,9 @@ impl ConversionAgent {
                         "No package built yet; call build_aem_package.".into(),
                     );
                 };
-                let files = match crate::references::unzip_package(&pkg) {
-                    Ok(files) => files,
-                    Err(e) => return ToolReply::Error(format!("Could not read package: {e}")),
-                };
-
-                let mut problems: Vec<String> = Vec::new();
-
-                // 1. Required FileVault package structure.
-                const REQUIRED: &[&str] = &[
-                    "META-INF/MANIFEST.MF",
-                    "META-INF/vault/config.xml",
-                    "META-INF/vault/nodetypes.cnd",
-                    "META-INF/vault/filter.xml",
-                    "META-INF/vault/properties.xml",
-                    "META-INF/vault/definition/.content.xml",
-                    "jcr_root/.content.xml",
-                    "jcr_root/content/.content.xml",
-                    "jcr_root/content/forms/.content.xml",
-                    "jcr_root/content/forms/af/.content.xml",
-                    "jcr_root/content/dam/.content.xml",
-                    "jcr_root/content/dam/formsanddocuments/.content.xml",
-                ];
-                for path in REQUIRED {
-                    if !files.iter().any(|(p, _)| p == path) {
-                        problems.push(format!("missing required package entry: {path}"));
-                    }
-                }
-
-                // 2. Validate the form content XML (the cq:Page under forms/af).
-                let form_xml = files.iter().find(|(p, c)| {
-                    p.starts_with("jcr_root/content/forms/af/")
-                        && p.ends_with("/.content.xml")
-                        && c.contains("\"cq:Page\"")
-                });
-                match form_xml {
-                    Some((path, xml)) => {
-                        if let Err(violations) = blueprint::validate_aem_form_xml(xml) {
-                            problems.push(format!(
-                                "form {path} failed {} validation check(s):\n    - {}",
-                                violations.len(),
-                                violations.join("\n    - ")
-                            ));
-                        }
-                    }
-                    None => problems.push(
-                        "no form .content.xml (jcr:primaryType cq:Page) found under \
-                         jcr_root/content/forms/af/"
-                            .into(),
-                    ),
-                }
-
-                // 3. Validate the DAM content XML (the dam:Asset).
-                let dam_xml = files.iter().find(|(p, c)| {
-                    p.starts_with("jcr_root/content/dam/formsanddocuments/")
-                        && p.ends_with("/.content.xml")
-                        && c.contains("\"dam:Asset\"")
-                });
-                match dam_xml {
-                    Some((path, xml)) => {
-                        if let Err(violations) = blueprint::validate_aem_dam_xml(xml) {
-                            problems.push(format!(
-                                "DAM {path} failed {} validation check(s):\n    - {}",
-                                violations.len(),
-                                violations.join("\n    - ")
-                            ));
-                        }
-                    }
-                    None => problems.push(
-                        "no DAM .content.xml (jcr:primaryType dam:Asset) found under \
-                         jcr_root/content/dam/formsanddocuments/"
-                            .into(),
-                    ),
-                }
-
-                if problems.is_empty() {
-                    ToolReply::Text(format!(
-                        "✓ Package valid: {} entries; required FileVault structure present; \
-                         form and DAM content XML pass AEM validation.",
-                        files.len()
-                    ))
-                } else {
-                    ToolReply::Error(format!(
-                        "Package validation found {} problem(s):\n- {}",
-                        problems.len(),
-                        problems.join("\n- ")
-                    ))
+                match validate_package_bytes(&pkg) {
+                    Ok(msg) => ToolReply::Text(msg),
+                    Err(e) => ToolReply::Error(e),
                 }
             }
             "review_output" => {
