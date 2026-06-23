@@ -9,7 +9,7 @@
 use dioxus::prelude::*;
 
 use agent::{ConversionAgent, SYSTEM_PROMPT, ToolReply};
-use blueprint::{DocumentEnvelope, StructuredNode};
+use blueprint::DocumentEnvelope;
 
 use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 use crate::platform::tool_result_message;
@@ -75,61 +75,8 @@ pub async fn run_agent(
     .await;
 }
 
-/// Resume the agent on an existing session to refine the result based on the
-/// user's feedback. The agent is seeded with the prior structured tree and
-/// asked to apply the feedback, then re-convert / package / upload and finish.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_agent_feedback(
-    feedback: String,
-    pdfs: Vec<(String, Vec<u8>)>,
-    profile: Option<String>,
-    settings: crate::settings::AppSettings,
-    structured_session: String,
-    processing_state: Signal<ProcessingState>,
-    current_session: Signal<Option<String>>,
-) {
-    let start = std::time::Instant::now();
-
-    // Seed the agent with the latest structured tree from the continuing
-    // session so feedback applies to the prior result, not a blank slate.
-    let prior: Vec<StructuredNode> = crate::db::latest_seq(&structured_session)
-        .and_then(|seq| crate::db::snapshot_at(&structured_session, seq))
-        .and_then(|json| serde_json::from_str::<Vec<StructuredNode>>(&json).ok())
-        .unwrap_or_default();
-
-    let mut agent = ConversionAgent::new(profile.clone(), pdfs, settings.aem_connection(), structured_session.clone());
-    agent.seed_structured(prior);
-
-    let intro = format!(
-        "{SYSTEM_PROMPT}{}\n\n--- REFINEMENT ---\n\
-A prior conversion already exists in your working structured tree (inspect it with \
-get_structured). The user reviewed the result and gave this feedback:\n\n{feedback}\n\n\
-Apply the requested changes to the structured tree, then re-convert to AEM \
-(convert_structured_to_aem), rebuild the package (build_aem_package), and \
-re-upload (upload_to_aem) if an AEM connection is configured, verifying as needed. \
-Then call finish.",
-        crate::settings::extra_instructions_block(&settings.agent_instructions)
-    );
-
-    let mut history: Vec<serde_json::Value> = Vec::new();
-    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
-
-    drive_agent(
-        agent,
-        history,
-        settings,
-        profile,
-        structured_session,
-        start,
-        processing_state,
-        current_session,
-    )
-    .await;
-}
-
 /// Drive the agent loop to completion: stream turns, execute tools, version
-/// each step, and finalize the result. Shared by [`run_agent`] and
-/// [`run_agent_feedback`].
+/// each step, and finalize the result. Shared by the agent entry points.
 #[allow(clippy::too_many_arguments)]
 async fn drive_agent(
     mut agent: ConversionAgent,
