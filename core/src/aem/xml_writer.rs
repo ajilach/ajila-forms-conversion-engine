@@ -1511,6 +1511,10 @@ mod tests {
             config
                 .user_vars
                 .insert("dor_field_styling".into(), "Default".into());
+            config.user_vars.insert(
+                "custom_resource_type_base".into(),
+                "ajila-forms-customers/ajila-forms-ubs/components".into(),
+            );
 
             let node = AemNode::Preface {
                 uuid: fixed_uuid(),
@@ -1535,11 +1539,12 @@ mod tests {
         }
     }
 
-    /// The banking-relationship preface fragment must be excluded from the
-    /// Document of Record. The reference packages always carry
-    /// `dorExclusion="true"` on `PN_BankingRelationship`.
+    /// The banking-relationship preface fragment must be wrapped in a `PN_BR`
+    /// panel that is excluded from both the Document of Record and the Summary.
+    /// This mirrors the AAJC reference form, where the exclusions sit on the
+    /// surrounding `PN_BR` panel rather than on `PN_BankingRelationship` itself.
     #[test]
-    fn preface_excludes_banking_relationship_from_dor() {
+    fn preface_wraps_banking_relationship_in_excluded_panel() {
         let mut config = test_config();
         config.component_templates.insert(
             "preface".into(),
@@ -1549,9 +1554,10 @@ mod tests {
             "default_layout".into(),
             "fd/af/layouts/gridFluidLayout2".into(),
         );
-        config
-            .user_vars
-            .insert("dor_field_styling".into(), "Default".into());
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ajila-forms-customers/ajila-forms-ubs/components".into(),
+        );
 
         let node = AemNode::Preface {
             uuid: fixed_uuid(),
@@ -1559,16 +1565,28 @@ mod tests {
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new());
 
+        // The wrapper panel exists and carries both exclusions.
         assert!(
-            xml.contains("dorExclusion=\"true\""),
-            "PN_BankingRelationship preface must be DOR-excluded. Got:\n{}",
+            xml.contains("name=\"PN_BR\""),
+            "expected a wrapping PN_BR panel. Got:\n{}",
             xml
         );
-        // The reference packages carry `dorFieldStyling` on every panel,
-        // including the banking-relationship preface.
         assert!(
-            xml.contains("dorFieldStyling=\"Default\""),
-            "PN_BankingRelationship preface must carry dorFieldStyling. Got:\n{}",
+            xml.contains("dorExclusion=\"true\""),
+            "PN_BR wrapper must be DOR-excluded. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("summaryExclusion=\"true\""),
+            "PN_BR wrapper must be summary-excluded. Got:\n{}",
+            xml
+        );
+        // The inner fragment panel is nested inside the wrapper.
+        let pn_br = xml.find("name=\"PN_BR\"").unwrap();
+        let pn_banking = xml.find("name=\"PN_BankingRelationship\"").unwrap();
+        assert!(
+            pn_br < pn_banking,
+            "PN_BankingRelationship must be nested inside PN_BR. Got:\n{}",
             xml
         );
     }

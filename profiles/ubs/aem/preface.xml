@@ -1,17 +1,14 @@
-<{{ element_name }}
+<panel_{{ uuid }}
     jcr:created="{Date}2025-01-01T00:00:00.000Z"
     jcr:createdBy="{{ author }}"
     jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
     jcr:lastModifiedBy="{{ author }}"
     jcr:primaryType="nt:unstructured"
-    sling:resourceType="fd/af/components/panel"
-    completionExpReq="{Boolean}false"
+    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
     dorExclusion="true"
-    dorFieldStyling="{{ variables.dor_field_styling }}"
-    fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"
-    summaryExclusion="true"
     guideNodeClass="guidePanel"
-    name="PN_BankingRelationship"
+    name="PN_BR"
+    summaryExclusion="true"
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false">
     <layout
@@ -19,12 +16,37 @@
         sling:resourceType="{{ variables.default_layout }}"
         columns="1"
         dorLayoutType="columnar"
-        dorNumCols="1"
         nonNavigable="{Boolean}true"
         toolbarPosition="Bottom"/>
     <items
         jcr:primaryType="nt:unstructured"
-        sling:resourceType="{{ variables.default_layout }}"/>
-    <fd:rules jcr:primaryType="nt:unstructured"/>
-    <fd:scripts jcr:primaryType="nt:unstructured"/>
-</{{ element_name }}>
+        sling:resourceType="{{ variables.default_layout }}">
+        <{{ element_name }}
+            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+            jcr:createdBy="{{ author }}"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
+            jcr:lastModifiedBy="{{ author }}"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/panel"
+            completionExpReq="{Boolean}false"
+            fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"
+            guideNodeClass="guidePanel"
+            name="PN_BankingRelationship"
+            textIsRich="true"
+            validateOnStepCompletion="{Boolean}false">
+            <layout
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}"
+                columns="1"
+                dorLayoutType="columnar"
+                dorNumCols="1"
+                nonNavigable="{Boolean}true"
+                toolbarPosition="Bottom"/>
+            <items
+                jcr:primaryType="nt:unstructured"
+                sling:resourceType="{{ variables.default_layout }}"/>
+            <fd:rules jcr:primaryType="nt:unstructured"/>
+            <fd:scripts jcr:primaryType="nt:unstructured"/>
+        </{{ element_name }}>
+    </items>
+</panel_{{ uuid }}>
