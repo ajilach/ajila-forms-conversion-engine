@@ -324,7 +324,16 @@ struct Extractor {
 }
 
 impl Extractor {
-    fn build(pdfs: &[(String, Vec<u8>)]) -> Self {
+    /// `semantic` is the sentence-embedding matcher used to align nodes across
+    /// languages when merging the per-PDF (per-language) trees into one
+    /// bilingual tree. Without it `merge_translations` can only align nodes
+    /// structurally, which duplicates whole sections (one per language, with
+    /// colliding field names) whenever the language variants don't line up
+    /// node-for-node — so always pass it for a multi-language source.
+    fn build(
+        pdfs: &[(String, Vec<u8>)],
+        semantic: Option<&blueprint::semantic::SemanticMatcher>,
+    ) -> Self {
         let multi = pdfs.len() > 1;
         let mut states = Vec::new();
         let mut xfa = Vec::new();
@@ -365,7 +374,7 @@ impl Extractor {
         let merged = match envelopes.len() {
             0 => Vec::new(),
             1 => envelopes.into_iter().next().unwrap().content,
-            _ => blueprint::merge_translations(envelopes, None)
+            _ => blueprint::merge_translations(envelopes, semantic)
                 .map(|e| e.content)
                 .unwrap_or_default(),
         };
@@ -528,7 +537,17 @@ impl ConversionAgent {
                 }
                 None => self.current_pdfs.clone(),
             };
-            self.extractors.insert(key.clone(), Extractor::build(&pdfs));
+            // A multi-language source must be merged with the semantic matcher
+            // (see Extractor::build). Load it best-effort; if it can't load we
+            // fall back to None and the structural merge. Single-PDF sources
+            // need no cross-language merge, so don't pay the load cost.
+            let ex = if pdfs.len() > 1 {
+                let _ = self.matcher();
+                Extractor::build(&pdfs, self.matcher.as_ref())
+            } else {
+                Extractor::build(&pdfs, None)
+            };
+            self.extractors.insert(key.clone(), ex);
         }
         Ok(self.extractors.get(&key).unwrap())
     }
