@@ -18,6 +18,9 @@ use crate::platform::tool_result_message;
 const AGENT_MAX_TOKENS: u32 = 16000;
 /// Max streamed turns before the loop bails out (the agent makes many calls).
 const MAX_ITERATIONS: usize = 200;
+/// How many consecutive `validate_aem_package` calls with identical output
+/// are allowed before the loop gives up and finalizes with what's built.
+const MAX_VALIDATE_REPEATS: usize = 3;
 
 /// Run the autonomous agent end-to-end, streaming activity into
 /// `processing_state.agent_steps` and finalizing the result on completion.
@@ -90,6 +93,11 @@ async fn drive_agent(
 ) {
     let tools = agent.tools();
 
+    // Escape hatch for a stuck validate loop: track how many consecutive turns
+    // called validate_aem_package and returned the same output.
+    let mut last_validate_output: Option<String> = None;
+    let mut validate_repeat_count: usize = 0;
+
     for _ in 0..MAX_ITERATIONS {
         let turn =
             match crate::platform::anthropic_stream_turn(
@@ -126,6 +134,7 @@ async fn drive_agent(
         }
 
         let mut results: Vec<(String, ToolReply)> = Vec::new();
+        let mut stuck = false;
         for tc in &turn.tool_calls {
             push_step(
                 &mut processing_state,
@@ -148,9 +157,70 @@ async fn drive_agent(
                     AgentStepStatus::Error
                 },
             );
+
+            // Detect a stuck validate loop: same output N times in a row.
+            if tc.name == "validate_aem_package" {
+                let output = match &reply {
+                    ToolReply::Text(s) => s.clone(),
+                    ToolReply::Error(s) => format!("error:{s}"),
+                    ToolReply::Image { .. } => "image".into(),
+                };
+                if last_validate_output.as_deref() == Some(&output) {
+                    validate_repeat_count += 1;
+                    if validate_repeat_count >= MAX_VALIDATE_REPEATS {
+                        stuck = true;
+                    }
+                } else {
+                    last_validate_output = Some(output);
+                    validate_repeat_count = 1;
+                }
+            } else {
+                // Any other tool means the agent is making progress; reset counter.
+                validate_repeat_count = 0;
+                last_validate_output = None;
+            }
+
             results.push((tc.id.clone(), reply));
         }
         history.push(tool_result_message(results));
+
+        if stuck {
+            processing_state.write().warnings.push(
+                "Validation produced the same result 3 times in a row — building what's available. \
+                 Some issues (e.g. missing fragment paths) may require manual follow-up."
+                    .into(),
+            );
+
+            // Ensure the package reflects the latest AEM tree, then upload.
+            for (id, name, detail) in [
+                ("recovery-build", "build_aem_package", "recovery"),
+                ("recovery-upload", "upload_to_aem", "recovery"),
+            ] {
+                push_step(
+                    &mut processing_state,
+                    AgentStep {
+                        id: id.into(),
+                        kind: AgentStepKind::Tool,
+                        label: name.into(),
+                        detail: detail.into(),
+                        status: AgentStepStatus::Running,
+                    },
+                );
+                let reply = agent.execute(name, &serde_json::json!({})).await;
+                let ok = !matches!(reply, ToolReply::Error(_));
+                set_step_status(
+                    &mut processing_state,
+                    id,
+                    if ok { AgentStepStatus::Done } else { AgentStepStatus::Error },
+                );
+                // Don't attempt upload if build failed.
+                if name == "build_aem_package" && !ok {
+                    break;
+                }
+            }
+
+            break;
+        }
 
         if agent.is_finished() {
             break;
