@@ -54,15 +54,18 @@ with get_reference_package / read_reference_file, and optionally run the engine 
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
 references' structure and patterns rather than inventing your own.\n\
-3. Seed the structured tree: ALWAYS start from get_merged_structured, then set_structured (whole \
-tree); re-read the working tree with get_structured. Call get_schema('structured') for the exact \
-JSON shape. The merged tree carries every language present in the source (each translatable label/ \
-option holds all languages) — preserve ALL of them through set_structured and every later edit; \
-never reduce the tree to a single language. The seeded tree is a best-effort heuristic guess and \
-is NOT guaranteed accurate — review it against the XFA (get_xfa / search_xfa) and the reference \
-forms, and fix field types, labels, options and grouping before converting. On a refinement run, \
-if the working tree is missing a language that get_merged_structured still has, re-seed from the \
-merged tree to restore it before applying your changes.\n\
+3. Seed the structured tree: ALWAYS seed by calling seed_structured, which copies the engine's \
+merged tree into the working tree server-side. Do NOT seed by reading get_merged_structured and \
+pasting it into set_structured — re-emitting that large tree by hand risks silently truncating it \
+or dropping a language, which yields an empty or partial form. After seeding, read the working \
+tree with get_structured and use get_schema('structured') for the exact JSON shape. The merged \
+tree carries every language present in the source (each translatable label/option holds all \
+languages); seed_structured preserves ALL of them, and you must keep them through every later \
+set_structured edit — never reduce the tree to a single language. The seeded tree is a best-effort \
+heuristic guess and is NOT guaranteed accurate — review it against the XFA (get_xfa / search_xfa) \
+and the reference forms, and fix field types, labels, options and grouping (with set_structured) \
+before converting. On a refinement run, if the working tree is missing a language, just call \
+seed_structured again to restore the full merged tree before applying your changes.\n\
 4. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
 with set_aem (get_schema('aem') for the shape).\n\
 4b. You can also hand-edit the final JCR content XML directly with structure-aware tools — \
@@ -641,11 +644,17 @@ impl ConversionAgent {
             ),
             t(
                 "get_merged_structured",
-                "The engine's full merged structured tree for the source (the usual seed for set_structured).",
+                "Inspect the engine's full merged structured tree for the source (read-only, may be large). To seed the working tree from it, use seed_structured instead of copying this back through set_structured.",
                 with_source(serde_json::json!({})),
                 serde_json::json!([]),
             ),
             // §2 structured tree
+            t(
+                "seed_structured",
+                "Seed the working structured tree directly from the engine's merged tree, server-side (no payload round-trips through you, so nothing can be truncated or lose a language). This is the standard way to seed; prefer it over get_merged_structured + set_structured. Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
+                with_source(serde_json::json!({})),
+                serde_json::json!([]),
+            ),
             t(
                 "get_structured",
                 "Return the current working structured tree (JSON).",
@@ -654,14 +663,14 @@ impl ConversionAgent {
             ),
             t(
                 "set_structured",
-                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
+                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Use this only for targeted edits to a tree you already seeded with seed_structured — do NOT use it to re-emit the full merged tree by hand (that risks dropping nodes or a language). Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
                 serde_json::json!({"nodes": {"type":"array"}}),
                 serde_json::json!(["nodes"]),
             ),
             // §3 conversion
             t(
                 "convert_structured_to_aem",
-                "Convert the current structured tree to the AEM tree (replaces it). Requires a non-empty structured tree (seed it with set_structured first). Invalidates the content XML and package. Versioned.",
+                "Convert the current structured tree to the AEM tree (replaces it). Requires a non-empty structured tree (seed it with seed_structured first). Invalidates the content XML and package. Versioned.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -1005,6 +1014,31 @@ impl ConversionAgent {
             "get_merged_structured" => match self.extractor(input) {
                 Ok(ex) => {
                     ToolReply::Text(serde_json::to_string_pretty(&ex.merged).unwrap_or_default())
+                }
+                Err(e) => ToolReply::Error(e),
+            },
+            "seed_structured" => match self.extractor(input) {
+                Ok(ex) => {
+                    let merged = ex.merged.clone();
+                    if merged.is_empty() {
+                        return ToolReply::Error(
+                            "Merged structured tree is empty for this source; nothing to seed."
+                                .into(),
+                        );
+                    }
+                    let n = merged.len();
+                    self.structured = merged;
+                    // Seeding replaces the structured tree, so reset everything downstream.
+                    self.aem = None;
+                    self.aem_xml = None;
+                    self.package = None;
+                    self.snapshot_structured("AI: seed structured from merged");
+                    ToolReply::Text(format!(
+                        "OK — working structured tree seeded from the engine's merged tree \
+                         ({n} top-level node(s); all languages preserved verbatim). AEM tree, \
+                         content XML and package reset — review with get_structured, then re-run \
+                         convert_structured_to_aem."
+                    ))
                 }
                 Err(e) => ToolReply::Error(e),
             },
