@@ -63,7 +63,8 @@ string (a field name, label, or AEM resource type); also consult grep_reference_
 list_reference_forms. Different sections often match different references; study how those \
 known-good forms were built with get_reference_package / read_reference_file, and optionally run \
 the engine on a reference's input via source={\"reference\":\"<ref_id>\"}. Match the references' \
-structure and patterns rather than inventing your own.\n\
+structure and patterns rather than inventing your own — including noticing where they reference a \
+reusable fragment (a `fragRef` to a `_fragmentlib` path) instead of building a section's fields inline.\n\
 3. Author the AEM tree DIRECTLY as an AemNodeTranslated: one multilingual AEM node tree in which \
 every user-visible text field (title/label/content and option labels) is a per-language map like \
 {\"de\":\"…\",\"en\":\"…\"}. Call get_schema('aem_translated') for the exact shape. There is no \
@@ -78,7 +79,18 @@ position — never leave a language blank or collapse to one); give each fillabl
 component type, options (real labels AND values), required/visible state and column width; nest \
 fields into Panels and use Repeatable for repeating sections; where content differs by configurator \
 selection, include each variant once — keep shared content shared, and NEVER reuse a node `name` \
-(that collides in AEM).\n\
+(that collides in AEM). For recurring standard sections that the bank ships as reusable fragments \
+— address, signature, account holder / contractual partner / beneficial owner / power of attorney, \
+banking relationship, IBAN, individual or entity basics, internal-bank-use, and the like — do NOT \
+hand-build the panel's inner fields; emit a single `Fragment` node that references the fragment by \
+its JCR path (`frag_ref`), exactly as the reference forms do. Find the matching fragment and its \
+path in the fragment-library documentation (read_reference_doc / grep_reference_docs for \"AF \
+Fragments and Common Fields\") and confirm it against the reference packages (grep_references for \
+`fragRef`); pick the `_fragmentlib` matching the form's entity (e.g. germany / italy / ch / ubs / \
+global). A fragment's internal fields are supplied by AEM at runtime from that path, so never also \
+recreate them as children — that duplicates the section. Keep the fragment's `bind_ref`; for a \
+section repeated per party emit one Fragment instance per party inside the Repeatable; and never \
+replace a conditional panel (one with show/hide behaviour) with a fragment.\n\
   c. Refine with the granular editors rather than re-emitting the whole tree: \
 get_aem_translated_outline maps every node by path and flags `⚠ empty` (text-bearing node with no \
 text) and `⚠ 1 lang` (only one language — likely a missing translation); get_aem_translated_node \
