@@ -14,34 +14,86 @@ pub fn ProgressDisplay(
     // Agent Processing: a live activity log of the agent's thoughts and tool
     // calls (spinner while running, ✓/✗ when done) instead of staged steps.
     if state.ai_mode {
+        let mut collapsed = use_signal(|| true);
+
+        let tool_steps: Vec<_> = state
+            .agent_steps
+            .iter()
+            .filter(|s| s.kind == AgentStepKind::Tool)
+            .collect();
+        let error_count = tool_steps
+            .iter()
+            .filter(|s| s.status == AgentStepStatus::Error)
+            .count();
+        let is_running = tool_steps
+            .iter()
+            .any(|s| s.status == AgentStepStatus::Running);
+        let total = tool_steps.len();
+
+        let summary = if state.agent_steps.is_empty() {
+            "Starting agent…".to_string()
+        } else if is_running {
+            let last = tool_steps.last().map(|s| s.label.as_str()).unwrap_or("…");
+            format!("{total} steps — running {last}…")
+        } else if error_count > 0 {
+            format!("{total} steps, {error_count} error(s)")
+        } else {
+            format!("{total} steps completed")
+        };
+
         return rsx! {
             div { class: "progress-container",
-                h2 { "Agent Processing" }
-                div { class: "agent-activity",
-                    if state.agent_steps.is_empty() {
-                        div { class: "agent-thought", "Starting agent…" }
+                div { class: "agent-header",
+                    h2 { "Agent Processing" }
+                    button {
+                        class: "agent-toggle",
+                        onclick: move |_| {
+                            let c = *collapsed.read();
+                            collapsed.set(!c);
+                        },
+                        if *collapsed.read() { "▶ Show steps" } else { "▼ Hide steps" }
                     }
-                    for (i, s) in state.agent_steps.iter().enumerate() {
-                        {match s.kind {
-                            AgentStepKind::Thought => rsx! {
-                                div { key: "{i}", class: "agent-thought", "{s.label}" }
-                            },
-                            AgentStepKind::Tool => rsx! {
-                                div { key: "{i}", class: "agent-tool",
-                                    span { class: "agent-tool-status",
-                                        {match s.status {
-                                            AgentStepStatus::Running => rsx! { Spinner { size: "sm" } },
-                                            AgentStepStatus::Done => rsx! { span { class: "agent-ok", "✓" } },
-                                            AgentStepStatus::Error => rsx! { span { class: "agent-err", "✗" } },
-                                        }}
+                }
+                div { class: "agent-summary", "{summary}" }
+
+                if !*collapsed.read() {
+                    div { class: "agent-activity",
+                        if state.agent_steps.is_empty() {
+                            div { class: "agent-thought", "Starting agent…" }
+                        }
+                        for (i, s) in state.agent_steps.iter().enumerate() {
+                            {match s.kind {
+                                AgentStepKind::Thought => rsx! {
+                                    div { key: "{i}", class: "agent-thought", "{s.label}" }
+                                },
+                                AgentStepKind::Tool => rsx! {
+                                    div { key: "{i}", class: "agent-tool",
+                                        span { class: "agent-tool-status",
+                                            {match s.status {
+                                                AgentStepStatus::Running => rsx! { Spinner { size: "sm" } },
+                                                AgentStepStatus::Done => rsx! { span { class: "agent-ok", "✓" } },
+                                                AgentStepStatus::Error => rsx! { span { class: "agent-err", "✗" } },
+                                            }}
+                                        }
+                                        span { class: "agent-tool-name", "{s.label}" }
+                                        if !s.detail.is_empty() {
+                                            span { class: "agent-tool-detail", "{s.detail}" }
+                                        }
                                     }
-                                    span { class: "agent-tool-name", "{s.label}" }
-                                    if !s.detail.is_empty() {
-                                        span { class: "agent-tool-detail", "{s.detail}" }
-                                    }
-                                }
-                            },
-                        }}
+                                },
+                            }}
+                        }
+                    }
+                }
+
+                if !state.warnings.is_empty() {
+                    div { class: "progress-warnings",
+                        strong { "Warnings:" }
+                        ul {
+                            for warning in state.warnings.iter() {
+                                li { "{warning}" }
+                            }
+                        }
                     }
                 }
 
