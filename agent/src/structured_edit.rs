@@ -1,0 +1,573 @@
+//! Path-addressed, structure-aware editing of the working structured tree.
+//!
+//! Mirrors the AEM content-XML editors (`get_aem_xml_outline`,
+//! `set_aem_xml_attribute`, …) so the agent can refine a *seeded* structured
+//! tree node-by-node instead of re-emitting the whole tree through
+//! `set_structured` (which is expensive and risks silently dropping nodes or a
+//! language). See `conversion.rs` for the tool wiring.
+//!
+//! ## Path syntax
+//!
+//! A node path is a `/`-separated walk from the top-level node list:
+//!   - the first segment is a top-level index, e.g. `3`;
+//!   - then one of the following container steps, repeated:
+//!       * `children/<i>`        — into a Group's children
+//!       * `rows/<r>/cells/<c>`  — into a Table body cell
+//!       * `header/cells/<c>`    — into a Table header cell
+//!       * `elements/<i>`        — into a GridLayout element's node
+//!       * `item`                — into a Repeatable's item
+//!       * `content`             — into a Conditional's content
+//!
+//! Example: `0/children/2`, `5/rows/0/cells/1`, `2/elements/0/content`.
+
+use blueprint::StructuredNode;
+
+/// Where to put a node when inserting into a child list.
+pub enum InsertPos {
+    First,
+    Last,
+    Before(usize),
+    After(usize),
+}
+
+/// Parse the `position` argument of `insert_structured_node`.
+/// Accepts `"first"`, `"last"`, `{"before": <i>}` or `{"after": <i>}`.
+pub fn parse_insert_pos(v: &serde_json::Value) -> Result<InsertPos, String> {
+    if let Some(s) = v.as_str() {
+        return match s {
+            "first" => Ok(InsertPos::First),
+            "last" => Ok(InsertPos::Last),
+            other => Err(format!(
+                "invalid position '{other}'; expected \"first\", \"last\", {{\"before\":<i>}} or {{\"after\":<i>}}"
+            )),
+        };
+    }
+    if let Some(obj) = v.as_object() {
+        if let Some(i) = obj.get("before").and_then(|x| x.as_u64()) {
+            return Ok(InsertPos::Before(i as usize));
+        }
+        if let Some(i) = obj.get("after").and_then(|x| x.as_u64()) {
+            return Ok(InsertPos::After(i as usize));
+        }
+    }
+    Err("invalid position; expected \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>}".into())
+}
+
+fn split_path(path: &str) -> Vec<&str> {
+    path.split('/').filter(|s| !s.is_empty()).collect()
+}
+
+fn parse_idx(seg: &str, container: &str) -> Result<usize, String> {
+    seg.parse::<usize>()
+        .map_err(|_| format!("expected an index after '{container}', got '{seg}'"))
+}
+
+/// Resolve a path to a mutable reference to the addressed node.
+pub fn resolve_mut<'a>(
+    roots: &'a mut [StructuredNode],
+    path: &str,
+) -> Result<&'a mut StructuredNode, String> {
+    let segs = split_path(path);
+    if segs.is_empty() {
+        return Err("empty path; the root is the whole node list, not a single node".into());
+    }
+    let idx = parse_idx(segs[0], "the top level")?;
+    let node = roots
+        .get_mut(idx)
+        .ok_or_else(|| format!("no top-level node at index {idx}"))?;
+    descend_mut(node, &segs[1..])
+}
+
+fn descend_mut<'a>(
+    node: &'a mut StructuredNode,
+    segs: &[&str],
+) -> Result<&'a mut StructuredNode, String> {
+    let Some((&head, tail)) = segs.split_first() else {
+        return Ok(node);
+    };
+    // Borrowed immutably and released before the mutable match below; reused in
+    // the fall-through error so we don't have to re-borrow `node` there.
+    let ty = node_type(node);
+    // Every matching arm `return`s so its borrow of `node` is confined to that
+    // arm (works around the non-Polonius borrow checker); anything that doesn't
+    // match falls through to the error.
+    match node {
+        StructuredNode::Group(g) if head == "children" => {
+            let (i, rest) = take_index(tail, "children")?;
+            let child = g.children.get_mut(i).ok_or_else(|| oob("children", i))?;
+            return descend_mut(child, rest);
+        }
+        // One arm for the whole Table variant (two arms of the same variant both
+        // returning `'a` defeats the borrow checker), branching on `head`.
+        StructuredNode::Table(t) => {
+            let (cell, rest): (&mut StructuredNode, &[&str]) = match head {
+                "rows" => {
+                    let (r, rest) = take_index(tail, "rows")?;
+                    let row = t.rows.get_mut(r).ok_or_else(|| oob("rows", r))?;
+                    let (kw, rest2) = rest
+                        .split_first()
+                        .ok_or_else(|| "expected 'cells' after rows/<i>".to_string())?;
+                    if *kw != "cells" {
+                        return Err(format!("expected 'cells' after rows/<i>, got '{kw}'"));
+                    }
+                    let (c, rest3) = take_index(rest2, "cells")?;
+                    (row.cells.get_mut(c).ok_or_else(|| oob("cells", c))?, rest3)
+                }
+                "header" => {
+                    let header = t
+                        .header
+                        .as_mut()
+                        .ok_or_else(|| "table has no header".to_string())?;
+                    let (kw, rest) = tail
+                        .split_first()
+                        .ok_or_else(|| "expected 'cells' after header".to_string())?;
+                    if *kw != "cells" {
+                        return Err(format!("expected 'cells' after header, got '{kw}'"));
+                    }
+                    let (c, rest2) = take_index(rest, "cells")?;
+                    (
+                        header.cells.get_mut(c).ok_or_else(|| oob("header cells", c))?,
+                        rest2,
+                    )
+                }
+                _ => return Err(format!("cannot descend into '{head}' from a table node")),
+            };
+            return descend_mut(cell, rest);
+        }
+        StructuredNode::GridLayout(grid) if head == "elements" => {
+            let (i, rest) = take_index(tail, "elements")?;
+            let el = grid.elements.get_mut(i).ok_or_else(|| oob("elements", i))?;
+            return descend_mut(&mut el.node, rest);
+        }
+        StructuredNode::Repeatable(r) if head == "item" => return descend_mut(&mut r.item, tail),
+        StructuredNode::Conditional(c) if head == "content" => {
+            return descend_mut(&mut c.content, tail);
+        }
+        _ => {}
+    }
+    Err(format!("cannot descend into '{head}' from a {ty} node"))
+}
+
+fn take_index<'b>(segs: &'b [&'b str], container: &str) -> Result<(usize, &'b [&'b str]), String> {
+    let (idx_seg, rest) = segs
+        .split_first()
+        .ok_or_else(|| format!("expected an index after '{container}'"))?;
+    Ok((parse_idx(idx_seg, container)?, rest))
+}
+
+fn oob(container: &str, i: usize) -> String {
+    format!("no '{container}' entry at index {i}")
+}
+
+/// Locate the child list and index that the addressed node lives in, for
+/// structural insert/remove. Only the list-like containers — the top level and
+/// `Group.children` — are supported; table cells and grid elements should be
+/// edited with `replace_structured_node` on the table/grid node (or
+/// `set_structured` for whole-table restructuring).
+fn locate_in_list_mut<'a>(
+    roots: &'a mut Vec<StructuredNode>,
+    path: &str,
+) -> Result<(&'a mut Vec<StructuredNode>, usize), String> {
+    let segs = split_path(path);
+    match segs.as_slice() {
+        [] => Err("empty path".into()),
+        [only] => {
+            let i = parse_idx(only, "the top level")?;
+            Ok((roots, i))
+        }
+        rest => {
+            // Must end in `children/<i>`; the prefix addresses a Group.
+            let n = rest.len();
+            if rest[n - 2] != "children" {
+                return Err(
+                    "insert/remove is only supported for top-level nodes and Group children; \
+                     for table cells or grid elements use replace_structured_node on the \
+                     table/grid node, or set_structured for structural changes"
+                        .into(),
+                );
+            }
+            let i = parse_idx(rest[n - 1], "children")?;
+            let prefix = rest[..n - 2].join("/");
+            let parent = resolve_mut(roots, &prefix)?;
+            match parent {
+                StructuredNode::Group(g) => Ok((&mut g.children, i)),
+                other => Err(format!(
+                    "node at '{prefix}' is a {} node, not a Group",
+                    node_type(other)
+                )),
+            }
+        }
+    }
+}
+
+/// Resolve the child list of a *container* node for insertion. `parent_path`
+/// empty (or `root`/`/`) means the top level.
+fn container_list_mut<'a>(
+    roots: &'a mut Vec<StructuredNode>,
+    parent_path: &str,
+) -> Result<&'a mut Vec<StructuredNode>, String> {
+    let trimmed = parent_path.trim_matches('/');
+    if trimmed.is_empty() || trimmed == "root" {
+        return Ok(roots);
+    }
+    match resolve_mut(roots, trimmed)? {
+        StructuredNode::Group(g) => Ok(&mut g.children),
+        other => Err(format!(
+            "node at '{parent_path}' is a {} node; can only insert into the top level or a Group",
+            node_type(other)
+        )),
+    }
+}
+
+// ── Edit operations ──────────────────────────────────────────────────────────
+
+/// Set one field of the node at `path` (e.g. `label`, `inputType`, `required`,
+/// `content`). `value` is the raw JSON for that field. The result is validated
+/// by round-tripping through `StructuredNode`, so a malformed value is rejected
+/// and the tree left unchanged.
+pub fn set_field(
+    roots: &mut [StructuredNode],
+    path: &str,
+    field: &str,
+    value: serde_json::Value,
+) -> Result<String, String> {
+    if field == "type" {
+        return Err(
+            "cannot change a node's `type` with set_structured_field; use replace_structured_node"
+                .into(),
+        );
+    }
+    let node = resolve_mut(roots, path)?;
+    let mut obj = serde_json::to_value(&*node).map_err(|e| e.to_string())?;
+    let map = obj
+        .as_object_mut()
+        .ok_or_else(|| "node does not serialize to an object".to_string())?;
+    map.insert(field.to_string(), value);
+    let new_node: StructuredNode = serde_json::from_value(obj)
+        .map_err(|e| format!("setting `{field}` would make the node invalid: {e}"))?;
+    let ty = node_type(&new_node);
+    *node = new_node;
+    Ok(format!("OK — set `{field}` on {path} ({ty})."))
+}
+
+/// Replace the whole node at `path` with `node_json`.
+pub fn replace_node(
+    roots: &mut [StructuredNode],
+    path: &str,
+    node_json: serde_json::Value,
+) -> Result<String, String> {
+    let new_node: StructuredNode =
+        serde_json::from_value(node_json).map_err(|e| format!("invalid StructuredNode: {e}"))?;
+    let node = resolve_mut(roots, path)?;
+    let ty = node_type(&new_node);
+    *node = new_node;
+    Ok(format!("OK — replaced {path} (now a {ty} node)."))
+}
+
+/// Remove the node at `path` from its parent list.
+pub fn remove_node(roots: &mut Vec<StructuredNode>, path: &str) -> Result<String, String> {
+    let (list, i) = locate_in_list_mut(roots, path)?;
+    if i >= list.len() {
+        return Err(format!("no node at index {i} to remove"));
+    }
+    list.remove(i);
+    Ok(format!("OK — removed {path}."))
+}
+
+/// Insert `node_json` into the child list of the container at `parent_path`.
+pub fn insert_node(
+    roots: &mut Vec<StructuredNode>,
+    parent_path: &str,
+    node_json: serde_json::Value,
+    pos: InsertPos,
+) -> Result<String, String> {
+    let new_node: StructuredNode =
+        serde_json::from_value(node_json).map_err(|e| format!("invalid StructuredNode: {e}"))?;
+    let ty = node_type(&new_node);
+    let list = container_list_mut(roots, parent_path)?;
+    let at = match pos {
+        InsertPos::First => 0,
+        InsertPos::Last => list.len(),
+        InsertPos::Before(i) => i.min(list.len()),
+        InsertPos::After(i) => (i + 1).min(list.len()),
+    };
+    list.insert(at, new_node);
+    Ok(format!(
+        "OK — inserted a {ty} node into '{}' at index {at}.",
+        if parent_path.trim_matches('/').is_empty() {
+            "root"
+        } else {
+            parent_path
+        }
+    ))
+}
+
+// ── Outline / lint ───────────────────────────────────────────────────────────
+
+/// One line per node: `<path>  <type> <summary> <flags>`. Flags (`⚠ …`) mark the
+/// heuristic-seed artifacts the agent should review: fields with a missing or
+/// `UNKNOWN` label, option groups with no options, and empty text nodes.
+pub fn outline(roots: &[StructuredNode]) -> String {
+    let mut out = String::new();
+    for (i, node) in roots.iter().enumerate() {
+        walk(node, &i.to_string(), &mut out);
+    }
+    if out.is_empty() {
+        out.push_str("(empty structured tree — seed it with seed_structured first)");
+    }
+    out
+}
+
+fn walk(node: &StructuredNode, path: &str, out: &mut String) {
+    let (summary, flags) = describe(node);
+    out.push_str(path);
+    out.push_str("  ");
+    out.push_str(node_type(node));
+    if !summary.is_empty() {
+        out.push(' ');
+        out.push_str(&summary);
+    }
+    if !flags.is_empty() {
+        out.push_str("  ");
+        out.push_str(&flags);
+    }
+    out.push('\n');
+
+    match node {
+        StructuredNode::Group(g) => {
+            for (i, c) in g.children.iter().enumerate() {
+                walk(c, &format!("{path}/children/{i}"), out);
+            }
+        }
+        StructuredNode::Table(t) => {
+            if let Some(h) = &t.header {
+                for (c, cell) in h.cells.iter().enumerate() {
+                    walk(cell, &format!("{path}/header/cells/{c}"), out);
+                }
+            }
+            for (r, row) in t.rows.iter().enumerate() {
+                for (c, cell) in row.cells.iter().enumerate() {
+                    walk(cell, &format!("{path}/rows/{r}/cells/{c}"), out);
+                }
+            }
+        }
+        StructuredNode::GridLayout(grid) => {
+            for (i, el) in grid.elements.iter().enumerate() {
+                walk(&el.node, &format!("{path}/elements/{i}"), out);
+            }
+        }
+        StructuredNode::Repeatable(r) => walk(&r.item, &format!("{path}/item"), out),
+        StructuredNode::Conditional(c) => walk(&c.content, &format!("{path}/content"), out),
+        _ => {}
+    }
+}
+
+fn looks_unknown(s: &str) -> bool {
+    let t = s.trim();
+    t.is_empty() || t.to_ascii_lowercase().contains("unknown")
+}
+
+fn excerpt(s: &str) -> String {
+    let s = s.trim().replace('\n', " ");
+    if s.chars().count() > 50 {
+        format!("{}…", s.chars().take(50).collect::<String>())
+    } else {
+        s
+    }
+}
+
+/// Returns `(summary, flags)` for one node.
+fn describe(node: &StructuredNode) -> (String, String) {
+    use blueprint::FieldType;
+    match node {
+        StructuredNode::Field(f) => {
+            let label = f.label.as_ref().map(|l| l.as_plain_text()).unwrap_or_default();
+            let mut flags = String::new();
+            if f.label.is_none() || looks_unknown(&label) {
+                flags.push_str("⚠ label? ");
+            }
+            let opts_empty = match &f.input_type {
+                FieldType::Radio { options }
+                | FieldType::Select { options }
+                | FieldType::CheckboxGroup { options } => options.is_empty(),
+                _ => false,
+            };
+            if opts_empty {
+                flags.push_str("⚠ no-options ");
+            }
+            let kind = field_type_name(&f.input_type);
+            let summary = if label.is_empty() {
+                format!("· {kind}")
+            } else {
+                format!("[{}] · {kind}", excerpt(&label))
+            };
+            (summary, flags.trim_end().to_string())
+        }
+        StructuredNode::Heading(h) => text_node_desc(&h.content.as_plain_text()),
+        StructuredNode::Paragraph(p) => text_node_desc(&p.content.as_plain_text()),
+        StructuredNode::Footnote(f) => text_node_desc(&f.content.as_plain_text()),
+        StructuredNode::Group(g) => (format!("({} children)", g.children.len()), String::new()),
+        StructuredNode::Table(t) => {
+            let cols = t.rows.first().map(|r| r.cells.len()).unwrap_or(0);
+            (format!("({}×{})", t.rows.len(), cols), String::new())
+        }
+        StructuredNode::GridLayout(g) => (
+            format!("({} cols, {} elements)", g.columns, g.elements.len()),
+            String::new(),
+        ),
+        StructuredNode::List(l) => (format!("({} items)", l.items.len()), String::new()),
+        _ => (String::new(), String::new()),
+    }
+}
+
+fn text_node_desc(text: &str) -> (String, String) {
+    let flags = if looks_unknown(text) {
+        "⚠ text?".to_string()
+    } else {
+        String::new()
+    };
+    let summary = if text.trim().is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", excerpt(text))
+    };
+    (summary, flags)
+}
+
+fn field_type_name(ft: &blueprint::FieldType) -> &'static str {
+    use blueprint::FieldType;
+    match ft {
+        FieldType::Text { .. } => "text",
+        FieldType::Textarea { .. } => "textarea",
+        FieldType::Number { .. } => "number",
+        FieldType::Date => "date",
+        FieldType::Email => "email",
+        FieldType::Tel => "tel",
+        FieldType::Bool => "bool",
+        FieldType::Radio { .. } => "radio",
+        FieldType::Select { .. } => "select",
+        FieldType::CheckboxGroup { .. } => "checkboxGroup",
+    }
+}
+
+fn node_type(node: &StructuredNode) -> &'static str {
+    match node {
+        StructuredNode::Heading(_) => "heading",
+        StructuredNode::Paragraph(_) => "paragraph",
+        StructuredNode::Image(_) => "image",
+        StructuredNode::Table(_) => "table",
+        StructuredNode::Field(_) => "field",
+        StructuredNode::Repeatable(_) => "repeatable",
+        StructuredNode::Group(_) => "group",
+        StructuredNode::Conditional(_) => "conditional",
+        StructuredNode::Empty => "empty",
+        StructuredNode::GridLayout(_) => "gridLayout",
+        StructuredNode::List(_) => "list",
+        StructuredNode::Footnote(_) => "footnote",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // A group with a heuristic-seed field (no label, empty select options) and a
+    // trailing empty node.
+    fn sample() -> Vec<StructuredNode> {
+        serde_json::from_value(json!([{
+            "type": "group",
+            "children": [
+                {
+                    "type": "field",
+                    "name": "00000000-0000-0000-0000-000000000001",
+                    "label": null,
+                    "inputType": { "type": "select", "options": [] },
+                    "value": null,
+                    "placeholder": null,
+                    "required": false
+                },
+                { "type": "empty" }
+            ]
+        }]))
+        .unwrap()
+    }
+
+    #[test]
+    fn outline_flags_seed_artifacts() {
+        let out = outline(&sample());
+        assert!(out.contains("0  group"), "{out}");
+        assert!(out.contains("0/children/0  field"), "{out}");
+        assert!(out.contains("⚠ label?"), "{out}");
+        assert!(out.contains("⚠ no-options"), "{out}");
+        assert!(out.contains("0/children/1  empty"), "{out}");
+    }
+
+    #[test]
+    fn resolve_descends_into_group() {
+        let mut tree = sample();
+        let node = resolve_mut(&mut tree, "0/children/0").unwrap();
+        assert_eq!(node_type(node), "field");
+        assert!(resolve_mut(&mut tree, "0/children/9").is_err());
+        assert!(resolve_mut(&mut tree, "5").is_err());
+    }
+
+    #[test]
+    fn set_field_validates_and_applies() {
+        let mut tree = sample();
+        // Valid: flip `required`.
+        set_field(&mut tree, "0/children/0", "required", json!(true)).unwrap();
+        let node = resolve_mut(&mut tree, "0/children/0").unwrap();
+        let v = serde_json::to_value(&*node).unwrap();
+        assert_eq!(v["required"], json!(true));
+
+        // Invalid inputType is rejected and leaves the tree unchanged.
+        let before = serde_json::to_value(&tree).unwrap();
+        assert!(set_field(&mut tree, "0/children/0", "inputType", json!({"type": "bogus"})).is_err());
+        assert_eq!(serde_json::to_value(&tree).unwrap(), before);
+
+        // `type` cannot be changed this way.
+        assert!(set_field(&mut tree, "0/children/0", "type", json!("empty")).is_err());
+    }
+
+    #[test]
+    fn insert_and_remove_in_group() {
+        let mut tree = sample();
+        insert_node(&mut tree, "0", json!({"type": "empty"}), InsertPos::First).unwrap();
+        let n = match &tree[0] {
+            StructuredNode::Group(g) => g.children.len(),
+            _ => panic!("expected group"),
+        };
+        assert_eq!(n, 3);
+        assert_eq!(node_type(resolve_mut(&mut tree, "0/children/0").unwrap()), "empty");
+
+        remove_node(&mut tree, "0/children/0").unwrap();
+        let n = match &tree[0] {
+            StructuredNode::Group(g) => g.children.len(),
+            _ => panic!(),
+        };
+        assert_eq!(n, 2);
+
+        // Table cells aren't list-removable.
+        let mut t2: Vec<StructuredNode> =
+            serde_json::from_value(json!([{"type":"table","header":null,"rows":[],"caption":null}]))
+                .unwrap();
+        assert!(remove_node(&mut t2, "0/rows/0/cells/0").is_err());
+    }
+
+    #[test]
+    fn replace_node_swaps_type() {
+        let mut tree = sample();
+        replace_node(&mut tree, "0/children/0", json!({"type": "empty"})).unwrap();
+        assert_eq!(node_type(resolve_mut(&mut tree, "0/children/0").unwrap()), "empty");
+    }
+
+    #[test]
+    fn insert_pos_parses() {
+        assert!(matches!(parse_insert_pos(&json!("first")), Ok(InsertPos::First)));
+        assert!(matches!(parse_insert_pos(&json!("last")), Ok(InsertPos::Last)));
+        assert!(matches!(parse_insert_pos(&json!({"before": 2})), Ok(InsertPos::Before(2))));
+        assert!(matches!(parse_insert_pos(&json!({"after": 0})), Ok(InsertPos::After(0))));
+        assert!(parse_insert_pos(&json!("middle")).is_err());
+    }
+}

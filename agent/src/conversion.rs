@@ -29,8 +29,15 @@ const RENDER_SCALE: f32 = 1.5;
 /// / `write_package` bootstrap) are appended by the consumer.
 pub const SYSTEM_PROMPT: &str = "\
 You are an autonomous conversion agent operating the form-conversion engine via tools, \
-replacing manual interaction. Goal: produce a correct AEM Adaptive Form from the uploaded \
-PDF(s).\n\n\
+replacing manual interaction. Goal: produce an AEM Adaptive Form that is analogous to the \
+uploaded PDF(s) — a faithful recreation that a person comparing the two side by side would \
+recognize as the same form. \"Analogous\" means matching the source in: the sections and their \
+order; every heading, label, paragraph and footnote text (in every language the source has); \
+every fillable field, with the right control type, options, default and required state; the \
+visual grouping and layout (panels, columns, tables, repeatable sections); and the conditional \
+behaviour. The output should look and read like the original form rebuilt as an Adaptive Form, \
+not an approximation — judge your work throughout by whether the rendered AEM form resembles the \
+source, and keep fixing until it does.\n\n\
 Typical workflow (call tools as needed; each step is a separate call):\n\
 1. Inspect the input: get_source_info, get_profile_info (form_code, languages, JCR paths, \
 binding flags), list_states, explore_states, get_xfa (authoritative text/fields), search_xfa \
@@ -54,27 +61,68 @@ with get_reference_package / read_reference_file, and optionally run the engine 
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
 references' structure and patterns rather than inventing your own.\n\
-3. Seed the structured tree: You can seed by calling seed_structured, which copies the engine's \
-merged tree into the working tree server-side. After seeding, read the working \
-tree with get_structured and use get_schema('structured') for the exact JSON shape. The merged \
-tree carries every language present in the source (each translatable label/option holds all \
-languages); seed_structured preserves ALL of them, and you must keep them through every later \
-set_structured edit — never reduce the tree to a single language. The seeded tree is a best-effort \
-heuristic guess and is NOT guaranteed accurate — review it against the XFA (get_xfa / search_xfa) \
-and the reference forms, and fix field types, labels, options and grouping (with set_structured) \
-before converting.\n\
-4. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
-with set_aem (get_schema('aem') for the shape).\n\
-4b. You can also hand-edit the final JCR content XML directly with structure-aware tools — \
-useful for tweaks the trees can't express. First map it with get_aem_xml_outline (node paths + \
+3. Seed the structured tree: ALWAYS seed by calling seed_structured, which copies the engine's \
+merged tree into the working tree server-side. Do NOT seed by reading get_merged_structured and \
+pasting it into set_structured — re-emitting that large tree by hand risks silently truncating it \
+or dropping a language, which yields an empty or partial form. The merged tree carries every \
+language present in the source (each translatable label/option holds all languages); \
+seed_structured preserves ALL of them, and you must keep them through every later edit — never \
+reduce the tree to a single language (if a language ever goes missing, just call seed_structured \
+again to restore the full tree). Use get_schema('structured') for the exact JSON shape.\n\
+3a. The seeded tree is a best-effort heuristic guess and is NOT accurate — you MUST review and fix \
+it before converting; seeding and converting as-is is a failure. Start with get_structured_outline, \
+which lists every node by path and flags the seed's artifacts: ⚠ label? (field with a missing or \
+UNKNOWN label), ⚠ no-options (radio/select/checkbox with no options), ⚠ text? (empty/UNKNOWN text). \
+Resolve EVERY flag, then go beyond the flags — the outline only catches the obvious cases. Work \
+section by section against the XFA (get_xfa / search_xfa) and the reference forms, calling \
+get_structured_node to see a node's exact shape, and fix in place with the targeted editors: \
+set_structured_field (change one field — label, inputType, options, required, placeholder, value, \
+content — at a path), replace_structured_node (rebuild a node or change its type), \
+insert_structured_node and remove_structured_node. Things to check and fix at this layer:\n\
+  • Labels: replace every UNKNOWN/empty/wrong label with the real source text.\n\
+  • Field types: ensure each field's inputType matches the source control (text, textarea, number, \
+date, email, tel, bool, radio, select, checkboxGroup) — the seed often guesses text for everything.\n\
+  • Options: choice fields (radio/select/checkboxGroup) must list every option with its real name \
+AND value.\n\
+  • Missing translations: every translatable label, option name, heading, paragraph and footnote \
+MUST carry text for EVERY language the source has — the seed sometimes fills only one language. \
+Compare languages with search_xfa and add any missing one by setting the field's label/content to \
+the full per-language map (get_structured_node shows the map shape). Never leave a language blank \
+and never collapse to a single language.\n\
+  • Heading levels: set each heading's level to reflect the document's real outline/hierarchy, not \
+the flat or guessed level the seed produced.\n\
+  • Grouping & layout: nest fields into the groups/panels the source implies, fix grid columns and \
+spans, and set repeatable min/max occurrences and conditional visibility conditions to match.\n\
+  • Required, placeholders, default values: set these from the source.\n\
+  • Structure: remove spurious or duplicate nodes, and insert any field or section the seed missed.\n\
+Prefer the targeted editors over set_structured (whole-tree replace); reserve set_structured for \
+sweeping rewrites. Only convert once get_structured_outline shows no unresolved flags and you have \
+verified the whole field set, the grouping and all languages against the source.\n\
+4. Convert: convert_structured_to_aem, then review the AEM tree (get_aem) and the rendered content \
+XML (get_aem_content_xml). The structured tree deliberately models only what is portable; it CANNOT \
+express many AEM Adaptive-Form concepts — often the very layout and presentation details that make \
+the result look analogous to the source — and you are encouraged to fix those here rather than \
+forcing them into the structured tree or leaving them wrong. Edit the AEM tree with set_aem \
+(get_schema('aem') for the shape) for AEM-only concerns such as: panel/wizard/tabbed/accordion \
+layout and column counts, field and panel widths/styling/CSS classes, short and long descriptions, \
+tooltips and help text, validation/visibility/enabled/value-calculation expressions and scripts, \
+submit actions and thank-you handling, navigation and summary/review panels, XSD data bindings, \
+rich-text content, and any property the structured schema simply has no field for. A structured \
+edit + reconvert regenerates the AEM tree (and discards AEM-tree edits), so do the structured-level \
+fixes from step 3a FIRST and only then layer AEM-tree edits on top.\n\
+4b. For finer control than set_aem (whole-tree replace) gives, hand-edit the final JCR content XML \
+directly with structure-aware tools — the right choice for localized attribute-level tweaks and for \
+anything the AEM tree can't express either. First map it with get_aem_xml_outline (node paths + \
 key attributes) and inspect a node with get_aem_xml_node; then edit by path with \
 set_aem_xml_attribute / remove_aem_xml_attribute (attribute values are taken verbatim, so pass \
 JCR-typed values like {Boolean}true), remove_aem_xml_node, replace_aem_xml_node and \
 insert_aem_xml_node. Nodes are addressed by a /-separated path of element names from the root \
 (e.g. jcr:root/guideContainer/panel_<uuid>/textbox_<uuid>); add a 1-based index like default[2] \
 only when sibling names repeat. Every edit is validated (rejected if it would produce malformed \
-XML) and versioned. Last-resort tuning: prefer fixing the structured or AEM tree, because XML \
-edits are discarded the moment you re-run set_structured / convert_structured_to_aem / set_aem.\n\
+XML) and versioned. Escalation ladder, least-fragile first: fix in the structured tree (step 3a) \
+whenever the concept exists there; otherwise edit the AEM tree (set_aem); use these content-XML \
+edits last, because they are discarded the moment you re-run set_structured / \
+convert_structured_to_aem / set_aem.\n\
 5. Package & validate: build_aem_package, then ALWAYS run validate_aem_package — it checks the \
 required package structure and validates the form and DAM content XML against the AEM contract. \
 If it reports problems, fix them (structured/AEM tree, or the content XML directly) and re-run \
@@ -90,9 +138,14 @@ dates, dropdowns, checkboxes, radio/choice groups, signatures, …) MUST have a 
 field in the output. review_output reports the input vs. output field counts — any field-count \
 mismatch, or any individual input field that has no counterpart in the output, must be \
 investigated and resolved (never silently dropped), since a lost input field means data the form \
-can no longer capture. (b) If an AEM \
+can no longer capture. (b) Confirm the result is analogous to the source, not merely complete: \
+compare the rendered form against the source page images (get_plain_state_image / \
+get_annotated_state_image) and check that the section order, grouping, headings, field layout and \
+overall appearance resemble the original; fix any structural or presentational drift via the \
+appropriate layer (step 3a, then set_aem, then content XML). (c) If an AEM \
 connection is configured, upload_to_aem, then fetch_aem_form_html / fetch_aem_dor_pdf to verify \
-the deployed result. Do not finish with unexplained misses.\n\
+the deployed result looks like the source. Do not finish with unexplained misses or while the \
+form still looks materially different from the original.\n\
 Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
 downward: editing the structured tree resets the AEM tree, content XML and package; updating \
 the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
@@ -512,6 +565,15 @@ impl ConversionAgent {
         }
     }
 
+    /// Common tail of every structured-tree edit: a structured change resets the
+    /// AEM tree, content XML and package, then snapshots for versioning.
+    fn structured_edited(&mut self, label: &str) {
+        self.aem = None;
+        self.aem_xml = None;
+        self.package = None;
+        self.snapshot_structured(label);
+    }
+
     fn snapshot_aem(&mut self, label: &str) {
         let Some(ref aem) = self.aem else { return };
         let Ok(json) = serde_json::to_string(aem) else {
@@ -671,9 +733,45 @@ impl ConversionAgent {
             ),
             t(
                 "set_structured",
-                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Use this only for targeted edits to a tree you already seeded with seed_structured — do NOT use it to re-emit the full merged tree by hand (that risks dropping nodes or a language). Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
+                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Prefer the targeted structured editors below (set_structured_field / replace/insert/remove_structured_node) for fixing a seeded tree — do NOT re-emit the full merged tree by hand (that risks dropping nodes or a language). Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
                 serde_json::json!({"nodes": {"type":"array"}}),
                 serde_json::json!(["nodes"]),
+            ),
+            t(
+                "get_structured_outline",
+                "Map the working structured tree: one line per node with its path and a summary, flagging the seed's heuristic artifacts to review — `⚠ label?` (field with a missing/UNKNOWN label), `⚠ no-options` (radio/select/checkbox group with no options), `⚠ text?` (empty/UNKNOWN text). Use it to find the path to fix, then call the set/replace/insert/remove tools. Paths: a top-level index, then steps like children/<i>, rows/<r>/cells/<c>, header/cells/<c>, elements/<i>, item, content (e.g. 0/children/2).",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "get_structured_node",
+                "Return just the node (its whole subtree) at `path` as JSON. Inspect it before editing to see the exact field shapes (e.g. how `label` / `inputType` are structured).",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
+            ),
+            t(
+                "set_structured_field",
+                "Set one field of the node at `path`. `field` is a node key such as `label`, `inputType`, `options`, `required`, `placeholder`, `value`, `name`, or `content`; `value` is the raw JSON for it (match the shape shown by get_structured_node — e.g. `label` is a per-language map). Validated by round-trip, so a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_structured_node). Resets the AEM tree, content XML and package. Versioned.",
+                serde_json::json!({"path": {"type":"string"}, "field": {"type":"string"}, "value": {}}),
+                serde_json::json!(["path", "field", "value"]),
+            ),
+            t(
+                "replace_structured_node",
+                "Replace the whole node at `path` with `node`, a JSON object parseable as a StructuredNode (must include its `type`). Use for changing a node's type or rebuilding it. Resets the AEM tree, content XML and package. Versioned.",
+                serde_json::json!({"path": {"type":"string"}, "node": {"type":"object"}}),
+                serde_json::json!(["path", "node"]),
+            ),
+            t(
+                "insert_structured_node",
+                "Insert `node` (a StructuredNode JSON object) into a child list. `parent_path` is empty/\"root\" for the top level, or the path of a Group; table cells and grid elements aren't insertable (edit the table/grid node with replace_structured_node). `position` is \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>} (i = child index). Resets the AEM tree, content XML and package. Versioned.",
+                serde_json::json!({"parent_path": {"type":"string"}, "node": {"type":"object"}, "position": {"type":["string","object"]}}),
+                serde_json::json!(["parent_path", "node", "position"]),
+            ),
+            t(
+                "remove_structured_node",
+                "Remove the node at `path`. Only top-level nodes and Group children are removable (for table cells or grid elements, edit the table/grid node with replace_structured_node). Resets the AEM tree, content XML and package. Versioned.",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
             ),
             // §3 conversion
             t(
@@ -1071,6 +1169,81 @@ impl ConversionAgent {
                         ))
                     }
                     Err(e) => ToolReply::Error(format!("Invalid StructuredNode JSON: {e}")),
+                }
+            }
+            "get_structured_outline" => {
+                ToolReply::Text(crate::structured_edit::outline(&self.structured))
+            }
+            "get_structured_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() {
+                    return ToolReply::Error("`path` must not be empty.".into());
+                }
+                match crate::structured_edit::resolve_mut(&mut self.structured, &path) {
+                    Ok(node) => {
+                        ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "set_structured_field" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let field = input["field"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() || field.is_empty() {
+                    return ToolReply::Error("`path` and `field` must not be empty.".into());
+                }
+                let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                match crate::structured_edit::set_field(&mut self.structured, &path, &field, value) {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: set {field} on {path}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "replace_structured_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() {
+                    return ToolReply::Error("`path` must not be empty.".into());
+                }
+                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                match crate::structured_edit::replace_node(&mut self.structured, &path, node) {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: replace {path}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "insert_structured_node" => {
+                let parent = input["parent_path"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let pos = match crate::structured_edit::parse_insert_pos(&input["position"]) {
+                    Ok(p) => p,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                match crate::structured_edit::insert_node(&mut self.structured, &parent, node, pos) {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: insert into {parent}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "remove_structured_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                if path.is_empty() {
+                    return ToolReply::Error("`path` must not be empty.".into());
+                }
+                match crate::structured_edit::remove_node(&mut self.structured, &path) {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: remove {path}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
                 }
             }
 

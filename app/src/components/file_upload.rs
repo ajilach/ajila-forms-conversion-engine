@@ -252,22 +252,6 @@ pub fn FileUploadSection(
                         }
                     }
 
-                    button {
-                        class: "btn btn-secondary btn-sm",
-                        disabled: is_processing,
-                        onclick: {
-                            let files = uploaded_files.read().clone();
-                            move |_| {
-                                on_process.call(files.clone());
-                            }
-                        },
-                        if is_processing {
-                            "Processing..."
-                        } else {
-                            "Start Processing"
-                        }
-                    }
-
                     {
                         let has_pdf = uploaded_files
                             .read()
@@ -283,7 +267,6 @@ pub fn FileUploadSection(
                         rsx! {
                             button {
                                 class: "btn btn-primary btn-sm",
-                                style: "margin-left: 0.5rem;",
                                 disabled: is_processing || !ai_available || !has_pdf,
                                 title,
                                 onclick: {
@@ -298,6 +281,23 @@ pub fn FileUploadSection(
                                     "Start Agent Processing"
                                 }
                             }
+                        }
+                    }
+
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        style: "margin-left: 0.5rem;",
+                        disabled: is_processing,
+                        onclick: {
+                            let files = uploaded_files.read().clone();
+                            move |_| {
+                                on_process.call(files.clone());
+                            }
+                        },
+                        if is_processing {
+                            "Processing..."
+                        } else {
+                            "Start Processing"
                         }
                     }
                 }
