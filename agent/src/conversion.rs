@@ -84,7 +84,13 @@ read_package_file to inspect.\n\
 compare the input against the converted AEM tree — it lists input text and elements missing from \
 the output plus a coverage score. For EVERY miss, either fix it (edit the structured/AEM tree and \
 re-run the downstream steps) or satisfy yourself it was an intentional drop; spot-check other \
-languages with search_xfa, since review_output only compares the master language. (b) If an AEM \
+languages with search_xfa, since review_output only compares the master language. Pay particular \
+attention to input fields: every fillable field in the source (text boxes, numeric boxes, \
+dates, dropdowns, checkboxes, radio/choice groups, signatures, …) MUST have a corresponding \
+field in the output. review_output reports the input vs. output field counts — any field-count \
+mismatch, or any individual input field that has no counterpart in the output, must be \
+investigated and resolved (never silently dropped), since a lost input field means data the form \
+can no longer capture. (b) If an AEM \
 connection is configured, upload_to_aem, then fetch_aem_form_html / fetch_aem_dor_pdf to verify \
 the deployed result. Do not finish with unexplained misses.\n\
 Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
