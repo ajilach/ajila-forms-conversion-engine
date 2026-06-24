@@ -12,11 +12,11 @@
 //! any UI state.
 
 pub mod aem_client;
+pub mod aem_translated_edit;
 pub mod conversion;
 pub mod db;
 pub mod image_encode;
 pub mod references;
-pub mod structured_edit;
 
 pub use conversion::{
     ConversionAgent, SYSTEM_PROMPT, ToolReply, aem_connection_from_settings,

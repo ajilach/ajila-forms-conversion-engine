@@ -168,9 +168,20 @@ pub fn aem_schema() -> serde_json::Value {
     serde_json::to_value(schemars::schema_for!(AemNode)).expect("AemNode schema serializes")
 }
 
+/// JSON Schema for the multilingual AEM node tree (`AemNodeTranslated`).
+///
+/// Like [`aem_schema`] but for the translations-in-place type the agent authors
+/// directly. Embedded as text in the agent prompt so the model knows the exact
+/// shape to emit (text fields are per-language maps).
+pub fn aem_translated_schema() -> serde_json::Value {
+    serde_json::to_value(schemars::schema_for!(AemNodeTranslated))
+        .expect("AemNodeTranslated schema serializes")
+}
+
 // AEM generation
 pub use aem::{
-    AemConfig, AemConnectionProfile, AemNode, AemOption, AemProfile, AemScriptEngine,
+    AemConfig, AemConnectionProfile, AemI18nText, AemNode, AemNodeTranslated, AemOption,
+    AemOptionTranslated, AemProfile, AemScriptEngine, LowerConflict,
     ConditionRule, OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement,
     aem_to_structured, aem_translations_from_content, collect_languages, convert_to_aem,
     detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
