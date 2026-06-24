@@ -1307,6 +1307,8 @@ impl XfaNode {
                     let text = e
                         .unescape()
                         .map_err(|e| format!("Failed to unescape text: {}", e))?;
+                    // Repair double-encoded source text (no-op on clean UTF-8).
+                    let text = crate::util::fix_double_encoded_utf8(&text);
                     text_content.push_str(&text);
                 }
                 Ok(Event::Empty(_e)) => {
@@ -1384,6 +1386,8 @@ impl XfaNode {
                     let text = e
                         .unescape()
                         .map_err(|e| format!("Failed to unescape text: {}", e))?;
+                    // Repair double-encoded source text (no-op on clean UTF-8).
+                    let text = crate::util::fix_double_encoded_utf8(&text);
                     text_content.push_str(&text);
                     // Also add as a Text child to preserve interleaving
                     // with sibling elements (e.g. <span>s within a <p>).

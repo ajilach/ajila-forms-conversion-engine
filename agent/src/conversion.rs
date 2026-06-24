@@ -61,23 +61,33 @@ with get_reference_package / read_reference_file, and optionally run the engine 
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
 references' structure and patterns rather than inventing your own.\n\
-3. Seed the structured tree: ALWAYS seed by calling seed_structured, which copies the engine's \
-merged tree into the working tree server-side. Do NOT seed by reading get_merged_structured and \
-pasting it into set_structured — re-emitting that large tree by hand risks silently truncating it \
-or dropping a language, which yields an empty or partial form. The merged tree carries every \
-language present in the source (each translatable label/option holds all languages); \
-seed_structured preserves ALL of them, and you must keep them through every later edit — never \
-reduce the tree to a single language (if a language ever goes missing, just call seed_structured \
-again to restore the full tree). Use get_schema('structured') for the exact JSON shape.\n\
-3a. The seeded tree is a best-effort heuristic guess and is NOT accurate — you MUST review and fix \
-it before converting; seeding and converting as-is is a failure. Start with get_structured_outline, \
-which lists every node by path and flags the seed's artifacts: ⚠ label? (field with a missing or \
-UNKNOWN label), ⚠ no-options (radio/select/checkbox with no options), ⚠ text? (empty/UNKNOWN text). \
-Resolve EVERY flag, then go beyond the flags — the outline only catches the obvious cases. Work \
-section by section against the XFA (get_xfa / search_xfa) and the reference forms, calling \
-get_structured_node to see a node's exact shape, and fix in place with the targeted editors: \
-set_structured_field (change one field — label, inputType, options, required, placeholder, value, \
-content — at a path), replace_structured_node (rebuild a node or change its type), \
+3. Assemble the structured tree from the per-state building blocks. Do NOT rely on a single \
+auto-merged tree — the engine cannot reliably merge the languages and configurator variants, so a \
+merged seed comes out with duplicated sections, colliding field names and mispaired translations. \
+Instead YOU assemble it, because you can read both languages and see the rendered pages. Steps:\n\
+  a. list_states to see every state (each is one language × one configurator selection, e.g. \
+EN/Private-Person, DE/Company). get_flattened_structure_for_state returns the CLEAN, \
+single-language, single-variant tree for any one of them (no merge artifacts).\n\
+  b. Pick the master-language, most-complete configurator state as your base and call \
+seed_structured_from_state with its label. Use get_schema('structured') for the exact JSON shape.\n\
+  c. Layer in the OTHER languages: for each node, the other-language state gives the counterpart \
+text. Add it so every translatable label/option/heading/paragraph/footnote carries text for EVERY \
+language the source has — set the full per-language map with set_structured_field (get_structured_node \
+shows the map shape). Pair translations by meaning and layout position (use the page images), not by \
+guesswork. Never leave a language blank and never collapse to one language.\n\
+  d. Layer in the OTHER configurator variants: where states differ by selection (client type, \
+options…), wrap the differing content in a conditional (insert_structured_node) keyed on the \
+relevant field, so each variant appears once. Keep shared content shared — do NOT duplicate a \
+section per variant, and never reuse a field `name` across variants (that collides in AEM).\n\
+3a. Review and fix before converting; assembling and converting as-is is a failure. The per-state \
+trees are still best-effort engine guesses. Run get_structured_outline, which lists every node by \
+path and flags artifacts: ⚠ label? (field with a missing or UNKNOWN label), ⚠ no-options \
+(radio/select/checkbox with no options), ⚠ text? (empty/UNKNOWN text). Resolve EVERY flag, then go \
+beyond the flags — the outline only catches the obvious cases. Work section by section against the \
+XFA (get_xfa / search_xfa, the authority for verbatim text) and the page images (the authority for \
+layout), calling get_structured_node to see a node's exact shape, and fix in place with the targeted \
+editors: set_structured_field (change one field — label, inputType, options, required, placeholder, \
+value, content — at a path), replace_structured_node (rebuild a node or change its type), \
 insert_structured_node and remove_structured_node. Things to check and fix at this layer:\n\
   • Labels: replace every UNKNOWN/empty/wrong label with the real source text.\n\
   • Field types: ensure each field's inputType matches the source control (text, textarea, number, \
@@ -388,6 +398,19 @@ impl Extractor {
 
     fn find(&self, label: &str) -> Option<&StateRec> {
         self.states.iter().find(|s| s.label == label)
+    }
+
+    /// The clean, single-language structured tree for one state (one language ×
+    /// one configurator selection). Unlike the merged tree this carries no
+    /// cross-language/cross-state merge artifacts (no duplicated sections,
+    /// colliding field names or mispaired translations) — it's the engine's
+    /// faithful read of exactly one rendered variant, suitable as a base to
+    /// assemble the working tree from.
+    fn state_structured(&self, label: &str) -> Result<Vec<StructuredNode>, String> {
+        let rec = self
+            .find(label)
+            .ok_or_else(|| format!("No state with label '{label}'. Use list_states."))?;
+        Ok(rec.state.structured(rec.context.clone()).content)
     }
 }
 
@@ -727,22 +750,16 @@ impl ConversionAgent {
             ),
             t(
                 "get_flattened_structure_for_state",
-                "Engine structured tree for one state.",
+                "The engine's clean structured tree for ONE state (one language × one configurator selection). Carries no merge artifacts — no duplicated sections, colliding field names or mispaired translations. This is the building block you assemble the working tree from: inspect each state, compare against its page image and XFA, then seed from one and layer in the rest.",
                 with_source(state_label.clone()),
                 serde_json::json!(["state_label"]),
             ),
-            t(
-                "get_merged_structured",
-                "Inspect the engine's full merged structured tree for the source (read-only, may be large). To seed the working tree from it, use seed_structured instead of copying this back through set_structured.",
-                with_source(serde_json::json!({})),
-                serde_json::json!([]),
-            ),
             // §2 structured tree
             t(
-                "seed_structured",
-                "Seed the working structured tree directly from the engine's merged tree, server-side (no payload round-trips through you, so nothing can be truncated or lose a language). This is the standard way to seed; prefer it over get_merged_structured + set_structured. Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
-                with_source(serde_json::json!({})),
-                serde_json::json!([]),
+                "seed_structured_from_state",
+                "Seed the working structured tree from ONE state's clean tree (see get_flattened_structure_for_state), server-side — no payload round-trips through you. Use the master-language, most-complete configurator state as your base, then layer in the other languages (set_structured_field on labels/text) and the other configurator variants (insert_structured_node with conditionals) using the structured editors. Resets the AEM tree, content XML and package. Versioned.",
+                with_source(state_label.clone()),
+                serde_json::json!(["state_label"]),
             ),
             t(
                 "get_structured",
@@ -752,7 +769,7 @@ impl ConversionAgent {
             ),
             t(
                 "set_structured",
-                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Prefer the targeted structured editors below (set_structured_field / replace/insert/remove_structured_node) for fixing a seeded tree — do NOT re-emit the full merged tree by hand (that risks dropping nodes or a language). Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
+                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Prefer seed_structured_from_state to start, then the targeted editors below (set_structured_field / replace/insert/remove_structured_node) to assemble and fix — do NOT re-emit a large tree by hand (that risks dropping nodes or a language). Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
                 serde_json::json!({"nodes": {"type":"array"}}),
                 serde_json::json!(["nodes"]),
             ),
@@ -795,7 +812,7 @@ impl ConversionAgent {
             // §3 conversion
             t(
                 "convert_structured_to_aem",
-                "Convert the current structured tree to the AEM tree (replaces it). Requires a non-empty structured tree (seed it with seed_structured first). Invalidates the content XML and package. Versioned.",
+                "Convert the current structured tree to the AEM tree (replaces it). Requires a non-empty structured tree (seed it with seed_structured_from_state first). Invalidates the content XML and package. Versioned.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -1124,49 +1141,45 @@ impl ConversionAgent {
                     .unwrap_or_default()
                     .to_string();
                 match self.extractor(input) {
-                    Ok(ex) => match ex.find(&label) {
-                        Some(rec) => {
-                            let env = rec.state.structured(rec.context.clone());
-                            ToolReply::Text(
-                                serde_json::to_string_pretty(&env.content).unwrap_or_default(),
-                            )
-                        }
-                        None => ToolReply::Error(format!("Unknown state_label: {label:?}")),
+                    Ok(ex) => match ex.state_structured(&label) {
+                        Ok(content) => ToolReply::Text(
+                            serde_json::to_string_pretty(&content).unwrap_or_default(),
+                        ),
+                        Err(e) => ToolReply::Error(e),
                     },
                     Err(e) => ToolReply::Error(e),
                 }
             }
-            "get_merged_structured" => match self.extractor(input) {
-                Ok(ex) => {
-                    ToolReply::Text(serde_json::to_string_pretty(&ex.merged).unwrap_or_default())
+            "seed_structured_from_state" => {
+                let label = input["state_label"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                if label.is_empty() {
+                    return ToolReply::Error("`state_label` must not be empty.".into());
                 }
-                Err(e) => ToolReply::Error(e),
-            },
-            "seed_structured" => match self.extractor(input) {
-                Ok(ex) => {
-                    let merged = ex.merged.clone();
-                    if merged.is_empty() {
-                        return ToolReply::Error(
-                            "Merged structured tree is empty for this source; nothing to seed."
-                                .into(),
-                        );
-                    }
-                    let n = merged.len();
-                    self.structured = merged;
-                    // Seeding replaces the structured tree, so reset everything downstream.
-                    self.aem = None;
-                    self.aem_xml = None;
-                    self.package = None;
-                    self.snapshot_structured("AI: seed structured from merged");
-                    ToolReply::Text(format!(
-                        "OK — working structured tree seeded from the engine's merged tree \
-                         ({n} top-level node(s); all languages preserved verbatim). AEM tree, \
-                         content XML and package reset — review with get_structured, then re-run \
-                         convert_structured_to_aem."
-                    ))
+                let nodes = match self.extractor(input) {
+                    Ok(ex) => match ex.state_structured(&label) {
+                        Ok(n) => n,
+                        Err(e) => return ToolReply::Error(e),
+                    },
+                    Err(e) => return ToolReply::Error(e),
+                };
+                if nodes.is_empty() {
+                    return ToolReply::Error(format!(
+                        "State '{label}' produced an empty structured tree; nothing to seed."
+                    ));
                 }
-                Err(e) => ToolReply::Error(e),
-            },
+                let n = nodes.len();
+                self.structured = nodes;
+                self.structured_edited(&format!("AI: seed structured from state {label}"));
+                ToolReply::Text(format!(
+                    "OK — working structured tree seeded from state '{label}' ({n} top-level \
+                     node(s), one language). Now layer in the other languages (set_structured_field) \
+                     and configurator variants (insert_structured_node) from the other states, \
+                     reviewing with get_structured_outline. AEM tree, content XML and package reset."
+                ))
+            }
 
             // §2 structured
             "get_structured" => {
@@ -1270,7 +1283,7 @@ impl ConversionAgent {
             "convert_structured_to_aem" => {
                 if self.structured.is_empty() {
                     return ToolReply::Error(
-                        "Structured tree is empty; set_structured first.".into(),
+                        "Structured tree is empty; seed_structured_from_state first.".into(),
                     );
                 }
                 let cfg = match self.config() {
