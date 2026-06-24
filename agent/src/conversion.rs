@@ -54,18 +54,15 @@ with get_reference_package / read_reference_file, and optionally run the engine 
 reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
 to compare against its known-good package. Build the structured and AEM trees to match the \
 references' structure and patterns rather than inventing your own.\n\
-3. Seed the structured tree: ALWAYS seed by calling seed_structured, which copies the engine's \
-merged tree into the working tree server-side. Do NOT seed by reading get_merged_structured and \
-pasting it into set_structured — re-emitting that large tree by hand risks silently truncating it \
-or dropping a language, which yields an empty or partial form. After seeding, read the working \
+3. Seed the structured tree: You can seed by calling seed_structured, which copies the engine's \
+merged tree into the working tree server-side. After seeding, read the working \
 tree with get_structured and use get_schema('structured') for the exact JSON shape. The merged \
 tree carries every language present in the source (each translatable label/option holds all \
 languages); seed_structured preserves ALL of them, and you must keep them through every later \
 set_structured edit — never reduce the tree to a single language. The seeded tree is a best-effort \
 heuristic guess and is NOT guaranteed accurate — review it against the XFA (get_xfa / search_xfa) \
 and the reference forms, and fix field types, labels, options and grouping (with set_structured) \
-before converting. On a refinement run, if the working tree is missing a language, just call \
-seed_structured again to restore the full merged tree before applying your changes.\n\
+before converting.\n\
 4. Convert: convert_structured_to_aem, then inspect get_aem / get_aem_content_xml and refine \
 with set_aem (get_schema('aem') for the shape).\n\
 4b. You can also hand-edit the final JCR content XML directly with structure-aware tools — \
@@ -136,12 +133,23 @@ const APP_SETTINGS_KEY: &str = "app";
 pub fn aem_connection_from_settings() -> Option<AemConnection> {
     let json = crate::db::get_setting(APP_SETTINGS_KEY)?;
     let v: serde_json::Value = serde_json::from_str(&json).ok()?;
-    let host = v.get("aem_host").and_then(|h| h.as_str()).unwrap_or_default().trim();
-    let username = v.get("aem_username").and_then(|u| u.as_str()).unwrap_or_default().trim();
+    let host = v
+        .get("aem_host")
+        .and_then(|h| h.as_str())
+        .unwrap_or_default()
+        .trim();
+    let username = v
+        .get("aem_username")
+        .and_then(|u| u.as_str())
+        .unwrap_or_default()
+        .trim();
     if host.is_empty() || username.is_empty() {
         return None;
     }
-    let password = v.get("aem_password").and_then(|p| p.as_str()).unwrap_or_default();
+    let password = v
+        .get("aem_password")
+        .and_then(|p| p.as_str())
+        .unwrap_or_default();
     Some(AemConnection {
         host: host.trim_end_matches('/').to_string(),
         username: username.to_string(),
@@ -1179,7 +1187,10 @@ impl ConversionAgent {
                 })
             }
             "insert_aem_xml_node" => {
-                let parent = input["parent_path"].as_str().unwrap_or_default().to_string();
+                let parent = input["parent_path"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
                 let frag = input["xml"].as_str().unwrap_or_default().to_string();
                 if parent.is_empty() || frag.is_empty() {
                     return ToolReply::Error("`parent_path` and `xml` must not be empty.".into());
