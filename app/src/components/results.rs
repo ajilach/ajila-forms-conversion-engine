@@ -30,6 +30,31 @@ fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
     }
 }
 
+fn agent_log_markdown(steps: &[crate::models::AgentStep]) -> String {
+    use crate::models::{AgentStepKind, AgentStepStatus};
+    let mut out = String::from("# Agent Conversion Log\n\n");
+    for step in steps {
+        match step.kind {
+            AgentStepKind::Thought => {
+                out.push_str(&format!("> {}\n\n", step.label.replace('\n', "\n> ")));
+            }
+            AgentStepKind::Tool => {
+                let icon = match step.status {
+                    AgentStepStatus::Done => "✓",
+                    AgentStepStatus::Error => "✗",
+                    AgentStepStatus::Running => "…",
+                };
+                if step.detail.is_empty() {
+                    out.push_str(&format!("- {icon} `{}`\n", step.label));
+                } else {
+                    out.push_str(&format!("- {icon} `{}` — {}\n", step.label, step.detail));
+                }
+            }
+        }
+    }
+    out
+}
+
 #[derive(Clone, PartialEq, Props)]
 pub struct ResultsSectionProps {
     /// The current processing state.
@@ -63,8 +88,10 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
     let mut pending_edit = use_signal(|| None::<PendingEdit>);
 
     let has_edit_group = state.envelope.is_some() || state.html_preview.is_some();
-    let has_download_group =
-        state.merged_json.is_some() || state.aem_package.is_some() || state.xsd_schema.is_some();
+    let has_download_group = state.merged_json.is_some()
+        || state.aem_package.is_some()
+        || state.xsd_schema.is_some()
+        || !state.agent_steps.is_empty();
 
     rsx! {
         div { class: "results-container",
@@ -185,6 +212,20 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                                     move |_| download_file(xsd_data.as_bytes(), &xsd_filename, "application/xml")
                                 },
                                 "XSD Schema"
+                            }
+                        }
+                        if !state.agent_steps.is_empty() {
+                            button {
+                                class: "btn btn-secondary btn-lg",
+                                onclick: {
+                                    let steps = state.agent_steps.clone();
+                                    let log_filename = filename("agent-log", &state.form_code, "md");
+                                    move |_| {
+                                        let md = agent_log_markdown(&steps);
+                                        download_file(md.as_bytes(), &log_filename, "text/markdown");
+                                    }
+                                },
+                                "Agent Log"
                             }
                         }
                     }
