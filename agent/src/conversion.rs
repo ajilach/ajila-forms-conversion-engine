@@ -16,7 +16,15 @@
 
 use std::collections::HashMap;
 
-use blueprint::{AemConfig, AemConnection, AemNode, Context, DocumentEnvelope, StructuredNode};
+use blueprint::{
+    AemConfig, AemConnection, AemNode, AemNodeTranslated, Context, DocumentEnvelope, StructuredNode,
+};
+
+/// Error returned by the AEM-tree tools when nothing has been authored yet.
+const NO_AEM_TREE: &str = "No AEM tree yet; author it with set_aem_translated.";
+
+/// The package writer's translation dictionary: master text → { lang → text }.
+type I18nDict = std::collections::HashMap<String, std::collections::HashMap<String, String>>;
 
 /// Render scale for on-demand page images.
 const RENDER_SCALE: f32 = 1.5;
@@ -40,133 +48,84 @@ not an approximation — judge your work throughout by whether the rendered AEM 
 source, and keep fixing until it does.\n\n\
 Typical workflow (call tools as needed; each step is a separate call):\n\
 1. Inspect the input: get_source_info, get_profile_info (form_code, languages, JCR paths, \
-binding flags), list_states, explore_states, get_xfa (authoritative text/fields), search_xfa \
-(find specific fields/labels), get_plain_state_image / get_annotated_state_image, \
-get_flattened_structure_for_state. A form is multilingual whenever get_source_info (or the \
-merged structured content) lists more than one language — trust that over get_profile_info if \
-they disagree. For a multilingual form the translations ride along in the merged structured \
-content and are bundled into the package automatically: you MUST carry every one of those \
-languages through to the final tree — don't invent translations, and never drop a language the \
-source contains.\n\
-2. Find precedents (do this before building): work through the input section by section. For \
-EACH section, do NOT search by form name or a single keyword — instead write a short \
-natural-language DESCRIPTION of that section (its purpose, the kinds of fields it has and how \
-they're grouped) and pass that description to search_references, which matches it semantically \
-against the reference forms' descriptions. Use grep_references only when you need a specific \
-string (a field name, label, or AEM resource type) verbatim. Also consult grep_reference_docs / \
-list_reference_forms. Different sections will often match different reference forms; find the \
-closest precedent for each so every section is built as accurately as possible. Study how those \
-known-good forms were built: inspect their package XML \
-with get_reference_package / read_reference_file, and optionally run the engine on a \
-reference's input by passing source={\"reference\":\"<ref_id>\"} to the step-1 inspection tools \
-to compare against its known-good package. Build the structured and AEM trees to match the \
-references' structure and patterns rather than inventing your own.\n\
-3. Assemble the structured tree from the per-state building blocks. Do NOT rely on a single \
-auto-merged tree — the engine cannot reliably merge the languages and configurator variants, so a \
-merged seed comes out with duplicated sections, colliding field names and mispaired translations. \
-Instead YOU assemble it, because you can read both languages and see the rendered pages. Steps:\n\
-  a. list_states to see every state (each is one language × one configurator selection, e.g. \
-EN/Private-Person, DE/Company). get_flattened_structure_for_state returns the CLEAN, \
-single-language, single-variant tree for any one of them (no merge artifacts).\n\
-  b. Pick the master-language, most-complete configurator state as your base and call \
-seed_structured_from_state with its label. Use get_schema('structured') for the exact JSON shape.\n\
-  c. Layer in the OTHER languages: for each node, the other-language state gives the counterpart \
-text. Add it so every translatable label/option/heading/paragraph/footnote carries text for EVERY \
-language the source has — set the full per-language map with set_structured_field (get_structured_node \
-shows the map shape). Pair translations by meaning and layout position (use the page images), not by \
-guesswork. Never leave a language blank and never collapse to one language.\n\
-  d. Layer in the OTHER configurator variants: where states differ by selection (client type, \
-options…), wrap the differing content in a conditional (insert_structured_node) keyed on the \
-relevant field, so each variant appears once. Keep shared content shared — do NOT duplicate a \
-section per variant, and never reuse a field `name` across variants (that collides in AEM).\n\
-3a. Review and fix before converting; assembling and converting as-is is a failure. The per-state \
-trees are still best-effort engine guesses. Run get_structured_outline, which lists every node by \
-path and flags artifacts: ⚠ label? (field with a missing or UNKNOWN label), ⚠ no-options \
-(radio/select/checkbox with no options), ⚠ text? (empty/UNKNOWN text). Resolve EVERY flag, then go \
-beyond the flags — the outline only catches the obvious cases. Work section by section against the \
-XFA (get_xfa / search_xfa, the authority for verbatim text) and the page images (the authority for \
-layout), calling get_structured_node to see a node's exact shape, and fix in place with the targeted \
-editors: set_structured_field (change one field — label, inputType, options, required, placeholder, \
-value, content — at a path), replace_structured_node (rebuild a node or change its type), \
-insert_structured_node and remove_structured_node. Things to check and fix at this layer:\n\
-  • Labels: replace every UNKNOWN/empty/wrong label with the real source text.\n\
-  • Field types: ensure each field's inputType matches the source control (text, textarea, number, \
-date, email, tel, bool, radio, select, checkboxGroup) — the seed often guesses text for everything.\n\
-  • Options: choice fields (radio/select/checkboxGroup) must list every option with its real name \
-AND value.\n\
-  • Missing translations: every translatable label, option name, heading, paragraph and footnote \
-MUST carry text for EVERY language the source has — the seed sometimes fills only one language. \
-Compare languages with search_xfa and add any missing one by setting the field's label/content to \
-the full per-language map (get_structured_node shows the map shape). Never leave a language blank \
-and never collapse to a single language.\n\
-  • Heading levels: set each heading's level to reflect the document's real outline/hierarchy, not \
-the flat or guessed level the seed produced.\n\
-  • Grouping & layout: nest fields into the groups/panels the source implies, fix grid columns and \
-spans, and set repeatable min/max occurrences and conditional visibility conditions to match.\n\
-  • Required, placeholders, default values: set these from the source.\n\
-  • Structure: remove spurious or duplicate nodes, and insert any field or section the seed missed.\n\
-Prefer the targeted editors over set_structured (whole-tree replace); reserve set_structured for \
-sweeping rewrites. Only convert once get_structured_outline shows no unresolved flags and you have \
-verified the whole field set, the grouping and all languages against the source.\n\
-4. Convert: convert_structured_to_aem, then review the AEM tree (get_aem) and the rendered content \
-XML (get_aem_content_xml). The structured tree deliberately models only what is portable; it CANNOT \
-express many AEM Adaptive-Form concepts — often the very layout and presentation details that make \
-the result look analogous to the source — and you are encouraged to fix those here rather than \
-forcing them into the structured tree or leaving them wrong. Edit the AEM tree with set_aem \
-(get_schema('aem') for the shape) for AEM-only concerns such as: panel/wizard/tabbed/accordion \
-layout and column counts, field and panel widths/styling/CSS classes, short and long descriptions, \
-tooltips and help text, validation/visibility/enabled/value-calculation expressions and scripts, \
-submit actions and thank-you handling, navigation and summary/review panels, XSD data bindings, \
-rich-text content, and any property the structured schema simply has no field for. A structured \
-edit + reconvert regenerates the AEM tree (and discards AEM-tree edits), so do the structured-level \
-fixes from step 3a FIRST and only then layer AEM-tree edits on top.\n\
-4b. For finer control than set_aem (whole-tree replace) gives, hand-edit the final JCR content XML \
-directly with structure-aware tools — the right choice for localized attribute-level tweaks and for \
-anything the AEM tree can't express either. First map it with get_aem_xml_outline (node paths + \
-key attributes) and inspect a node with get_aem_xml_node; then edit by path with \
-set_aem_xml_attribute / remove_aem_xml_attribute (attribute values are taken verbatim, so pass \
-JCR-typed values like {Boolean}true), remove_aem_xml_node, replace_aem_xml_node and \
-insert_aem_xml_node. Nodes are addressed by a /-separated path of element names from the root \
-(e.g. jcr:root/guideContainer/panel_<uuid>/textbox_<uuid>); add a 1-based index like default[2] \
-only when sibling names repeat. Every edit is validated (rejected if it would produce malformed \
-XML) and versioned. Escalation ladder, least-fragile first: fix in the structured tree (step 3a) \
-whenever the concept exists there; otherwise edit the AEM tree (set_aem); use these content-XML \
-edits last, because they are discarded the moment you re-run set_structured / \
-convert_structured_to_aem / set_aem.\n\
-5. Package & validate: build_aem_package, then ALWAYS run validate_aem_package — it checks the \
-required package structure and validates the form and DAM content XML against the AEM contract. \
-If it reports problems, fix them (structured/AEM tree, or the content XML directly) and re-run \
-the downstream steps; never upload or export an invalid package. Use get_package_info / \
-read_package_file to inspect.\n\
-6. Review: once the package validates, verify the result end to end. (a) Call review_output to \
-compare the input against the converted AEM tree — it lists input text and elements missing from \
-the output plus a coverage score. For EVERY miss, either fix it (edit the structured/AEM tree and \
-re-run the downstream steps) or satisfy yourself it was an intentional drop; spot-check other \
-languages with search_xfa, since review_output only compares the master language. Pay particular \
-attention to input fields: every fillable field in the source (text boxes, numeric boxes, \
-dates, dropdowns, checkboxes, radio/choice groups, signatures, …) MUST have a corresponding \
-field in the output. review_output reports the input vs. output field counts — any field-count \
-mismatch, or any individual input field that has no counterpart in the output, must be \
-investigated and resolved (never silently dropped), since a lost input field means data the form \
-can no longer capture. (b) Confirm the result is analogous to the source, not merely complete: \
-compare the rendered form against the source page images (get_plain_state_image / \
-get_annotated_state_image) and check that the section order, grouping, headings, field layout and \
-overall appearance resemble the original; fix any structural or presentational drift via the \
-appropriate layer (step 3a, then set_aem, then content XML). (c) If an AEM \
-connection is configured, upload_to_aem, then fetch_aem_form_html / fetch_aem_dor_pdf to verify \
-the deployed result looks like the source. Do not finish with unexplained misses or while the \
-form still looks materially different from the original.\n\
-Pipeline & invalidation: structured tree -> AEM tree -> content XML -> package. Edits cascade \
-downward: editing the structured tree resets the AEM tree, content XML and package; updating \
-the AEM tree invalidates the content XML and package; editing the content XML invalidates the \
-package. After any edit, re-run the downstream steps (including validate_aem_package).\n\
-Consult reference documentation when unsure: list_reference_docs, read_reference_doc, \
-grep_reference_docs.\n\n\
+binding flags), list_states, explore_states, get_xfa (the authoritative text/fields, in every \
+language), search_xfa (find specific fields/labels), get_plain_state_image / \
+get_annotated_state_image, and get_flattened_structure_for_state (the engine's CLEAN, \
+single-language, single-variant tree for ONE state — your structural reference for fields and \
+grouping). A form is multilingual whenever get_source_info lists more than one language — trust \
+that over get_profile_info if they disagree. You MUST carry every one of those languages into the \
+final form; don't invent translations, and never drop a language the source contains.\n\
+2. Find precedents (before building): work section by section. For EACH section, do NOT search by \
+form name or a single keyword — write a short natural-language DESCRIPTION of that section (its \
+purpose, the kinds of fields it has and how they're grouped) and pass it to search_references, \
+which matches it semantically against the reference forms. Use grep_references only for a verbatim \
+string (a field name, label, or AEM resource type); also consult grep_reference_docs / \
+list_reference_forms. Different sections often match different references; study how those \
+known-good forms were built with get_reference_package / read_reference_file, and optionally run \
+the engine on a reference's input via source={\"reference\":\"<ref_id>\"}. Match the references' \
+structure and patterns rather than inventing your own — including noticing where they reference a \
+reusable fragment (a `fragRef` to a `_fragmentlib` path) instead of building a section's fields inline.\n\
+3. Author the AEM tree DIRECTLY as an AemNodeTranslated: one multilingual AEM node tree in which \
+every user-visible text field (title/label/content and option labels) is a per-language map like \
+{\"de\":\"…\",\"en\":\"…\"}. Call get_schema('aem_translated') for the exact shape. There is no \
+automated merge — YOU combine the languages and configurator variants, because you can read every \
+language and see the rendered pages. Steps:\n\
+  a. Read each state with get_flattened_structure_for_state (every language × every configurator \
+selection, e.g. EN/Private-Person, DE/Company) plus its page image. The XFA is the authority for \
+verbatim text in each language; the images are the authority for layout and section order.\n\
+  b. Build the whole tree in one set_aem_translated call: lay out the sections in source order; \
+for every text field include EVERY source language (pair translations by meaning and layout \
+position — never leave a language blank or collapse to one); give each fillable field the right \
+component type, options (real labels AND values), required/visible state and column width; nest \
+fields into Panels and use Repeatable for repeating sections; where content differs by configurator \
+selection, include each variant once — keep shared content shared, and NEVER reuse a node `name` \
+(that collides in AEM). For recurring standard sections that the bank ships as reusable fragments \
+— address, signature, account holder / contractual partner / beneficial owner / power of attorney, \
+banking relationship, IBAN, individual or entity basics, internal-bank-use, and the like — do NOT \
+hand-build the panel's inner fields; emit a single `Fragment` node that references the fragment by \
+its JCR path (`frag_ref`), exactly as the reference forms do. Find the matching fragment and its \
+path in the fragment-library documentation (read_reference_doc / grep_reference_docs for \"AF \
+Fragments and Common Fields\") and confirm it against the reference packages (grep_references for \
+`fragRef`); pick the `_fragmentlib` matching the form's entity (e.g. germany / italy / ch / ubs / \
+global). A fragment's internal fields are supplied by AEM at runtime from that path, so never also \
+recreate them as children — that duplicates the section. Keep the fragment's `bind_ref`; for a \
+section repeated per party emit one Fragment instance per party inside the Repeatable; and never \
+replace a conditional panel (one with show/hide behaviour) with a fragment.\n\
+  c. Refine with the granular editors rather than re-emitting the whole tree: \
+get_aem_translated_outline maps every node by path and flags `⚠ empty` (text-bearing node with no \
+text) and `⚠ 1 lang` (only one language — likely a missing translation); get_aem_translated_node \
+shows a node's exact shape; set_aem_translated_field changes one field (label/title/content/options/ \
+visible/mandatory/colspan/bind_ref…); replace_aem_translated_node rebuilds a node or changes its \
+type; insert_aem_translated_node / remove_aem_translated_node add or drop nodes (Panel/Repeatable/ \
+Root hold children). Resolve EVERY flag and verify the whole field set, the grouping and all \
+languages against the source — authoring and packaging as-is is a failure.\n\
+4. Package & validate: build_aem_package lowers your tree to the AEM form plus a per-language \
+translation dictionary, then ALWAYS run validate_aem_package — it checks the required package \
+structure and validates the form and DAM content XML against the AEM contract. If it reports \
+problems, fix them in the AEM tree (set_aem_translated_field / replace/insert/remove) and rebuild; \
+never upload or export an invalid package. Inspect with get_package_info / read_package_file.\n\
+5. Review end to end. (a) review_output compares the source against your tree and lists input \
+text/elements missing from the output plus a coverage score. For EVERY miss, fix it (edit the tree \
+and rebuild) or satisfy yourself it was an intentional drop; spot-check non-master languages with \
+search_xfa, since review_output compares the master language only. Every fillable source field \
+(text boxes, numeric boxes, dates, dropdowns, checkboxes, radio/choice groups, signatures, …) MUST \
+have a counterpart in the output — investigate and resolve any field-count mismatch or missing \
+field (never silently dropped), since a lost field means data the form can no longer capture. \
+(b) Confirm the result is analogous to the source, not merely complete: compare the rendered form \
+against the source page images (get_plain_state_image / get_annotated_state_image) and check that \
+the section order, grouping, headings, field layout and overall appearance resemble the original; \
+fix any drift with the editors and rebuild. (c) If an AEM connection is configured, upload_to_aem, \
+then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result looks like the source. \
+Do not finish with unexplained misses or while the form still looks materially different from the \
+original.\n\
+After ANY edit to the tree, the package is invalidated — rebuild with build_aem_package and re-run \
+validate_aem_package before reviewing. Consult reference documentation when unsure: \
+list_reference_docs, read_reference_doc, grep_reference_docs.\n\n\
 Never invent text content: take all labels/options/help text verbatim from the XFA, and never \
-write copy of your own. Likewise, the final form must contain EVERY language present in the \
-source (get_source_info / the merged structured content list them) and ONLY those: never drop a \
-language the source contains, and never invent a translation for a language it does not. When \
-done, call finish. Keep tool inputs minimal and valid JSON.";
+write copy of your own. The final form must contain EVERY language present in the source \
+(get_source_info lists them) and ONLY those: never drop a language the source contains, and never \
+invent a translation for a language it does not. When done, call finish. Keep tool inputs minimal \
+and valid JSON.";
 
 /// The result of executing one tool call, to be returned to the model as a
 /// `tool_result` content block.
@@ -424,12 +383,12 @@ pub struct ConversionAgent {
     current_pdfs: Vec<(String, Vec<u8>)>,
     extractors: HashMap<String, Extractor>,
 
+    /// Kept only to feed `config()`'s language detection before any tree is
+    /// authored (via the extractor's merged tree); not agent-editable anymore.
     structured: Vec<StructuredNode>,
-    aem: Option<AemNode>,
-    /// The stored, hand-editable `.content.xml`. `None` = not materialized;
-    /// materialized lazily from the AEM tree on first read/edit and used
-    /// verbatim for the package build until something upstream invalidates it.
-    aem_xml: Option<String>,
+    /// The working multilingual AEM tree the agent authors directly. Lowered to
+    /// `(AemNode, translations)` at build/review time.
+    aem_translated: Option<AemNodeTranslated>,
     package: Option<Vec<u8>>,
 
     structured_session: String,
@@ -470,8 +429,7 @@ impl ConversionAgent {
             current_pdfs: pdfs,
             extractors: HashMap::new(),
             structured: Vec::new(),
-            aem: None,
-            aem_xml: None,
+            aem_translated: None,
             package: None,
             structured_session,
             aem_session: None,
@@ -601,28 +559,15 @@ impl ConversionAgent {
         }
     }
 
-    fn snapshot_structured(&mut self, label: &str) {
-        if let Ok(json) = serde_json::to_string(&self.structured) {
-            crate::db::insert_edit(&self.structured_session, label, &json);
-        }
-    }
 
-    /// Common tail of every structured-tree edit: a structured change resets the
-    /// AEM tree, content XML and package, then snapshots for versioning.
-    fn structured_edited(&mut self, label: &str) {
-        self.aem = None;
-        self.aem_xml = None;
-        self.package = None;
-        self.snapshot_structured(label);
-    }
-
-    fn snapshot_aem(&mut self, label: &str) {
-        let Some(ref aem) = self.aem else { return };
-        let Ok(json) = serde_json::to_string(aem) else {
+    /// Snapshot the working AEM (translated) tree for versioning.
+    fn snapshot_aem_translated(&mut self, label: &str) {
+        let Some(ref tree) = self.aem_translated else {
             return;
         };
-        // Write to the same derived id the AEM editor reads
-        // (`{structured_session}#aem`) so the agent's AEM history shows there.
+        let Ok(json) = serde_json::to_string(tree) else {
+            return;
+        };
         let sid = self
             .aem_session
             .get_or_insert_with(|| format!("{}#aem", self.structured_session))
@@ -630,53 +575,18 @@ impl ConversionAgent {
         crate::db::insert_edit(&sid, label, &json);
     }
 
-    fn snapshot_aem_xml(&mut self, label: &str) {
-        let Some(ref xml) = self.aem_xml else { return };
-        let sid = format!("{}#aem-xml", self.structured_session);
-        crate::db::insert_edit(&sid, label, xml);
+    /// Common tail of every AEM-tree edit: invalidate the package, then snapshot.
+    fn aem_translated_edited(&mut self, label: &str) {
+        self.package = None;
+        self.snapshot_aem_translated(label);
     }
 
-    /// Ensure `self.aem_xml` is materialized from the current AEM tree, returning
-    /// the stored XML. Errors if there is no AEM tree yet.
-    fn ensure_aem_xml(&mut self) -> Result<String, String> {
-        if self.aem_xml.is_none() {
-            let aem = self
-                .aem
-                .clone()
-                .ok_or("No AEM tree yet; call convert_structured_to_aem.")?;
-            let cfg = self.config()?;
-            self.aem_xml = Some(blueprint::generate_aem_xml(&aem, &cfg));
-        }
-        Ok(self.aem_xml.clone().unwrap())
-    }
-
-    /// Apply a structure-aware edit to the materialized content XML: run `f` on
-    /// the current XML, and on success store the result, invalidate the package,
-    /// and snapshot it under `label`. The core editor rejects edits that would
-    /// produce non-well-formed XML, so a returned `Err` leaves `self.aem_xml`
-    /// untouched.
-    fn apply_aem_xml_edit(
-        &mut self,
-        label: &str,
-        f: impl FnOnce(&str) -> Result<String, String>,
-    ) -> ToolReply {
-        let xml = match self.ensure_aem_xml() {
-            Ok(xml) => xml,
-            Err(e) => return ToolReply::Error(e),
-        };
-        match f(&xml) {
-            Ok(updated) => {
-                let len = updated.len();
-                self.aem_xml = Some(updated);
-                // Editing the content XML invalidates the package.
-                self.package = None;
-                self.snapshot_aem_xml(label);
-                ToolReply::Text(format!(
-                    "OK — content XML is now {len} bytes (package invalidated)."
-                ))
-            }
-            Err(e) => ToolReply::Error(e),
-        }
+    /// Lower the working multilingual tree to the single-language `AemNode` plus
+    /// the master-text-keyed translation dictionary the package writer consumes.
+    fn lower_aem_translated(&mut self) -> Result<(AemNode, I18nDict), String> {
+        let cfg = self.config()?;
+        let tree = self.aem_translated.as_ref().ok_or(NO_AEM_TREE)?;
+        Ok(tree.lower(&cfg.master_language, &cfg.languages))
     }
 
     // ── Tool definitions ───────────────────────────────────────────────────────
@@ -755,137 +665,54 @@ impl ConversionAgent {
                 serde_json::json!(["state_label"]),
             ),
             // §2 structured tree
+            // §2 multilingual AEM tree (AemNodeTranslated) — authored directly.
             t(
-                "seed_structured_from_state",
-                "Seed the working structured tree from ONE state's clean tree (see get_flattened_structure_for_state), server-side — no payload round-trips through you. Use the master-language, most-complete configurator state as your base, then layer in the other languages (set_structured_field on labels/text) and the other configurator variants (insert_structured_node with conditionals) using the structured editors. Resets the AEM tree, content XML and package. Versioned.",
-                with_source(state_label.clone()),
-                serde_json::json!(["state_label"]),
-            ),
-            t(
-                "get_structured",
-                "Return the current working structured tree (JSON).",
-                serde_json::json!({}),
-                serde_json::json!([]),
-            ),
-            t(
-                "set_structured",
-                "Replace the whole structured tree. `nodes` is a JSON array parseable as Vec<StructuredNode>. Prefer seed_structured_from_state to start, then the targeted editors below (set_structured_field / replace/insert/remove_structured_node) to assemble and fix — do NOT re-emit a large tree by hand (that risks dropping nodes or a language). Resets the AEM tree, content XML and package (re-run convert_structured_to_aem after). Versioned.",
-                serde_json::json!({"nodes": {"type":"array"}}),
-                serde_json::json!(["nodes"]),
-            ),
-            t(
-                "get_structured_outline",
-                "Map the working structured tree: one line per node with its path and a summary, flagging the seed's heuristic artifacts to review — `⚠ label?` (field with a missing/UNKNOWN label), `⚠ no-options` (radio/select/checkbox group with no options), `⚠ text?` (empty/UNKNOWN text). Use it to find the path to fix, then call the set/replace/insert/remove tools. Paths: a top-level index, then steps like children/<i>, rows/<r>/cells/<c>, header/cells/<c>, elements/<i>, item, content (e.g. 0/children/2).",
-                serde_json::json!({}),
-                serde_json::json!([]),
-            ),
-            t(
-                "get_structured_node",
-                "Return just the node (its whole subtree) at `path` as JSON. Inspect it before editing to see the exact field shapes (e.g. how `label` / `inputType` are structured).",
-                serde_json::json!({"path": {"type":"string"}}),
-                serde_json::json!(["path"]),
-            ),
-            t(
-                "set_structured_field",
-                "Set one field of the node at `path`. `field` is a node key such as `label`, `inputType`, `options`, `required`, `placeholder`, `value`, `name`, or `content`; `value` is the raw JSON for it (match the shape shown by get_structured_node — e.g. `label` is a per-language map). Validated by round-trip, so a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_structured_node). Resets the AEM tree, content XML and package. Versioned.",
-                serde_json::json!({"path": {"type":"string"}, "field": {"type":"string"}, "value": {}}),
-                serde_json::json!(["path", "field", "value"]),
-            ),
-            t(
-                "replace_structured_node",
-                "Replace the whole node at `path` with `node`, a JSON object parseable as a StructuredNode (must include its `type`). Use for changing a node's type or rebuilding it. Resets the AEM tree, content XML and package. Versioned.",
-                serde_json::json!({"path": {"type":"string"}, "node": {"type":"object"}}),
-                serde_json::json!(["path", "node"]),
-            ),
-            t(
-                "insert_structured_node",
-                "Insert `node` (a StructuredNode JSON object) into a child list. `parent_path` is empty/\"root\" for the top level, or the path of a Group; table cells and grid elements aren't insertable (edit the table/grid node with replace_structured_node). `position` is \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>} (i = child index). Resets the AEM tree, content XML and package. Versioned.",
-                serde_json::json!({"parent_path": {"type":"string"}, "node": {"type":"object"}, "position": {"type":["string","object"]}}),
-                serde_json::json!(["parent_path", "node", "position"]),
-            ),
-            t(
-                "remove_structured_node",
-                "Remove the node at `path`. Only top-level nodes and Group children are removable (for table cells or grid elements, edit the table/grid node with replace_structured_node). Resets the AEM tree, content XML and package. Versioned.",
-                serde_json::json!({"path": {"type":"string"}}),
-                serde_json::json!(["path"]),
-            ),
-            // §3 conversion
-            t(
-                "convert_structured_to_aem",
-                "Convert the current structured tree to the AEM tree (replaces it). Requires a non-empty structured tree (seed it with seed_structured_from_state first). Invalidates the content XML and package. Versioned.",
-                serde_json::json!({}),
-                serde_json::json!([]),
-            ),
-            // §4 aem tree
-            t(
-                "get_aem",
-                "Return the current working AEM tree (JSON).",
-                serde_json::json!({}),
-                serde_json::json!([]),
-            ),
-            t(
-                "set_aem",
-                "Replace the whole AEM tree. `root` is a JSON object parseable as AemNode. Invalidates the content XML and package. Versioned.",
+                "set_aem_translated",
+                "Set the WHOLE working AEM tree as an AemNodeTranslated JSON object (call get_schema('aem_translated') for the exact shape). Use this for the initial authoring of the form; for small fixes afterwards use the targeted editors below. Text fields (title/label/content and option labels) are per-language maps like {\"de\":\"…\",\"en\":\"…\"}; include EVERY source language. Invalidates the package.",
                 serde_json::json!({"root": {"type":"object"}}),
                 serde_json::json!(["root"]),
             ),
             t(
-                "get_aem_content_xml",
-                "Return the whole AEM .content.xml (the final JCR XML). Materialized from the AEM tree on first access, then reflects any structure-aware XML edits. For a map of node paths use get_aem_xml_outline; to read one node use get_aem_xml_node.",
-                serde_json::json!({}),
-                serde_json::json!([]),
-            ),
-            // Structure-aware editing of the final JCR content XML. Nodes are
-            // addressed by a `/`-separated path of element names from the root,
-            // e.g. `jcr:root/guideContainer/panel_<uuid>/textbox_<uuid>`; add a
-            // 1-based index like `default[2]` only when sibling names repeat.
-            // Every edit materializes the XML from the AEM tree first if needed,
-            // is rejected if it would produce non-well-formed XML, invalidates the
-            // package, and is versioned. These edits are expert-mode escape
-            // hatches: the edited XML is used verbatim for the package while
-            // everything else (XSD, translations, DAM) still derives from the AEM
-            // tree, and converting/setting the structured or AEM tree discards them.
-            t(
-                "get_aem_xml_outline",
-                "Map the content XML: one line per element with its full node path and key attributes (name, jcr:title, jcr:primaryType, guideNodeClass). Use it to find the path to edit before calling the set/remove/replace/insert tools.",
+                "get_aem_translated",
+                "Return the current working AemNodeTranslated tree (JSON).",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
             t(
-                "get_aem_xml_node",
-                "Return just one element's subtree (start tag through end tag) from the content XML, addressed by its node `path`.",
+                "get_aem_translated_outline",
+                "Map the working AEM tree: one line per node — `<path>  <Type>  [langs] \"excerpt\"  <flags>`. Flags: `⚠ empty` (text-bearing node with no text), `⚠ 1 lang` (only one language present — likely a missing translation). Use it to find the path to fix, then call the set/replace/insert/remove tools. Paths are `/`-separated child indices from the root (e.g. 2/0/3); `root`/empty addresses the root node.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "get_aem_translated_node",
+                "Return just the node (its whole subtree) at `path` as JSON. Inspect it before editing to see the exact field shapes (e.g. how `label`/`options` are structured).",
                 serde_json::json!({"path": {"type":"string"}}),
                 serde_json::json!(["path"]),
             ),
             t(
-                "set_aem_xml_attribute",
-                "Set (or add) an attribute on the content-XML node at `path`. `value` is used verbatim — pass JCR-typed values such as `{Boolean}true` directly. Rejected if the result is not well-formed (e.g. an unescaped `&`).",
-                serde_json::json!({"path": {"type":"string"}, "attribute": {"type":"string"}, "value": {"type":"string"}}),
-                serde_json::json!(["path", "attribute", "value"]),
+                "set_aem_translated_field",
+                "Set one field of the node at `path`. `field` is a node key such as `label`, `title`, `content`, `options`, `visible`, `mandatory`, `colspan`, `bind_ref`; `value` is the raw JSON for it (match the shape from get_aem_translated_node — text fields are per-language maps). Validated by round-trip; a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_aem_translated_node). Invalidates the package.",
+                serde_json::json!({"path": {"type":"string"}, "field": {"type":"string"}, "value": {}}),
+                serde_json::json!(["path", "field", "value"]),
             ),
             t(
-                "remove_aem_xml_attribute",
-                "Remove an attribute from the content-XML node at `path`. Errors if the node has no such attribute.",
-                serde_json::json!({"path": {"type":"string"}, "attribute": {"type":"string"}}),
-                serde_json::json!(["path", "attribute"]),
+                "replace_aem_translated_node",
+                "Replace the whole node at `path` with `node`, a JSON object parseable as an AemNodeTranslated (must include its `type`). Use to change a node's type or rebuild it. Invalidates the package.",
+                serde_json::json!({"path": {"type":"string"}, "node": {"type":"object"}}),
+                serde_json::json!(["path", "node"]),
             ),
             t(
-                "remove_aem_xml_node",
-                "Delete the content-XML node at `path` (its whole subtree). The document root cannot be removed.",
+                "insert_aem_translated_node",
+                "Insert `node` (an AemNodeTranslated JSON object) into a child list. `parent_path` is empty/\"root\" for the root, or the path of a Panel or Repeatable (only those hold children). `position` is \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>} (i = child index). Invalidates the package.",
+                serde_json::json!({"parent_path": {"type":"string"}, "node": {"type":"object"}, "position": {"type":["string","object"]}}),
+                serde_json::json!(["parent_path", "node", "position"]),
+            ),
+            t(
+                "remove_aem_translated_node",
+                "Remove the node at `path` from its parent's child list (the root cannot be removed). Invalidates the package.",
                 serde_json::json!({"path": {"type":"string"}}),
                 serde_json::json!(["path"]),
-            ),
-            t(
-                "replace_aem_xml_node",
-                "Replace the content-XML node at `path` (its whole subtree) with `xml`, a well-formed XML fragment. The document root cannot be replaced.",
-                serde_json::json!({"path": {"type":"string"}, "xml": {"type":"string"}}),
-                serde_json::json!(["path", "xml"]),
-            ),
-            t(
-                "insert_aem_xml_node",
-                "Insert `xml` (a well-formed fragment) as a child of the content-XML node at `parent_path`. `position` is \"first\", \"last\", {\"before\":\"<child_segment>\"} or {\"after\":\"<child_segment>\"}, where child_segment is a direct child's name (e.g. textbox_<uuid> or default[2]).",
-                serde_json::json!({"parent_path": {"type":"string"}, "xml": {"type":"string"}, "position": {"type":["string","object"]}}),
-                serde_json::json!(["parent_path", "xml", "position"]),
             ),
             // §5 output
             t(
@@ -1018,8 +845,8 @@ impl ConversionAgent {
             // §8 control
             t(
                 "get_schema",
-                "Return the JSON schema for the 'structured' or 'aem' tree.",
-                serde_json::json!({"kind": {"type":"string","enum":["structured","aem"]}}),
+                "Return the JSON schema for the 'aem_translated' tree (the shape you author with set_aem_translated and the granular editors).",
+                serde_json::json!({"kind": {"type":"string","enum":["aem_translated"]}}),
                 serde_json::json!(["kind"]),
             ),
             t(
@@ -1150,296 +977,124 @@ impl ConversionAgent {
                     Err(e) => ToolReply::Error(e),
                 }
             }
-            "seed_structured_from_state" => {
-                let label = input["state_label"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_string();
-                if label.is_empty() {
-                    return ToolReply::Error("`state_label` must not be empty.".into());
-                }
-                let nodes = match self.extractor(input) {
-                    Ok(ex) => match ex.state_structured(&label) {
-                        Ok(n) => n,
-                        Err(e) => return ToolReply::Error(e),
-                    },
-                    Err(e) => return ToolReply::Error(e),
-                };
-                if nodes.is_empty() {
-                    return ToolReply::Error(format!(
-                        "State '{label}' produced an empty structured tree; nothing to seed."
-                    ));
-                }
-                let n = nodes.len();
-                self.structured = nodes;
-                self.structured_edited(&format!("AI: seed structured from state {label}"));
-                ToolReply::Text(format!(
-                    "OK — working structured tree seeded from state '{label}' ({n} top-level \
-                     node(s), one language). Now layer in the other languages (set_structured_field) \
-                     and configurator variants (insert_structured_node) from the other states, \
-                     reviewing with get_structured_outline. AEM tree, content XML and package reset."
-                ))
-            }
-
-            // §2 structured
-            "get_structured" => {
-                ToolReply::Text(serde_json::to_string_pretty(&self.structured).unwrap_or_default())
-            }
-            "set_structured" => {
-                let v = input.get("nodes").cloned().unwrap_or_else(|| input.clone());
-                match serde_json::from_value::<Vec<StructuredNode>>(v) {
-                    Ok(nodes) => {
-                        self.structured = nodes;
-                        // A structured edit resets the AEM tree + everything downstream.
-                        self.aem = None;
-                        self.aem_xml = None;
-                        self.package = None;
-                        self.snapshot_structured("AI: set structured");
-                        ToolReply::Text(format!(
-                            "OK ({} top-level node(s)). AEM tree, content XML and package reset — re-run convert_structured_to_aem.",
-                            self.structured.len()
-                        ))
-                    }
-                    Err(e) => ToolReply::Error(format!("Invalid StructuredNode JSON: {e}")),
-                }
-            }
-            "get_structured_outline" => {
-                ToolReply::Text(crate::structured_edit::outline(&self.structured))
-            }
-            "get_structured_node" => {
-                let path = input["path"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() {
-                    return ToolReply::Error("`path` must not be empty.".into());
-                }
-                match crate::structured_edit::resolve_mut(&mut self.structured, &path) {
+            // §2 multilingual AEM tree (AemNodeTranslated)
+            "set_aem_translated" => {
+                let v = input.get("root").cloned().unwrap_or_else(|| input.clone());
+                match serde_json::from_value::<AemNodeTranslated>(v) {
                     Ok(node) => {
-                        ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
+                        self.aem_translated = Some(node);
+                        self.aem_translated_edited("AI: set AEM (translated) tree");
+                        ToolReply::Text("OK — working AEM tree set (package invalidated).".into())
                     }
-                    Err(e) => ToolReply::Error(e),
+                    Err(e) => ToolReply::Error(format!("Invalid AemNodeTranslated JSON: {e}")),
                 }
             }
-            "set_structured_field" => {
+            "get_aem_translated" => match &self.aem_translated {
+                Some(n) => ToolReply::Text(serde_json::to_string_pretty(n).unwrap_or_default()),
+                None => ToolReply::Error(NO_AEM_TREE.into()),
+            },
+            "get_aem_translated_outline" => match &self.aem_translated {
+                Some(n) => ToolReply::Text(crate::aem_translated_edit::outline(n)),
+                None => ToolReply::Error(NO_AEM_TREE.into()),
+            },
+            "get_aem_translated_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                match self.aem_translated.as_mut() {
+                    Some(root) => match crate::aem_translated_edit::resolve_mut(root, &path) {
+                        Ok(node) => {
+                            ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
+                        }
+                        Err(e) => ToolReply::Error(e),
+                    },
+                    None => ToolReply::Error(NO_AEM_TREE.into()),
+                }
+            }
+            "set_aem_translated_field" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let field = input["field"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() || field.is_empty() {
-                    return ToolReply::Error("`path` and `field` must not be empty.".into());
+                if field.is_empty() {
+                    return ToolReply::Error("`field` must not be empty.".into());
                 }
                 let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
-                match crate::structured_edit::set_field(&mut self.structured, &path, &field, value) {
+                let result = match self.aem_translated.as_mut() {
+                    Some(root) => crate::aem_translated_edit::set_field(root, &path, &field, value),
+                    None => return ToolReply::Error(NO_AEM_TREE.into()),
+                };
+                match result {
                     Ok(msg) => {
-                        self.structured_edited(&format!("AI: set {field} on {path}"));
+                        self.aem_translated_edited(&format!("AI: set {field} on {path}"));
                         ToolReply::Text(msg)
                     }
                     Err(e) => ToolReply::Error(e),
                 }
             }
-            "replace_structured_node" => {
+            "replace_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() {
-                    return ToolReply::Error("`path` must not be empty.".into());
-                }
                 let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
-                match crate::structured_edit::replace_node(&mut self.structured, &path, node) {
+                let result = match self.aem_translated.as_mut() {
+                    Some(root) => crate::aem_translated_edit::replace_node(root, &path, node),
+                    None => return ToolReply::Error(NO_AEM_TREE.into()),
+                };
+                match result {
                     Ok(msg) => {
-                        self.structured_edited(&format!("AI: replace {path}"));
+                        self.aem_translated_edited(&format!("AI: replace {path}"));
                         ToolReply::Text(msg)
                     }
                     Err(e) => ToolReply::Error(e),
                 }
             }
-            "insert_structured_node" => {
+            "insert_aem_translated_node" => {
                 let parent = input["parent_path"]
                     .as_str()
                     .unwrap_or_default()
                     .to_string();
                 let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
-                let pos = match crate::structured_edit::parse_insert_pos(&input["position"]) {
+                let pos = match crate::aem_translated_edit::parse_insert_pos(&input["position"]) {
                     Ok(p) => p,
                     Err(e) => return ToolReply::Error(e),
                 };
-                match crate::structured_edit::insert_node(&mut self.structured, &parent, node, pos) {
+                let result = match self.aem_translated.as_mut() {
+                    Some(root) => crate::aem_translated_edit::insert_node(root, &parent, node, pos),
+                    None => return ToolReply::Error(NO_AEM_TREE.into()),
+                };
+                match result {
                     Ok(msg) => {
-                        self.structured_edited(&format!("AI: insert into {parent}"));
+                        self.aem_translated_edited(&format!("AI: insert into {parent}"));
                         ToolReply::Text(msg)
                     }
                     Err(e) => ToolReply::Error(e),
                 }
             }
-            "remove_structured_node" => {
+            "remove_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() {
-                    return ToolReply::Error("`path` must not be empty.".into());
-                }
-                match crate::structured_edit::remove_node(&mut self.structured, &path) {
+                let result = match self.aem_translated.as_mut() {
+                    Some(root) => crate::aem_translated_edit::remove_node(root, &path),
+                    None => return ToolReply::Error(NO_AEM_TREE.into()),
+                };
+                match result {
                     Ok(msg) => {
-                        self.structured_edited(&format!("AI: remove {path}"));
+                        self.aem_translated_edited(&format!("AI: remove {path}"));
                         ToolReply::Text(msg)
                     }
                     Err(e) => ToolReply::Error(e),
                 }
-            }
-
-            // §3 conversion
-            "convert_structured_to_aem" => {
-                if self.structured.is_empty() {
-                    return ToolReply::Error(
-                        "Structured tree is empty; seed_structured_from_state first.".into(),
-                    );
-                }
-                let cfg = match self.config() {
-                    Ok(c) => c,
-                    Err(e) => return ToolReply::Error(e),
-                };
-                let aem = blueprint::convert_to_aem(&self.structured, &cfg);
-                self.aem = Some(aem);
-                // New AEM tree invalidates the content XML + package.
-                self.aem_xml = None;
-                self.package = None;
-                self.snapshot_aem("AI: convert from structured");
-                ToolReply::Text(
-                    "OK — AEM tree generated from structured (content XML + package invalidated)."
-                        .into(),
-                )
-            }
-
-            // §4 aem
-            "get_aem" => match &self.aem {
-                Some(aem) => ToolReply::Text(serde_json::to_string_pretty(aem).unwrap_or_default()),
-                None => ToolReply::Error("No AEM tree yet; call convert_structured_to_aem.".into()),
-            },
-            "set_aem" => {
-                let v = input.get("root").cloned().unwrap_or_else(|| input.clone());
-                match serde_json::from_value::<AemNode>(v) {
-                    Ok(node) => {
-                        self.aem = Some(node);
-                        // Updating the AEM tree invalidates the content XML + package.
-                        self.aem_xml = None;
-                        self.package = None;
-                        self.snapshot_aem("AI: set AEM tree");
-                        ToolReply::Text("OK (content XML + package invalidated).".into())
-                    }
-                    Err(e) => ToolReply::Error(format!("Invalid AemNode JSON: {e}")),
-                }
-            }
-            "get_aem_content_xml" => match self.ensure_aem_xml() {
-                Ok(xml) => ToolReply::Text(xml),
-                Err(e) => ToolReply::Error(e),
-            },
-            "get_aem_xml_outline" => {
-                let xml = match self.ensure_aem_xml() {
-                    Ok(xml) => xml,
-                    Err(e) => return ToolReply::Error(e),
-                };
-                match blueprint::outline_aem_xml(&xml) {
-                    Ok(outline) => ToolReply::Text(outline),
-                    Err(e) => ToolReply::Error(e),
-                }
-            }
-            "get_aem_xml_node" => {
-                let path = input["path"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() {
-                    return ToolReply::Error("`path` must not be empty.".into());
-                }
-                let xml = match self.ensure_aem_xml() {
-                    Ok(xml) => xml,
-                    Err(e) => return ToolReply::Error(e),
-                };
-                match blueprint::read_aem_xml_node(&xml, &path) {
-                    Ok(node) => ToolReply::Text(node),
-                    Err(e) => ToolReply::Error(e),
-                }
-            }
-            "set_aem_xml_attribute" => {
-                let path = input["path"].as_str().unwrap_or_default().to_string();
-                let attr = input["attribute"].as_str().unwrap_or_default().to_string();
-                let value = input["value"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() || attr.is_empty() {
-                    return ToolReply::Error("`path` and `attribute` must not be empty.".into());
-                }
-                let label = format!("AI: set @{attr} on {path}");
-                self.apply_aem_xml_edit(&label, |xml| {
-                    blueprint::set_aem_xml_attribute(xml, &path, &attr, &value)
-                })
-            }
-            "remove_aem_xml_attribute" => {
-                let path = input["path"].as_str().unwrap_or_default().to_string();
-                let attr = input["attribute"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() || attr.is_empty() {
-                    return ToolReply::Error("`path` and `attribute` must not be empty.".into());
-                }
-                let label = format!("AI: remove @{attr} on {path}");
-                self.apply_aem_xml_edit(&label, |xml| {
-                    blueprint::remove_aem_xml_attribute(xml, &path, &attr)
-                })
-            }
-            "remove_aem_xml_node" => {
-                let path = input["path"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() {
-                    return ToolReply::Error("`path` must not be empty.".into());
-                }
-                let label = format!("AI: remove node {path}");
-                self.apply_aem_xml_edit(&label, |xml| blueprint::remove_aem_xml_node(xml, &path))
-            }
-            "replace_aem_xml_node" => {
-                let path = input["path"].as_str().unwrap_or_default().to_string();
-                let frag = input["xml"].as_str().unwrap_or_default().to_string();
-                if path.is_empty() || frag.is_empty() {
-                    return ToolReply::Error("`path` and `xml` must not be empty.".into());
-                }
-                let label = format!("AI: replace node {path}");
-                self.apply_aem_xml_edit(&label, |xml| {
-                    blueprint::replace_aem_xml_node(xml, &path, &frag)
-                })
-            }
-            "insert_aem_xml_node" => {
-                let parent = input["parent_path"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_string();
-                let frag = input["xml"].as_str().unwrap_or_default().to_string();
-                if parent.is_empty() || frag.is_empty() {
-                    return ToolReply::Error("`parent_path` and `xml` must not be empty.".into());
-                }
-                let position = match parse_insert_pos(&input["position"]) {
-                    Ok(p) => p,
-                    Err(e) => return ToolReply::Error(e),
-                };
-                let label = format!("AI: insert node into {parent}");
-                self.apply_aem_xml_edit(&label, |xml| {
-                    blueprint::insert_aem_xml_node(xml, &parent, &frag, position)
-                })
             }
 
             // §5 output
             "build_aem_package" => {
-                let Some(aem) = self.aem.clone() else {
-                    return ToolReply::Error("No AEM tree yet; convert first.".into());
-                };
                 let cfg = match self.config() {
                     Ok(c) => c,
                     Err(e) => return ToolReply::Error(e),
                 };
-                let translations = blueprint::aem_translations_from_content(
-                    &self.structured,
-                    &cfg.master_language,
-                );
-                let (pkg, note) = match self.aem_xml.clone() {
-                    Some(xml) => (
-                        blueprint::to_aem_package_from_node_with_xml(&aem, &cfg, translations, xml),
-                        " (using edited content XML)",
-                    ),
-                    None => (
-                        blueprint::to_aem_package_from_node_with_translations(
-                            &aem,
-                            &cfg,
-                            translations,
-                        ),
-                        "",
-                    ),
+                let (aem, translations) = match self.lower_aem_translated() {
+                    Ok(pair) => pair,
+                    Err(e) => return ToolReply::Error(e),
                 };
+                let pkg =
+                    blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations);
                 let size = pkg.len();
                 self.package = Some(pkg);
-                ToolReply::Text(format!("Built package ({size} bytes){note}."))
+                ToolReply::Text(format!("Built package ({size} bytes)."))
             }
             "get_package_info" => match &self.package {
                 Some(pkg) => {
@@ -1478,10 +1133,9 @@ impl ConversionAgent {
                 }
             }
             "review_output" => {
-                let Some(aem) = self.aem.clone() else {
-                    return ToolReply::Error(
-                        "No AEM tree yet; call convert_structured_to_aem first.".into(),
-                    );
+                let (aem, _) = match self.lower_aem_translated() {
+                    Ok(pair) => pair,
+                    Err(e) => return ToolReply::Error(e),
                 };
                 let merged = match self.extractor(&serde_json::Value::Null) {
                     Ok(ex) => ex.merged.clone(),
@@ -1664,15 +1318,10 @@ impl ConversionAgent {
             }
 
             // §8 control
-            "get_schema" => match input["kind"].as_str() {
-                Some("aem") => ToolReply::Text(
-                    serde_json::to_string_pretty(&blueprint::aem_schema()).unwrap_or_default(),
-                ),
-                _ => ToolReply::Text(
-                    serde_json::to_string_pretty(&blueprint::structured_schema())
-                        .unwrap_or_default(),
-                ),
-            },
+            "get_schema" => ToolReply::Text(
+                serde_json::to_string_pretty(&blueprint::aem_translated_schema())
+                    .unwrap_or_default(),
+            ),
             "get_profile_info" => match self.config() {
                 Ok(c) => ToolReply::Text(format!(
                     "form_code: {}\nlanguages: {:?}\nmaster_language: {}\nform_path: {}\nform_dir: {}\nbind_to_xsd: {}\nuse_fragments: {}",
@@ -1707,29 +1356,6 @@ fn dedup(mut v: Vec<&str>) -> Vec<String> {
     v.sort();
     v.dedup();
     v.into_iter().map(String::from).collect()
-}
-
-/// Parse the `position` argument of `insert_aem_xml_node` into an [`InsertPos`].
-/// Accepts the strings `"first"` / `"last"`, or an object
-/// `{"before": "<child>"}` / `{"after": "<child>"}`.
-fn parse_insert_pos(value: &serde_json::Value) -> Result<blueprint::InsertPos, String> {
-    use blueprint::InsertPos;
-    if let Some(s) = value.as_str() {
-        return match s {
-            "first" => Ok(InsertPos::First),
-            "last" => Ok(InsertPos::Last),
-            other => Err(format!(
-                "invalid position '{other}'; use \"first\", \"last\", {{\"before\":...}} or {{\"after\":...}}"
-            )),
-        };
-    }
-    if let Some(s) = value.get("before").and_then(|v| v.as_str()) {
-        return Ok(InsertPos::Before(s.to_string()));
-    }
-    if let Some(s) = value.get("after").and_then(|v| v.as_str()) {
-        return Ok(InsertPos::After(s.to_string()));
-    }
-    Err("`position` must be \"first\", \"last\", {\"before\":\"<child>\"} or {\"after\":\"<child>\"}".into())
 }
 
 fn truncate(s: &str, max: usize) -> String {
