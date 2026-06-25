@@ -478,6 +478,25 @@ impl ConversionAgent {
         self.package.clone()
     }
 
+    /// Guarantee a downloadable package when one can be built.
+    ///
+    /// Every tree edit invalidates the package (see [`Self::aem_translated_edited`]),
+    /// and it is only rebuilt when the agent explicitly calls `build_aem_package`.
+    /// If a run finishes right after an edit, `self.package` is `None` and the UI
+    /// has nothing to offer for download. Call this at the end of a run: when a
+    /// working AEM tree exists but no package is current, build one from the
+    /// latest tree. Returns the resulting package, if any.
+    pub fn ensure_package(&mut self) -> Option<Vec<u8>> {
+        if self.package.is_none() && self.aem_translated.is_some() {
+            let cfg = self.config().ok()?;
+            let (aem, translations) = self.lower_aem_translated().ok()?;
+            let pkg =
+                blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations);
+            self.package = Some(pkg);
+        }
+        self.package.clone()
+    }
+
     /// The resolved form code, if the AEM config has been loaded.
     pub fn form_code(&self) -> Option<String> {
         self.aem_config.as_ref().map(|c| c.form_code.clone())

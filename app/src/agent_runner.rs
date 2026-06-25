@@ -281,7 +281,7 @@ async fn drive_agent(
     }
 
     finalize(
-        &agent,
+        &mut agent,
         &profile,
         structured_session,
         start,
@@ -292,7 +292,7 @@ async fn drive_agent(
 
 /// Build the final `ProcessingState` from the agent's working trees.
 fn finalize(
-    agent: &ConversionAgent,
+    agent: &mut ConversionAgent,
     profile: &Option<String>,
     structured_session: String,
     start: std::time::Instant,
@@ -312,7 +312,10 @@ fn finalize(
     state.ai_mode = true;
     state.envelope = Some(envelope);
     state.merged_json = merged_json;
-    state.aem_package = agent.package();
+    // Guarantee a downloadable package: the agent may have finished right after
+    // a tree edit (which invalidates the package) without a final rebuild. Build
+    // one from the latest tree so the UI always offers a download.
+    state.aem_package = agent.ensure_package();
     state.form_code = form_code;
     state.agent_aem_session = agent.aem_session();
     state.aem_uploaded = agent.aem_uploaded();
