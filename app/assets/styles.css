@@ -3442,6 +3442,12 @@ body > div, #main {
     color: var(--accent);
     word-break: break-all;
 }
+.ag-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+}
 .ag-fb {
     margin-top: var(--space-5);
     padding-top: var(--space-5);
