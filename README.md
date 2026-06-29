@@ -28,14 +28,19 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
-- [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the desktop app
+- [Dioxus CLI](https://dioxuslabs.com/learn/0.7/getting_started/) — only needed for the desktop app
 
 Dioxus can easily be installed using cargo-binstall:
 
 ```sh
 cargo install cargo-binstall
-cargo binstall dioxus-cli@0.7.3
+cargo binstall dioxus-cli@0.7.9
 ```
+
+After installing, make sure `dx --version` prints `dioxus 0.7.9`. If it
+prints Deno help or executes `deno x`, your shell is resolving a different
+`dx` binary first. Put `~/.cargo/bin` before that binary in `PATH`, or call
+the Dioxus CLI directly as `~/.cargo/bin/dx`.
 
 In order to version large files we need the git lfs extension
 
@@ -112,14 +117,14 @@ It bundles an AI conversion agent that drives the engine's tools turn by turn to
 
 ```sh
 cd app
-dx serve --platform desktop
+~/.cargo/bin/dx serve --platform desktop --package blueprint-app
 ```
 
 ### Production Build
 
 ```sh
 cd app
-dx build --release --platform desktop
+~/.cargo/bin/dx build --release --platform desktop --package blueprint-app
 ```
 
 ## MCP Server
