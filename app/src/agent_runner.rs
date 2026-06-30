@@ -14,13 +14,37 @@ use blueprint::{DocumentEnvelope, StructuredNode};
 use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 use crate::platform::tool_result_message;
 
-/// Output-token cap per agent turn.
-const AGENT_MAX_TOKENS: u32 = 16000;
+/// Output-token cap per agent turn. Sized generously so authoring turns — which
+/// emit large `set_aem_translated` / `insert_aem_translated_node` payloads — are
+/// far less likely to be truncated mid-tool-call. A turn that still overflows is
+/// handled explicitly (see the `max_tokens` branch in [`drive_agent`]) rather
+/// than silently dropping the (incomplete) tool call.
+const AGENT_MAX_TOKENS: u32 = 32000;
 /// Max streamed turns before the loop bails out (the agent makes many calls).
 const MAX_ITERATIONS: usize = 200;
 /// How many consecutive `validate_aem_package` calls with identical output
 /// are allowed before the loop gives up and finalizes with what's built.
 const MAX_VALIDATE_REPEATS: usize = 3;
+/// How many consecutive output-token-truncated turns are tolerated before the
+/// loop stops nudging and finalizes with whatever tree exists. Bounds the cost
+/// of a model that keeps re-attempting one oversized call instead of chunking.
+const MAX_TRUNCATE_REPEATS: usize = 3;
+
+/// Shown in the activity log when a turn is cut off at the output-token cap.
+const TRUNCATED_TURN_NOTICE: &str = "⚠ The model's response hit the per-turn \
+output limit and was cut off — asking it to author the tree in smaller steps.";
+
+/// Fed back to the model after a truncated turn to steer it off one-shot
+/// authoring (the usual cause of truncation) and toward incremental edits.
+const TRUNCATED_TURN_GUIDANCE: &str = "Your previous response was cut off at the \
+output-token limit before it finished, so any tool call it contained was \
+incomplete and was NOT applied. Do not emit the whole AEM tree in a single \
+set_aem_translated call. Author it incrementally instead: first set a skeleton \
+with set_aem_translated (the root plus the top-level panels/sections and their \
+titles), then add each section's fields with insert_aem_translated_node, and \
+refine with the granular editors (set_aem_translated_field / \
+replace_aem_translated_node). Keep every individual tool call small enough to \
+fit within the output limit.";
 
 /// Run the autonomous agent end-to-end, streaming activity into
 /// `processing_state.agent_steps` and finalizing the result on completion.
@@ -150,6 +174,8 @@ async fn drive_agent(
     // called validate_aem_package and returned the same output.
     let mut last_validate_output: Option<String> = None;
     let mut validate_repeat_count: usize = 0;
+    // Track consecutive turns truncated at the output-token cap (see below).
+    let mut truncate_repeat_count: usize = 0;
 
     for _ in 0..MAX_ITERATIONS {
         let turn =
@@ -164,8 +190,13 @@ async fn drive_agent(
             {
                 Ok(t) => t,
                 Err(e) => {
+                    // Record the error but fall through to finalize instead of
+                    // bailing out here: the agent may already have authored a
+                    // working tree, and finalize/ensure_package will still build
+                    // a downloadable package from it. (A truly empty run
+                    // finalizes with no package and this error shown.)
                     processing_state.write().error = Some(format!("Agent failed: {e}"));
-                    return;
+                    break;
                 }
             };
 
@@ -181,6 +212,55 @@ async fn drive_agent(
                 },
             );
         }
+
+        // The turn was cut off at the per-turn output-token cap — almost always
+        // the model trying to emit the entire AEM tree in one giant
+        // set_aem_translated call. Anthropic truncates mid-tool-input, so the
+        // partial JSON does not parse and the tool call is dropped (never
+        // executed). Breaking here would finalize with no tree and therefore no
+        // downloadable package, so instead steer the model to author the tree
+        // incrementally and let the loop continue so it can recover.
+        if turn.stop_reason.as_deref() == Some("max_tokens") {
+            truncate_repeat_count += 1;
+            push_step(
+                &mut processing_state,
+                AgentStep {
+                    id: String::new(),
+                    kind: AgentStepKind::Thought,
+                    label: TRUNCATED_TURN_NOTICE.into(),
+                    detail: String::new(),
+                    status: AgentStepStatus::Done,
+                },
+            );
+            if truncate_repeat_count >= MAX_TRUNCATE_REPEATS {
+                processing_state.write().warnings.push(
+                    "The model repeatedly exceeded the output limit while authoring \
+                     the tree — building what's available. The result may be \
+                     incomplete and need manual follow-up."
+                        .into(),
+                );
+                break;
+            }
+            // The assistant message (with any partial tool_use blocks) was
+            // already appended to history; the API requires a tool_result for
+            // every tool_use before the next turn, so answer them all with the
+            // recovery guidance. With no tool calls, nudge via a user message.
+            if turn.tool_calls.is_empty() {
+                history.push(serde_json::json!({
+                    "role": "user",
+                    "content": [{"type": "text", "text": TRUNCATED_TURN_GUIDANCE}],
+                }));
+            } else {
+                let results: Vec<(String, ToolReply)> = turn
+                    .tool_calls
+                    .iter()
+                    .map(|tc| (tc.id.clone(), ToolReply::Error(TRUNCATED_TURN_GUIDANCE.into())))
+                    .collect();
+                history.push(tool_result_message(results));
+            }
+            continue;
+        }
+        truncate_repeat_count = 0;
 
         if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
             break;
@@ -306,21 +386,46 @@ fn finalize(
     };
     let merged_json = serde_json::to_string_pretty(&envelope).ok();
     let form_code = agent.form_code();
+    // Guarantee a downloadable package: the agent may have finished right after
+    // a tree edit (which invalidates the package) without a final rebuild, so
+    // build one from the latest tree. Computed before taking the UI lock; the
+    // build itself is panic-isolated inside the agent (see `build_package`).
+    // Ok(None) = no tree authored; Err = a tree exists but packaging failed.
+    let package_result = agent.ensure_package();
 
     let mut state = processing_state.write();
     state.step = ProcessingStep::Complete;
     state.ai_mode = true;
     state.envelope = Some(envelope);
     state.merged_json = merged_json;
-    // Guarantee a downloadable package: the agent may have finished right after
-    // a tree edit (which invalidates the package) without a final rebuild. Build
-    // one from the latest tree so the UI always offers a download.
-    state.aem_package = agent.ensure_package();
+    match package_result {
+        Ok(pkg) => state.aem_package = pkg,
+        Err(e) => {
+            state.aem_package = None;
+            // Surface the real packaging failure rather than a vague "no
+            // download". Don't clobber an API error already recorded above.
+            if state.error.is_none() {
+                state.error = Some(format!("Could not build the AEM package: {e}"));
+            }
+        }
+    }
     state.form_code = form_code;
     state.agent_aem_session = agent.aem_session();
     state.aem_uploaded = agent.aem_uploaded();
     state.aem_form_path = agent.aem_form_path();
     state.elapsed_secs = Some(start.elapsed().as_secs());
+    // The run is Complete but there is nothing to download and no error to
+    // explain it — never leave the user staring at a result screen with no
+    // package and no reason. This means the tree was never authored (e.g. the
+    // run was cut short), so say so.
+    if state.aem_package.is_none() && state.error.is_none() {
+        state.warnings.push(
+            "The conversion finished without a downloadable package — the AEM tree \
+             was never completed (the run may have been cut short). Re-run the \
+             conversion, or use the feedback box to ask the agent to finish the tree."
+                .into(),
+        );
+    }
     drop(state);
 
     let _ = profile;

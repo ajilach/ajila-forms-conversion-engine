@@ -73,7 +73,12 @@ language and see the rendered pages. Steps:\n\
   a. Read each state with get_flattened_structure_for_state (every language × every configurator \
 selection, e.g. EN/Private-Person, DE/Company) plus its page image. The XFA is the authority for \
 verbatim text in each language; the images are the authority for layout and section order.\n\
-  b. Build the whole tree in one set_aem_translated call: lay out the sections in source order; \
+  b. Author the tree. A small form may be passed whole in one set_aem_translated call, but for a \
+large form (many sections/fields, repeatable sections, or several languages) do NOT emit it all at \
+once — a single tool call whose output exceeds the per-turn limit is cut off and discarded in full. \
+Instead set a skeleton first with set_aem_translated (the root plus the top-level panels/sections and \
+their titles), then add each section's fields with insert_aem_translated_node, building the tree up in \
+small calls. Lay out the sections in source order; \
 for every text field include EVERY source language (pair translations by meaning and layout \
 position — never leave a language blank or collapse to one); give each fillable field the right \
 component type, options (real labels AND values), required/visible state and column width; nest \
@@ -485,16 +490,37 @@ impl ConversionAgent {
     /// If a run finishes right after an edit, `self.package` is `None` and the UI
     /// has nothing to offer for download. Call this at the end of a run: when a
     /// working AEM tree exists but no package is current, build one from the
-    /// latest tree. Returns the resulting package, if any.
-    pub fn ensure_package(&mut self) -> Option<Vec<u8>> {
+    /// latest tree.
+    ///
+    /// Returns `Ok(None)` when no tree has been authored yet (nothing to build),
+    /// `Ok(Some(pkg))` for the current/just-built package, and `Err` when a tree
+    /// exists but packaging failed — so the caller can surface *why* there is no
+    /// download instead of silently showing none.
+    pub fn ensure_package(&mut self) -> Result<Option<Vec<u8>>, String> {
         if self.package.is_none() && self.aem_translated.is_some() {
-            let cfg = self.config().ok()?;
-            let (aem, translations) = self.lower_aem_translated().ok()?;
-            let pkg =
-                blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations);
+            let pkg = self.build_package()?;
             self.package = Some(pkg);
         }
-        self.package.clone()
+        Ok(self.package.clone())
+    }
+
+    /// Build the AEM package from the current translated tree, isolating any
+    /// panic in the package writer (it relies on many internal
+    /// `.unwrap()`/`.expect()` calls) so a build failure becomes a recoverable
+    /// error instead of aborting the whole conversion task. Assumes a tree
+    /// exists; callers check `aem_translated` first.
+    fn build_package(&mut self) -> Result<Vec<u8>, String> {
+        let cfg = self.config()?;
+        let (aem, translations) = self.lower_aem_translated()?;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations)
+        }))
+        .map_err(|_| {
+            "The AEM package writer failed unexpectedly while building the \
+             package. The tree may contain an unsupported shape — inspect it \
+             with get_aem_translated_outline and simplify the offending node."
+                .to_string()
+        })
     }
 
     /// The resolved form code, if the AEM config has been loaded.
@@ -687,7 +713,7 @@ impl ConversionAgent {
             // §2 multilingual AEM tree (AemNodeTranslated) — authored directly.
             t(
                 "set_aem_translated",
-                "Set the WHOLE working AEM tree as an AemNodeTranslated JSON object (call get_schema('aem_translated') for the exact shape). Use this for the initial authoring of the form; for small fixes afterwards use the targeted editors below. Text fields (title/label/content and option labels) are per-language maps like {\"de\":\"…\",\"en\":\"…\"}; include EVERY source language. Invalidates the package.",
+                "Set the WHOLE working AEM tree as an AemNodeTranslated JSON object (call get_schema('aem_translated') for the exact shape). Use this for initial authoring; for a large form set only a skeleton here (root + top-level panels/sections with titles) and add each section's fields with insert_aem_translated_node, since a single call whose output exceeds the per-turn limit is cut off and discarded in full. For small fixes afterwards use the targeted editors below. Text fields (title/label/content and option labels) are per-language maps like {\"de\":\"…\",\"en\":\"…\"}; include EVERY source language. Invalidates the package.",
                 serde_json::json!({"root": {"type":"object"}}),
                 serde_json::json!(["root"]),
             ),
@@ -1100,21 +1126,14 @@ impl ConversionAgent {
             }
 
             // §5 output
-            "build_aem_package" => {
-                let cfg = match self.config() {
-                    Ok(c) => c,
-                    Err(e) => return ToolReply::Error(e),
-                };
-                let (aem, translations) = match self.lower_aem_translated() {
-                    Ok(pair) => pair,
-                    Err(e) => return ToolReply::Error(e),
-                };
-                let pkg =
-                    blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations);
-                let size = pkg.len();
-                self.package = Some(pkg);
-                ToolReply::Text(format!("Built package ({size} bytes)."))
-            }
+            "build_aem_package" => match self.build_package() {
+                Ok(pkg) => {
+                    let size = pkg.len();
+                    self.package = Some(pkg);
+                    ToolReply::Text(format!("Built package ({size} bytes)."))
+                }
+                Err(e) => ToolReply::Error(e),
+            },
             "get_package_info" => match &self.package {
                 Some(pkg) => {
                     let files = crate::references::unzip_package(pkg).unwrap_or_default();
@@ -1487,6 +1506,21 @@ mod tests {
             "config.languages must include every language in the seeded tree, got {:?}",
             after.languages
         );
+    }
+
+    #[test]
+    fn ensure_package_without_tree_is_ok_none() {
+        // No AEM tree authored yet → nothing to build, and crucially NOT an
+        // error: ensure_package distinguishes "no tree" (Ok(None)) from "a tree
+        // exists but packaging failed" (Err) so finalize can tell the user why
+        // there is no download instead of silently showing none.
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-ensure-package".into(),
+        );
+        assert!(matches!(agent.ensure_package(), Ok(None)));
     }
 
     #[test]

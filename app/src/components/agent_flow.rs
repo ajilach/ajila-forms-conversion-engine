@@ -514,6 +514,16 @@ fn RunBox(
                                     }
                                 }
                             }
+                            if !state.warnings.is_empty() {
+                                div { class: "progress-warnings",
+                                    strong { "Warnings:" }
+                                    ul {
+                                        for warning in state.warnings.iter() {
+                                            li { "{warning}" }
+                                        }
+                                    }
+                                }
+                            }
                             if let Some(error) = &state.error {
                                 div { class: "progress-error",
                                     strong { "Error: " }
