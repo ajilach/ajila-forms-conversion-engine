@@ -265,7 +265,7 @@ const MAX_TOOL_ITERATIONS: usize = 16;
 
 // ── Prompt caching + history eviction (shared by every Messages-API path) ────
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// Default trailing messages kept verbatim by [`evict_stale_history`]. Even, so
 /// whole assistant+`tool_result` turn-pairs survive (the latest data stays
@@ -366,11 +366,26 @@ fn tool_name_by_id(history: &[serde_json::Value]) -> std::collections::HashMap<S
 /// idempotent (already-stubbed blocks are skipped), so it cooperates with prompt
 /// caching instead of busting the cached prefix.
 fn evict_stale_history(history: &mut [serde_json::Value]) {
-    let keep_recent = CFG_KEEP_RECENT.load(Ordering::Relaxed);
-    let text_over = CFG_TEXT_OVER.load(Ordering::Relaxed);
-    let input_over = CFG_INPUT_OVER.load(Ordering::Relaxed);
-    let trigger_bytes = CFG_TRIGGER_BYTES.load(Ordering::Relaxed);
+    evict_stale_history_with(
+        history,
+        CFG_KEEP_RECENT.load(Ordering::Relaxed),
+        CFG_TEXT_OVER.load(Ordering::Relaxed),
+        CFG_INPUT_OVER.load(Ordering::Relaxed),
+        CFG_TRIGGER_BYTES.load(Ordering::Relaxed),
+    );
+}
 
+/// [`evict_stale_history`] with explicit tuning instead of the live config, so
+/// [`evict_to_fit`] can escalate to a tiny recent window and near-zero thresholds
+/// (with `trigger_bytes = 0` to run unconditionally) when a turn must be forced
+/// under the context window.
+fn evict_stale_history_with(
+    history: &mut [serde_json::Value],
+    keep_recent: usize,
+    text_over: usize,
+    input_over: usize,
+    trigger_bytes: usize,
+) {
     let total = serde_json::to_string(&history)
         .map(|s| s.len())
         .unwrap_or(0);
@@ -398,6 +413,125 @@ fn evict_stale_history(history: &mut [serde_json::Value]) {
                 _ => {}
             }
         }
+    }
+}
+
+/// Tokens reserved below the context window for the model's own reply plus
+/// estimation slack, so the assembled prompt lands comfortably under the hard
+/// limit even when the char-based estimate runs low.
+const CONTEXT_SAFETY_MARGIN: usize = 48_000;
+
+/// The model's maximum context window in tokens. The 1M-context beta variants
+/// carry a `[1m]` (or `-1m`) marker; every other current Claude model is 200K.
+fn context_window_for(model: &str) -> usize {
+    if model.contains("[1m]") || model.contains("-1m") {
+        1_000_000
+    } else {
+        200_000
+    }
+}
+
+/// Rough token estimate for a JSON value: byte length / 4. Text and JSON run
+/// ~3.5–4 chars/token; base64 image payloads over-estimate, which only makes the
+/// bound tighter (safe). This raw figure is scaled by the learned
+/// [`token_calibration`] factor before it is compared against a budget, so the
+/// `400 prompt is too long` retry in [`anthropic_stream_turn`] is only a
+/// last-resort net.
+fn estimate_tokens(v: &serde_json::Value) -> usize {
+    serde_json::to_string(v).map(|s| s.len() / 4).unwrap_or(0)
+}
+
+/// Calibration factor (real prompt tokens ÷ raw char-based estimate), in
+/// thousandths. Learned from the API's reported `usage`; starts at 1.0 and is
+/// nudged toward each turn's observed ratio (see [`record_token_calibration`]).
+static CFG_TOKEN_CALIBRATION_MILLI: AtomicU64 = AtomicU64::new(1000);
+
+/// The current calibration factor as a float (defaults to 1.0).
+fn token_calibration() -> f64 {
+    CFG_TOKEN_CALIBRATION_MILLI.load(Ordering::Relaxed) as f64 / 1000.0
+}
+
+/// A raw estimate scaled by the learned calibration factor — the actual token
+/// count we predict the API will bill for `raw` estimated tokens.
+fn calibrated_tokens(raw: usize) -> usize {
+    (raw as f64 * token_calibration()) as usize
+}
+
+/// Fold one observed (real prompt tokens, raw estimate) pair into the calibration
+/// factor with an EMA, clamped to a sane band so a single odd turn can't wildly
+/// skew eviction. `real` comes from the API's `usage` (input + cache tokens);
+/// `estimate` is the raw [`estimate_tokens`] of the same assembled prompt.
+fn record_token_calibration(real: usize, estimate: usize) {
+    if real == 0 || estimate == 0 {
+        return;
+    }
+    let observed = (real as f64 / estimate as f64).clamp(0.5, 8.0);
+    let blended = (token_calibration() * 0.7 + observed * 0.3).clamp(0.5, 8.0);
+    CFG_TOKEN_CALIBRATION_MILLI.store((blended * 1000.0) as u64, Ordering::Relaxed);
+}
+
+/// Raw char-based token estimate for the whole assembled prompt: messages +
+/// `tools` + `system`.
+fn assembled_prompt_estimate(
+    history: &[serde_json::Value],
+    tools: &[serde_json::Value],
+    system: Option<&str>,
+) -> usize {
+    estimate_tokens(&serde_json::Value::Array(tools.to_vec()))
+        + system.map_or(0, |s| s.len() / 4)
+        + history.iter().map(estimate_tokens).sum::<usize>()
+}
+
+/// The estimated-token budget for the assembled prompt (messages + tools +
+/// system), leaving room for the reply and estimation slack.
+fn prompt_token_target(model: &str, max_tokens: u32) -> usize {
+    context_window_for(model).saturating_sub(max_tokens as usize + CONTEXT_SAFETY_MARGIN)
+}
+
+/// Shrink `history` in place until the assembled prompt (messages + `tools` +
+/// `system`) is estimated to fit under `target` input tokens. Escalates in three
+/// stages, reusing the stubbing pass, and only ever engages when a turn would
+/// otherwise overflow — so short runs are untouched:
+///   1. Normal stubbing ([`evict_stale_history`]).
+///   2. Aggressive stubbing — tiny thresholds and a minimal recent window, run
+///      unconditionally — so even recent / smaller heavy blocks are stubbed.
+///   3. Sliding window — drop the oldest `(assistant, user)` turn-pairs, the only
+///      lever that removes rather than shrinks, keeping `history[0]` and the most
+///      recent pair, until it fits or nothing more is safe to drop.
+fn evict_to_fit(
+    history: &mut Vec<serde_json::Value>,
+    tools: &[serde_json::Value],
+    system: Option<&str>,
+    target: usize,
+) {
+    let fits = |h: &[serde_json::Value]| {
+        calibrated_tokens(assembled_prompt_estimate(h, tools, system)) <= target
+    };
+
+    // Stage 1: normal stubbing.
+    evict_stale_history(history);
+    if fits(history) {
+        return;
+    }
+
+    // Stage 2: aggressive stubbing (ignore the size gate; keep only the last
+    // pair verbatim; stub any text/input over ~200 chars).
+    evict_stale_history_with(history, 2, 200, 200, 0);
+    if fits(history) {
+        return;
+    }
+
+    // Stage 3: drop oldest turn-pairs. Keep `history[0]` (the kickoff/user
+    // prefix) and at least the most recent pair; stop if the head isn't a clean
+    // (assistant, user) pair, rather than risk breaking tool_use↔tool_result
+    // pairing.
+    while !fits(history) && history.len() > 3 {
+        let head_is_pair = history.get(1).and_then(|m| m["role"].as_str()) == Some("assistant")
+            && history.get(2).and_then(|m| m["role"].as_str()) == Some("user");
+        if !head_is_pair {
+            break;
+        }
+        history.drain(1..3);
     }
 }
 
@@ -606,46 +740,65 @@ pub async fn anthropic_stream_turn(
         );
     }
 
-    // Bound context growth before billing this turn (no-op until history is
-    // large; see [`evict_stale_history`]). Every caller runs through here.
-    evict_stale_history(history);
+    // Bound the assembled prompt below the model's context window before billing
+    // this turn (no-op until history is large; escalates from stubbing to
+    // dropping oldest turns — see [`evict_to_fit`]). Every caller runs through
+    // here.
+    let mut target = prompt_token_target(model, max_tokens);
+    evict_to_fit(history, tools, system, target);
 
-    // Prompt caching: `ephemeral` breakpoints on the system prompt (static — the
-    // instruction prefix is identical every turn), the last tool, and the final
-    // message block bill the stable prefix at the cache-read rate. The static
-    // system breakpoint means a >5-min stall (cache TTL) only re-writes the
-    // rolling tail, never the whole prefix. See [`cache_marked_messages`] /
-    // [`cache_marked_tools`] / [`cache_marked_system`].
-    let mut request = serde_json::json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": cache_marked_messages(history),
-        "tools": cache_marked_tools(tools),
-        "stream": true,
-    });
-    if let Some(system) = system.filter(|s| !s.is_empty()) {
-        request["system"] = cache_marked_system(system);
-    }
+    // Send with a retry on context overflow: the token estimate is char-based, so
+    // if the real count still trips the hard `400 prompt is too long` limit we
+    // halve the target, force another eviction, and retry — up to a few times —
+    // rather than failing the whole run.
+    let response = loop {
+        // Prompt caching: `ephemeral` breakpoints on the system prompt (static —
+        // the instruction prefix is identical every turn), the last tool, and the
+        // final message block bill the stable prefix at the cache-read rate. The
+        // static system breakpoint means a >5-min stall (cache TTL) only re-writes
+        // the rolling tail, never the whole prefix. See [`cache_marked_messages`]
+        // / [`cache_marked_tools`] / [`cache_marked_system`].
+        let mut request = serde_json::json!({
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": cache_marked_messages(history),
+            "tools": cache_marked_tools(tools),
+            "stream": true,
+        });
+        if let Some(system) = system.filter(|s| !s.is_empty()) {
+            request["system"] = cache_marked_system(system);
+        }
 
-    let response = reqwest::Client::new()
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
+        let response = reqwest::Client::new()
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
 
-    let status = response.status();
-    if !status.is_success() {
+        let status = response.status();
+        if status.is_success() {
+            break response;
+        }
+
         let body = response.text().await.unwrap_or_default();
         let msg = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
             .and_then(|v| v["error"]["message"].as_str().map(String::from))
             .unwrap_or(body);
+
+        // Context overflow: shrink harder and retry until the floor target.
+        const MIN_TARGET: usize = 16_000;
+        if status.as_u16() == 400 && msg.contains("prompt is too long") && target > MIN_TARGET {
+            target = (target / 2).max(MIN_TARGET);
+            evict_to_fit(history, tools, system, target);
+            continue;
+        }
         return Err(format!("Anthropic API error ({status}): {msg}"));
-    }
+    };
 
     let mut stream = response.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
@@ -653,6 +806,9 @@ pub async fn anthropic_stream_turn(
     let mut tool_blocks: std::collections::BTreeMap<u64, (String, String, String)> =
         std::collections::BTreeMap::new();
     let mut stop_reason: Option<String> = None;
+    // Real prompt-token count reported by the API (input + both cache buckets),
+    // used to calibrate the char-based estimate. 0 until `message_start` arrives.
+    let mut prompt_tokens: usize = 0;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
@@ -672,6 +828,15 @@ pub async fn anthropic_stream_turn(
                 continue;
             };
             match event["type"].as_str() {
+                Some("message_start") => {
+                    // Total prompt size counts uncached input plus both cache
+                    // buckets — caching lowers cost, not the context-window count.
+                    let u = &event["message"]["usage"];
+                    prompt_tokens = (u["input_tokens"].as_u64().unwrap_or(0)
+                        + u["cache_creation_input_tokens"].as_u64().unwrap_or(0)
+                        + u["cache_read_input_tokens"].as_u64().unwrap_or(0))
+                        as usize;
+                }
                 Some("content_block_start") if event["content_block"]["type"] == "tool_use" => {
                     let idx = event["index"].as_u64().unwrap_or(0);
                     let id = event["content_block"]["id"]
@@ -715,6 +880,14 @@ pub async fn anthropic_stream_turn(
             }
         }
     }
+
+    // Calibrate the token estimate against the API's reported usage while
+    // `history` still equals exactly what was sent (the assistant reply is
+    // appended below). Next turn's [`evict_to_fit`] scales its estimate by this.
+    record_token_calibration(
+        prompt_tokens,
+        assembled_prompt_estimate(history, tools, system),
+    );
 
     // Append the assistant message (text + tool_use blocks) to history.
     let mut assistant_content: Vec<serde_json::Value> = Vec::new();
@@ -982,6 +1155,60 @@ mod tests {
         let mut h = original.clone();
         evict_stale_history(&mut h);
         assert_eq!(h, original);
+    }
+
+    #[test]
+    fn calibration_ema_moves_toward_observed_and_clamps() {
+        // Save + restore the shared factor so this test can't perturb others.
+        let saved = CFG_TOKEN_CALIBRATION_MILLI.load(Ordering::Relaxed);
+        CFG_TOKEN_CALIBRATION_MILLI.store(1000, Ordering::Relaxed);
+
+        // Real is 2× the estimate → factor moves from 1.0 toward 2.0 (EMA, so
+        // it lands between), and stays within the clamp band.
+        record_token_calibration(2000, 1000);
+        let k = token_calibration();
+        assert!(k > 1.0 && k < 2.0, "EMA should land between 1.0 and 2.0, got {k}");
+        // Zero inputs are ignored (no divide-by-zero, no change).
+        let before = CFG_TOKEN_CALIBRATION_MILLI.load(Ordering::Relaxed);
+        record_token_calibration(0, 1000);
+        record_token_calibration(1000, 0);
+        assert_eq!(CFG_TOKEN_CALIBRATION_MILLI.load(Ordering::Relaxed), before);
+
+        CFG_TOKEN_CALIBRATION_MILLI.store(saved, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn context_window_maps_1m_variant() {
+        assert_eq!(context_window_for("claude-opus-4-8[1m]"), 1_000_000);
+        assert_eq!(context_window_for("claude-opus-4-8"), 200_000);
+        assert_eq!(context_window_for("claude-sonnet-5"), 200_000);
+    }
+
+    #[test]
+    fn evict_to_fit_drops_oldest_pairs_under_tiny_target() {
+        // Several big turn-pairs. A tiny target forces escalation all the way to
+        // dropping the oldest (assistant, user) pairs, keeping the kickoff message
+        // and the most recent pair, with tool_use↔tool_result pairing intact.
+        let big = "x".repeat(50_000);
+        let kick = user_text("KICK");
+        let mut h = vec![
+            kick.clone(),
+            assistant_tool_use("t1", "get_xfa", json!({})),
+            result_text("t1", &big),
+            assistant_tool_use("t2", "get_xfa", json!({})),
+            result_text("t2", &big),
+            assistant_tool_use("t3", "get_xfa", json!({})),
+            result_text("t3", &big),
+            assistant_tool_use("t4", "get_xfa", json!({})),
+            result_text("t4", &big),
+        ];
+        evict_to_fit(&mut h, &[], None, 5_000);
+
+        // Kickoff preserved; dropped down toward the floor (kickoff + last pair).
+        assert_eq!(h[0], kick);
+        assert!(h.len() <= 3, "expected drop to floor, got {} msgs", h.len());
+        // Head after the kickoff is an assistant turn — no orphaned tool_result.
+        assert_eq!(h[1]["role"], "assistant");
     }
 
     #[test]
