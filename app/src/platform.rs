@@ -431,14 +431,70 @@ fn context_window_for(model: &str) -> usize {
     }
 }
 
-/// Rough token estimate for a JSON value: byte length / 4. Text and JSON run
-/// ~3.5–4 chars/token; base64 image payloads over-estimate, which only makes the
-/// bound tighter (safe). This raw figure is scaled by the learned
-/// [`token_calibration`] factor before it is compared against a budget, so the
-/// `400 prompt is too long` retry in [`anthropic_stream_turn`] is only a
-/// last-resort net.
+/// Fallback per-image token cost when the base64 can't be decoded to read
+/// dimensions (near the observed max, so a fallback errs high/safe).
+const IMAGE_TOKEN_FALLBACK: usize = 1_600;
+/// Anthropic's vision cost is `(width * height) / PX_PER_TOKEN`, after the image
+/// is downscaled to at most `MAX_IMAGE_PX` pixels — so the cost is bounded at
+/// `MAX_IMAGE_PX / PX_PER_TOKEN` (~1533).
+const PX_PER_TOKEN: usize = 750;
+const MAX_IMAGE_PX: usize = 1_150_000;
+
+/// Real vision-token cost of one base64 image: decode just enough to read its
+/// dimensions, then apply Anthropic's `min(w*h, MAX_IMAGE_PX) / PX_PER_TOKEN`.
+/// Falls back to [`IMAGE_TOKEN_FALLBACK`] if the payload can't be read.
+fn image_token_cost(data_b64: &str) -> usize {
+    use base64::Engine;
+    let Ok(bytes) = base64::prelude::BASE64_STANDARD.decode(data_b64) else {
+        return IMAGE_TOKEN_FALLBACK;
+    };
+    match image::ImageReader::new(std::io::Cursor::new(&bytes))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.into_dimensions().ok())
+    {
+        Some((w, h)) => (w as usize * h as usize).min(MAX_IMAGE_PX) / PX_PER_TOKEN,
+        None => IMAGE_TOKEN_FALLBACK,
+    }
+}
+
+/// Total base64 payload length across all image blocks in `v` (to subtract from
+/// the byte-based estimate) and their combined real vision-token cost (to add
+/// back). Counting images by base64 length would dwarf everything and skew both
+/// the budget and [`token_calibration`].
+fn image_payload_stats(v: &serde_json::Value) -> (usize, usize) {
+    match v {
+        serde_json::Value::Object(o)
+            if o.get("type").and_then(|t| t.as_str()) == Some("image") =>
+        {
+            let data = o
+                .get("source")
+                .and_then(|s| s.get("data"))
+                .and_then(|d| d.as_str())
+                .unwrap_or_default();
+            (data.len(), image_token_cost(data))
+        }
+        serde_json::Value::Object(o) => o
+            .values()
+            .map(image_payload_stats)
+            .fold((0, 0), |(a, b), (c, d)| (a + c, b + d)),
+        serde_json::Value::Array(a) => a
+            .iter()
+            .map(image_payload_stats)
+            .fold((0, 0), |(a, b), (c, d)| (a + c, b + d)),
+        _ => (0, 0),
+    }
+}
+
+/// Token estimate for a JSON value: serialized byte length ÷ 4 (the byte count
+/// already includes every brace/quote/colon, so this tracks real tokens well for
+/// text and JSON alike), except that image blocks are counted at their real
+/// vision cost via [`image_token_cost`] rather than their base64 length. The
+/// figure is scaled by the calibration factor before being compared to a budget.
 fn estimate_tokens(v: &serde_json::Value) -> usize {
-    serde_json::to_string(v).map(|s| s.len() / 4).unwrap_or(0)
+    let total = serde_json::to_string(v).map(|s| s.len()).unwrap_or(0);
+    let (image_bytes, image_tokens) = image_payload_stats(v);
+    total.saturating_sub(image_bytes) / 4 + image_tokens
 }
 
 /// Calibration factor (real prompt tokens ÷ raw char-based estimate), in
@@ -458,15 +514,17 @@ fn calibrated_tokens(raw: usize) -> usize {
 }
 
 /// Fold one observed (real prompt tokens, raw estimate) pair into the calibration
-/// factor with an EMA, clamped to a sane band so a single odd turn can't wildly
-/// skew eviction. `real` comes from the API's `usage` (input + cache tokens);
-/// `estimate` is the raw [`estimate_tokens`] of the same assembled prompt.
+/// factor with an EMA. Clamped to `[1.0, 8.0]`: the factor may only ever make us
+/// evict *more*, never less — under-counting is the direction that overflows the
+/// context window, so calibration is not allowed to shrink the estimate below its
+/// raw value. `real` comes from the API's `usage` (input + both cache buckets);
+/// `estimate` is the [`estimate_tokens`] of the same assembled prompt.
 fn record_token_calibration(real: usize, estimate: usize) {
     if real == 0 || estimate == 0 {
         return;
     }
-    let observed = (real as f64 / estimate as f64).clamp(0.5, 8.0);
-    let blended = (token_calibration() * 0.7 + observed * 0.3).clamp(0.5, 8.0);
+    let observed = (real as f64 / estimate as f64).clamp(1.0, 8.0);
+    let blended = (token_calibration() * 0.7 + observed * 0.3).clamp(1.0, 8.0);
     CFG_TOKEN_CALIBRATION_MILLI.store((blended * 1000.0) as u64, Ordering::Relaxed);
 }
 
@@ -489,7 +547,7 @@ fn prompt_token_target(model: &str, max_tokens: u32) -> usize {
 }
 
 /// Shrink `history` in place until the assembled prompt (messages + `tools` +
-/// `system`) is estimated to fit under `target` input tokens. Escalates in three
+/// `system`) is estimated to fit under `target` input tokens. Escalates in four
 /// stages, reusing the stubbing pass, and only ever engages when a turn would
 /// otherwise overflow — so short runs are untouched:
 ///   1. Normal stubbing ([`evict_stale_history`]).
@@ -498,6 +556,8 @@ fn prompt_token_target(model: &str, max_tokens: u32) -> usize {
 ///   3. Sliding window — drop the oldest `(assistant, user)` turn-pairs, the only
 ///      lever that removes rather than shrinks, keeping `history[0]` and the most
 ///      recent pair, until it fits or nothing more is safe to drop.
+///   4. Last resort — stub the most-recent pair too (no protected window), so a
+///      single oversized tool result / tool input can't blow the limit alone.
 fn evict_to_fit(
     history: &mut Vec<serde_json::Value>,
     tools: &[serde_json::Value],
@@ -533,6 +593,15 @@ fn evict_to_fit(
         }
         history.drain(1..3);
     }
+    if fits(history) {
+        return;
+    }
+
+    // Stage 4: nothing left to drop but still over budget — a single recent block
+    // (e.g. a whole-XFA `get_xfa`, or a monolithic `set_*` input) exceeds it on
+    // its own. Stub with no protected window (`keep_recent = 0`) so even the last
+    // pair is shrunk; the model re-fetches from the engine if it still needs it.
+    evict_stale_history_with(history, 0, 200, 200, 0);
 }
 
 /// Replace an oversized `tool_use` `input` with a small stub object. `input`
@@ -718,6 +787,63 @@ pub async fn anthropic_agentic_turn(
     ))
 }
 
+/// The output of [`prepare_request_body`]: the (possibly evicted) history, the
+/// serialized request bytes, and the raw token estimate of what was assembled.
+struct PreparedRequest {
+    history: Vec<serde_json::Value>,
+    body: Vec<u8>,
+    sent_estimate: usize,
+}
+
+/// Do the CPU-heavy prompt assembly off the UI thread: evict to fit the target,
+/// clone in the cache-control breakpoints, and serialize the request to bytes.
+///
+/// The agent loop is spawned on Dioxus's main-thread executor, so running this
+/// synchronously (full-history serialization + recursive token walks + a deep
+/// clone of a multi-MB history, several times per turn) freezes rendering. It
+/// all happens inside [`tokio::task::spawn_blocking`] instead. Ownership of
+/// `history` is moved in and returned so the caller can restore it.
+async fn prepare_request_body(
+    history: Vec<serde_json::Value>,
+    tools: Vec<serde_json::Value>,
+    system: Option<String>,
+    model: String,
+    max_tokens: u32,
+    target: usize,
+) -> Result<PreparedRequest, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut history = history;
+        evict_to_fit(&mut history, &tools, system.as_deref(), target);
+        let sent_estimate = assembled_prompt_estimate(&history, &tools, system.as_deref());
+
+        // Prompt caching: `ephemeral` breakpoints on the system prompt (static —
+        // the instruction prefix is identical every turn), the last tool, and the
+        // final message block bill the stable prefix at the cache-read rate. The
+        // static system breakpoint means a >5-min stall (cache TTL) only re-writes
+        // the rolling tail, never the whole prefix. See [`cache_marked_messages`]
+        // / [`cache_marked_tools`] / [`cache_marked_system`].
+        let mut request = serde_json::json!({
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": cache_marked_messages(&history),
+            "tools": cache_marked_tools(&tools),
+            "stream": true,
+        });
+        if let Some(s) = system.as_deref().filter(|s| !s.is_empty()) {
+            request["system"] = cache_marked_system(s);
+        }
+        let body = serde_json::to_vec(&request)
+            .map_err(|e| format!("Failed to serialize request: {e}"))?;
+        Ok(PreparedRequest {
+            history,
+            body,
+            sent_estimate,
+        })
+    })
+    .await
+    .map_err(|e| format!("Request preparation task failed: {e}"))?
+}
+
 /// Run **one** streamed assistant turn against the Messages API with `tools`
 /// available, append the assistant message to `history`, and return its text +
 /// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:
@@ -741,47 +867,43 @@ pub async fn anthropic_stream_turn(
     }
 
     // Bound the assembled prompt below the model's context window before billing
-    // this turn (no-op until history is large; escalates from stubbing to
-    // dropping oldest turns — see [`evict_to_fit`]). Every caller runs through
-    // here.
+    // this turn (no-op until history is large; escalates from stubbing to dropping
+    // oldest turns — see [`evict_to_fit`]). This and the request serialization run
+    // off the UI thread (see [`prepare_request_body`]).
+    //
+    // Retry on context overflow: the token estimate is char-based, so if the real
+    // count still trips the hard `400 prompt is too long` limit we halve the
+    // target, force another (harder) eviction, and retry — rather than failing the
+    // whole run.
     let mut target = prompt_token_target(model, max_tokens);
-    evict_to_fit(history, tools, system, target);
+    const MIN_TARGET: usize = 16_000;
+    let client = reqwest::Client::new();
 
-    // Send with a retry on context overflow: the token estimate is char-based, so
-    // if the real count still trips the hard `400 prompt is too long` limit we
-    // halve the target, force another eviction, and retry — up to a few times —
-    // rather than failing the whole run.
-    let response = loop {
-        // Prompt caching: `ephemeral` breakpoints on the system prompt (static —
-        // the instruction prefix is identical every turn), the last tool, and the
-        // final message block bill the stable prefix at the cache-read rate. The
-        // static system breakpoint means a >5-min stall (cache TTL) only re-writes
-        // the rolling tail, never the whole prefix. See [`cache_marked_messages`]
-        // / [`cache_marked_tools`] / [`cache_marked_system`].
-        let mut request = serde_json::json!({
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": cache_marked_messages(history),
-            "tools": cache_marked_tools(tools),
-            "stream": true,
-        });
-        if let Some(system) = system.filter(|s| !s.is_empty()) {
-            request["system"] = cache_marked_system(system);
-        }
+    let (response, sent_estimate) = loop {
+        let prepared = prepare_request_body(
+            std::mem::take(history),
+            tools.to_vec(),
+            system.map(str::to_string),
+            model.to_string(),
+            max_tokens,
+            target,
+        )
+        .await?;
+        *history = prepared.history;
 
-        let response = reqwest::Client::new()
+        let response = client
             .post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
-            .json(&request)
+            .body(prepared.body)
             .send()
             .await
             .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
 
         let status = response.status();
         if status.is_success() {
-            break response;
+            break (response, prepared.sent_estimate);
         }
 
         let body = response.text().await.unwrap_or_default();
@@ -790,11 +912,8 @@ pub async fn anthropic_stream_turn(
             .and_then(|v| v["error"]["message"].as_str().map(String::from))
             .unwrap_or(body);
 
-        // Context overflow: shrink harder and retry until the floor target.
-        const MIN_TARGET: usize = 16_000;
         if status.as_u16() == 400 && msg.contains("prompt is too long") && target > MIN_TARGET {
             target = (target / 2).max(MIN_TARGET);
-            evict_to_fit(history, tools, system, target);
             continue;
         }
         return Err(format!("Anthropic API error ({status}): {msg}"));
@@ -881,13 +1000,10 @@ pub async fn anthropic_stream_turn(
         }
     }
 
-    // Calibrate the token estimate against the API's reported usage while
-    // `history` still equals exactly what was sent (the assistant reply is
-    // appended below). Next turn's [`evict_to_fit`] scales its estimate by this.
-    record_token_calibration(
-        prompt_tokens,
-        assembled_prompt_estimate(history, tools, system),
-    );
+    // Calibrate the token estimate against the API's reported usage. `sent_estimate`
+    // was computed off-thread for exactly what was sent, so this adds no
+    // main-thread work. Next turn's [`evict_to_fit`] scales its estimate by this.
+    record_token_calibration(prompt_tokens, sent_estimate);
 
     // Append the assistant message (text + tool_use blocks) to history.
     let mut assistant_content: Vec<serde_json::Value> = Vec::new();
@@ -1175,6 +1291,55 @@ mod tests {
         assert_eq!(CFG_TOKEN_CALIBRATION_MILLI.load(Ordering::Relaxed), before);
 
         CFG_TOKEN_CALIBRATION_MILLI.store(saved, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn estimate_counts_image_by_vision_cost_not_base64_length() {
+        // Undecodable base64 must not be counted at ~100k tokens (byte/4); it
+        // falls back to the flat per-image figure so it can't drag calibration
+        // down and cause later text turns to under-evict.
+        let huge = "A".repeat(400_000);
+        let est = estimate_tokens(&result_image("i1", &huge));
+        assert!(
+            est < IMAGE_TOKEN_FALLBACK + 1_000,
+            "image over-counted ({est}) — should be ~{IMAGE_TOKEN_FALLBACK}"
+        );
+    }
+
+    #[test]
+    fn image_tokens_computed_from_real_dimensions() {
+        use base64::Engine;
+        // A real 300×300 PNG → 90_000 px / 750 = 120 vision tokens, regardless of
+        // its (tiny, well-compressed) base64 length.
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::new(300, 300));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::Png).unwrap();
+        let b64 = base64::prelude::BASE64_STANDARD.encode(buf.get_ref());
+
+        let est = estimate_tokens(&result_image("i1", &b64));
+        assert!(
+            (120..400).contains(&est),
+            "expected ~120 computed image tokens + small wrapper, got {est}"
+        );
+    }
+
+    #[test]
+    fn evict_to_fit_stubs_single_oversized_recent_result() {
+        // One turn-pair whose result alone exceeds the target. Stage 3 can't drop
+        // it (the last pair is kept for pairing), so stage 4 must stub it in place.
+        let big = "x".repeat(400_000);
+        let mut h = vec![
+            user_text("KICK"),
+            assistant_tool_use("t1", "get_xfa", json!({})),
+            result_text("t1", &big),
+        ];
+        evict_to_fit(&mut h, &[], None, 5_000);
+
+        assert_eq!(h.len(), 3, "pairing preserved — nothing safe to drop");
+        assert!(
+            block_text(&h[2]).starts_with(ELIDED_MARKER),
+            "oversized recent result should be stubbed by stage 4"
+        );
     }
 
     #[test]
