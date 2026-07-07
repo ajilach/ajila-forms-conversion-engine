@@ -483,6 +483,11 @@ impl ConversionAgent {
         self.package.clone()
     }
 
+    /// `true` once a working AEM (translated) tree has been authored.
+    pub fn has_aem_tree(&self) -> bool {
+        self.aem_translated.is_some()
+    }
+
     /// Guarantee a downloadable package when one can be built.
     ///
     /// Every tree edit invalidates the package (see [`Self::aem_translated_edited`]),

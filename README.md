@@ -113,7 +113,7 @@ The app is built with [Dioxus](https://dioxuslabs.com/) and targets the desktop.
 
 It bundles an AI conversion agent that drives the engine's tools turn by turn to convert a form interactively. The agent uses the Anthropic API — set the API key and model (default `claude-opus-4-8`) in the app's settings. Every tree change is versioned into a local edit-history SQLite database, so conversions can be reviewed and resumed.
 
-### Development
+### Developmentt
 
 ```sh
 cd app

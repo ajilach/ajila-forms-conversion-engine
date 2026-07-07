@@ -29,6 +29,21 @@ const MAX_VALIDATE_REPEATS: usize = 3;
 /// loop stops nudging and finalizes with whatever tree exists. Bounds the cost
 /// of a model that keeps re-attempting one oversized call instead of chunking.
 const MAX_TRUNCATE_REPEATS: usize = 3;
+/// Extra "continue" rounds the app grants itself when the agent stops without
+/// calling `finish` — the model quit with a plain-text turn, or the turn budget
+/// ran out (e.g. after over-long exploration). Each round re-prompts the agent
+/// to complete the remaining work with a fresh, smaller turn budget.
+const MAX_CONTINUATION_ROUNDS: usize = 2;
+/// Turn budget for each continuation round. Smaller than [`MAX_ITERATIONS`]:
+/// a continuation should take stock and finish, not restart exploration.
+const CONTINUATION_MAX_ITERATIONS: usize = 80;
+/// How many times a failed API turn is retried (with backoff) before the run
+/// gives up. A single transient 429/5xx/network hiccup must not end a long run.
+const TURN_RETRIES: usize = 2;
+
+/// Shown in the activity log when the app auto-continues a stopped run.
+const CONTINUATION_NOTICE: &str = "⚠ The agent stopped before finishing — \
+asking it to complete the remaining work.";
 
 /// Shown in the activity log when a turn is cut off at the output-token cap.
 const TRUNCATED_TURN_NOTICE: &str = "⚠ The model's response hit the per-turn \
@@ -154,9 +169,27 @@ Then call finish.",
     .await;
 }
 
+/// How one round of the agent loop ended (see [`drive_agent`]).
+enum RoundEnd {
+    /// Terminal: the agent called `finish`, or a recovery path already
+    /// prepared the best available result (repeated truncation, stuck
+    /// validation, persistent API failure).
+    Done,
+    /// The model stopped requesting tools without calling `finish`.
+    StoppedEarly,
+    /// The round's turn budget ran out before the agent called `finish`.
+    OutOfTurns,
+}
+
 /// Drive the agent loop to completion: stream turns, execute tools, version
 /// each step, and finalize the result. Shared by [`run_agent`] and
 /// [`run_agent_feedback`].
+///
+/// Runs in rounds: the main round has [`MAX_ITERATIONS`] turns; if the agent
+/// stops without calling `finish` (plain-text stop or budget exhausted), up to
+/// [`MAX_CONTINUATION_ROUNDS`] smaller rounds re-prompt it to complete the
+/// remaining work, so a stalled run self-continues instead of finalizing a
+/// half-done (or never-started) tree.
 #[allow(clippy::too_many_arguments)]
 async fn drive_agent(
     mut agent: ConversionAgent,
@@ -171,192 +204,265 @@ async fn drive_agent(
     let tools = agent.tools();
 
     // Escape hatch for a stuck validate loop: track how many consecutive turns
-    // called validate_aem_package and returned the same output.
+    // called validate_aem_package and returned the same output. (All repeat
+    // counters persist across continuation rounds.)
     let mut last_validate_output: Option<String> = None;
     let mut validate_repeat_count: usize = 0;
     // Track consecutive turns truncated at the output-token cap (see below).
     let mut truncate_repeat_count: usize = 0;
+    // Continuation rounds already granted (see RoundEnd handling below).
+    let mut continuation_rounds: usize = 0;
 
-    for _ in 0..MAX_ITERATIONS {
-        let turn =
-            match crate::platform::anthropic_stream_turn(
-                &mut history,
-                &tools,
-                &settings.anthropic_api_key,
-                &settings.anthropic_model,
-                AGENT_MAX_TOKENS,
-            )
-            .await
-            {
-                Ok(t) => t,
-                Err(e) => {
-                    // Record the error but fall through to finalize instead of
-                    // bailing out here: the agent may already have authored a
-                    // working tree, and finalize/ensure_package will still build
-                    // a downloadable package from it. (A truly empty run
-                    // finalizes with no package and this error shown.)
-                    processing_state.write().error = Some(format!("Agent failed: {e}"));
+    loop {
+        // The first round gets the full budget; continuations get a smaller one
+        // — they are meant to take stock and finish, not restart exploration.
+        let budget = if continuation_rounds == 0 {
+            MAX_ITERATIONS
+        } else {
+            CONTINUATION_MAX_ITERATIONS
+        };
+
+        let end = 'round: {
+            for _ in 0..budget {
+                let turn = match stream_turn_with_retry(
+                    &mut history,
+                    &tools,
+                    &settings,
+                    &mut processing_state,
+                )
+                .await
+                {
+                    Ok(t) => t,
+                    Err(e) => {
+                        // Persistent failure even after retries. Record the
+                        // error but still fall through to finalize: the agent
+                        // may already have authored a working tree, and
+                        // ensure_package will build a downloadable package
+                        // from it. (A truly empty run finalizes with no
+                        // package and this error shown.)
+                        processing_state.write().error = Some(format!("Agent failed: {e}"));
+                        break 'round RoundEnd::Done;
+                    }
+                };
+
+                if !turn.text.trim().is_empty() {
+                    push_step(
+                        &mut processing_state,
+                        AgentStep {
+                            id: String::new(),
+                            kind: AgentStepKind::Thought,
+                            label: turn.text.trim().to_string(),
+                            detail: String::new(),
+                            status: AgentStepStatus::Done,
+                        },
+                    );
+                }
+
+                // The turn was cut off at the per-turn output-token cap —
+                // almost always the model trying to emit the entire AEM tree in
+                // one giant set_aem_translated call. Anthropic truncates
+                // mid-tool-input, so the partial JSON does not parse and the
+                // tool call is dropped (never executed). Breaking here would
+                // finalize with no tree and therefore no downloadable package,
+                // so instead steer the model to author the tree incrementally
+                // and let the loop continue so it can recover.
+                if turn.stop_reason.as_deref() == Some("max_tokens") {
+                    truncate_repeat_count += 1;
+                    push_step(
+                        &mut processing_state,
+                        AgentStep {
+                            id: String::new(),
+                            kind: AgentStepKind::Thought,
+                            label: TRUNCATED_TURN_NOTICE.into(),
+                            detail: String::new(),
+                            status: AgentStepStatus::Done,
+                        },
+                    );
+                    if truncate_repeat_count >= MAX_TRUNCATE_REPEATS {
+                        processing_state.write().warnings.push(
+                            "The model repeatedly exceeded the output limit while authoring \
+                             the tree — building what's available. The result may be \
+                             incomplete and need manual follow-up."
+                                .into(),
+                        );
+                        break 'round RoundEnd::Done;
+                    }
+                    // The assistant message (with any partial tool_use blocks)
+                    // was already appended to history; the API requires a
+                    // tool_result for every tool_use before the next turn, so
+                    // answer them all with the recovery guidance. With no tool
+                    // calls, nudge via a user message.
+                    if turn.tool_calls.is_empty() {
+                        push_user_text(&mut history, TRUNCATED_TURN_GUIDANCE);
+                    } else {
+                        let results: Vec<(String, ToolReply)> = turn
+                            .tool_calls
+                            .iter()
+                            .map(|tc| {
+                                (tc.id.clone(), ToolReply::Error(TRUNCATED_TURN_GUIDANCE.into()))
+                            })
+                            .collect();
+                        history.push(tool_result_message(results));
+                    }
+                    continue;
+                }
+                truncate_repeat_count = 0;
+
+                if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
+                    // The turn may still carry tool_use blocks (a "refusal"
+                    // stop, or a stream that ended cleanly mid-message and left
+                    // stop_reason unset). They are already in history, and the
+                    // API requires every tool_use to be answered by a
+                    // tool_result in the next message — a continuation round
+                    // would otherwise 400 on every subsequent call. Answer them
+                    // without executing (the turn never committed to them; the
+                    // inputs may be truncated).
+                    if !turn.tool_calls.is_empty() {
+                        let results: Vec<(String, ToolReply)> = turn
+                            .tool_calls
+                            .iter()
+                            .map(|tc| {
+                                (
+                                    tc.id.clone(),
+                                    ToolReply::Error(
+                                        "Not executed — the turn ended before completing. \
+                                         Re-issue this call if it is still needed."
+                                            .into(),
+                                    ),
+                                )
+                            })
+                            .collect();
+                        history.push(tool_result_message(results));
+                    }
+                    break 'round RoundEnd::StoppedEarly;
+                }
+
+                let mut results: Vec<(String, ToolReply)> = Vec::new();
+                let mut stuck = false;
+                for tc in &turn.tool_calls {
+                    push_step(
+                        &mut processing_state,
+                        AgentStep {
+                            id: tc.id.clone(),
+                            kind: AgentStepKind::Tool,
+                            label: tc.name.clone(),
+                            detail: summarize_input(&tc.input),
+                            status: AgentStepStatus::Running,
+                        },
+                    );
+                    let reply = agent.execute(&tc.name, &tc.input).await;
+                    let ok = !matches!(reply, ToolReply::Error(_));
+                    set_step_status(
+                        &mut processing_state,
+                        &tc.id,
+                        if ok {
+                            AgentStepStatus::Done
+                        } else {
+                            AgentStepStatus::Error
+                        },
+                    );
+
+                    // Detect a stuck validate loop: same output N times in a row.
+                    if tc.name == "validate_aem_package" {
+                        let output = match &reply {
+                            ToolReply::Text(s) => s.clone(),
+                            ToolReply::Error(s) => format!("error:{s}"),
+                            ToolReply::Image { .. } => "image".into(),
+                        };
+                        if last_validate_output.as_deref() == Some(&output) {
+                            validate_repeat_count += 1;
+                            if validate_repeat_count >= MAX_VALIDATE_REPEATS {
+                                stuck = true;
+                            }
+                        } else {
+                            last_validate_output = Some(output);
+                            validate_repeat_count = 1;
+                        }
+                    } else {
+                        // Any other tool means the agent is making progress;
+                        // reset the counter.
+                        validate_repeat_count = 0;
+                        last_validate_output = None;
+                    }
+
+                    results.push((tc.id.clone(), reply));
+                }
+                history.push(tool_result_message(results));
+
+                if stuck {
+                    processing_state.write().warnings.push(
+                        "Validation produced the same result 3 times in a row — building what's available. \
+                         Some issues (e.g. missing fragment paths) may require manual follow-up."
+                            .into(),
+                    );
+
+                    // Ensure the package reflects the latest AEM tree, then upload.
+                    for (id, name, detail) in [
+                        ("recovery-build", "build_aem_package", "recovery"),
+                        ("recovery-upload", "upload_to_aem", "recovery"),
+                    ] {
+                        push_step(
+                            &mut processing_state,
+                            AgentStep {
+                                id: id.into(),
+                                kind: AgentStepKind::Tool,
+                                label: name.into(),
+                                detail: detail.into(),
+                                status: AgentStepStatus::Running,
+                            },
+                        );
+                        let reply = agent.execute(name, &serde_json::json!({})).await;
+                        let ok = !matches!(reply, ToolReply::Error(_));
+                        set_step_status(
+                            &mut processing_state,
+                            id,
+                            if ok { AgentStepStatus::Done } else { AgentStepStatus::Error },
+                        );
+                        // Don't attempt upload if build failed.
+                        if name == "build_aem_package" && !ok {
+                            break;
+                        }
+                    }
+
+                    break 'round RoundEnd::Done;
+                }
+
+                if agent.is_finished() {
+                    break 'round RoundEnd::Done;
+                }
+            }
+            RoundEnd::OutOfTurns
+        };
+
+        match end {
+            RoundEnd::Done => break,
+            // The agent stopped without calling finish — either the model quit
+            // with a plain-text turn or the round's turn budget ran out. Rather
+            // than finalizing a half-done (or never-started) tree, grant a
+            // bounded number of continuation rounds that re-prompt the agent to
+            // take stock and complete the remaining work.
+            RoundEnd::StoppedEarly | RoundEnd::OutOfTurns => {
+                if continuation_rounds >= MAX_CONTINUATION_ROUNDS {
+                    processing_state.write().warnings.push(
+                        "The agent did not finish within its turn budget, even after \
+                         being asked to continue — finalizing with what was built."
+                            .into(),
+                    );
                     break;
                 }
-            };
-
-        if !turn.text.trim().is_empty() {
-            push_step(
-                &mut processing_state,
-                AgentStep {
-                    id: String::new(),
-                    kind: AgentStepKind::Thought,
-                    label: turn.text.trim().to_string(),
-                    detail: String::new(),
-                    status: AgentStepStatus::Done,
-                },
-            );
-        }
-
-        // The turn was cut off at the per-turn output-token cap — almost always
-        // the model trying to emit the entire AEM tree in one giant
-        // set_aem_translated call. Anthropic truncates mid-tool-input, so the
-        // partial JSON does not parse and the tool call is dropped (never
-        // executed). Breaking here would finalize with no tree and therefore no
-        // downloadable package, so instead steer the model to author the tree
-        // incrementally and let the loop continue so it can recover.
-        if turn.stop_reason.as_deref() == Some("max_tokens") {
-            truncate_repeat_count += 1;
-            push_step(
-                &mut processing_state,
-                AgentStep {
-                    id: String::new(),
-                    kind: AgentStepKind::Thought,
-                    label: TRUNCATED_TURN_NOTICE.into(),
-                    detail: String::new(),
-                    status: AgentStepStatus::Done,
-                },
-            );
-            if truncate_repeat_count >= MAX_TRUNCATE_REPEATS {
-                processing_state.write().warnings.push(
-                    "The model repeatedly exceeded the output limit while authoring \
-                     the tree — building what's available. The result may be \
-                     incomplete and need manual follow-up."
-                        .into(),
-                );
-                break;
-            }
-            // The assistant message (with any partial tool_use blocks) was
-            // already appended to history; the API requires a tool_result for
-            // every tool_use before the next turn, so answer them all with the
-            // recovery guidance. With no tool calls, nudge via a user message.
-            if turn.tool_calls.is_empty() {
-                history.push(serde_json::json!({
-                    "role": "user",
-                    "content": [{"type": "text", "text": TRUNCATED_TURN_GUIDANCE}],
-                }));
-            } else {
-                let results: Vec<(String, ToolReply)> = turn
-                    .tool_calls
-                    .iter()
-                    .map(|tc| (tc.id.clone(), ToolReply::Error(TRUNCATED_TURN_GUIDANCE.into())))
-                    .collect();
-                history.push(tool_result_message(results));
-            }
-            continue;
-        }
-        truncate_repeat_count = 0;
-
-        if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
-            break;
-        }
-
-        let mut results: Vec<(String, ToolReply)> = Vec::new();
-        let mut stuck = false;
-        for tc in &turn.tool_calls {
-            push_step(
-                &mut processing_state,
-                AgentStep {
-                    id: tc.id.clone(),
-                    kind: AgentStepKind::Tool,
-                    label: tc.name.clone(),
-                    detail: summarize_input(&tc.input),
-                    status: AgentStepStatus::Running,
-                },
-            );
-            let reply = agent.execute(&tc.name, &tc.input).await;
-            let ok = !matches!(reply, ToolReply::Error(_));
-            set_step_status(
-                &mut processing_state,
-                &tc.id,
-                if ok {
-                    AgentStepStatus::Done
-                } else {
-                    AgentStepStatus::Error
-                },
-            );
-
-            // Detect a stuck validate loop: same output N times in a row.
-            if tc.name == "validate_aem_package" {
-                let output = match &reply {
-                    ToolReply::Text(s) => s.clone(),
-                    ToolReply::Error(s) => format!("error:{s}"),
-                    ToolReply::Image { .. } => "image".into(),
-                };
-                if last_validate_output.as_deref() == Some(&output) {
-                    validate_repeat_count += 1;
-                    if validate_repeat_count >= MAX_VALIDATE_REPEATS {
-                        stuck = true;
-                    }
-                } else {
-                    last_validate_output = Some(output);
-                    validate_repeat_count = 1;
-                }
-            } else {
-                // Any other tool means the agent is making progress; reset counter.
-                validate_repeat_count = 0;
-                last_validate_output = None;
-            }
-
-            results.push((tc.id.clone(), reply));
-        }
-        history.push(tool_result_message(results));
-
-        if stuck {
-            processing_state.write().warnings.push(
-                "Validation produced the same result 3 times in a row — building what's available. \
-                 Some issues (e.g. missing fragment paths) may require manual follow-up."
-                    .into(),
-            );
-
-            // Ensure the package reflects the latest AEM tree, then upload.
-            for (id, name, detail) in [
-                ("recovery-build", "build_aem_package", "recovery"),
-                ("recovery-upload", "upload_to_aem", "recovery"),
-            ] {
+                continuation_rounds += 1;
                 push_step(
                     &mut processing_state,
                     AgentStep {
-                        id: id.into(),
-                        kind: AgentStepKind::Tool,
-                        label: name.into(),
-                        detail: detail.into(),
-                        status: AgentStepStatus::Running,
+                        id: String::new(),
+                        kind: AgentStepKind::Thought,
+                        label: CONTINUATION_NOTICE.into(),
+                        detail: String::new(),
+                        status: AgentStepStatus::Done,
                     },
                 );
-                let reply = agent.execute(name, &serde_json::json!({})).await;
-                let ok = !matches!(reply, ToolReply::Error(_));
-                set_step_status(
-                    &mut processing_state,
-                    id,
-                    if ok { AgentStepStatus::Done } else { AgentStepStatus::Error },
-                );
-                // Don't attempt upload if build failed.
-                if name == "build_aem_package" && !ok {
-                    break;
-                }
+                push_user_text(&mut history, &continuation_prompt(&agent));
             }
-
-            break;
-        }
-
-        if agent.is_finished() {
-            break;
         }
     }
 
@@ -432,6 +538,105 @@ fn finalize(
     current_session.set(Some(structured_session));
 }
 
+// ── Loop helpers ─────────────────────────────────────────────────────────────
+
+/// Run one streamed turn, retrying transient API failures with backoff so a
+/// single 429/5xx/network hiccup does not end a long run. Configuration errors
+/// (missing/invalid API key) fail immediately — retrying cannot fix them.
+///
+/// Safe to retry: [`crate::platform::anthropic_stream_turn`] only appends the
+/// assistant message to `history` on success, so a failed attempt leaves the
+/// conversation unchanged.
+async fn stream_turn_with_retry(
+    history: &mut Vec<serde_json::Value>,
+    tools: &[serde_json::Value],
+    settings: &crate::settings::AppSettings,
+    processing_state: &mut Signal<ProcessingState>,
+) -> Result<crate::platform::TurnOutput, String> {
+    let mut last_err = String::new();
+    for attempt in 0..=TURN_RETRIES {
+        if attempt > 0 {
+            push_step(
+                processing_state,
+                AgentStep {
+                    id: String::new(),
+                    kind: AgentStepKind::Thought,
+                    label: format!(
+                        "⚠ API error — retrying (attempt {attempt}/{TURN_RETRIES}): {last_err}"
+                    ),
+                    detail: String::new(),
+                    status: AgentStepStatus::Done,
+                },
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(10 * attempt as u64)).await;
+        }
+        match crate::platform::anthropic_stream_turn(
+            history,
+            tools,
+            &settings.anthropic_api_key,
+            &settings.anthropic_model,
+            AGENT_MAX_TOKENS,
+        )
+        .await
+        {
+            Ok(t) => return Ok(t),
+            Err(e) => {
+                // Configuration/auth problems are not transient; surface them
+                // right away instead of stalling through pointless retries.
+                if e.contains("not configured")
+                    || e.contains("(401")
+                    || e.contains("(403")
+                    || e.contains("authentication")
+                {
+                    return Err(e);
+                }
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err)
+}
+
+/// Append `text` to the conversation as user content: onto the trailing user
+/// message when there is one (the API requires tool_result blocks to lead a
+/// message, so the text goes after them), otherwise as a new user message.
+fn push_user_text(history: &mut Vec<serde_json::Value>, text: &str) {
+    if let Some(last) = history.last_mut()
+        && last["role"] == "user"
+        && let Some(blocks) = last.get_mut("content").and_then(|c| c.as_array_mut())
+    {
+        blocks.push(serde_json::json!({"type": "text", "text": text}));
+        return;
+    }
+    history.push(serde_json::json!({
+        "role": "user",
+        "content": [{"type": "text", "text": text}],
+    }));
+}
+
+/// The re-prompt fed to the agent when it stops without calling `finish`.
+/// States what already exists so the agent takes stock and completes the work
+/// instead of restarting exploration (the usual way a run exhausts its turns).
+fn continuation_prompt(agent: &ConversionAgent) -> String {
+    let state = if agent.package().is_some() {
+        "A package has already been built from your working AEM tree."
+    } else if agent.has_aem_tree() {
+        "A working AEM tree exists, but no current package has been built from it."
+    } else {
+        "No working AEM tree has been authored yet."
+    };
+    format!(
+        "You stopped before calling finish. {state} Complete the remaining work \
+         now, efficiently. Do NOT restart exploration or re-read source states \
+         you have already inspected; if a tool output you need was elided from \
+         earlier turns, re-fetch it once and use it immediately. Take stock with \
+         get_aem_translated_outline if a tree exists. Author whatever is missing \
+         — for a large form set a skeleton with set_aem_translated and add each \
+         section with insert_aem_translated_node — then build_aem_package, \
+         validate_aem_package, and call finish."
+    )
+}
+
 // ── UI step helpers ──────────────────────────────────────────────────────────
 
 fn push_step(processing_state: &mut Signal<ProcessingState>, step: AgentStep) {
@@ -470,5 +675,39 @@ mod tests {
         assert_eq!(summarize_input(&serde_json::json!({})), "");
         let long = serde_json::json!({"q": "x".repeat(500)});
         assert!(summarize_input(&long).chars().count() <= 121);
+    }
+
+    #[test]
+    fn push_user_text_appends_to_trailing_user_message() {
+        // Trailing user message (tool results): the text is appended after
+        // them, keeping tool_result blocks first as the API requires.
+        let mut h = vec![serde_json::json!({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu1",
+             "content": [{"type": "text", "text": "ok"}]},
+        ]})];
+        push_user_text(&mut h, "continue");
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0]["content"][0]["type"], "tool_result");
+        assert_eq!(h[0]["content"][1]["type"], "text");
+        assert_eq!(h[0]["content"][1]["text"], "continue");
+    }
+
+    #[test]
+    fn push_user_text_pushes_after_assistant_message() {
+        let mut h = vec![serde_json::json!({"role": "assistant", "content": [
+            {"type": "text", "text": "hi"},
+        ]})];
+        push_user_text(&mut h, "continue");
+        assert_eq!(h.len(), 2);
+        assert_eq!(h[1]["role"], "user");
+        assert_eq!(h[1]["content"][0]["text"], "continue");
+    }
+
+    #[test]
+    fn continuation_prompt_reflects_missing_tree() {
+        let agent = ConversionAgent::new(None, Vec::new(), None, "test-continuation".into());
+        let p = continuation_prompt(&agent);
+        assert!(p.contains("No working AEM tree has been authored yet"));
+        assert!(p.contains("call finish"));
     }
 }

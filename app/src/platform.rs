@@ -270,7 +270,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// Default trailing messages kept verbatim by [`evict_stale_history`]. Even, so
 /// whole assistant+`tool_result` turn-pairs survive (the latest data stays
 /// intact). Overridable at runtime via [`configure_eviction`].
-pub const DEFAULT_KEEP_RECENT_MESSAGES: usize = 4;
+///
+/// Sized so the conversion agent can hold one full working set at once — e.g.
+/// both language variants of `get_flattened_structure_for_state` plus a page
+/// image or two (4 turn-pairs). With only 2 turn-pairs protected, the agent's
+/// reference data was elided before it could use it, sending it into
+/// re-fetch loops that exhausted the turn budget without ever authoring.
+pub const DEFAULT_KEEP_RECENT_MESSAGES: usize = 8;
 /// Default: tool-result text longer than this (chars) is elided once stale.
 pub const DEFAULT_ELIDE_TEXT_OVER_CHARS: usize = 2000;
 /// Default: `tool_use` input longer than this (chars) is elided once stale.
@@ -709,10 +715,16 @@ pub async fn anthropic_stream_turn(
             input,
         });
     }
-    history.push(serde_json::json!({
-        "role": "assistant",
-        "content": assistant_content,
-    }));
+    // Never append an all-empty assistant message: the Messages API rejects
+    // empty content on any non-final assistant message, so a fully empty turn
+    // (no text, no tool blocks — e.g. a stream that ended before any content
+    // event) would poison the history for every later call in the run.
+    if !assistant_content.is_empty() {
+        history.push(serde_json::json!({
+            "role": "assistant",
+            "content": assistant_content,
+        }));
+    }
 
     Ok(TurnOutput {
         text: response_text,
@@ -843,7 +855,8 @@ mod tests {
     }
 
     /// History with stale heavy content (big image, big text, big tool input) in
-    /// old turns and a small recent turn-pair. Total exceeds the size gate.
+    /// old turns and small recent turn-pairs (enough of them to fill the
+    /// DEFAULT_KEEP_RECENT_MESSAGES tail). Total exceeds the size gate.
     fn big_history() -> Vec<serde_json::Value> {
         let big_input = json!({"tree": "X".repeat(3000)});
         vec![
@@ -854,8 +867,12 @@ mod tests {
             result_text("tu2", &"x".repeat(5000)),                  // 4 evict
             assistant_tool_use("tu3", "get_structured", json!({})), // 5 recent
             result_text("tu3", "small recent result"),              // 6 recent
-            assistant_tool_use("tu4", "finish", json!({})),         // 7 recent
-            result_text("tu4", "done"),                             // 8 recent
+            assistant_tool_use("tu4", "get_source_info", json!({})), // 7 recent
+            result_text("tu4", "info"),                             // 8 recent
+            assistant_tool_use("tu5", "list_states", json!({})),    // 9 recent
+            result_text("tu5", "states"),                           // 10 recent
+            assistant_tool_use("tu6", "finish", json!({})),         // 11 recent
+            result_text("tu6", "done"),                             // 12 recent
         ]
     }
 
@@ -903,8 +920,8 @@ mod tests {
                 .count()
         };
         // No blocks deleted: every tool_use still has its tool_result.
-        assert_eq!(count("assistant", "tool_use"), 4);
-        assert_eq!(count("user", "tool_result"), 4);
+        assert_eq!(count("assistant", "tool_use"), 6);
+        assert_eq!(count("user", "tool_result"), 6);
     }
 
     #[test]
@@ -918,17 +935,24 @@ mod tests {
 
     #[test]
     fn size_gated_below_threshold() {
-        // A small history (well under EVICT_TRIGGER_BYTES) is left untouched even
-        // though it contains an over-threshold text block.
+        // A small history (well under EVICT_TRIGGER_BYTES) is left untouched
+        // even though it contains an over-threshold text block OUTSIDE the
+        // protected tail — long enough (> 1 + keep_recent messages) that only
+        // the byte gate, not tail protection, is what spares it.
         let original = vec![
-            user_text("SYSTEM"),
-            assistant_tool_use("tu1", "get_xfa", json!({})),
-            result_text("tu1", &"x".repeat(DEFAULT_ELIDE_TEXT_OVER_CHARS + 100)),
-            assistant_tool_use("tu2", "get_structured", json!({})),
+            user_text("SYSTEM"),                                     // 0 protected
+            assistant_tool_use("tu1", "get_xfa", json!({})),         // 1 evictable
+            result_text("tu1", &"x".repeat(DEFAULT_ELIDE_TEXT_OVER_CHARS + 100)), // 2 evictable
+            assistant_tool_use("tu2", "get_structured", json!({})),  // 3 recent
             result_text("tu2", "recent"),
-            assistant_tool_use("tu3", "finish", json!({})),
-            result_text("tu3", "done"),
+            assistant_tool_use("tu3", "list_states", json!({})),
+            result_text("tu3", "states"),
+            assistant_tool_use("tu4", "get_source_info", json!({})),
+            result_text("tu4", "info"),
+            assistant_tool_use("tu5", "finish", json!({})),
+            result_text("tu5", "done"),
         ];
+        assert!(original.len() > 1 + DEFAULT_KEEP_RECENT_MESSAGES);
         let mut h = original.clone();
         evict_stale_history(&mut h);
         assert_eq!(h, original);
