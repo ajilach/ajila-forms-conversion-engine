@@ -116,8 +116,8 @@ pub enum PipelineEvent {
     PlainRender {
         /// State identifier (e.g. `"de_0"`).
         label: String,
-        /// The rendered image.
-        image: Arc<RgbaImage>,
+        /// The rendered images, one per page (in page order).
+        images: Vec<Arc<RgbaImage>>,
     },
 
     /// A labelled (analysis-overlay) render completed for one form state.
@@ -127,8 +127,8 @@ pub enum PipelineEvent {
     LabelledRender {
         /// State identifier (e.g. `"de_0"`).
         label: String,
-        /// The rendered image.
-        image: Arc<RgbaImage>,
+        /// The rendered images, one per page (in page order).
+        images: Vec<Arc<RgbaImage>>,
     },
 
     /// An annotated (red field-level debug annotations) render completed for
@@ -139,8 +139,8 @@ pub enum PipelineEvent {
     AnnotatedRender {
         /// State identifier (e.g. `"de_0"`).
         label: String,
-        /// The rendered image.
-        image: Arc<RgbaImage>,
+        /// The rendered images, one per page (in page order).
+        images: Vec<Arc<RgbaImage>>,
     },
 
     /// A non-fatal warning occurred.
@@ -198,21 +198,21 @@ impl Default for PipelineConfig {
 
 /// Output produced by a successful [`run_pipeline`] call.
 pub struct PipelineOutput {
-    /// Plain renders in discovery order: `(label, image)`.
+    /// Plain renders in discovery order: `(label, per-page images)`.
     ///
     /// Empty when [`PipelineConfig::render_plain`] is `false`.
-    pub plain_renders: Vec<(String, Arc<RgbaImage>)>,
+    pub plain_renders: Vec<(String, Vec<Arc<RgbaImage>>)>,
 
     /// Annotated (red field-level debug annotations) renders in discovery
-    /// order: `(label, image)`.
+    /// order: `(label, per-page images)`.
     ///
     /// Empty when [`PipelineConfig::render_annotated`] is `false`.
-    pub annotated_renders: Vec<(String, Arc<RgbaImage>)>,
+    pub annotated_renders: Vec<(String, Vec<Arc<RgbaImage>>)>,
 
-    /// Labelled renders in discovery order: `(label, image)`.
+    /// Labelled renders in discovery order: `(label, per-page images)`.
     ///
     /// Empty when [`PipelineConfig::render_labelled`] is `false`.
-    pub labelled_renders: Vec<(String, Arc<RgbaImage>)>,
+    pub labelled_renders: Vec<(String, Vec<Arc<RgbaImage>>)>,
 
     /// Per-state labels and selections, in discovery order.
     ///
@@ -350,8 +350,8 @@ where
     on_event(PipelineEvent::StepChanged(PipelineStep::Flattening));
     yield_fn().await;
 
-    let mut plain_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
-    let mut annotated_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
+    let mut plain_renders: Vec<(String, Vec<Arc<RgbaImage>>)> = Vec::new();
+    let mut annotated_renders: Vec<(String, Vec<Arc<RgbaImage>>)> = Vec::new();
 
     if config.render_plain || config.render_annotated {
         for (_filename, language, form_states, _context) in &explored {
@@ -359,14 +359,17 @@ where
                 let label = format!("{}_{}", language, state_idx);
 
                 if config.render_plain {
-                    match form_state.render_plain(config.scale) {
-                        Ok(image) => {
-                            let image = Arc::new(image);
+                    // One image per page so tall multi-page forms never produce a
+                    // single oversized image downstream.
+                    match form_state.render_plain_pages(config.scale) {
+                        Ok(pages) => {
+                            let images: Vec<Arc<RgbaImage>> =
+                                pages.into_iter().map(Arc::new).collect();
                             on_event(PipelineEvent::PlainRender {
                                 label: label.clone(),
-                                image: Arc::clone(&image),
+                                images: images.clone(),
                             });
-                            plain_renders.push((label.clone(), image));
+                            plain_renders.push((label.clone(), images));
                         }
                         Err(e) => on_event(PipelineEvent::Warning(format!(
                             "Plain render failed for {label}: {e}"
@@ -375,14 +378,15 @@ where
                 }
 
                 if config.render_annotated {
-                    match form_state.render_annotated(config.scale) {
-                        Ok(image) => {
-                            let image = Arc::new(image);
+                    match form_state.render_annotated_pages(config.scale) {
+                        Ok(pages) => {
+                            let images: Vec<Arc<RgbaImage>> =
+                                pages.into_iter().map(Arc::new).collect();
                             on_event(PipelineEvent::AnnotatedRender {
                                 label: label.clone(),
-                                image: Arc::clone(&image),
+                                images: images.clone(),
                             });
-                            annotated_renders.push((label, image));
+                            annotated_renders.push((label, images));
                         }
                         Err(e) => on_event(PipelineEvent::Warning(format!(
                             "Annotated render failed for {label}: {e}"
@@ -399,7 +403,7 @@ where
     on_event(PipelineEvent::StepChanged(PipelineStep::Structuring));
     yield_fn().await;
 
-    let mut labelled_renders: Vec<(String, Arc<RgbaImage>)> = Vec::new();
+    let mut labelled_renders: Vec<(String, Vec<Arc<RgbaImage>>)> = Vec::new();
     let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
     let mut state_labels: Vec<(String, Vec<Selection>)> = Vec::new();
 
@@ -412,14 +416,15 @@ where
 
             // Labelled render (sequential — emits events)
             if config.render_labelled {
-                match form_state.render_labelled(config.scale) {
-                    Ok(image) => {
-                        let image = Arc::new(image);
+                match form_state.render_labelled_pages(config.scale) {
+                    Ok(pages) => {
+                        let images: Vec<Arc<RgbaImage>> =
+                            pages.into_iter().map(Arc::new).collect();
                         on_event(PipelineEvent::LabelledRender {
                             label: label.clone(),
-                            image: Arc::clone(&image),
+                            images: images.clone(),
                         });
-                        labelled_renders.push((label.clone(), image));
+                        labelled_renders.push((label.clone(), images));
                     }
                     Err(e) => on_event(PipelineEvent::Warning(format!(
                         "Labelled render failed for {label}: {e}"

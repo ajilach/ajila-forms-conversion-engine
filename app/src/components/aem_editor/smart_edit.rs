@@ -63,8 +63,8 @@ HARD CONSTRAINTS:\n\
 pub struct SmartAemEditCtx<'a> {
     /// Current AEM node tree (the Root).
     pub root: &'a AemNode,
-    /// label→base64-PNG map from the plain render stage.
-    pub plain_images: &'a HashMap<String, String>,
+    /// label→per-page base64 images from the plain render stage.
+    pub plain_images: &'a HashMap<String, Vec<String>>,
     /// Source PDF bytes, exposed to the model via tools.
     pub source_pdfs: &'a [(String, Vec<u8>)],
     /// API key for the provider.

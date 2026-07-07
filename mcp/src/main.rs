@@ -153,9 +153,12 @@ fn to_mcp_tool(spec: &serde_json::Value) -> Option<Tool> {
 fn reply_to_result(reply: ToolReply) -> CallToolResult {
     match reply {
         ToolReply::Text(text) => CallToolResult::success(vec![Content::text(text)]),
-        ToolReply::Image { media_type, b64 } => {
-            CallToolResult::success(vec![Content::image(b64, media_type.to_string())])
-        }
+        ToolReply::Image { media_type, images } => CallToolResult::success(
+            images
+                .into_iter()
+                .map(|b64| Content::image(b64, media_type.to_string()))
+                .collect(),
+        ),
         ToolReply::Error(msg) => CallToolResult::error(vec![Content::text(msg)]),
     }
 }

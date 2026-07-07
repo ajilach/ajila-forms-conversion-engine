@@ -57,7 +57,7 @@ fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
 fn App() -> Element {
     let mut processing_state = use_signal(ProcessingState::new);
     let mut is_processing = use_signal(|| false);
-    let mut enlarged_image = use_signal(|| None::<(String, String)>);
+    let mut enlarged_image = use_signal(|| None::<(String, Vec<String>)>);
     let mut selected_profile = use_signal(|| None::<String>);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut settings_open = use_signal(|| false);
@@ -575,10 +575,10 @@ fn App() -> Element {
                     }
 
                     // Image Modal Overlay
-                    if let Some((name, data)) = enlarged_image.read().as_ref() {
+                    if let Some((name, pages)) = enlarged_image.read().as_ref() {
                         ImageModal {
                             name: name.clone(),
-                            data: data.clone(),
+                            pages: pages.clone(),
                             on_close: move |_| enlarged_image.set(None),
                         }
                     }

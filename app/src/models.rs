@@ -54,8 +54,10 @@ pub struct ProcessingState {
     /// Progress within the current step, from 0.0 to 1.0.
     pub step_progress: Option<f32>,
     pub available_states: Vec<String>,
-    pub plain_images: HashMap<String, String>,
-    pub labelled_images: HashMap<String, String>,
+    /// label → per-page base64 images (JPEG), in page order.
+    pub plain_images: HashMap<String, Vec<String>>,
+    /// label → per-page base64 images (PNG), in page order.
+    pub labelled_images: HashMap<String, Vec<String>>,
     pub form_code: Option<String>,
     pub merged_json: Option<String>,
     pub html_preview: Option<String>,

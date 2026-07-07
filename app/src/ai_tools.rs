@@ -43,7 +43,7 @@ pub trait ToolExecutor {
 /// for that profile (see [`CompositeToolExecutor`]).
 pub async fn build_tools(
     source_pdfs: &[(String, Vec<u8>)],
-    plain_images: &HashMap<String, String>,
+    plain_images: &HashMap<String, Vec<String>>,
     profile: Option<&str>,
 ) -> Box<dyn ToolExecutor> {
     let base: Box<dyn ToolExecutor> = if source_pdfs.is_empty() {
@@ -261,14 +261,26 @@ impl ToolExecutor for FormToolContext {
                 let Some(entry) = self.states.iter().find(|s| s.label == label) else {
                     return ToolReply::Error(format!("Unknown state_label: {label:?}"));
                 };
-                match entry.state.render_plain(RENDER_SCALE) {
-                    Ok(img) => match crate::pipeline::encode_rgba_to_jpeg(&img, 82) {
-                        Ok(jpeg) => ToolReply::Image {
-                            media_type: "image/jpeg",
-                            b64: base64::prelude::BASE64_STANDARD.encode(&jpeg),
-                        },
-                        Err(e) => ToolReply::Error(format!("Encode failed: {e}")),
-                    },
+                // One image per page so tall multi-page forms don't exceed the
+                // vision API's per-image size limit.
+                match entry.state.render_plain_pages(RENDER_SCALE) {
+                    Ok(imgs) => {
+                        let encoded: Result<Vec<String>, String> = imgs
+                            .iter()
+                            .map(|img| {
+                                crate::pipeline::encode_rgba_to_jpeg(img, 82)
+                                    .map(|jpeg| base64::prelude::BASE64_STANDARD.encode(&jpeg))
+                                    .map_err(|e| format!("Encode failed: {e}"))
+                            })
+                            .collect();
+                        match encoded {
+                            Ok(images) => ToolReply::Image {
+                                media_type: "image/jpeg",
+                                images,
+                            },
+                            Err(e) => ToolReply::Error(e),
+                        }
+                    }
                     Err(e) => ToolReply::Error(format!("Render failed: {e}")),
                 }
             }
@@ -312,12 +324,12 @@ impl ToolExecutor for FormToolContext {
 /// Tool executor backed only by the pre-rendered plain page images. Used by
 /// Smart Edit, which has no source PDFs / states / XFA at its call site.
 pub struct ImageToolContext {
-    /// label → base64 image (JPEG/PNG).
-    images: HashMap<String, String>,
+    /// label → per-page base64 images (JPEG/PNG), in page order.
+    images: HashMap<String, Vec<String>>,
 }
 
 impl ImageToolContext {
-    pub fn new(images: HashMap<String, String>) -> Self {
+    pub fn new(images: HashMap<String, Vec<String>>) -> Self {
         Self { images }
     }
 }
@@ -341,9 +353,9 @@ impl ToolExecutor for ImageToolContext {
             "get_plain_state_image" => {
                 let label = input["state_label"].as_str().unwrap_or_default();
                 match self.images.get(label) {
-                    Some(b64) => ToolReply::Image {
-                        media_type: media_type_of(b64),
-                        b64: b64.clone(),
+                    Some(pages) => ToolReply::Image {
+                        media_type: pages.first().map(|b| media_type_of(b)).unwrap_or("image/jpeg"),
+                        images: pages.clone(),
                     },
                     None => ToolReply::Error(format!("Unknown state_label: {label:?}")),
                 }
@@ -597,9 +609,12 @@ impl ToolExecutor for ReferenceToolContext {
                 let pdf_index = input["pdf_index"].as_u64().unwrap_or(0) as usize;
                 let page = input["page"].as_u64().unwrap_or(0) as usize;
                 match crate::references::render_reference_page(ref_id, pdf_index, page) {
-                    Ok(jpeg) => ToolReply::Image {
+                    Ok(pages) => ToolReply::Image {
                         media_type: "image/jpeg",
-                        b64: base64::prelude::BASE64_STANDARD.encode(&jpeg),
+                        images: pages
+                            .iter()
+                            .map(|jpeg| base64::prelude::BASE64_STANDARD.encode(jpeg))
+                            .collect(),
                     },
                     Err(e) => ToolReply::Error(e),
                 }
@@ -616,7 +631,7 @@ mod tests {
     fn ctx() -> ImageToolContext {
         let mut images = HashMap::new();
         // `/9j/` prefix marks a JPEG payload.
-        images.insert("default".to_string(), "/9j/abc".to_string());
+        images.insert("default".to_string(), vec!["/9j/abc".to_string()]);
         ImageToolContext::new(images)
     }
 
@@ -636,9 +651,9 @@ mod tests {
             &serde_json::json!({"state_label": "default"}),
         );
         match reply {
-            ToolReply::Image { media_type, b64 } => {
+            ToolReply::Image { media_type, images } => {
                 assert_eq!(media_type, "image/jpeg");
-                assert_eq!(b64, "/9j/abc");
+                assert_eq!(images, vec!["/9j/abc".to_string()]);
             }
             _ => panic!("expected image"),
         }

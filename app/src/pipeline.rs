@@ -82,14 +82,13 @@ pub async fn run_blueprint_pipeline(
                         on_progress(&state);
                     }
                     PipelineEvent::StatesFound { .. } => {}
-                    PipelineEvent::PlainRender { label, image } => {
-                        // JPEG-compress plain renders: far smaller than PNG for
-                        // page renders, keeping the Smart Edit request (which
-                        // attaches these) within provider size limits.
-                        match encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY) {
-                            Ok(jpeg) => {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
-                                state.plain_images.insert(label, b64);
+                    PipelineEvent::PlainRender { label, images } => {
+                        // JPEG-compress plain renders (one per page): far smaller
+                        // than PNG for page renders, keeping the Smart Edit request
+                        // (which attaches these) within provider size limits.
+                        match encode_plain_pages(&images) {
+                            Ok(pages) => {
+                                state.plain_images.insert(label, pages);
                             }
                             Err(e) => state
                                 .warnings
@@ -97,12 +96,10 @@ pub async fn run_blueprint_pipeline(
                         }
                         on_progress(&state);
                     }
-                    PipelineEvent::LabelledRender { label, image } => {
-                        let mut png_bytes = Vec::new();
-                        match encode_rgba_to_png(&image, &mut png_bytes) {
-                            Ok(()) => {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                                state.labelled_images.insert(label, b64);
+                    PipelineEvent::LabelledRender { label, images } => {
+                        match encode_labelled_pages(&images) {
+                            Ok(pages) => {
+                                state.labelled_images.insert(label, pages);
                             }
                             Err(e) => state
                                 .warnings
@@ -121,17 +118,14 @@ pub async fn run_blueprint_pipeline(
                 // Pipeline finished — drain any remaining events
                 while let Ok(event) = rx.try_recv() {
                     match event {
-                        PipelineEvent::PlainRender { label, image } => {
-                            if let Ok(jpeg) = encode_rgba_to_jpeg(&image, PLAIN_JPEG_QUALITY) {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&jpeg);
-                                state.plain_images.insert(label, b64);
+                        PipelineEvent::PlainRender { label, images } => {
+                            if let Ok(pages) = encode_plain_pages(&images) {
+                                state.plain_images.insert(label, pages);
                             }
                         }
-                        PipelineEvent::LabelledRender { label, image } => {
-                            let mut png_bytes = Vec::new();
-                            if let Ok(()) = encode_rgba_to_png(&image, &mut png_bytes) {
-                                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                                state.labelled_images.insert(label, b64);
+                        PipelineEvent::LabelledRender { label, images } => {
+                            if let Ok(pages) = encode_labelled_pages(&images) {
+                                state.labelled_images.insert(label, pages);
                             }
                         }
                         _ => {}
@@ -227,3 +221,26 @@ pub async fn run_blueprint_pipeline(
 // Image encoding lives in the headless `agent` crate; re-export so the
 // historical `crate::pipeline::encode_*` paths keep working across the app.
 pub use agent::image_encode::{encode_rgba_to_jpeg, encode_rgba_to_png};
+
+/// Encode per-page plain renders to base64 JPEG strings (page order preserved).
+fn encode_plain_pages(images: &[std::sync::Arc<blueprint::RgbaImage>]) -> Result<Vec<String>, String> {
+    images
+        .iter()
+        .map(|img| {
+            encode_rgba_to_jpeg(img, PLAIN_JPEG_QUALITY)
+                .map(|jpeg| base64::prelude::BASE64_STANDARD.encode(&jpeg))
+        })
+        .collect()
+}
+
+/// Encode per-page labelled renders to base64 PNG strings (page order preserved).
+fn encode_labelled_pages(images: &[std::sync::Arc<blueprint::RgbaImage>]) -> Result<Vec<String>, String> {
+    images
+        .iter()
+        .map(|img| {
+            let mut png_bytes = Vec::new();
+            encode_rgba_to_png(img, &mut png_bytes)
+                .map(|()| base64::prelude::BASE64_STANDARD.encode(&png_bytes))
+        })
+        .collect()
+}

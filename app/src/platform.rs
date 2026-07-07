@@ -733,13 +733,16 @@ pub fn tool_result_message(results: Vec<(String, ToolReply)>) -> serde_json::Val
                 "tool_use_id": id,
                 "content": [{"type": "text", "text": text}],
             }),
-            ToolReply::Image { media_type, b64 } => serde_json::json!({
+            ToolReply::Image { media_type, images } => serde_json::json!({
                 "type": "tool_result",
                 "tool_use_id": id,
-                "content": [{
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": media_type, "data": b64},
-                }],
+                "content": images
+                    .into_iter()
+                    .map(|b64| serde_json::json!({
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": media_type, "data": b64},
+                    }))
+                    .collect::<Vec<_>>(),
             }),
             ToolReply::Error(msg) => serde_json::json!({
                 "type": "tool_result",

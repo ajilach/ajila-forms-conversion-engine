@@ -14,13 +14,58 @@ use blueprint::{DocumentEnvelope, StructuredNode};
 use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 use crate::platform::tool_result_message;
 
-/// Output-token cap per agent turn.
+/// Fallback output-token cap per agent turn, used for models we don't recognize
+/// in [`max_output_tokens_for`].
 const AGENT_MAX_TOKENS: u32 = 16000;
+
+/// The output-token ceiling to request for a given model. The agent loop streams
+/// every turn (see `anthropic_stream_turn`), so we can request up to the model's
+/// true max output without risking the HTTP timeouts that cap non-streaming
+/// requests near 16k. `max_tokens` is a ceiling, not a target — we're billed only
+/// for tokens actually generated — so requesting the full max costs nothing extra
+/// and just lets a large authoring turn complete in one call.
+///
+/// Matches on family substrings so date/suffix variants (e.g. `-20251001`,
+/// `[1m]`) still resolve; unrecognized models fall back to [`AGENT_MAX_TOKENS`].
+fn max_output_tokens_for(model: &str) -> u32 {
+    if model.contains("haiku") {
+        64_000
+    } else if model.contains("opus-4-8")
+        || model.contains("opus-4-7")
+        || model.contains("opus-4-6")
+        || model.contains("sonnet-5")
+        || model.contains("sonnet-4-6")
+        || model.contains("fable-5")
+    {
+        128_000
+    } else {
+        AGENT_MAX_TOKENS
+    }
+}
 /// Max streamed turns before the loop bails out (the agent makes many calls).
 const MAX_ITERATIONS: usize = 200;
 /// How many consecutive `validate_aem_package` calls with identical output
 /// are allowed before the loop gives up and finalizes with what's built.
 const MAX_VALIDATE_REPEATS: usize = 3;
+/// How many consecutive turns that overflow the output-token cap we nudge
+/// toward incremental authoring before giving up (avoids an endless loop if the
+/// model keeps trying to emit one oversized call regardless).
+const MAX_MAX_TOKEN_NUDGES: usize = 3;
+
+/// Injected when a turn is cut off at [`AGENT_MAX_TOKENS`] — almost always
+/// mid-way through one oversized tool call (a monolithic `set_aem_translated`
+/// for a large form). Steers the agent to author the tree incrementally so no
+/// single call has to fit under the output-token cap.
+const MAX_TOKENS_NUDGE: &str = "\
+Your previous turn was cut off at the output-token limit before it completed — that call \
+was NOT executed. This almost always means you tried to emit too much in a single tool call \
+(e.g. authoring a whole large form in one set_aem_translated). Do NOT retry it as one call. \
+Instead author the tree incrementally so no single call is oversized:\n\
+1. Call set_aem_translated with a SMALL skeleton only: the Root plus one empty Panel per \
+top-level section (titles set, no inner fields yet).\n\
+2. Then fill in each section one at a time with insert_aem_translated_node (add each field / \
+sub-panel into its section's Panel), replace_aem_translated_node and set_aem_translated_field.\n\
+Keep every individual call small. Proceed now.";
 
 /// Run the autonomous agent end-to-end, streaming activity into
 /// `processing_state.agent_steps` and finalizing the result on completion.
@@ -165,11 +210,15 @@ async fn drive_agent(
     mut current_session: Signal<Option<String>>,
 ) {
     let tools = agent.tools();
+    let agent_max_tokens = max_output_tokens_for(&settings.anthropic_model);
 
     // Escape hatch for a stuck validate loop: track how many consecutive turns
     // called validate_aem_package and returned the same output.
     let mut last_validate_output: Option<String> = None;
     let mut validate_repeat_count: usize = 0;
+    // How many consecutive turns overflowed the output-token cap; reset on any
+    // turn that ends with an executable tool call (i.e. real progress).
+    let mut consecutive_max_tokens: usize = 0;
 
     for _ in 0..MAX_ITERATIONS {
         let turn =
@@ -178,7 +227,7 @@ async fn drive_agent(
                 &tools,
                 &settings.anthropic_api_key,
                 &settings.anthropic_model,
-                AGENT_MAX_TOKENS,
+                agent_max_tokens,
             )
             .await
             {
@@ -203,8 +252,55 @@ async fn drive_agent(
         }
 
         if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
+            // A turn cut off at the output-token cap didn't decide to stop — it
+            // ran out of room, almost always mid-way through one oversized tool
+            // call. Rather than ending the run (which finalizes an unbuilt or
+            // partial tree), nudge the agent to author incrementally and retry.
+            if turn.stop_reason.as_deref() == Some("max_tokens")
+                && consecutive_max_tokens < MAX_MAX_TOKEN_NUDGES
+            {
+                consecutive_max_tokens += 1;
+                // Any tool_use block in a truncated turn is incomplete and was
+                // not executed; answer each with an error result so history
+                // stays valid (every tool_use needs a matching tool_result),
+                // and fold the incremental-authoring nudge into the same user
+                // message.
+                let mut content: Vec<serde_json::Value> = turn
+                    .tool_calls
+                    .iter()
+                    .map(|tc| {
+                        serde_json::json!({
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "is_error": true,
+                            "content": [{
+                                "type": "text",
+                                "text": "This call was cut off at the output-token limit and was not executed.",
+                            }],
+                        })
+                    })
+                    .collect();
+                content.push(serde_json::json!({"type": "text", "text": MAX_TOKENS_NUDGE}));
+                history.push(serde_json::json!({"role": "user", "content": content}));
+
+                push_step(
+                    &mut processing_state,
+                    AgentStep {
+                        id: String::new(),
+                        kind: AgentStepKind::Thought,
+                        label: "Turn hit the output-token limit — asking the agent to author the \
+                                tree incrementally instead of in one call."
+                            .into(),
+                        detail: String::new(),
+                        status: AgentStepStatus::Done,
+                    },
+                );
+                continue;
+            }
             break;
         }
+        // The agent produced an executable tool call — real progress.
+        consecutive_max_tokens = 0;
 
         let mut results: Vec<(String, ToolReply)> = Vec::new();
         let mut stuck = false;

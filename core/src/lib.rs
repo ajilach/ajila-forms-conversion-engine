@@ -425,6 +425,29 @@ impl FormState {
         run_analysis_pipeline_with_context(&mut doc, &self.global_ctx);
         doc.render_to_image_buffer(scale).map_err(Error::Render)
     }
+
+    /// Render the plain image, split into one image per page.
+    ///
+    /// The renderer stacks every page into one tall buffer; this returns each
+    /// page as its own image so downstream consumers (the vision API, the app
+    /// preview) never handle a single oversized image. Single-page forms return
+    /// a one-element vector.
+    pub fn render_plain_pages(&self, scale: f32) -> Result<Vec<RgbaImage>, Error> {
+        let img = self.render_plain(scale)?;
+        Ok(self.flattened.slice_into_pages(img, scale))
+    }
+
+    /// Render the annotated (red debug overlay) image, split into one image per page.
+    pub fn render_annotated_pages(&self, scale: f32) -> Result<Vec<RgbaImage>, Error> {
+        let img = self.render_annotated(scale)?;
+        Ok(self.flattened.slice_into_pages(img, scale))
+    }
+
+    /// Render the labelled (blue group overlay) image, split into one image per page.
+    pub fn render_labelled_pages(&self, scale: f32) -> Result<Vec<RgbaImage>, Error> {
+        let img = self.render_labelled(scale)?;
+        Ok(self.flattened.slice_into_pages(img, scale))
+    }
 }
 
 // ============================================================================

@@ -74,8 +74,8 @@ impl PartialEq for EnvelopeWrapper {
 pub struct StructuredEditorProps {
     /// The document envelope to edit.
     pub envelope: EnvelopeWrapper,
-    /// Plain rendered page images (label → base64 PNG) for Smart Edit.
-    pub plain_images: HashMap<String, String>,
+    /// Plain rendered page images (label → per-page base64) for Smart Edit.
+    pub plain_images: HashMap<String, Vec<String>>,
     /// Source PDF bytes (filename → bytes), enabling the full Smart Edit tool
     /// set (states/XFA). Empty when unavailable (e.g. reopened session).
     pub source_pdfs: Vec<(String, Vec<u8>)>,

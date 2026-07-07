@@ -6945,6 +6945,67 @@ impl Flattened {
         Ok(img)
     }
 
+    /// Slice a full (all-pages-stacked) render into one image per page.
+    ///
+    /// The renderers stack every page into a single tall buffer in a cumulative
+    /// Y coordinate space. This crops that buffer back into per-page images using
+    /// [`Page::page_breaks`] (scaled to pixels). Page images are far shorter than
+    /// the combined buffer, which keeps them under the vision API's per-image
+    /// size limit. When there are no usable breaks (single-page forms), the input
+    /// is returned unchanged as a one-element vector.
+    pub fn slice_into_pages(&self, full: RgbaImage, scale: f32) -> Vec<RgbaImage> {
+        let scale_dec = num(scale as f64);
+        let full_w = full.width();
+        let full_h = full.height();
+
+        // Explicit page breaks, converted to pixel Y and kept within the image.
+        let mut boundaries: Vec<u32> = self
+            .page
+            .page_breaks
+            .iter()
+            .map(|y| (*y * scale_dec).to_f32().unwrap_or(0.0) as u32)
+            .filter(|&py| py > 0 && py < full_h)
+            .collect();
+        boundaries.sort_unstable();
+        boundaries.dedup();
+
+        // Fallback: step by page height when no explicit breaks were recorded.
+        if boundaries.is_empty() {
+            let page_h_px = (self.page.height * scale_dec).to_f32().unwrap_or(0.0) as u32;
+            if page_h_px > 0 {
+                let mut y = page_h_px;
+                while y < full_h {
+                    boundaries.push(y);
+                    y += page_h_px;
+                }
+            }
+        }
+
+        // Build vertical bands: [0..b0], [b0..b1], …, [bn..full_h]. The last band
+        // extends to full_h so content overflowing the final break is included.
+        let mut bands: Vec<(u32, u32)> = Vec::with_capacity(boundaries.len() + 1);
+        let mut start = 0u32;
+        for b in boundaries {
+            if b > start {
+                bands.push((start, b));
+                start = b;
+            }
+        }
+        if start < full_h {
+            bands.push((start, full_h));
+        }
+
+        // Single page (or empty image): return the buffer as-is.
+        if bands.len() <= 1 {
+            return vec![full];
+        }
+
+        bands
+            .into_iter()
+            .map(|(y0, y1)| image::imageops::crop_imm(&full, 0, y0, full_w, y1 - y0).to_image())
+            .collect()
+    }
+
     /// Render the flattened layout to an image buffer without debug annotations (plain mode)
     ///
     /// Returns the rendered image without red debug overlays, only showing the actual content.
@@ -10751,5 +10812,63 @@ mod tests {
         // Third token: "suffix", not bold
         assert_eq!(tokens[2].text, "suffix");
         assert!(!tokens[2].bold, "suffix should not be bold");
+    }
+
+    // ── slice_into_pages ─────────────────────────────────────────────────────
+
+    /// Build a minimal `Flattened` with the given page size and breaks.
+    fn flattened_with_breaks(width: f64, height: f64, breaks: Vec<f64>) -> Flattened {
+        let mut page = Page::new(num(width), num(height));
+        page.page_breaks = breaks.into_iter().map(num).collect();
+        Flattened {
+            page,
+            children: vec![],
+            language: String::new(),
+            cached_key: None,
+        }
+    }
+
+    fn blank(width: u32, height: u32) -> RgbaImage {
+        ImageBuffer::from_pixel(width, height, Rgba([255u8, 255u8, 255u8, 255u8]))
+    }
+
+    #[test]
+    fn slice_splits_on_explicit_breaks() {
+        // Two 50-tall pages stacked into a 100-tall buffer, break at y=50.
+        let f = flattened_with_breaks(100.0, 50.0, vec![50.0]);
+        let pages = f.slice_into_pages(blank(100, 100), 1.0);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].height(), 50);
+        assert_eq!(pages[1].height(), 50);
+        assert_eq!(pages.iter().map(|p| p.height()).sum::<u32>(), 100);
+        assert!(pages.iter().all(|p| p.width() == 100));
+    }
+
+    #[test]
+    fn slice_falls_back_to_page_height() {
+        // No explicit breaks: step by page height (50) across a 100-tall buffer.
+        let f = flattened_with_breaks(100.0, 50.0, vec![]);
+        let pages = f.slice_into_pages(blank(100, 100), 1.0);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages.iter().map(|p| p.height()).sum::<u32>(), 100);
+    }
+
+    #[test]
+    fn slice_single_page_returns_unchanged() {
+        // A buffer shorter than one page yields a single image.
+        let f = flattened_with_breaks(100.0, 50.0, vec![]);
+        let pages = f.slice_into_pages(blank(100, 40), 1.0);
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].height(), 40);
+    }
+
+    #[test]
+    fn slice_honors_scale() {
+        // At scale 2.0 the break at y=50 maps to pixel row 100 in a 200-tall buffer.
+        let f = flattened_with_breaks(100.0, 50.0, vec![50.0]);
+        let pages = f.slice_into_pages(blank(200, 200), 2.0);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].height(), 100);
+        assert_eq!(pages[1].height(), 100);
     }
 }

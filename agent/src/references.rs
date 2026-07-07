@@ -417,13 +417,14 @@ mod imp {
 
     // ── Page rendering ─────────────────────────────────────────────────────────
 
-    /// Render a source-PDF page of a reference to JPEG bytes. `page` is
-    /// currently advisory — the default form state is rendered.
+    /// Render a source-PDF page of a reference to one JPEG per page. `page` is
+    /// currently advisory — the default form state is rendered, split per page
+    /// so a tall multi-page form isn't returned as one oversized image.
     pub fn render_reference_page(
         ref_id: &str,
         pdf_index: usize,
         _page: usize,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<Vec<u8>>, String> {
         let conn = crate::db::open().map_err(|e| e.to_string())?;
         let bytes: Vec<u8> = conn
             .query_row(
@@ -440,10 +441,16 @@ mod imp {
             .iter()
             .next()
             .ok_or_else(|| "No renderable state in PDF".to_string())?;
-        let img = state
-            .render_plain(RENDER_SCALE)
+        let pages = state
+            .render_plain_pages(RENDER_SCALE)
             .map_err(|e| format!("Render failed: {e}"))?;
-        crate::image_encode::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("Encode failed: {e}"))
+        pages
+            .iter()
+            .map(|img| {
+                crate::image_encode::encode_rgba_to_jpeg(img, 82)
+                    .map_err(|e| format!("Encode failed: {e}"))
+            })
+            .collect()
     }
 
     // ── Import / export ──────────────────────────────────────────────────────────

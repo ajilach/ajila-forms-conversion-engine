@@ -122,8 +122,8 @@ pub struct SmartEditCtx<'a> {
     pub content: &'a [StructuredNode],
     /// Root-level indices of selected nodes (empty = all).
     pub selected_indices: &'a [usize],
-    /// label→base64-PNG map from the plain render stage.
-    pub plain_images: &'a HashMap<String, String>,
+    /// label→per-page base64 images from the plain render stage.
+    pub plain_images: &'a HashMap<String, Vec<String>>,
     /// Source PDF bytes, exposed to the model via tools.
     pub source_pdfs: &'a [(String, Vec<u8>)],
     /// API key for the provider.
@@ -367,7 +367,7 @@ fn build_initial_user_text(prompt: &str, json_context: &str) -> String {
 
 fn build_smart_edit_prompt(
     selected_indices: &[usize],
-    plain_images: &HashMap<String, String>,
+    plain_images: &HashMap<String, Vec<String>>,
     instructions: &str,
 ) -> String {
     let selection_scope = if selected_indices.is_empty() {
@@ -430,7 +430,7 @@ fn build_smart_edit_prompt(
 
 fn build_feedback_prompt(
     selected_indices: &[usize],
-    plain_images: &HashMap<String, String>,
+    plain_images: &HashMap<String, Vec<String>>,
     accepted_changes: &[ChangeItem],
     rejected_changes: &[ChangeItem],
     user_feedback: &str,

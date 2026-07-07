@@ -100,7 +100,7 @@ enum SmartState {
 #[derive(Clone, PartialEq, Props)]
 pub struct AemEditorProps {
     pub root: AemRootWrapper,
-    pub plain_images: HashMap<String, String>,
+    pub plain_images: HashMap<String, Vec<String>>,
     /// Source PDF bytes (filename → bytes) for the full Smart Edit tool set.
     pub source_pdfs: Vec<(String, Vec<u8>)>,
     pub aem_config: AemConfigWrapper,
@@ -579,7 +579,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
 }
 
 /// Helper to clone the plain images into an owned map (kept out of the rsx body).
-fn plain_images_signal(images: &HashMap<String, String>) -> HashMap<String, String> {
+fn plain_images_signal(images: &HashMap<String, Vec<String>>) -> HashMap<String, Vec<String>> {
     images.clone()
 }
 
@@ -633,7 +633,7 @@ fn render_smart_panel(
     model: Signal<String>,
     smart_edit_instructions: Signal<String>,
     profile: Signal<Option<String>>,
-    plain_images: HashMap<String, String>,
+    plain_images: HashMap<String, Vec<String>>,
     source_pdfs: Vec<(String, Vec<u8>)>,
 ) -> Element {
     match smart_state.read().clone() {

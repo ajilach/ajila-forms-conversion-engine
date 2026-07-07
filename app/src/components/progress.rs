@@ -6,7 +6,7 @@ use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingS
 #[component]
 pub fn ProgressDisplay(
     state: ProcessingState,
-    on_image_click: EventHandler<(String, String)>,
+    on_image_click: EventHandler<(String, Vec<String>)>,
 ) -> Element {
     // AI processing shows the staged pipeline up to state rendering, then a
     // single "AI Generation" step takes over (same StepIndicator style, fewer

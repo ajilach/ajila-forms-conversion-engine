@@ -186,10 +186,11 @@ and valid JSON.";
 pub enum ToolReply {
     /// A textual result (JSON, plain text, …).
     Text(String),
-    /// An image result (base64 + media type), e.g. a rendered page.
+    /// One or more images (base64), all sharing one media type — e.g. the pages
+    /// of a rendered form. Emitted as multiple image blocks in one `tool_result`.
     Image {
         media_type: &'static str,
-        b64: String,
+        images: Vec<String>,
     },
     /// The tool failed; the message is surfaced to the model as an error result.
     Error(String),
@@ -1032,18 +1033,25 @@ impl ConversionAgent {
                 match self.extractor(input) {
                     Ok(ex) => match ex.find(&label) {
                         Some(rec) => {
-                            let img = if annotated {
-                                rec.state.render_annotated(RENDER_SCALE)
+                            // Render one image per page so no single image exceeds
+                            // the vision API's size limit on tall multi-page forms.
+                            let pages = if annotated {
+                                rec.state.render_annotated_pages(RENDER_SCALE)
                             } else {
-                                rec.state.render_plain(RENDER_SCALE)
+                                rec.state.render_plain_pages(RENDER_SCALE)
                             };
-                            match img.map_err(|e| e.to_string()).and_then(|i| {
-                                crate::image_encode::encode_rgba_to_jpeg(&i, 82)
-                                    .map_err(|e| e.to_string())
+                            match pages.map_err(|e| e.to_string()).and_then(|imgs| {
+                                imgs.iter()
+                                    .map(|i| {
+                                        crate::image_encode::encode_rgba_to_jpeg(i, 82)
+                                            .map(|jpeg| base64_encode(&jpeg))
+                                            .map_err(|e| e.to_string())
+                                    })
+                                    .collect::<Result<Vec<String>, String>>()
                             }) {
-                                Ok(jpeg) => ToolReply::Image {
+                                Ok(images) => ToolReply::Image {
                                     media_type: "image/jpeg",
-                                    b64: base64_encode(&jpeg),
+                                    images,
                                 },
                                 Err(e) => ToolReply::Error(format!("Render failed: {e}")),
                             }
@@ -1312,10 +1320,10 @@ impl ConversionAgent {
                 };
                 let path = form_jcr_path(&cfg);
                 match crate::aem_client::fetch_dor_pdf(&conn, &path).await {
-                    Ok(pdf) => match render_pdf_first_page(&pdf) {
-                        Ok(jpeg) => ToolReply::Image {
+                    Ok(pdf) => match render_pdf_pages(&pdf) {
+                        Ok(images) => ToolReply::Image {
                             media_type: "image/jpeg",
-                            b64: base64_encode(&jpeg),
+                            images,
                         },
                         Err(e) => ToolReply::Error(e),
                     },
@@ -1480,16 +1488,23 @@ fn join_form_path(form_path: &str, form_dir: &str) -> String {
     )
 }
 
-/// Render the first page of a PDF (the DoR) to JPEG via the engine.
-fn render_pdf_first_page(pdf: &[u8]) -> Result<Vec<u8>, String> {
+/// Render the DoR PDF to one base64 JPEG per page via the engine.
+fn render_pdf_pages(pdf: &[u8]) -> Result<Vec<String>, String> {
     let mut bp =
         blueprint::Blueprint::from_pdf_bytes(pdf).map_err(|e| format!("PDF parse: {e}"))?;
     let states = bp.states().map_err(|e| format!("states: {e}"))?;
     let state = states.iter().next().ok_or("no state in DoR PDF")?;
-    let img = state
-        .render_plain(RENDER_SCALE)
+    let pages = state
+        .render_plain_pages(RENDER_SCALE)
         .map_err(|e| format!("render: {e}"))?;
-    crate::image_encode::encode_rgba_to_jpeg(&img, 82).map_err(|e| format!("encode: {e}"))
+    pages
+        .iter()
+        .map(|img| {
+            crate::image_encode::encode_rgba_to_jpeg(img, 82)
+                .map(|jpeg| base64_encode(&jpeg))
+                .map_err(|e| format!("encode: {e}"))
+        })
+        .collect()
 }
 
 #[cfg(test)]
