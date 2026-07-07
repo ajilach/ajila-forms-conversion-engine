@@ -123,16 +123,22 @@ instead of authoring from scratch."
     } else {
         ""
     };
-    let intro = format!(
+    // The agent's instructions live in the `system` request field (cached
+    // statically across the run); the first user message is only a short trigger.
+    let system = format!(
         "{SYSTEM_PROMPT}{}{template_note}",
         crate::settings::extra_instructions_block(&settings.agent_instructions)
     );
     let mut history: Vec<serde_json::Value> = Vec::new();
-    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
+    history.push(serde_json::json!({
+        "role": "user",
+        "content": [{"type": "text", "text": "Begin the conversion now, following your instructions."}],
+    }));
 
     drive_agent(
         agent,
         history,
+        system,
         settings,
         profile,
         structured_session,
@@ -168,23 +174,29 @@ pub async fn run_agent_feedback(
     let mut agent = ConversionAgent::new(profile.clone(), pdfs, settings.aem_connection(), structured_session.clone());
     agent.seed_structured(prior);
 
-    let intro = format!(
-        "{SYSTEM_PROMPT}{}\n\n--- REFINEMENT ---\n\
+    // Instructions in the cached `system` field; the user message carries the
+    // refinement request (the actual per-run task).
+    let system = format!(
+        "{SYSTEM_PROMPT}{}",
+        crate::settings::extra_instructions_block(&settings.agent_instructions)
+    );
+    let user_msg = format!(
+        "--- REFINEMENT ---\n\
 A prior conversion already exists in your working structured tree (inspect it with \
 get_structured). The user reviewed the result and gave this feedback:\n\n{feedback}\n\n\
 Apply the requested changes to the structured tree, then re-convert to AEM \
 (convert_structured_to_aem), rebuild the package (build_aem_package), and \
 re-upload (upload_to_aem) if an AEM connection is configured, verifying as needed. \
-Then call finish.",
-        crate::settings::extra_instructions_block(&settings.agent_instructions)
+Then call finish."
     );
 
     let mut history: Vec<serde_json::Value> = Vec::new();
-    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": intro}]}));
+    history.push(serde_json::json!({"role": "user", "content": [{"type": "text", "text": user_msg}]}));
 
     drive_agent(
         agent,
         history,
+        system,
         settings,
         profile,
         structured_session,
@@ -202,6 +214,7 @@ Then call finish.",
 async fn drive_agent(
     mut agent: ConversionAgent,
     mut history: Vec<serde_json::Value>,
+    system: String,
     settings: crate::settings::AppSettings,
     profile: Option<String>,
     structured_session: String,
@@ -228,6 +241,7 @@ async fn drive_agent(
                 &settings.anthropic_api_key,
                 &settings.anthropic_model,
                 agent_max_tokens,
+                Some(&system),
             )
             .await
             {

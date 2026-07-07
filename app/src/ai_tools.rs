@@ -18,9 +18,11 @@ use base64::Engine;
 
 use crate::platform::ToolReply;
 
-/// Render scale for on-demand state images — matches the core pipeline default
-/// (`PipelineConfig::scale`) so tool images look like the staged renders.
-const RENDER_SCALE: f32 = 1.5;
+/// Render scale for on-demand state images. Kept at 1.0 (below the core
+/// pipeline default of 1.5) to cut vision-token cost: at this resolution form
+/// text is still comfortably legible to the model, and vision tokens scale with
+/// pixel area, so 1.0 vs 1.5 is roughly half the tokens per page.
+const RENDER_SCALE: f32 = 1.0;
 
 /// A source of LLM tools: it advertises tool definitions and answers calls.
 pub trait ToolExecutor {

@@ -329,6 +329,31 @@ pub fn configure_eviction(
     );
 }
 
+/// Build a `tool_use_id -> tool name` map over the whole transcript. Shared by
+/// the eviction passes that need to label or target results by their originating
+/// tool.
+fn tool_name_by_id(history: &[serde_json::Value]) -> std::collections::HashMap<String, String> {
+    let mut names = std::collections::HashMap::new();
+    for msg in history.iter() {
+        for block in msg
+            .get("content")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+        {
+            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                && let (Some(id), Some(name)) = (
+                    block.get("id").and_then(|v| v.as_str()),
+                    block.get("name").and_then(|v| v.as_str()),
+                )
+            {
+                names.insert(id.to_string(), name.to_string());
+            }
+        }
+    }
+    names
+}
+
 /// Shrink heavy, stale content in `history` **in place** to bound context growth
 /// on long tool loops. Older base64 images, oversized `tool_result` text, and
 /// oversized `set_*` tool inputs are replaced with short stubs; the model can
@@ -359,22 +384,7 @@ fn evict_stale_history(history: &mut [serde_json::Value]) {
     let cutoff = len - keep_recent; // index >= cutoff is protected
 
     // Pass 1 (read-only): map tool_use_id -> tool name, to label result stubs.
-    let mut names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    for msg in history.iter() {
-        let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
-            continue;
-        };
-        for block in blocks {
-            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-                && let (Some(id), Some(name)) = (
-                    block.get("id").and_then(|v| v.as_str()),
-                    block.get("name").and_then(|v| v.as_str()),
-                )
-            {
-                names.insert(id.to_string(), name.to_string());
-            }
-        }
-    }
+    let names = tool_name_by_id(history);
 
     // Pass 2 (mutate): elide older messages, skipping index 0 + the recent tail.
     for msg in history.iter_mut().take(cutoff).skip(1) {
@@ -478,6 +488,18 @@ fn cache_marked_messages(history: &[serde_json::Value]) -> Vec<serde_json::Value
     messages
 }
 
+/// Build the `system` request field as a single text block with a static
+/// `ephemeral` cache_control breakpoint. The instruction prefix is byte-identical
+/// on every turn of a run, so this caches it independently of the rolling message
+/// cache — a stall past the cache TTL then only re-writes the message tail.
+fn cache_marked_system(system: &str) -> serde_json::Value {
+    serde_json::json!([{
+        "type": "text",
+        "text": system,
+        "cache_control": {"type": "ephemeral"},
+    }])
+}
+
 /// Clone `tools` and tag the last tool definition with an `ephemeral`
 /// cache_control breakpoint. The tool block is identical for the whole run, so
 /// this caches the entire tools array.
@@ -542,7 +564,7 @@ pub async fn anthropic_agentic_turn(
     // we only drive the tool round-trips with the synchronous `execute` closure,
     // reusing [`tool_result_message`] for the result blocks.
     for _ in 0..MAX_TOOL_ITERATIONS {
-        let turn = anthropic_stream_turn(history, tools, api_key, model, max_tokens).await?;
+        let turn = anthropic_stream_turn(history, tools, api_key, model, max_tokens, None).await?;
 
         // Done unless the model asked for tools.
         if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
@@ -573,6 +595,7 @@ pub async fn anthropic_stream_turn(
     api_key: &str,
     model: &str,
     max_tokens: u32,
+    system: Option<&str>,
 ) -> Result<TurnOutput, String> {
     use futures_util::StreamExt;
 
@@ -587,17 +610,22 @@ pub async fn anthropic_stream_turn(
     // large; see [`evict_stale_history`]). Every caller runs through here.
     evict_stale_history(history);
 
-    // Prompt caching: `ephemeral` breakpoints on the last tool and the final
-    // message block bill the stable prefix (tools + instruction prefix + prior
-    // turns) at the cache-read rate. See [`cache_marked_messages`] /
-    // [`cache_marked_tools`].
-    let request = serde_json::json!({
+    // Prompt caching: `ephemeral` breakpoints on the system prompt (static — the
+    // instruction prefix is identical every turn), the last tool, and the final
+    // message block bill the stable prefix at the cache-read rate. The static
+    // system breakpoint means a >5-min stall (cache TTL) only re-writes the
+    // rolling tail, never the whole prefix. See [`cache_marked_messages`] /
+    // [`cache_marked_tools`] / [`cache_marked_system`].
+    let mut request = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": cache_marked_messages(history),
         "tools": cache_marked_tools(tools),
         "stream": true,
     });
+    if let Some(system) = system.filter(|s| !s.is_empty()) {
+        request["system"] = cache_marked_system(system);
+    }
 
     let response = reqwest::Client::new()
         .post("https://api.anthropic.com/v1/messages")
@@ -917,6 +945,43 @@ mod tests {
         let mut twice = once.clone();
         evict_stale_history(&mut twice);
         assert_eq!(once, twice, "second pass must be a no-op");
+    }
+
+    #[test]
+    fn images_survive_below_threshold() {
+        // Images are evicted by the same size-gated pass as text: below the
+        // trigger they are left intact (regression guard against an unconditional
+        // image pass that stubbed the just-fetched render mid-comparison).
+        let original = vec![
+            user_text("SYSTEM"),
+            assistant_tool_use("tu1", "get_plain_state_image", json!({})),
+            result_image("tu1", "AAAA"),
+            assistant_tool_use("tu2", "get_plain_state_image", json!({})),
+            result_image("tu2", "BBBB"),
+            assistant_tool_use("tu3", "get_plain_state_image", json!({})),
+            result_image("tu3", "CCCC"),
+        ];
+        let mut h = original.clone();
+        evict_stale_history(&mut h);
+        assert_eq!(h, original);
+    }
+
+    #[test]
+    fn verbose_text_results_survive_below_threshold() {
+        // Two get_xfa reads below the size gate must BOTH stay intact — the agent
+        // legitimately holds several verbose results at once (regression guard:
+        // an over-aggressive verbose-eviction once stubbed all but the latest,
+        // forcing an endless re-fetch loop when comparing languages).
+        let original = vec![
+            user_text("SYSTEM"),
+            assistant_tool_use("tu1", "get_xfa", json!({})),
+            result_text("tu1", &"x".repeat(400)),
+            assistant_tool_use("tu2", "get_xfa", json!({})),
+            result_text("tu2", &"y".repeat(400)),
+        ];
+        let mut h = original.clone();
+        evict_stale_history(&mut h);
+        assert_eq!(h, original);
     }
 
     #[test]

@@ -151,27 +151,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("  {}: {} unique states found", file, count);
         }
 
-        PipelineEvent::PlainRender { label, image } => {
-            let path = PathBuf::from(format!("{}_{}.plain.png", base_name, label));
-            match image.save(&path) {
-                Ok(()) => info!("  Saved: {}", path.display()),
-                Err(e) => eprintln!("Warning: failed to save {}: {}", path.display(), e),
+        PipelineEvent::PlainRender { label, images } => {
+            for (page, image) in images.iter().enumerate() {
+                let path = PathBuf::from(format!("{}_{}_p{}.plain.png", base_name, label, page));
+                match image.save(&path) {
+                    Ok(()) => info!("  Saved: {}", path.display()),
+                    Err(e) => eprintln!("Warning: failed to save {}: {}", path.display(), e),
+                }
             }
         }
 
-        PipelineEvent::AnnotatedRender { label, image } => {
-            let path = PathBuf::from(format!("{}_{}.annotated.png", base_name, label));
-            match image.save(&path) {
-                Ok(()) => info!("  Saved: {}", path.display()),
-                Err(e) => eprintln!("Warning: failed to save {}: {}", path.display(), e),
+        PipelineEvent::AnnotatedRender { label, images } => {
+            for (page, image) in images.iter().enumerate() {
+                let path =
+                    PathBuf::from(format!("{}_{}_p{}.annotated.png", base_name, label, page));
+                match image.save(&path) {
+                    Ok(()) => info!("  Saved: {}", path.display()),
+                    Err(e) => eprintln!("Warning: failed to save {}: {}", path.display(), e),
+                }
             }
         }
 
-        PipelineEvent::LabelledRender { label, image } => {
-            let path = PathBuf::from(format!("{}_{}.labelled.png", base_name, label));
-            match image.save(&path) {
-                Ok(()) => info!("  Saved: {}", path.display()),
-                Err(e) => eprintln!("Warning: failed to save {}: {}", path.display(), e),
+        PipelineEvent::LabelledRender { label, images } => {
+            for (page, image) in images.iter().enumerate() {
+                let path = PathBuf::from(format!("{}_{}_p{}.labelled.png", base_name, label, page));
+                match image.save(&path) {
+                    Ok(()) => info!("  Saved: {}", path.display()),
+                    Err(e) => eprintln!("Warning: failed to save {}: {}", path.display(), e),
+                }
             }
         }
 
