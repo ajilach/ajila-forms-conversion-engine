@@ -139,7 +139,13 @@ impl AppSettings {
     /// otherwise show in the UI and read as "off").
     fn normalize_eviction(&mut self) {
         let d = Self::default();
-        if self.evict_keep_recent_messages == 0 {
+        // `4` is migrated too: settings saves persist every field, so installs
+        // that saved under the old default carry a `4` the user never chose —
+        // and a 2-turn-pair window is exactly what caused the agent's
+        // reference data to be elided before use (re-fetch loops that exhaust
+        // the turn budget; see platform::DEFAULT_KEEP_RECENT_MESSAGES). A
+        // deliberately tighter window is still expressible as 2 or 6.
+        if self.evict_keep_recent_messages == 0 || self.evict_keep_recent_messages == 4 {
             self.evict_keep_recent_messages = d.evict_keep_recent_messages;
         }
         if self.evict_text_over_chars == 0 {
