@@ -17,11 +17,60 @@
 use std::collections::HashMap;
 
 use blueprint::{
-    AemConfig, AemConnection, AemNode, AemNodeTranslated, Context, DocumentEnvelope, StructuredNode,
+    AemConfig, AemConnection, AemI18nText, AemNode, AemNodeTranslated, AemOptionTranslated, Context,
+    DocumentEnvelope, StructuredNode,
 };
 
 /// Error returned by the AEM-tree tools when nothing has been authored yet.
 const NO_AEM_TREE: &str = "No AEM tree yet; author it with set_aem_translated.";
+
+/// All language codes appearing in any text field of a working tree (used to
+/// keep a pre-loaded template's languages alive through lowering).
+fn collect_translated_languages(tree: &AemNodeTranslated) -> std::collections::BTreeSet<String> {
+    fn add(text: &AemI18nText, out: &mut std::collections::BTreeSet<String>) {
+        out.extend(text.languages().map(String::from));
+    }
+    fn add_opts(opts: &[AemOptionTranslated], out: &mut std::collections::BTreeSet<String>) {
+        for o in opts {
+            add(&o.label, out);
+        }
+    }
+    fn walk(node: &AemNodeTranslated, out: &mut std::collections::BTreeSet<String>) {
+        match node {
+            AemNodeTranslated::Root { title, children } => {
+                add(title, out);
+                children.iter().for_each(|c| walk(c, out));
+            }
+            AemNodeTranslated::Panel { title, children, .. } => {
+                add(title, out);
+                children.iter().for_each(|c| walk(c, out));
+            }
+            AemNodeTranslated::Repeatable { title, children, .. } => {
+                add(title, out);
+                children.iter().for_each(|c| walk(c, out));
+            }
+            AemNodeTranslated::TextField { label, .. }
+            | AemNodeTranslated::NumberField { label, .. }
+            | AemNodeTranslated::DatePicker { label, .. } => add(label, out),
+            AemNodeTranslated::Dropdown { label, options, .. }
+            | AemNodeTranslated::Checkbox { label, options, .. }
+            | AemNodeTranslated::RadioButton { label, options, .. }
+            | AemNodeTranslated::Custom { label, options, .. } => {
+                add(label, out);
+                add_opts(options, out);
+            }
+            AemNodeTranslated::TextDraw { content, .. }
+            | AemNodeTranslated::TitleDraw { content, .. } => add(content, out),
+            AemNodeTranslated::Fragment { .. }
+            | AemNodeTranslated::Preface { .. }
+            | AemNodeTranslated::Appendix { .. }
+            | AemNodeTranslated::FootnotePlaceholder { .. } => {}
+        }
+    }
+    let mut out = std::collections::BTreeSet::new();
+    walk(tree, &mut out);
+    out
+}
 
 /// The package writer's translation dictionary: master text → { lang → text }.
 type I18nDict = std::collections::HashMap<String, std::collections::HashMap<String, String>>;
@@ -46,6 +95,11 @@ visual grouping and layout (panels, columns, tables, repeatable sections); and t
 behaviour. The output should look and read like the original form rebuilt as an Adaptive Form, \
 not an approximation — judge your work throughout by whether the rendered AEM form resembles the \
 source, and keep fixing until it does.\n\n\
+If a content-package ZIP was uploaded as a template, your working AEM tree is ALREADY pre-loaded \
+from it — start with get_aem_translated_outline / get_aem_translated_node to study it, then MODIFY \
+the existing tree (set_aem_translated_field / replace/insert/remove) to match the source instead of \
+authoring a new tree from scratch; only call set_aem_translated to overwrite it wholesale if it is \
+unusable.\n\n\
 Typical workflow (call tools as needed; each step is a separate call):\n\
 1. Inspect the input: get_source_info, get_profile_info (form_code, languages, JCR paths, \
 binding flags), list_states, explore_states, get_xfa (the authoritative text/fields, in every \
@@ -407,12 +461,30 @@ pub struct ConversionAgent {
 }
 
 impl ConversionAgent {
+    /// `files` may mix source PDFs and a single AEM content-package ZIP. The
+    /// PDFs are the conversion source; the ZIP (if any) is parsed into an
+    /// `AemNodeTranslated` and pre-loaded as the working tree, acting as an
+    /// editable template the agent modifies instead of authoring from scratch.
     pub fn new(
         profile: Option<String>,
-        pdfs: Vec<(String, Vec<u8>)>,
+        files: Vec<(String, Vec<u8>)>,
         conn: Option<AemConnection>,
         structured_session: String,
     ) -> Self {
+        let pdfs: Vec<(String, Vec<u8>)> = files
+            .iter()
+            .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
+            .cloned()
+            .collect();
+
+        // First AEM content-package ZIP, parsed once for both the template tree
+        // and (for template-only runs) the document context/language.
+        let template_bp = files
+            .iter()
+            .find(|(_, b)| blueprint::aem::detect_aem_zip(b))
+            .and_then(|(_, b)| blueprint::Blueprint::from_aem_zip(b).ok());
+        let aem_translated = template_bp.as_ref().and_then(|bp| bp.aem_translated());
+
         let context = pdfs
             .iter()
             .find_map(|(_, b)| {
@@ -420,8 +492,10 @@ impl ConversionAgent {
                     .ok()
                     .map(|bp| bp.context())
             })
+            .or_else(|| template_bp.as_ref().map(|bp| bp.context()))
             .unwrap_or_else(|| Context::with_language("en"));
-        Self {
+
+        let mut agent = Self {
             profile,
             context,
             aem_config: None,
@@ -429,7 +503,7 @@ impl ConversionAgent {
             current_pdfs: pdfs,
             extractors: HashMap::new(),
             structured: Vec::new(),
-            aem_translated: None,
+            aem_translated,
             package: None,
             structured_session,
             aem_session: None,
@@ -437,7 +511,13 @@ impl ConversionAgent {
             aem_form_path: None,
             matcher: None,
             finished: false,
+        };
+        // Record the pre-loaded template as the initial AEM edit so it shows in
+        // the AEM edit history (no-op when no template was uploaded).
+        if agent.aem_translated.is_some() {
+            agent.aem_translated_edited("Template (from uploaded package)");
         }
+        agent
     }
 
     /// Lazily load (and cache) the sentence-embedding model used by semantic
@@ -550,13 +630,24 @@ impl ConversionAgent {
         // self.structured without touching self.aem_config. Prefer the working
         // tree once seeded; otherwise fall back to the merged source extraction
         // so the languages are reported even before the tree is seeded.
-        if !self.structured.is_empty() {
-            Ok(blueprint::resolve_aem_languages(&self.structured, &cfg))
+        let mut cfg = if !self.structured.is_empty() {
+            blueprint::resolve_aem_languages(&self.structured, &cfg)
         } else if let Ok(ex) = self.extractor(&serde_json::Value::Null) {
-            Ok(blueprint::resolve_aem_languages(&ex.merged, &cfg))
+            blueprint::resolve_aem_languages(&ex.merged, &cfg)
         } else {
-            Ok(cfg)
+            cfg
+        };
+        // Carry any languages present in the working tree (e.g. a pre-loaded
+        // template) into the config so they survive lowering — important for
+        // template-only runs where there is no PDF source to detect them from.
+        if let Some(tree) = &self.aem_translated {
+            for lang in collect_translated_languages(tree) {
+                if !cfg.languages.contains(&lang) {
+                    cfg.languages.push(lang);
+                }
+            }
         }
+        Ok(cfg)
     }
 
 

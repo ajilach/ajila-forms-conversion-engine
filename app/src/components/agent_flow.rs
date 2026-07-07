@@ -173,13 +173,18 @@ fn UploadBox(
     let has_pdf = files
         .iter()
         .any(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"));
-    let start_disabled = files.is_empty() || !has_pdf || !ai_available;
+    // An AEM content-package ZIP can be attached as an editable template; a run
+    // needs at least a PDF or a template.
+    let has_template = files
+        .iter()
+        .any(|(_, bytes)| blueprint::detect_aem_zip(bytes));
+    let start_disabled = files.is_empty() || (!has_pdf && !has_template) || !ai_available;
     let start_title = if !ai_available {
         "Configure an API key in Settings to enable agent processing."
     } else if files.is_empty() {
         "Drop or choose a file to begin."
-    } else if !has_pdf {
-        "Upload at least one PDF to start the agent."
+    } else if !has_pdf && !has_template {
+        "Upload at least one PDF, or an AEM content-package ZIP template, to start the agent."
     } else {
         "Let the agent convert and upload the form."
     };
@@ -262,7 +267,9 @@ fn UploadBox(
 
                 div { class: "dz-icon", "↑" }
                 h3 { "Drop files to start the agent" }
-                p { class: "upload-hint", "Upload the PDF forms here." }
+                p { class: "upload-hint",
+                    "Upload the PDF forms here — optionally add an AEM content-package ZIP as an editable template."
+                }
                 div { class: "upload-actions",
                     label {
                         class: "btn btn-secondary btn-sm",

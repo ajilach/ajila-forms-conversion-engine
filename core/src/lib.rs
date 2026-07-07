@@ -183,7 +183,8 @@ pub use aem::{
     AemConfig, AemConnectionProfile, AemI18nText, AemNode, AemNodeTranslated, AemOption,
     AemOptionTranslated, AemProfile, AemScriptEngine, LowerConflict,
     ConditionRule, OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement,
-    aem_to_structured, aem_translations_from_content, collect_languages, convert_to_aem,
+    aem_to_structured, aem_to_translated, aem_translations_from_content, collect_languages,
+    convert_to_aem,
     detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
     generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
     generate_aem_xml, parse_aem_zip,
@@ -730,6 +731,45 @@ impl Blueprint {
             content,
             state_count: 1,
         })
+    }
+
+    /// Lift a parsed AEM package into the multilingual [`AemNodeTranslated`]
+    /// working tree. Returns `None` for non-AEM inputs.
+    ///
+    /// This is the inverse of `AemNodeTranslated::lower`: it lets an uploaded
+    /// content-package ZIP act as an editable template (pre-loaded as the
+    /// conversion agent's working tree) instead of authoring from scratch.
+    pub fn aem_translated(&self) -> Option<AemNodeTranslated> {
+        let package = match &self.inner {
+            BlueprintInner::Aem { package } => package,
+            _ => return None,
+        };
+
+        // Same language union as `aem_structured`: all languages present across
+        // the Sling dictionaries, plus the master language.
+        let languages: Vec<String> = if package.translations.entries.is_empty() {
+            vec![package.language.clone()]
+        } else {
+            let mut langs: Vec<String> = package
+                .translations
+                .entries
+                .values()
+                .flat_map(|m| m.keys().cloned())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            if !langs.contains(&package.language) {
+                langs.push(package.language.clone());
+            }
+            langs
+        };
+
+        Some(aem::aem_to_translated(
+            &package.root,
+            &package.translations,
+            &languages,
+            &package.language,
+        ))
     }
 
     /// Run full exhaustive exploration *and* merge all state trees into a

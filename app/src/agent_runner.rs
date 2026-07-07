@@ -26,7 +26,7 @@ const MAX_VALIDATE_REPEATS: usize = 3;
 /// `processing_state.agent_steps` and finalizing the result on completion.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent(
-    pdfs: Vec<(String, Vec<u8>)>,
+    files: Vec<(String, Vec<u8>)>,
     profile: Option<String>,
     settings: crate::settings::AppSettings,
     session_label: String,
@@ -35,8 +35,21 @@ pub async fn run_agent(
 ) {
     let start = std::time::Instant::now();
 
+    // An attached AEM content-package ZIP is pre-loaded as the agent's editable
+    // working tree (the ConversionAgent splits PDFs vs. template internally).
+    let has_template = files
+        .iter()
+        .any(|(_, bytes)| blueprint::detect_aem_zip(bytes));
+    let pdfs: Vec<(String, Vec<u8>)> = files
+        .iter()
+        .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
+        .cloned()
+        .collect();
+
     // Structured history session (seeded empty); shown in the structured editor.
-    let doc_hash = crate::db::document_hash(&pdfs);
+    // Hash on the PDFs when present, otherwise on the template so the session id
+    // is stable for template-only runs.
+    let doc_hash = crate::db::document_hash(if pdfs.is_empty() { &files } else { &pdfs });
     crate::db::upsert_document(&doc_hash, &session_label);
     let Some(structured_session) =
         crate::db::create_session(&doc_hash, profile.as_deref(), &session_label)
@@ -53,13 +66,20 @@ pub async fn run_agent(
 
     let agent = ConversionAgent::new(
         profile.clone(),
-        pdfs.clone(),
+        files.clone(),
         settings.aem_connection(),
         structured_session.clone(),
     );
 
+    let template_note = if has_template {
+        "\n\nA template AEM tree from an uploaded content package has been pre-loaded as your \
+working tree. Inspect it with get_aem_translated_outline and modify it to match the source \
+instead of authoring from scratch."
+    } else {
+        ""
+    };
     let intro = format!(
-        "{SYSTEM_PROMPT}{}",
+        "{SYSTEM_PROMPT}{}{template_note}",
         crate::settings::extra_instructions_block(&settings.agent_instructions)
     );
     let mut history: Vec<serde_json::Value> = Vec::new();

@@ -467,6 +467,32 @@ fn field_id_from_name(name: &str) -> FieldId {
     FieldId::from(name)
 }
 
+/// Find the per-language message map for a component's property in the Sling
+/// dictionary.
+///
+/// Builds the dictionary key from the component name hierarchy
+/// (e.g. `guideContainer##rootPanel##items##fieldName##jcr:title##1234`) and
+/// matches it, falling back to a bare `##name##` suffix and finally the `fd_`
+/// fragment-dictionary key. Shared by [`translate_string`] (AEM → structured)
+/// and the `to_translated` lift (AEM → `AemNodeTranslated`).
+pub(super) fn lookup_translation_entry<'a>(
+    translations: &'a TranslationData,
+    default: &str,
+    component_name: &str,
+    property: &str,
+) -> Option<&'a HashMap<String, String>> {
+    // Strategy 1: Sling keys like guideContainer##rootPanel##items##...##property##hash
+    let key_suffix = format!("##{}##{}", component_name, property);
+    let lang_map = translations
+        .entries
+        .keys()
+        .find(|k| k.contains(&key_suffix) || k.ends_with(&format!("##{}##", component_name)))
+        .and_then(|k| translations.entries.get(k));
+
+    // Strategy 2: fd_ prefixed keys (used by fragment dictionaries)
+    lang_map.or_else(|| translations.entries.get(&format!("fd_{}", default)))
+}
+
 /// Try to look up a translation for the given component and property.
 ///
 /// Builds the Sling dictionary key from the component name hierarchy
@@ -482,23 +508,9 @@ fn translate_string(
         return TranslatableString::Plain(default.to_string());
     }
 
-    // Try to find a matching translation key
-    // Strategy 1: Sling keys like guideContainer##rootPanel##items##...##property##hash
-    let key_suffix = format!("##{}##{}", component_name, property);
-    let lang_map = ctx
-        .translations
-        .entries
-        .keys()
-        .find(|k| k.contains(&key_suffix) || k.ends_with(&format!("##{}##", component_name)))
-        .and_then(|k| ctx.translations.entries.get(k));
-
-    // Strategy 2: fd_ prefixed keys (used by fragment dictionaries)
-    let lang_map = lang_map.or_else(|| {
-        let fd_key = format!("fd_{}", default);
-        ctx.translations.entries.get(&fd_key)
-    });
-
-    if let Some(lang_map) = lang_map {
+    if let Some(lang_map) =
+        lookup_translation_entry(ctx.translations, default, component_name, property)
+    {
         let mut translation_map: TranslationMap = HashMap::new();
 
         // Add master language with the default value

@@ -130,10 +130,16 @@ fn App() -> Element {
     // document straight from its response, skipping the core pipeline.
     let mut on_ai_process = move |file_data: Vec<(String, Vec<u8>)>| {
         let pdfs: Vec<(String, Vec<u8>)> = file_data
-            .into_iter()
+            .iter()
             .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
+            .cloned()
             .collect();
-        if pdfs.is_empty() {
+        // An AEM content-package ZIP may be attached as an editable template for
+        // the agent's working tree. Proceed with PDFs, a template, or both.
+        let has_template = file_data
+            .iter()
+            .any(|(_, bytes)| blueprint::detect_aem_zip(bytes));
+        if pdfs.is_empty() && !has_template {
             return;
         }
 
@@ -154,7 +160,7 @@ fn App() -> Element {
         });
 
         spawn(async move {
-            let session_label = pdfs
+            let session_label = file_data
                 .iter()
                 .map(|(name, _)| name.clone())
                 .collect::<Vec<_>>()
@@ -169,8 +175,10 @@ fn App() -> Element {
             // Hand the whole conversion to the autonomous agent: it drives the
             // engine via tools (extract → structure → convert → AEM → package →
             // upload/verify), versioning each step, and finalizes the result.
+            // The full file set is passed so an attached content-package ZIP can
+            // be pre-loaded as the agent's editable working tree.
             crate::agent_runner::run_agent(
-                pdfs,
+                file_data,
                 profile,
                 settings,
                 session_label,

@@ -32713,3 +32713,116 @@ fn test_aahx_has_unordered_list_with_four_field_items() {
 
     println!("\n✓ AAHX has one unordered list with 4 Feld items");
 }
+
+// ============================================================================
+// AemNode → AemNodeTranslated "lift" (to_translated)
+// ============================================================================
+
+/// Collect the language union the same way `Blueprint::aem_translated` does.
+fn lift_languages(package: &crate::aem::ParsedAemPackage) -> Vec<String> {
+    if package.translations.entries.is_empty() {
+        vec![package.language.clone()]
+    } else {
+        let mut langs: Vec<String> = package
+            .translations
+            .entries
+            .values()
+            .flat_map(|m| m.keys().cloned())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if !langs.contains(&package.language) {
+            langs.push(package.language.clone());
+        }
+        langs
+    }
+}
+
+/// Lifting an AEM package to `AemNodeTranslated` and lowering it back must
+/// reproduce the original `AemNode` tree exactly — the lift is the structural
+/// inverse of `lower`. `AemNode` has no `PartialEq`, so compare via serde.
+#[test]
+fn to_translated_lift_round_trips_to_aem_node() {
+    use crate::aem::{aem_to_translated, parse_aem_zip};
+
+    for fixture in ["AACX.zip", "AAFM_019.zip"] {
+        let zip_bytes = std::fs::read(input_path(fixture)).expect("read zip fixture");
+        let package = parse_aem_zip(&zip_bytes).expect("parse zip fixture");
+        let languages = lift_languages(&package);
+
+        let lifted = aem_to_translated(
+            &package.root,
+            &package.translations,
+            &languages,
+            &package.language,
+        );
+        let (lowered, _dict) = lifted.lower(&package.language, &languages);
+
+        assert_eq!(
+            serde_json::to_value(&lowered).unwrap(),
+            serde_json::to_value(&package.root).unwrap(),
+            "{fixture}: lift→lower must round-trip back to the original AemNode tree"
+        );
+    }
+}
+
+/// A multilingual package must lift into per-language text: at least one
+/// `AemI18nText` carries ≥2 languages.
+#[test]
+fn to_translated_lift_preserves_multiple_languages() {
+    use crate::aem::translated::{AemI18nText, AemNodeTranslated, AemOptionTranslated};
+    use crate::aem::{aem_to_translated, parse_aem_zip};
+
+    let zip_bytes = std::fs::read(input_path("AAFM_019.zip")).expect("read AAFM_019.zip");
+    let package = parse_aem_zip(&zip_bytes).expect("parse AAFM_019.zip");
+    let languages = lift_languages(&package);
+    assert!(
+        languages.len() >= 2,
+        "AAFM_019.zip is expected to be multilingual, got {languages:?}"
+    );
+
+    let lifted = aem_to_translated(
+        &package.root,
+        &package.translations,
+        &languages,
+        &package.language,
+    );
+
+    fn max_langs(node: &AemNodeTranslated) -> usize {
+        fn count(t: &AemI18nText) -> usize {
+            t.languages().count()
+        }
+        fn opts(os: &[AemOptionTranslated]) -> usize {
+            os.iter().map(|o| count(&o.label)).max().unwrap_or(0)
+        }
+        let here = match node {
+            AemNodeTranslated::Root { title, .. } => count(title),
+            AemNodeTranslated::Panel { title, .. }
+            | AemNodeTranslated::Repeatable { title, .. } => count(title),
+            AemNodeTranslated::TextField { label, .. }
+            | AemNodeTranslated::NumberField { label, .. }
+            | AemNodeTranslated::DatePicker { label, .. } => count(label),
+            AemNodeTranslated::Dropdown { label, options, .. }
+            | AemNodeTranslated::Checkbox { label, options, .. }
+            | AemNodeTranslated::RadioButton { label, options, .. }
+            | AemNodeTranslated::Custom { label, options, .. } => count(label).max(opts(options)),
+            AemNodeTranslated::TextDraw { content, .. }
+            | AemNodeTranslated::TitleDraw { content, .. } => count(content),
+            _ => 0,
+        };
+        let children = match node {
+            AemNodeTranslated::Root { children, .. }
+            | AemNodeTranslated::Panel { children, .. }
+            | AemNodeTranslated::Repeatable { children, .. } => {
+                children.iter().map(max_langs).max().unwrap_or(0)
+            }
+            _ => 0,
+        };
+        here.max(children)
+    }
+
+    assert!(
+        max_langs(&lifted) >= 2,
+        "expected at least one AemI18nText with ≥2 languages after lifting AAFM_019.zip"
+    );
+}
