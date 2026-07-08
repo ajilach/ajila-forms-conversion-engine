@@ -109,7 +109,16 @@ single-language, single-variant tree for ONE state — your structural reference
 grouping). A form is multilingual whenever get_source_info lists more than one language — trust \
 that over get_profile_info if they disagree. You MUST carry every one of those languages into the \
 final form; don't invent translations, and never drop a language the source contains.\n\
-2. Find precedents (before building): work section by section. For EACH section, do NOT search by \
+2. Find precedents (before building): BEFORE authoring any node, consult the reference DOCUMENTATION \
+to build a deep understanding of the house conventions behind the issues you'll face — call \
+list_reference_docs, then read_reference_doc on the relevant guides (grep_reference_docs to jump to a \
+topic): the \"AF Fragments and Common Fields\" catalogue (which standard fragment + entity library to \
+use for banking relationship, address, signatures, account holder, and the rest), wizard pages and \
+step-title headings, DoR and summary exclusions, and the multilingual/translation rules. The \
+conventions summarised in this prompt are pointers INTO those docs, not substitutes — confirm each \
+against the documentation and the reference packages before you rely on it, and do not begin building \
+until you understand how the reference forms handle each issue. Then work section by section. For \
+EACH section, do NOT search by \
 form name or a single keyword — write a short natural-language DESCRIPTION of that section (its \
 purpose, the kinds of fields it has and how they're grouped) and pass it to search_references, \
 which matches it semantically against the reference forms. Use grep_references only for a verbatim \
@@ -133,7 +142,17 @@ position — never leave a language blank or collapse to one); give each fillabl
 component type, options (real labels AND values), required/visible state and column width; nest \
 fields into Panels and use Repeatable for repeating sections; where content differs by configurator \
 selection, include each variant once — keep shared content shared, and NEVER reuse a node `name` \
-(that collides in AEM). For recurring standard sections that the bank ships as reusable fragments \
+(that collides in AEM). PAGES: the Root is laid out as a wizard, so ONLY its direct-child Panels \
+become pages (wizard steps). Set `is_page: true` on each first-level section Panel — the top-level \
+sections of the form, in source order — and `is_page: false` on every Panel nested below them \
+(inner groupings, column wrappers, conditional panels, fields inside a section). So a new page \
+starts exactly at each first-level section and nowhere deeper: never mark a nested panel as a page, \
+and never leave a top-level section without `is_page: true`. \
+HEADINGS: a Panel's `title` does NOT render as a visible heading in AEM — for every section/page \
+that shows a heading in the source, author an explicit `TitleDraw` (heading level 2) as the panel's \
+FIRST child carrying that text; do not rely on the Panel `title` to display it, and never render the \
+same heading twice (exactly one TitleDraw per heading — don't also leave a second drawn copy of the \
+same text). For recurring standard sections that the bank ships as reusable fragments \
 — address, signature, account holder / contractual partner / beneficial owner / power of attorney, \
 banking relationship, IBAN, individual or entity basics, internal-bank-use, and the like — do NOT \
 hand-build the panel's inner fields; emit a single `Fragment` node that references the fragment by \
@@ -141,10 +160,28 @@ its JCR path (`frag_ref`), exactly as the reference forms do. Find the matching 
 path in the fragment-library documentation (read_reference_doc / grep_reference_docs for \"AF \
 Fragments and Common Fields\") and confirm it against the reference packages (grep_references for \
 `fragRef`); pick the `_fragmentlib` matching the form's entity (e.g. germany / italy / ch / ubs / \
-global). A fragment's internal fields are supplied by AEM at runtime from that path, so never also \
+global). Use the exact fragment the corpus standardised on for these recurring sections: BANKING \
+RELATIONSHIP → the UBS fragment `affrg_BankingRelationship1` (in `afforms_ubs_fragmentlib`), NEVER a \
+germany/italy/global variant or a dam-path reference; it renders the \"UBS Europe SE\" line itself, so \
+NEVER also author a standalone \"UBS Europe SE\" text draw (that duplicates it), and set \
+`dor_exclude: true` on that panel. ADDRESS block → the entity's AddressBlock fragment (germany \
+`affrg_germany_AddressBlock_CountryDD`, italy `affrg_italy_AddressBlock_CountryDD`, else \
+`affrg_AddressGeneric1` / `affrg_Address1`), NEVER hand-built Street / No. / PLZ / City / Country \
+fields; it renders Country as a dropdown and may add an \"Additional address details\" (Adresszusatz) \
+line, which is standard — keep it. A fragment's internal fields are supplied by AEM at runtime from that path, so never also \
 recreate them as children — that duplicates the section. Keep the fragment's `bind_ref`; for a \
 section repeated per party emit one Fragment instance per party inside the Repeatable; and never \
-replace a conditional panel (one with show/hide behaviour) with a fragment.\n\
+replace a conditional panel (one with show/hide behaviour) with a fragment. \
+CASCADING / DEPENDENT DROPDOWNS (one dropdown's options or value depend on another field's selection \
+— in the XFA a change-event script drives it via clearItems/addItem/rawValue): do NOT make a single \
+dropdown mutate its options at runtime, and do NOT rely on a value-commit/change rule — that shape \
+validates but does NOT fire in this profile. Instead model it as static variants: emit one dropdown \
+per parent selection, each in its own Panel holding ONLY that selection's options, authored \
+`visible: false`, and shown by a `ConditionRule` on the TRIGGER field (its `conditions` — one rule \
+per parent value, targeting that variant panel's `name` with `show: true`). Gate a third-level \
+variant on BOTH the level-1 and level-2 selections so a stale upstream value can't keep it visible. \
+Read the XFA change-event function to enumerate the branches, and take every option label, value and \
+code VERBATIM from its addItem/rawValue lines — never invent one.\n\
   c. Refine with the granular editors rather than re-emitting the whole tree: \
 get_aem_translated_outline maps every node by path and flags `⚠ empty` (text-bearing node with no \
 text) and `⚠ 1 lang` (only one language — likely a missing translation); get_aem_translated_node \
@@ -178,7 +215,9 @@ list_reference_docs, read_reference_doc, grep_reference_docs.\n\n\
 Never invent text content: take all labels/options/help text verbatim from the XFA, and never \
 write copy of your own. The final form must contain EVERY language present in the source \
 (get_source_info lists them) and ONLY those: never drop a language the source contains, and never \
-invent a translation for a language it does not. When done, call finish. Keep tool inputs minimal \
+invent a translation for a language it does not. A non-master language whose text merely repeats the \
+master-language text is an untranslated stub, not a translation — supply the genuine per-language \
+wording (AEM otherwise silently falls back to the master language). When done, call finish. Keep tool inputs minimal \
 and valid JSON.";
 
 /// The result of executing one tool call, to be returned to the model as a
