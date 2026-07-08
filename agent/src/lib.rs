@@ -19,6 +19,6 @@ pub mod image_encode;
 pub mod references;
 
 pub use conversion::{
-    ConversionAgent, SYSTEM_PROMPT, ToolReply, aem_connection_from_settings,
-    validate_package_bytes,
+    ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, REVIEWER_ADDENDUM, ReviewResult,
+    SHARED_PREAMBLE, SYSTEM_PROMPT, ToolReply, aem_connection_from_settings, validate_package_bytes,
 };

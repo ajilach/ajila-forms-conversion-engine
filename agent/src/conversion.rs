@@ -220,6 +220,74 @@ master-language text is an untranslated stub, not a translation — supply the g
 wording (AEM otherwise silently falls back to the master language). When done, call finish. Keep tool inputs minimal \
 and valid JSON.";
 
+// ── Multi-agent role prompts ─────────────────────────────────────────────────
+//
+// The desktop pipeline (see `app`'s `run_conversion`) splits the run into an
+// Analyst → Author → Reviewer sequence. Each role's system prompt is composed by
+// the controller as SHARED_PREAMBLE + the role addendum (+ for Author/Reviewer,
+// the Analyst's plan and accumulated review reports, pinned in the system field
+// so they are never evicted). The Author reuses the full [`SYSTEM_PROMPT`] as its
+// authoring body; MCP still serves [`SYSTEM_PROMPT`] to external clients.
+
+/// Prepended to every pipeline-stage role prompt.
+pub const SHARED_PREAMBLE: &str = "\
+You are one stage of a pipeline that converts an uploaded PDF form into an AEM Adaptive Form \
+analogous to the source. Invariants for every stage: (1) Never invent text — take all labels, \
+options, help and titles verbatim from the XFA (get_xfa / search_xfa); the source is the only \
+authority for content. (2) Carry EVERY language get_source_info lists and ONLY those; a non-master \
+value that merely repeats the master-language text is an untranslated stub, not a translation. \
+(3) The reference forms and profile templates are ground truth for structure — consult them and \
+copy proven shapes (fragment references, visibility scripts) verbatim rather than inventing, and \
+read them fresh. When your stage is done, stop and reply with a concise, structured summary of what \
+you found or changed.";
+
+/// Analyst role: read-only source analysis + precedent research → a conversion plan.
+pub const ANALYST_ADDENDUM: &str = "\
+ROLE: Analyst. You do NOT edit the tree. Produce ONE detailed CONVERSION PLAN that lets the Author \
+build the form without re-reading the bulky source. Inspect exhaustively (get_source_info + \
+get_profile_info — form codes ending 019 = Germany, 033 = Italy; list_states + explore_states; \
+get_plain_state_image / get_annotated_state_image; get_xfa / search_xfa; \
+get_flattened_structure_for_state per state) AND research precedents FIRST via the reference \
+documentation (list_reference_docs, read_reference_doc, grep_reference_docs — the \"AF Fragments and \
+Common Fields\" catalogue, wizard pages & step-title headings, DoR/summary exclusions, translation \
+rules), then per section search_references / grep_references / get_reference_package / \
+read_reference_file. The plan must give, per top-level SECTION in source order: whether it is a \
+wizard page (a first-level section = one page); its heading and the verbatim labels / options / \
+field text in EVERY language; each field's control type; any conditional or CASCADING behaviour \
+(quote the XFA change-event function and its clearItems/addItem/rawValue branches); the recommended \
+standard fragment with its exact JCR path + entity library (banking relationship → \
+affrg_BankingRelationship1 in afforms_ubs_fragmentlib; address → affrg_germany_AddressBlock_CountryDD \
+(019) / affrg_italy_AddressBlock_CountryDD (033) / else affrg_AddressGeneric1; signatures → \
+affrg_SignatureGeneric1); and any verbatim script/hook shape to copy (showAFShowDor / hideAFHideDor, \
+cascade visibility scripts) with its source ref_id + file path. List the languages and any DoR / \
+summary exclusion notes. Your final message IS the plan — make it complete and self-contained; the \
+Author works from it, not by re-reading the source.";
+
+/// Author role: appended AFTER the full [`SYSTEM_PROMPT`] authoring body.
+pub const AUTHOR_ADDENDUM: &str = "\
+STAGE NOTE: A CONVERSION PLAN produced by an Analyst is appended below as your section / field / \
+precedent map — trust it and use search_xfa only to fill specific gaps rather than re-dumping the \
+whole XFA. A separate Reviewer judges fidelity after you, so do NOT call finish; once you have \
+authored a complete tree and run build_aem_package + validate_aem_package, stop with a short summary. \
+If REVIEW FEEDBACK appears below, address EVERY point from every round, then rebuild and re-validate.";
+
+/// Reviewer role: read-only quality gate that ends by calling `submit_review`.
+pub const REVIEWER_ADDENDUM: &str = "\
+ROLE: Reviewer / validator. You do NOT edit the tree. build_aem_package, then ALWAYS \
+validate_aem_package; run review_output (coverage vs the source, master language) and spot-check \
+non-master languages with search_xfa; compare the rendered pages against the source images (and, if \
+an AEM connection is configured, upload_to_aem then fetch_aem_form_html / fetch_aem_dor_pdf). Judge \
+ANALOGY to the source AND conformance to the CONVERSION PLAN appended below, and confirm every point \
+in any prior REVIEW FEEDBACK is now fixed. Checklist: naming prefixes + uniqueness; first-level \
+sections are pages and nothing deeper is; exactly one rendered TitleDraw heading per section (a Panel \
+title does not render); banking = affrg_BankingRelationship1 inside a PN_BR sole-child wrapper with \
+dor_exclude; address uses the entity AddressBlock fragment; DoR exclusions set; no invented text; \
+every language present and non-stub; cascading dropdowns implemented as static visibility-gated \
+variants (never a runtime option mutation); every fillable source field present. End by calling \
+submit_review with approved=true ONLY if the form is fully correct; otherwise approved=false and \
+report = a detailed, actionable message listing every issue (with node paths where possible). Do not \
+fix anything yourself.";
+
 /// The result of executing one tool call, to be returned to the model as a
 /// `tool_result` content block.
 pub enum ToolReply {
@@ -233,6 +301,15 @@ pub enum ToolReply {
     },
     /// The tool failed; the message is surfaced to the model as an error result.
     Error(String),
+}
+
+/// The outcome of the Reviewer role's `submit_review` call: whether the form is
+/// approved, and (if not) a detailed report the controller pins into the Author's
+/// next system prompt.
+#[derive(Debug, Clone)]
+pub struct ReviewResult {
+    pub approved: bool,
+    pub report: String,
 }
 
 /// Settings key under which the desktop app persists its serialized settings
@@ -498,6 +575,10 @@ pub struct ConversionAgent {
     matcher: Option<blueprint::semantic::SemanticMatcher>,
 
     finished: bool,
+
+    /// The Reviewer role's latest `submit_review` outcome, drained by the
+    /// controller via [`take_review`](Self::take_review).
+    review: Option<ReviewResult>,
 }
 
 impl ConversionAgent {
@@ -551,6 +632,7 @@ impl ConversionAgent {
             aem_form_path: None,
             matcher: None,
             finished: false,
+            review: None,
         };
         // Record the pre-loaded template as the initial AEM edit so it shows in
         // the AEM edit history (no-op when no template was uploaded).
@@ -581,6 +663,12 @@ impl ConversionAgent {
     /// `true` once the agent has called the `finish` tool.
     pub fn is_finished(&self) -> bool {
         self.finished
+    }
+
+    /// Drain the Reviewer role's latest `submit_review` outcome (the controller
+    /// reads this after running the Reviewer stage).
+    pub fn take_review(&mut self) -> Option<ReviewResult> {
+        self.review.take()
     }
 
     /// The detected document context (language, …).
@@ -991,6 +1079,15 @@ impl ConversionAgent {
                 "Terminal step — call this once, last, after the package is built, validated and reviewed (review_output) — and uploaded if an AEM connection is configured — to persist the structured + AEM trees + package as the result and end the run.",
                 serde_json::json!({"summary": {"type":"string"}}),
                 serde_json::json!([]),
+            ),
+            t(
+                "submit_review",
+                "Terminal REVIEW step (Reviewer role) — call once, last, after building/validating/reviewing. approved=true means the form is fully correct and ends the run; approved=false returns your detailed issue list to the author for a fix round.",
+                serde_json::json!({
+                    "approved": {"type": "boolean"},
+                    "report": {"type": "string", "description": "When not approved: a detailed, actionable list of every issue, with node paths where possible."}
+                }),
+                serde_json::json!(["approved"]),
             ),
         ]
     }
@@ -1476,6 +1573,16 @@ impl ConversionAgent {
             "finish" => {
                 self.finished = true;
                 ToolReply::Text("Finalized.".into())
+            }
+            "submit_review" => {
+                let approved = input["approved"].as_bool().unwrap_or(false);
+                let report = input["report"].as_str().unwrap_or_default().to_string();
+                self.review = Some(ReviewResult { approved, report });
+                ToolReply::Text(if approved {
+                    "Review recorded: approved.".into()
+                } else {
+                    "Review recorded: changes requested — returning to the author.".into()
+                })
             }
 
             other => ToolReply::Error(format!("Unknown tool: {other}")),
