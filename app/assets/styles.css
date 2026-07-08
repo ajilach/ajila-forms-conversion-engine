@@ -3435,6 +3435,29 @@ body > div, #main {
     white-space: nowrap;
 }
 .ag-tl-title { font-weight: 700; font-size: 13px; color: var(--text); }
+/* Context-window fill indicator: a small donut that fills as the prompt grows. */
+.ag-ctx { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; }
+.ag-ctx-ring {
+    position: relative;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    /* `background` (the conic-gradient fill) is set inline from the fill %. */
+}
+.ag-ctx-ring::after {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: var(--surface);
+}
+.ag-ctx-pct {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
 .ag-tl-chevron {
     margin-left: auto;
     display: inline-flex;

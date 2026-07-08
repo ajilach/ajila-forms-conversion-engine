@@ -225,6 +225,26 @@ async fn drive_agent(
     let tools = agent.tools();
     let agent_max_tokens = max_output_tokens_for(&settings.anthropic_model);
 
+    // Surface the context budget so a mis-detected window (which would evict the
+    // transcript every turn) is visible rather than silent.
+    let ctx_window = crate::platform::context_window_for(&settings.anthropic_model);
+    let ctx_target = crate::platform::prompt_token_target(&settings.anthropic_model, agent_max_tokens);
+    processing_state.write().context_window = ctx_window;
+    push_step(
+        &mut processing_state,
+        AgentStep {
+            id: String::new(),
+            kind: AgentStepKind::Thought,
+            label: format!(
+                "Context window: {ctx_window} tokens · per-turn budget: {ctx_target} tokens · \
+                 output cap: {agent_max_tokens} · model: {}",
+                settings.anthropic_model
+            ),
+            detail: String::new(),
+            status: AgentStepStatus::Done,
+        },
+    );
+
     // Escape hatch for a stuck validate loop: track how many consecutive turns
     // called validate_aem_package and returned the same output.
     let mut last_validate_output: Option<String> = None;
@@ -251,6 +271,11 @@ async fn drive_agent(
                     return;
                 }
             };
+
+        // Update the context-window fill indicator with this turn's real prompt size.
+        if turn.prompt_tokens > 0 {
+            processing_state.write().context_used_tokens = turn.prompt_tokens;
+        }
 
         if !turn.text.trim().is_empty() {
             push_step(

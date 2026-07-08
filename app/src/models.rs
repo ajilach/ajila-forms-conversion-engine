@@ -89,6 +89,15 @@ pub struct ProcessingState {
     /// next to "Finished" on the agent "done" screen.
     #[serde(default)]
     pub elapsed_secs: Option<u64>,
+    /// Latest real prompt-token count sent to the model this run (from the API's
+    /// reported usage), for the context-window fill indicator. 0 before the first
+    /// turn reports usage.
+    #[serde(default)]
+    pub context_used_tokens: usize,
+    /// The model's context window in tokens — the denominator of the fill
+    /// indicator. 0 until the agent run sets it.
+    #[serde(default)]
+    pub context_window: usize,
     /// The merged document envelope for the editor.
     /// This is the structured representation before JSON serialization.
     #[serde(skip)]
@@ -117,6 +126,8 @@ impl PartialEq for ProcessingState {
             && self.aem_uploaded == other.aem_uploaded
             && self.aem_form_path == other.aem_form_path
             && self.elapsed_secs == other.elapsed_secs
+            && self.context_used_tokens == other.context_used_tokens
+            && self.context_window == other.context_window
         // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
     }
 }

@@ -336,6 +336,25 @@ fn RunBox(
     let open = *timeline_open.read();
     let steps = &state.agent_steps;
     let latest = steps.last();
+
+    // Context-window fill indicator (shown next to the step count when expanded).
+    let ctx_window = state.context_window;
+    let ctx_used = state.context_used_tokens.min(ctx_window);
+    let ctx_pct = if ctx_window > 0 {
+        (ctx_used as f32 / ctx_window as f32 * 100.0).round() as u32
+    } else {
+        0
+    };
+    let ctx_fill = if ctx_pct >= 90 {
+        "var(--danger, #c2185b)"
+    } else if ctx_pct >= 75 {
+        "var(--warn, #dc9e26)"
+    } else {
+        "var(--accent)"
+    };
+    let ctx_ring_style =
+        format!("background: conic-gradient({ctx_fill} {}deg, var(--border) 0);", ctx_pct * 36 / 10);
+    let ctx_title = format!("Context window · {ctx_used} / {ctx_window} tokens ({ctx_pct}%)");
     let feedback_empty = feedback.read().trim().is_empty();
     // Lifecycle of the on-demand AEM upload, reported inside the button.
     let mut upload_state = use_signal(|| UploadState::Idle);
@@ -444,6 +463,12 @@ fn RunBox(
                     },
                     if open {
                         span { class: "ag-tl-title", "Activity · {steps.len()} steps" }
+                        if ctx_window > 0 {
+                            span { class: "ag-ctx", title: "{ctx_title}",
+                                span { class: "ag-ctx-ring", style: "{ctx_ring_style}" }
+                                span { class: "ag-ctx-pct", "{ctx_pct}%" }
+                            }
+                        }
                     } else {
                         // Collapsed: show only the latest step.
                         match latest {

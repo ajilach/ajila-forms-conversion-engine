@@ -148,9 +148,6 @@ pub async fn anthropic_chat_turn(
         );
     }
 
-    // Bound context growth on long repair threads before adding this turn.
-    evict_stale_history(history);
-
     let mut content: Vec<serde_json::Value> =
         vec![serde_json::json!({"type": "text", "text": user_text})];
 
@@ -178,6 +175,12 @@ pub async fn anthropic_chat_turn(
     }
 
     history.push(serde_json::json!({"role": "user", "content": content}));
+
+    // Bound the prompt to the model's context window — a no-op while under budget
+    // (so short repair threads keep full context) and escalating only when over.
+    // No tools/system on this path. Histories here are small, so this stays on the
+    // caller's thread rather than off-loading like the agent's streaming turn.
+    evict_to_fit(history, &[], None, prompt_token_target(model, max_tokens));
 
     // Streaming request — accumulate text deltas. Streaming avoids the
     // server timeout on long generations (e.g. whole-document AI processing).
@@ -267,8 +270,8 @@ const MAX_TOOL_ITERATIONS: usize = 16;
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-/// Default trailing messages kept verbatim by [`evict_stale_history`]. Even, so
-/// whole assistant+`tool_result` turn-pairs survive (the latest data stays
+/// Default trailing messages kept verbatim by [`evict_stale_history_with`]. Even,
+/// so whole assistant+`tool_result` turn-pairs survive (the latest data stays
 /// intact). Overridable at runtime via [`configure_eviction`].
 pub const DEFAULT_KEEP_RECENT_MESSAGES: usize = 4;
 /// Default: tool-result text longer than this (chars) is elided once stale.
@@ -361,24 +364,12 @@ fn tool_name_by_id(history: &[serde_json::Value]) -> std::collections::HashMap<S
 /// truth, not the transcript). Blocks are never removed, so the API's
 /// `tool_use`↔`tool_result` pairing stays intact.
 ///
-/// Protects `history[0]` (the instruction prefix) and the last
-/// [`DEFAULT_KEEP_RECENT_MESSAGES`] messages. Size-gated by [`EVICT_TRIGGER_BYTES`] and
-/// idempotent (already-stubbed blocks are skipped), so it cooperates with prompt
-/// caching instead of busting the cached prefix.
-fn evict_stale_history(history: &mut [serde_json::Value]) {
-    evict_stale_history_with(
-        history,
-        CFG_KEEP_RECENT.load(Ordering::Relaxed),
-        CFG_TEXT_OVER.load(Ordering::Relaxed),
-        CFG_INPUT_OVER.load(Ordering::Relaxed),
-        CFG_TRIGGER_BYTES.load(Ordering::Relaxed),
-    );
-}
-
-/// [`evict_stale_history`] with explicit tuning instead of the live config, so
-/// [`evict_to_fit`] can escalate to a tiny recent window and near-zero thresholds
-/// (with `trigger_bytes = 0` to run unconditionally) when a turn must be forced
-/// under the context window.
+/// Protects `history[0]` (the instruction prefix) and the last `keep_recent`
+/// messages. Size-gated by `trigger_bytes` and idempotent (already-stubbed blocks
+/// are skipped), so it cooperates with prompt caching instead of busting the
+/// cached prefix. [`evict_to_fit`] drives it with escalating tuning (a tiny recent
+/// window, near-zero thresholds, and `trigger_bytes = 0`) as a turn approaches the
+/// context window.
 fn evict_stale_history_with(
     history: &mut [serde_json::Value],
     keep_recent: usize,
@@ -421,13 +412,49 @@ fn evict_stale_history_with(
 /// limit even when the char-based estimate runs low.
 const CONTEXT_SAFETY_MARGIN: usize = 48_000;
 
-/// The model's maximum context window in tokens. The 1M-context beta variants
-/// carry a `[1m]` (or `-1m`) marker; every other current Claude model is 200K.
-fn context_window_for(model: &str) -> usize {
-    if model.contains("[1m]") || model.contains("-1m") {
-        1_000_000
-    } else {
-        200_000
+/// Context window learned from the API (parsed from a `prompt is too long: …
+/// > N maximum` error). `0` means "not learned yet — use the heuristic". This is
+/// authoritative once set, so a wrong heuristic guess self-corrects after at most
+/// one overflow. See [`learn_context_window_from_error`].
+static CFG_CONTEXT_WINDOW: AtomicUsize = AtomicUsize::new(0);
+
+/// The model's maximum context window in tokens.
+///
+/// Prefer the value learned from the API; otherwise fall back to a heuristic that
+/// is **optimistic** — modern large-context families default to 1M. Guessing high
+/// is the safe direction: too-high costs at most one `400` (caught and learned
+/// from by [`anthropic_stream_turn`]), whereas too-low silently shrinks the budget
+/// and makes the agent evict its own context every turn (an amnesia loop). Only
+/// known-small models (Haiku, pre-4 families) default to 200K.
+pub fn context_window_for(model: &str) -> usize {
+    let learned = CFG_CONTEXT_WINDOW.load(Ordering::Relaxed);
+    if learned > 0 {
+        return learned;
+    }
+    let m = model.to_ascii_lowercase();
+    let large = m.contains("[1m]")
+        || m.contains("-1m")
+        || m.contains("opus-4")
+        || m.contains("sonnet-4")
+        || m.contains("sonnet-5")
+        || m.contains("fable-5");
+    if large { 1_000_000 } else { 200_000 }
+}
+
+/// Learn the real context window from a `prompt is too long: X tokens > N maximum`
+/// error, clamping the stored window to the smallest maximum the API has reported.
+fn learn_context_window_from_error(msg: &str) {
+    let Some(n) = msg
+        .split('>')
+        .nth(1)
+        .and_then(|tail| tail.split_whitespace().next())
+        .and_then(|tok| tok.parse::<usize>().ok())
+    else {
+        return;
+    };
+    let prev = CFG_CONTEXT_WINDOW.load(Ordering::Relaxed);
+    if prev == 0 || n < prev {
+        CFG_CONTEXT_WINDOW.store(n, Ordering::Relaxed);
     }
 }
 
@@ -542,17 +569,18 @@ fn assembled_prompt_estimate(
 
 /// The estimated-token budget for the assembled prompt (messages + tools +
 /// system), leaving room for the reply and estimation slack.
-fn prompt_token_target(model: &str, max_tokens: u32) -> usize {
+pub fn prompt_token_target(model: &str, max_tokens: u32) -> usize {
     context_window_for(model).saturating_sub(max_tokens as usize + CONTEXT_SAFETY_MARGIN)
 }
 
 /// Shrink `history` in place until the assembled prompt (messages + `tools` +
-/// `system`) is estimated to fit under `target` input tokens. Escalates in four
-/// stages, reusing the stubbing pass, and only ever engages when a turn would
-/// otherwise overflow — so short runs are untouched:
-///   1. Normal stubbing ([`evict_stale_history`]).
-///   2. Aggressive stubbing — tiny thresholds and a minimal recent window, run
-///      unconditionally — so even recent / smaller heavy blocks are stubbed.
+/// `system`) is estimated to fit under `target` input tokens. Does **nothing**
+/// while the prompt is under budget — so with a 1M-token window, context is kept
+/// intact right up to the limit; nothing is stubbed prematurely. Only once over
+/// budget does it escalate through four stages, reusing the stubbing pass:
+///   1. Normal-tuned stubbing (large stale blocks; keeps the recent window).
+///   2. Aggressive stubbing — tiny thresholds and a minimal recent window — so
+///      even recent / smaller heavy blocks are stubbed.
 ///   3. Sliding window — drop the oldest `(assistant, user)` turn-pairs, the only
 ///      lever that removes rather than shrinks, keeping `history[0]` and the most
 ///      recent pair, until it fits or nothing more is safe to drop.
@@ -568,14 +596,29 @@ fn evict_to_fit(
         calibrated_tokens(assembled_prompt_estimate(h, tools, system)) <= target
     };
 
-    // Stage 1: normal stubbing.
-    evict_stale_history(history);
+    // Under budget → keep the full transcript verbatim. This is the common case
+    // and MUST not touch anything: stubbing while there is ample token headroom
+    // (the old byte-gated behaviour) makes the agent re-fetch context it still
+    // had room for. All stages below force-run (`trigger_bytes = 0`) because we
+    // only reach them once genuinely over budget.
     if fits(history) {
         return;
     }
 
-    // Stage 2: aggressive stubbing (ignore the size gate; keep only the last
-    // pair verbatim; stub any text/input over ~200 chars).
+    // Stage 1: normal-tuned stubbing (stale big blocks; keep the recent window).
+    evict_stale_history_with(
+        history,
+        CFG_KEEP_RECENT.load(Ordering::Relaxed),
+        CFG_TEXT_OVER.load(Ordering::Relaxed),
+        CFG_INPUT_OVER.load(Ordering::Relaxed),
+        0,
+    );
+    if fits(history) {
+        return;
+    }
+
+    // Stage 2: aggressive stubbing (keep only the last pair verbatim; stub any
+    // text/input over ~200 chars).
     evict_stale_history_with(history, 2, 200, 200, 0);
     if fits(history) {
         return;
@@ -732,6 +775,10 @@ pub struct TurnOutput {
     pub tool_calls: Vec<ToolCall>,
     /// The turn's `stop_reason` (`"tool_use"` when tools were requested).
     pub stop_reason: Option<String>,
+    /// Real prompt-token count the API billed for this turn's request (uncached
+    /// input + both cache buckets) — i.e. how full the context window was. 0 if
+    /// the API didn't report usage.
+    pub prompt_tokens: usize,
 }
 
 /// Run an agentic (tool-enabled) conversation turn against the Anthropic
@@ -913,7 +960,11 @@ pub async fn anthropic_stream_turn(
             .unwrap_or(body);
 
         if status.as_u16() == 400 && msg.contains("prompt is too long") && target > MIN_TARGET {
-            target = (target / 2).max(MIN_TARGET);
+            // Record the real window so future turns (and this retry) size to it,
+            // then re-derive the target and shrink further before retrying.
+            learn_context_window_from_error(&msg);
+            let learned_target = prompt_token_target(model, max_tokens);
+            target = learned_target.min(target / 2).max(MIN_TARGET);
             continue;
         }
         return Err(format!("Anthropic API error ({status}): {msg}"));
@@ -1035,6 +1086,7 @@ pub async fn anthropic_stream_turn(
         text: response_text,
         tool_calls,
         stop_reason,
+        prompt_tokens,
     })
 }
 
@@ -1184,6 +1236,19 @@ mod tests {
             .as_str()
             .unwrap_or("")
             .to_string()
+    }
+
+    /// The stubbing pass with the shipped defaults — exercises the exact tuning
+    /// the live config resets to. (Production drives [`evict_stale_history_with`]
+    /// via [`evict_to_fit`].)
+    fn evict_stale_history(history: &mut [serde_json::Value]) {
+        evict_stale_history_with(
+            history,
+            DEFAULT_KEEP_RECENT_MESSAGES,
+            DEFAULT_ELIDE_TEXT_OVER_CHARS,
+            DEFAULT_ELIDE_INPUT_OVER_CHARS,
+            DEFAULT_EVICT_TRIGGER_BYTES,
+        );
     }
 
     #[test]
@@ -1343,10 +1408,45 @@ mod tests {
     }
 
     #[test]
-    fn context_window_maps_1m_variant() {
+    fn context_window_heuristic_and_learning() {
+        // Isolate the shared learned-window state.
+        let saved = CFG_CONTEXT_WINDOW.load(Ordering::Relaxed);
+        CFG_CONTEXT_WINDOW.store(0, Ordering::Relaxed);
+
+        // Optimistic heuristic: modern large-context families → 1M (even without a
+        // literal `[1m]` in the id, which real API model strings lack); Haiku/older
+        // → 200K.
         assert_eq!(context_window_for("claude-opus-4-8[1m]"), 1_000_000);
-        assert_eq!(context_window_for("claude-opus-4-8"), 200_000);
-        assert_eq!(context_window_for("claude-sonnet-5"), 200_000);
+        assert_eq!(context_window_for("claude-opus-4-8"), 1_000_000);
+        assert_eq!(context_window_for("claude-sonnet-5"), 1_000_000);
+        assert_eq!(context_window_for("claude-haiku-4-5-20251001"), 200_000);
+
+        // A 400 teaches the real maximum; it's authoritative and only ratchets down.
+        learn_context_window_from_error("prompt is too long: 1316205 tokens > 250000 maximum");
+        assert_eq!(context_window_for("claude-opus-4-8"), 250_000);
+        learn_context_window_from_error("prompt is too long: 900000 tokens > 500000 maximum");
+        assert_eq!(context_window_for("claude-opus-4-8"), 250_000);
+
+        CFG_CONTEXT_WINDOW.store(saved, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn evict_to_fit_keeps_everything_under_token_budget() {
+        // ~250KB of history — well over the legacy 200KB byte gate — but far under
+        // a 1M-window token budget. Nothing may be stubbed or dropped. Regression
+        // guard against premature eviction that made the agent re-fetch its own
+        // context and loop on re-inspection.
+        let big = "x".repeat(250_000); // ~62K estimated tokens
+        let original = vec![
+            user_text("KICK"),
+            assistant_tool_use("t1", "get_xfa", json!({})),
+            result_text("t1", &big),
+            assistant_tool_use("t2", "list_states", json!({})),
+            result_text("t2", "small recent result"),
+        ];
+        let mut h = original.clone();
+        evict_to_fit(&mut h, &[], None, 800_000);
+        assert_eq!(h, original, "must not evict while under the token budget");
     }
 
     #[test]
