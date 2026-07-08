@@ -376,7 +376,7 @@
             </view>
             <assets jcr:primaryType="nt:unstructured">
                 <dictionary jcr:primaryType="nt:unstructured">
-                    {% set langs = expanded_languages | split(pat=",") %}{% for lang in langs %}<{{ lang }}/>
+                    {% set langs = expanded_languages | split(pat=",") %}{% for lang in langs %}<{{ lang }} jcr:primaryType="nt:unstructured"/>
                     {% endfor %}
                 </dictionary>
             </assets>

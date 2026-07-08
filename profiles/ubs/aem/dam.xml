@@ -13,7 +13,7 @@
         guide="1"
         type="guide">
         <dictionary jcr:primaryType="nt:unstructured">
-            {% set langs = expanded_languages | split(pat=",") %}{% for lang in langs %}<{{ lang }}/>
+            {% set langs = expanded_languages | split(pat=",") %}{% for lang in langs %}<{{ lang }} jcr:primaryType="nt:unstructured"/>
             {% endfor %}
         </dictionary>
         <metadata
