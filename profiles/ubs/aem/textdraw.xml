@@ -12,9 +12,10 @@
     {% if dor_exclude %}dorExclusion="true"{% endif %}
     guideNodeClass="guideTextDraw"
     name="{{ name }}"
-    textIsRich="true">
-    <fd:rules jcr:primaryType="nt:unstructured"/>
+    textIsRich="true"{{ extra_attributes }}>
+    {% if not has_passthrough_rules %}<fd:rules jcr:primaryType="nt:unstructured"/>{% endif %}
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>
+    {{ raw_children }}
 </{{ element_name }}>

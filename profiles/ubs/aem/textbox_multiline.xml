@@ -15,8 +15,9 @@
     name="{{ name }}"
     {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
     {% if not visible %}visible="{Boolean}false"
-    dorExclusion="true"{% endif %}>
+    dorExclusion="true"{% endif %}{{ extra_attributes }}>
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>
+    {{ raw_children }}
 </{{ element_name }}>

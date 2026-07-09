@@ -22,8 +22,9 @@
     {% if not visible %}visible="{Boolean}false"
     dorExclusion="true"{% endif %}
     yearRangeFrom="100"
-    yearRangeTo="10">
+    yearRangeTo="10"{{ extra_attributes }}>
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>
+    {{ raw_children }}
 </{{ element_name }}>

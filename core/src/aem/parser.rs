@@ -15,7 +15,7 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use uuid::Uuid;
 
-use super::{AemNode, AemOption, OptionAlignment};
+use super::{AemNode, AemOption, OptionAlignment, Passthrough};
 
 // ============================================================================
 // Public types
@@ -69,6 +69,11 @@ pub struct ParsedAemPackage {
     pub form_title: String,
     /// Visibility conditions: panel name → condition that shows it.
     pub visibility_conditions: HashMap<String, VisibilityCondition>,
+    /// Per-node fidelity passthrough (raw attrs + unmodeled children), keyed by
+    /// the node uuid. Consumed by `aem_to_translated` to populate each
+    /// `AemNodeTranslated` node's `passthrough`, so a load→save round-trip keeps
+    /// every attribute the typed model doesn't represent. See [`Passthrough`].
+    pub raw_by_uuid: HashMap<Uuid, Passthrough>,
 }
 
 // ============================================================================
@@ -175,6 +180,7 @@ pub fn parse_aem_zip(bytes: &[u8]) -> Result<ParsedAemPackage, String> {
         language,
         form_title,
         visibility_conditions: parse_ctx.visibility_conditions,
+        raw_by_uuid: parse_ctx.raw_by_uuid,
     })
 }
 
@@ -260,6 +266,8 @@ struct ParseContext<'a> {
     option_labels: HashMap<String, HashMap<String, String>>,
     /// Fragment library paths whose dictionaries have already been loaded.
     loaded_library_dicts: std::collections::HashSet<String>,
+    /// Per-node fidelity passthrough keyed by node uuid (see [`Passthrough`]).
+    raw_by_uuid: HashMap<Uuid, Passthrough>,
 }
 
 impl<'a> ParseContext<'a> {
@@ -273,7 +281,40 @@ impl<'a> ParseContext<'a> {
             visibility_conditions: HashMap::new(),
             option_labels: HashMap::new(),
             loaded_library_dicts: std::collections::HashSet::new(),
+            raw_by_uuid: HashMap::new(),
         }
+    }
+
+    /// Record the fidelity passthrough for a converted node, keyed by its uuid:
+    /// every attribute NOT in `consumed` (the names the converter reads into
+    /// typed fields) plus every child element NOT in `skip_children` (which the
+    /// writer regenerates). See [`Passthrough`].
+    fn record_passthrough(
+        &mut self,
+        uuid: Uuid,
+        node: &JcrNode,
+        consumed: &[&str],
+        skip_children: &[&str],
+    ) {
+        let raw_attributes = node
+            .attributes
+            .iter()
+            .filter(|(k, _)| !consumed.contains(&k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let raw_children = node
+            .children
+            .iter()
+            .filter(|c| !skip_children.contains(&c.tag_name.as_str()))
+            .map(serialize_jcr_node)
+            .collect();
+        self.raw_by_uuid.insert(
+            uuid,
+            Passthrough {
+                raw_attributes,
+                raw_children,
+            },
+        );
     }
 
     fn next_uuid(&mut self, seed: &str) -> Uuid {
@@ -386,6 +427,52 @@ impl JcrNode {
     fn component_name(&self) -> Option<&str> {
         self.attr("name")
     }
+}
+
+/// Child element tags the writer regenerates from typed fields, so they are
+/// excluded from a node's `raw_children` passthrough (else they'd be emitted
+/// twice): the fields' own `items`, the grid `layout`, and `cq:responsive`
+/// (reproduced from `colspan`).
+const REGENERATED_CHILD_TAGS: &[&str] = &["items", "layout", "cq:responsive"];
+
+/// Re-serialize a [`JcrNode`] subtree to XML (the inverse of [`parse_jcr_xml`]).
+/// Attribute values are re-escaped (they were XML-decoded on parse); empty vs
+/// start/end element form is preserved. AEM `.content.xml` carries no element
+/// text, so only attributes + children are emitted.
+fn serialize_jcr_node(node: &JcrNode) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = write!(s, "<{}", node.tag_name);
+    for (k, v) in &node.attributes {
+        let _ = write!(s, " {}=\"{}\"", k, quick_xml::escape::escape(v));
+    }
+    if node.children.is_empty() {
+        s.push_str("/>");
+    } else {
+        s.push('>');
+        for c in &node.children {
+            s.push_str(&serialize_jcr_node(c));
+        }
+        let _ = write!(s, "</{}>", node.tag_name);
+    }
+    s
+}
+
+/// Adaptive-form column span, read from the node's `cq:responsive/default@width`
+/// (the AEM 12-column grid), defaulting to full width (12).
+fn parse_colspan(node: &JcrNode) -> u32 {
+    node.children
+        .iter()
+        .find(|c| c.tag_name == "cq:responsive")
+        .and_then(|r| r.children.iter().find(|c| c.tag_name == "default"))
+        .and_then(|d| d.attr("width"))
+        .and_then(|w| w.parse().ok())
+        .unwrap_or(12)
+}
+
+/// Document-of-Record column span (`@dorColspan`), if set.
+fn parse_dor_colspan(node: &JcrNode) -> Option<u32> {
+    node.attr("dorColspan").and_then(|v| v.parse().ok())
 }
 
 /// Parse JCR XML into a tree of JcrNode.
@@ -561,6 +648,12 @@ fn convert_textbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     let visible = parse_visible(node);
     let mandatory = parse_bool_attr(node, "mandatory");
     let max_chars = node.attr("maxChars").and_then(|v| v.parse::<usize>().ok());
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "jcr:title", "mandatory", "maxChars", "bindRef", "visible", "dorColspan"],
+        REGENERATED_CHILD_TAGS,
+    );
 
     AemNode::TextField {
         uuid,
@@ -569,8 +662,8 @@ fn convert_textbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         mandatory,
         visible,
         max_chars,
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
     }
 }
@@ -579,6 +672,12 @@ fn convert_numberfield(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     let name = node.component_name().unwrap_or("numericbox").to_string();
     let label = node.attr("jcr:title").unwrap_or("").to_string();
     let uuid = ctx.next_uuid(&name);
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "jcr:title", "mandatory", "bindRef", "visible", "dorColspan"],
+        REGENERATED_CHILD_TAGS,
+    );
 
     AemNode::NumberField {
         uuid,
@@ -586,8 +685,8 @@ fn convert_numberfield(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         label,
         mandatory: parse_bool_attr(node, "mandatory"),
         visible: parse_visible(node),
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
     }
 }
@@ -596,6 +695,12 @@ fn convert_datepicker(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     let name = node.component_name().unwrap_or("datepicker").to_string();
     let label = node.attr("jcr:title").unwrap_or("").to_string();
     let uuid = ctx.next_uuid(&name);
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "jcr:title", "mandatory", "bindRef", "visible", "dorColspan"],
+        REGENERATED_CHILD_TAGS,
+    );
 
     AemNode::DatePicker {
         uuid,
@@ -603,8 +708,8 @@ fn convert_datepicker(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         label,
         mandatory: parse_bool_attr(node, "mandatory"),
         visible: parse_visible(node),
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
     }
 }
@@ -629,6 +734,14 @@ fn convert_radiobutton(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         ctx.option_labels.insert(name.clone(), label_map);
     }
 
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "jcr:title", "optionLayout", "mandatory", "bindRef", "visible",
+          "dorColspan", "enum", "enumNames", "options"],
+        REGENERATED_CHILD_TAGS,
+    );
+
     AemNode::RadioButton {
         uuid,
         name,
@@ -637,8 +750,8 @@ fn convert_radiobutton(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         alignment,
         mandatory: parse_bool_attr(node, "mandatory"),
         visible: parse_visible(node),
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
         field_id: None,
         conditions: Vec::new(),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
@@ -656,6 +769,14 @@ fn convert_checkbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         OptionAlignment::Vertical
     };
 
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "jcr:title", "optionLayout", "bindRef", "visible",
+          "dorColspan", "enum", "enumNames", "options"],
+        REGENERATED_CHILD_TAGS,
+    );
+
     AemNode::Checkbox {
         uuid,
         name,
@@ -663,8 +784,8 @@ fn convert_checkbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         options,
         alignment,
         visible: parse_visible(node),
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
         field_id: None,
         conditions: Vec::new(),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
@@ -686,6 +807,14 @@ fn convert_dropdown(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         ctx.option_labels.insert(name.clone(), label_map);
     }
 
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "jcr:title", "mandatory", "bindRef", "visible",
+          "dorColspan", "enum", "enumNames", "options"],
+        REGENERATED_CHILD_TAGS,
+    );
+
     AemNode::Dropdown {
         uuid,
         name,
@@ -693,8 +822,8 @@ fn convert_dropdown(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         options,
         mandatory: parse_bool_attr(node, "mandatory"),
         visible: parse_visible(node),
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
         field_id: None,
         conditions: Vec::new(),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
@@ -712,13 +841,20 @@ fn convert_textdraw(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         .unwrap_or("")
         .to_string();
 
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "_value", "messageboxBody", "dorExclusion", "dorColspan"],
+        REGENERATED_CHILD_TAGS,
+    );
+
     AemNode::TextDraw {
         uuid,
         name,
         content,
         dor_exclude: parse_bool_attr(node, "dorExclusion"),
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
     }
 }
 
@@ -731,13 +867,20 @@ fn convert_titledraw(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
 
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["name", "_value", "headingLevel", "dorColspan"],
+        REGENERATED_CHILD_TAGS,
+    );
+
     AemNode::TitleDraw {
         uuid,
         name,
         content,
         heading_level,
-        colspan: 12,
-        dor_colspan: None,
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
     }
 }
 
@@ -748,6 +891,16 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
     let visible = parse_visible(node);
     let dor_exclude =
         parse_bool_attr(node, "dorExclusion") || parse_bool_attr(node, "dorExcludeTitle");
+    ctx.record_passthrough(
+        uuid,
+        node,
+        // NB: `dorExclusion` is intentionally NOT consumed here — the panel /
+        // conditional templates never re-emit it on the node's own tag, so it
+        // must flow through `Passthrough` to survive a round-trip.
+        &["name", "jcr:title", "visible", "dorExcludeTitle", "minOccur",
+          "maxOccur", "bindRef", "dorColspan", "fragRef"],
+        REGENERATED_CHILD_TAGS,
+    );
 
     // Check for repeatable
     let min_occur = node
@@ -820,8 +973,8 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
             visible,
             is_conditional: !visible, // Initially hidden panels may be conditional
             dor_num_cols,
-            colspan: 12,
-            dor_colspan: None,
+            colspan: parse_colspan(node),
+            dor_colspan: parse_dor_colspan(node),
             bind_ref: node.attr("bindRef").map(|s| s.to_string()),
         }))
     }
@@ -831,6 +984,12 @@ fn convert_fragment(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<Aem
     let frag_ref = node.attr("fragRef").unwrap_or("").to_string();
     let name = node.component_name().unwrap_or(&node.tag_name).to_string();
     let uuid = ctx.next_uuid(&name);
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &["fragRef", "name", "jcr:title", "visible", "bindRef", "dorColspan"],
+        REGENERATED_CHILD_TAGS,
+    );
 
     // Cycle detection
     if ctx.fragment_stack.contains(&frag_ref) {
@@ -872,8 +1031,8 @@ fn convert_fragment(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<Aem
                 visible: parse_visible(node),
                 is_conditional: false,
                 dor_num_cols: None,
-                colspan: 12,
-                dor_colspan: None,
+                colspan: parse_colspan(node),
+                dor_colspan: parse_dor_colspan(node),
                 bind_ref: node.attr("bindRef").map(|s| s.to_string()),
             }))
         };

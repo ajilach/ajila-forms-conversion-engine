@@ -7,10 +7,20 @@
 
 use std::collections::HashMap;
 
-use super::{AemConfig, AemNode, AemOption, OptionAlignment};
+use uuid::Uuid;
+
+use super::{AemConfig, AemNode, AemOption, OptionAlignment, Passthrough};
 use crate::aem::template;
 use crate::structured::InputValue;
 use crate::util::escape_html as xml_escape;
+
+/// No fidelity passthrough (the engine / from-XFA path): every node renders
+/// purely from its template, exactly as before.
+fn no_passthrough() -> &'static HashMap<Uuid, Passthrough> {
+    use std::sync::OnceLock;
+    static EMPTY: OnceLock<HashMap<Uuid, Passthrough>> = OnceLock::new();
+    EMPTY.get_or_init(HashMap::new)
+}
 
 // ============================================================================
 // Public API
@@ -23,10 +33,23 @@ use crate::util::escape_html as xml_escape;
 /// `config.component_templates`. Attributes are post-processed to appear
 /// one per line (matching AEM's export style).
 pub fn generate_aem_xml(root: &AemNode, config: &AemConfig) -> String {
+    generate_aem_xml_with_passthrough(root, config, no_passthrough())
+}
+
+/// Like [`generate_aem_xml`], but re-emits each node's captured fidelity
+/// [`Passthrough`] (raw attributes + unmodeled child elements), keyed by node
+/// uuid. Used when saving a working tree that was loaded from an existing
+/// package, so a load→save round-trip preserves attributes/children the typed
+/// model does not represent. Pass an empty map for the from-XFA engine path.
+pub fn generate_aem_xml_with_passthrough(
+    root: &AemNode,
+    config: &AemConfig,
+    pass: &HashMap<Uuid, Passthrough>,
+) -> String {
     // Invert the trigger-field condition rules into a per-panel map so each
     // conditional panel can carry its own AABO-style `fd:visible` SHOW_EXPRESSION.
     let vis = collect_panel_visibility(root);
-    let rendered = render_node(root, config, &vis);
+    let rendered = render_node(root, config, &vis, pass);
     reformat_attributes(&rendered)
 }
 
@@ -89,7 +112,12 @@ fn collect_panel_visibility_rec(node: &AemNode, map: &mut PanelVisibilityMap) {
 ///
 /// If no template exists for the node type, an empty string is returned
 /// (the component is omitted from the output).
-fn render_node(node: &AemNode, config: &AemConfig, vis: &PanelVisibilityMap) -> String {
+fn render_node(
+    node: &AemNode,
+    config: &AemConfig,
+    vis: &PanelVisibilityMap,
+    pass: &HashMap<Uuid, Passthrough>,
+) -> String {
     // Custom nodes use a separate template lookup.
     if let AemNode::Custom { template_key, .. } = node {
         let template = match config.custom_templates.get(template_key) {
@@ -102,7 +130,8 @@ fn render_node(node: &AemNode, config: &AemConfig, vis: &PanelVisibilityMap) -> 
                 return String::new();
             }
         };
-        let ctx = build_node_context(node, config, vis);
+        let mut ctx = build_node_context(node, config, vis, pass);
+        insert_passthrough(&mut ctx, node, pass, template);
         return match template::render_string(template, &ctx) {
             Ok(rendered) => rendered,
             Err(e) => {
@@ -140,7 +169,8 @@ fn render_node(node: &AemNode, config: &AemConfig, vis: &PanelVisibilityMap) -> 
         None => return String::new(),
     };
 
-    let ctx = build_node_context(node, config, vis);
+    let mut ctx = build_node_context(node, config, vis, pass);
+    insert_passthrough(&mut ctx, node, pass, template);
     match template::render_string(template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
@@ -150,11 +180,120 @@ fn render_node(node: &AemNode, config: &AemConfig, vis: &PanelVisibilityMap) -> 
     }
 }
 
+/// Collect the attribute names a template writes itself, by scanning its text
+/// for `name="` tokens (both hard-coded attributes and Tera-guarded ones like
+/// `{% if x %}foo="…"`). A loaded node's [`Passthrough`] must NOT re-emit any of
+/// these — the template already writes them — or the element would have a
+/// duplicate attribute (invalid XML). Everything else the template does not own
+/// flows through `extra_attributes`.
+///
+/// Deriving the set from the template text (rather than a hand-maintained global
+/// list) keeps it precise per template: an attribute one template owns (e.g.
+/// `dorExclusion` on a field) is not wrongly suppressed on another template that
+/// never writes it (e.g. a panel), so that attribute survives via passthrough.
+///
+/// (Preserving a template-owned value *exactly* when it differs from the
+/// template's own output is a separate override step; for engine-origin packages
+/// they already match.)
+fn template_owned_attrs(template: &str) -> std::collections::HashSet<&str> {
+    let bytes = template.as_bytes();
+    let mut set = std::collections::HashSet::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        // An attribute is written as `name="`; find each `="` and walk left over
+        // the identifier characters to recover the name.
+        if bytes[i] == b'=' && i + 1 < bytes.len() && bytes[i + 1] == b'"' {
+            let mut start = i;
+            while start > 0 {
+                let c = bytes[start - 1];
+                if c.is_ascii_alphanumeric() || matches!(c, b'_' | b':' | b'.' | b'-') {
+                    start -= 1;
+                } else {
+                    break;
+                }
+            }
+            if start < i {
+                set.insert(&template[start..i]);
+            }
+        }
+        i += 1;
+    }
+    set
+}
+
+/// The node's uuid (for looking up its [`Passthrough`]); `Root` has none.
+fn node_uuid(node: &AemNode) -> Option<Uuid> {
+    match node {
+        AemNode::Root { .. } => None,
+        AemNode::Panel { uuid, .. }
+        | AemNode::TextField { uuid, .. }
+        | AemNode::NumberField { uuid, .. }
+        | AemNode::DatePicker { uuid, .. }
+        | AemNode::Dropdown { uuid, .. }
+        | AemNode::Checkbox { uuid, .. }
+        | AemNode::RadioButton { uuid, .. }
+        | AemNode::TextDraw { uuid, .. }
+        | AemNode::TitleDraw { uuid, .. }
+        | AemNode::Repeatable { uuid, .. }
+        | AemNode::Fragment { uuid, .. }
+        | AemNode::Preface { uuid, .. }
+        | AemNode::Appendix { uuid, .. }
+        | AemNode::FootnotePlaceholder { uuid, .. }
+        | AemNode::Custom { uuid, .. } => Some(*uuid),
+    }
+}
+
+/// Insert the node's captured fidelity passthrough into its render context as two
+/// pre-escaped strings the templates emit verbatim: `extra_attributes` (raw
+/// attributes the typed model + template don't own) and `raw_children` (unmodeled
+/// child XML). Empty when the node carries no passthrough (engine-built nodes).
+fn insert_passthrough(
+    ctx: &mut tera::Context,
+    node: &AemNode,
+    pass: &HashMap<Uuid, Passthrough>,
+    template: &str,
+) {
+    let pt = node_uuid(node).and_then(|u| pass.get(&u));
+    let (extra, children) = match pt {
+        Some(p) => {
+            // Only the node's OWN opening tag owns attributes; nested child
+            // elements in the template (e.g. a panel's `panel_title`) must not
+            // count. `{{ extra_attributes }}` was inserted immediately before the
+            // opening tag's closing `>`, so it bounds the own-tag region.
+            let head = template
+                .split("{{ extra_attributes }}")
+                .next()
+                .unwrap_or(template);
+            let owned = template_owned_attrs(head);
+            let extra: String = p
+                .raw_attributes
+                .iter()
+                .filter(|(k, _)| !owned.contains(k.as_str()))
+                .map(|(k, v)| format!(" {}=\"{}\"", k, xml_escape(v)))
+                .collect();
+            (extra, p.raw_children.join("\n"))
+        }
+        None => (String::new(), String::new()),
+    };
+    // Templates that hard-code an empty `<fd:rules/>` must suppress it when the
+    // node's passthrough already carries an `fd:rules` element — otherwise every
+    // save would append another empty one (unbounded growth) and the real rules
+    // would be duplicated.
+    ctx.insert("has_passthrough_rules", &children.contains("<fd:rules"));
+    ctx.insert("extra_attributes", &extra);
+    ctx.insert("raw_children", &children);
+}
+
 /// Render all children of a node and concatenate the results.
-fn render_children(children: &[AemNode], config: &AemConfig, vis: &PanelVisibilityMap) -> String {
+fn render_children(
+    children: &[AemNode],
+    config: &AemConfig,
+    vis: &PanelVisibilityMap,
+    pass: &HashMap<Uuid, Passthrough>,
+) -> String {
     children
         .iter()
-        .map(|c| render_node(c, config, vis))
+        .map(|c| render_node(c, config, vis, pass))
         .collect()
 }
 
@@ -168,6 +307,7 @@ fn build_node_context(
     node: &AemNode,
     config: &AemConfig,
     vis: &PanelVisibilityMap,
+    pass: &HashMap<Uuid, Passthrough>,
 ) -> tera::Context {
     let mut ctx = tera::Context::new();
 
@@ -186,7 +326,7 @@ fn build_node_context(
         AemNode::Root { title, children } => {
             ctx.insert("title", &xml_escape(title));
             ctx.insert("form_code", &config.form_code);
-            ctx.insert("children", &render_children(children, config, vis));
+            ctx.insert("children", &render_children(children, config, vis, pass));
         }
 
         AemNode::Panel {
@@ -213,7 +353,7 @@ fn build_node_context(
             ctx.insert("dor_num_cols", dor_num_cols);
             ctx.insert("dor_colspan", dor_colspan);
             ctx.insert("bind_ref", bind_ref);
-            ctx.insert("children", &render_children(children, config, vis));
+            ctx.insert("children", &render_children(children, config, vis, pass));
 
             // Conditional panels carry an AABO-style `fd:visible` SHOW_EXPRESSION
             // that toggles both form visibility and DOR inclusion via the UBS
@@ -447,7 +587,7 @@ fn build_node_context(
             ctx.insert("title", &xml_escape(title));
             ctx.insert("min_occur", min_occur);
             ctx.insert("max_occur", max_occur);
-            ctx.insert("children", &render_children(children, config, vis));
+            ctx.insert("children", &render_children(children, config, vis, pass));
             ctx.insert("bind_ref", bind_ref);
 
             let panel_name = format!("RCP_{}", name);
@@ -1521,7 +1661,7 @@ mod tests {
                 name: "PRF_Preface_abcdef01".into(),
             };
 
-            let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+            let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
             assert!(
                 xml.contains(&format!("fragRef=\"{}\"", expected_frag_ref)),
@@ -1563,7 +1703,7 @@ mod tests {
             uuid: fixed_uuid(),
             name: "PRF_Preface_abcdef01".into(),
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
         // The wrapper panel exists and carries both exclusions.
         assert!(
@@ -1629,7 +1769,7 @@ mod tests {
             dor_colspan: None,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
         // The parent FormConfigurator panel element (up to the first `>`) must
         // NOT carry dorExclusion; it keeps only dorExcludeTitle/Description.
@@ -1693,7 +1833,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
         assert!(
             xml.contains("BT_Add.visible = true"),
@@ -1738,7 +1878,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
         let expected_remove_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
@@ -1792,7 +1932,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
         let expected_add_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
@@ -1846,7 +1986,7 @@ mod tests {
             max_occur: 5,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new());
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
         let expected_add_init = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",

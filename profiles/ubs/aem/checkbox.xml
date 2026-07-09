@@ -18,9 +18,10 @@
     richTextOptions="true"
     textIsRich="{{ text_is_rich }}"
     {% if not visible %}visible="{Boolean}false"
-    dorExclusion="true"{% endif %}>
+    dorExclusion="true"{% endif %}{{ extra_attributes }}>
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>
     {% if conditions_script %}<fd:scripts fd:valueCommit="{{ conditions_script }}" jcr:primaryType="nt:unstructured"/>{% endif %}
+    {{ raw_children }}
 </{{ element_name }}>

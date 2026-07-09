@@ -39,8 +39,8 @@ pub use converter::convert_to_aem;
 pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
 pub use package_writer::{
     aem_translations_from_content, collect_languages, generate_aem_package,
-    generate_aem_package_from_node, generate_aem_package_from_node_with_translations,
-    generate_aem_package_from_node_with_xml,
+    generate_aem_package_from_node, generate_aem_package_from_node_with_passthrough,
+    generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
 };
 pub use parser::{
     AemScript, ParsedAemPackage, TranslationData, VisibilityCondition, detect_aem_zip,
@@ -58,10 +58,10 @@ pub use xml_edit::{
 pub use xml_validation::{
     validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
 };
-pub use xml_writer::generate_aem_xml;
+pub use xml_writer::{generate_aem_xml, generate_aem_xml_with_passthrough};
 
 use regex_lite::Regex;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
 use crate::structured::{FieldId, InputValue};
@@ -456,6 +456,39 @@ pub struct ConditionRule {
     pub value: InputValue,
     /// `true` → show panel when matched; `false` → hide.
     pub show: bool,
+}
+
+/// Fidelity passthrough for a node loaded from an existing AEM package: the raw
+/// attributes and child elements the typed model does NOT represent, captured on
+/// load so a load→edit→save round-trip preserves them. Empty for engine-built
+/// (from-XFA) nodes, so their output is unchanged.
+///
+/// Lives on [`AemNodeTranslated`](crate::aem::translated::AemNodeTranslated) (the
+/// persisted, editable working tree) and is carried to the writer via a
+/// uuid-keyed side-map at build time. Values are XML-decoded strings (as
+/// `parse_jcr_xml` stores them), preserving JCR type prefixes/arrays verbatim
+/// (`{Boolean}false`, `[true,true,true]`); they are re-escaped on write.
+#[derive(
+    Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+pub struct Passthrough {
+    /// Raw attributes not owned by the node's typed fields (attribute name → raw
+    /// value). Keyed/ordered for stable output.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub raw_attributes: BTreeMap<String, String>,
+    /// Verbatim XML of child elements the converter does not model (e.g.
+    /// `fd:rules`, non-condition `fd:scripts`). Excludes `items`/`layout`/
+    /// `cq:responsive`, which the writer regenerates from typed fields.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_children: Vec<String>,
+}
+
+impl Passthrough {
+    /// `true` when there is nothing to carry (engine-built nodes) — used to keep
+    /// serialized output identical to today for from-XFA trees.
+    pub fn is_empty(&self) -> bool {
+        self.raw_attributes.is_empty() && self.raw_children.is_empty()
+    }
 }
 
 /// The intermediate AEM node tree.

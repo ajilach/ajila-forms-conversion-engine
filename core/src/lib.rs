@@ -186,6 +186,7 @@ pub use aem::{
     aem_to_structured, aem_to_translated, aem_translations_from_content, collect_languages,
     convert_to_aem,
     detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
+    generate_aem_package_from_node_with_passthrough,
     generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
     generate_aem_xml, parse_aem_zip,
     parse_fragment_content, scan_fragments, validate_aem_dam_xml, validate_aem_form_xml,
@@ -792,6 +793,7 @@ impl Blueprint {
             &package.translations,
             &languages,
             &package.language,
+            &package.raw_by_uuid,
         ))
     }
 
@@ -1290,6 +1292,21 @@ pub fn to_aem_package_from_node_with_xml(
     form_xml: String,
 ) -> Vec<u8> {
     generate_aem_package_from_node_with_xml(root, config, translations, form_xml)
+}
+
+/// Like [`to_aem_package_from_node_with_translations`] but re-emits each node's
+/// captured fidelity [`aem::Passthrough`] (raw attributes + unmodeled child
+/// elements), keyed by node uuid — for saving a working tree loaded from an
+/// existing package losslessly. Get the map from
+/// [`aem::AemNodeTranslated::passthrough_map`]; pass an empty map for from-XFA
+/// trees (output identical to the plain variant).
+pub fn to_aem_package_from_node_with_passthrough(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    passthrough: &std::collections::HashMap<uuid::Uuid, aem::Passthrough>,
+) -> Vec<u8> {
+    generate_aem_package_from_node_with_passthrough(root, config, translations, passthrough)
 }
 
 fn ensure_aem_bind_config(config: &AemConfig) {

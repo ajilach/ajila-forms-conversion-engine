@@ -1325,8 +1325,21 @@ impl ConversionAgent {
                     Ok(pair) => pair,
                     Err(e) => return ToolReply::Error(e),
                 };
-                let pkg =
-                    blueprint::to_aem_package_from_node_with_translations(&aem, &cfg, translations);
+                // Re-emit each loaded node's fidelity passthrough (raw attrs +
+                // unmodeled children) so a template's load→edit→save round-trip
+                // preserves what the typed model doesn't represent. Empty for
+                // from-XFA trees, so their output is unchanged.
+                let passthrough = self
+                    .aem_translated
+                    .as_ref()
+                    .map(|t| t.passthrough_map())
+                    .unwrap_or_default();
+                let pkg = blueprint::to_aem_package_from_node_with_passthrough(
+                    &aem,
+                    &cfg,
+                    translations,
+                    &passthrough,
+                );
                 let size = pkg.len();
                 self.package = Some(pkg);
                 ToolReply::Text(format!("Built package ({size} bytes)."))

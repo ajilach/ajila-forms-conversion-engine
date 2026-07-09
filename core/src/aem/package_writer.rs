@@ -89,6 +89,22 @@ pub fn generate_aem_package_from_node_with_xml(
     assemble_package(root, config, translations, None, Some(form_xml))
 }
 
+/// Like [`generate_aem_package_from_node_with_translations`] but re-emits each
+/// node's captured fidelity [`Passthrough`](super::Passthrough) (raw attributes +
+/// unmodeled child elements), keyed by node uuid, so saving a working tree that
+/// was loaded from an existing package preserves what the typed model doesn't
+/// represent. `passthrough` is empty for from-XFA trees (output identical).
+pub fn generate_aem_package_from_node_with_passthrough(
+    root: &AemNode,
+    config: &AemConfig,
+    translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    passthrough: &std::collections::HashMap<uuid::Uuid, super::Passthrough>,
+) -> Vec<u8> {
+    let form_xml =
+        crate::aem::xml_writer::generate_aem_xml_with_passthrough(root, config, passthrough);
+    assemble_package(root, config, translations, None, Some(form_xml))
+}
+
 /// Extract the form-content translation dictionary from structured nodes.
 ///
 /// Exposed so the AEM editor can seed its per-language label overlay from the

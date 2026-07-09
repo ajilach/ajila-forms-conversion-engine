@@ -11,8 +11,9 @@
     guideNodeClass="guideTextDraw"
     headingLevel="{{ heading_level }}"
     name="{{ name }}"
-    textIsRich="true">
+    textIsRich="true"{{ extra_attributes }}>
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>
+    {{ raw_children }}
 </{{ element_name }}>

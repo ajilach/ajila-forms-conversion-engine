@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use uuid::Uuid;
 
-use super::{AemNode, AemOption, ConditionRule, OptionAlignment};
+use super::{AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough};
 use crate::structured::FieldId;
 
 /// The translation dictionary shape the package writer expects:
@@ -100,6 +100,9 @@ pub enum AemNodeTranslated {
     },
     Panel {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         title: AemI18nText,
         children: Vec<AemNodeTranslated>,
@@ -114,6 +117,9 @@ pub enum AemNodeTranslated {
     },
     TextField {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         label: AemI18nText,
         mandatory: bool,
@@ -125,6 +131,9 @@ pub enum AemNodeTranslated {
     },
     NumberField {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         label: AemI18nText,
         mandatory: bool,
@@ -135,6 +144,9 @@ pub enum AemNodeTranslated {
     },
     DatePicker {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         label: AemI18nText,
         mandatory: bool,
@@ -145,6 +157,9 @@ pub enum AemNodeTranslated {
     },
     Dropdown {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         label: AemI18nText,
         options: Vec<AemOptionTranslated>,
@@ -159,6 +174,9 @@ pub enum AemNodeTranslated {
     },
     Checkbox {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         label: AemI18nText,
         options: Vec<AemOptionTranslated>,
@@ -173,6 +191,9 @@ pub enum AemNodeTranslated {
     },
     RadioButton {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         label: AemI18nText,
         options: Vec<AemOptionTranslated>,
@@ -188,6 +209,9 @@ pub enum AemNodeTranslated {
     },
     TextDraw {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         content: AemI18nText,
         dor_exclude: bool,
@@ -196,6 +220,9 @@ pub enum AemNodeTranslated {
     },
     TitleDraw {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         content: AemI18nText,
         heading_level: u8,
@@ -204,6 +231,9 @@ pub enum AemNodeTranslated {
     },
     Repeatable {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         title: AemI18nText,
         children: Vec<AemNodeTranslated>,
@@ -213,25 +243,40 @@ pub enum AemNodeTranslated {
     },
     Fragment {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         frag_ref: String,
         bind_ref: Option<String>,
     },
     Preface {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
     },
     Appendix {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
     },
     FootnotePlaceholder {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         colspan: u32,
     },
     Custom {
         uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
         name: String,
         template_key: String,
         label: AemI18nText,
@@ -332,6 +377,53 @@ impl AemNodeTranslated {
         (node, dict, conflicts)
     }
 
+    /// Collect every node's fidelity [`Passthrough`] keyed by uuid, for the
+    /// writer to re-emit. Only non-empty entries are included (engine-built nodes
+    /// carry nothing). The map is derived fresh from the tree, so it always
+    /// reflects the current (possibly edited/restored) state.
+    pub fn passthrough_map(&self) -> HashMap<Uuid, Passthrough> {
+        let mut m = HashMap::new();
+        self.collect_passthrough(&mut m);
+        m
+    }
+
+    fn collect_passthrough(&self, m: &mut HashMap<Uuid, Passthrough>) {
+        let record = |m: &mut HashMap<Uuid, Passthrough>, uuid: &Uuid, p: &Passthrough| {
+            if !p.is_empty() {
+                m.insert(*uuid, p.clone());
+            }
+        };
+        match self {
+            AemNodeTranslated::Root { children, .. } => {
+                for c in children {
+                    c.collect_passthrough(m);
+                }
+            }
+            AemNodeTranslated::Panel { uuid, passthrough, children, .. }
+            | AemNodeTranslated::Repeatable { uuid, passthrough, children, .. } => {
+                record(m, uuid, passthrough);
+                for c in children {
+                    c.collect_passthrough(m);
+                }
+            }
+            AemNodeTranslated::TextField { uuid, passthrough, .. }
+            | AemNodeTranslated::NumberField { uuid, passthrough, .. }
+            | AemNodeTranslated::DatePicker { uuid, passthrough, .. }
+            | AemNodeTranslated::Dropdown { uuid, passthrough, .. }
+            | AemNodeTranslated::Checkbox { uuid, passthrough, .. }
+            | AemNodeTranslated::RadioButton { uuid, passthrough, .. }
+            | AemNodeTranslated::TextDraw { uuid, passthrough, .. }
+            | AemNodeTranslated::TitleDraw { uuid, passthrough, .. }
+            | AemNodeTranslated::Fragment { uuid, passthrough, .. }
+            | AemNodeTranslated::Preface { uuid, passthrough, .. }
+            | AemNodeTranslated::Appendix { uuid, passthrough, .. }
+            | AemNodeTranslated::FootnotePlaceholder { uuid, passthrough, .. }
+            | AemNodeTranslated::Custom { uuid, passthrough, .. } => {
+                record(m, uuid, passthrough);
+            }
+        }
+    }
+
     fn lower_node(
         &self,
         master_lang: &str,
@@ -365,6 +457,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                ..
             } => AemNode::Panel {
                 uuid: *uuid,
                 name: name.clone(),
@@ -389,6 +482,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                ..
             } => AemNode::TextField {
                 uuid: *uuid,
                 name: name.clone(),
@@ -409,6 +503,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                ..
             } => AemNode::NumberField {
                 uuid: *uuid,
                 name: name.clone(),
@@ -428,6 +523,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                ..
             } => AemNode::DatePicker {
                 uuid: *uuid,
                 name: name.clone(),
@@ -450,6 +546,7 @@ impl AemNodeTranslated {
                 field_id,
                 conditions,
                 bind_ref,
+                ..
             } => AemNode::Dropdown {
                 uuid: *uuid,
                 name: name.clone(),
@@ -475,6 +572,7 @@ impl AemNodeTranslated {
                 field_id,
                 conditions,
                 bind_ref,
+                ..
             } => AemNode::Checkbox {
                 uuid: *uuid,
                 name: name.clone(),
@@ -501,6 +599,7 @@ impl AemNodeTranslated {
                 field_id,
                 conditions,
                 bind_ref,
+                ..
             } => AemNode::RadioButton {
                 uuid: *uuid,
                 name: name.clone(),
@@ -522,6 +621,7 @@ impl AemNodeTranslated {
                 dor_exclude,
                 colspan,
                 dor_colspan,
+                ..
             } => AemNode::TextDraw {
                 uuid: *uuid,
                 name: name.clone(),
@@ -537,6 +637,7 @@ impl AemNodeTranslated {
                 heading_level,
                 colspan,
                 dor_colspan,
+                ..
             } => AemNode::TitleDraw {
                 uuid: *uuid,
                 name: name.clone(),
@@ -553,6 +654,7 @@ impl AemNodeTranslated {
                 min_occur,
                 max_occur,
                 bind_ref,
+                ..
             } => AemNode::Repeatable {
                 uuid: *uuid,
                 name: name.clone(),
@@ -567,17 +669,18 @@ impl AemNodeTranslated {
                 name,
                 frag_ref,
                 bind_ref,
+                ..
             } => AemNode::Fragment {
                 uuid: *uuid,
                 name: name.clone(),
                 frag_ref: frag_ref.clone(),
                 bind_ref: bind_ref.clone(),
             },
-            AemNodeTranslated::Preface { uuid, name } => AemNode::Preface {
+            AemNodeTranslated::Preface { uuid, name, .. } => AemNode::Preface {
                 uuid: *uuid,
                 name: name.clone(),
             },
-            AemNodeTranslated::Appendix { uuid, name } => AemNode::Appendix {
+            AemNodeTranslated::Appendix { uuid, name, .. } => AemNode::Appendix {
                 uuid: *uuid,
                 name: name.clone(),
             },
@@ -585,6 +688,7 @@ impl AemNodeTranslated {
                 uuid,
                 name,
                 colspan,
+                ..
             } => AemNode::FootnotePlaceholder {
                 uuid: *uuid,
                 name: name.clone(),
@@ -601,6 +705,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                ..
             } => AemNode::Custom {
                 uuid: *uuid,
                 name: name.clone(),
@@ -635,11 +740,13 @@ mod tests {
             children: vec![
                 AemNodeTranslated::Panel {
                     uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                     name: "panel".into(),
                     title: t(&[("de", "Abschnitt"), ("en", "Section")]),
                     children: vec![
                         AemNodeTranslated::TextField {
                             uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                             name: "f1".into(),
                             label: t(&[("de", "Nachname"), ("en", "Last name")]),
                             mandatory: true,
@@ -651,6 +758,7 @@ mod tests {
                         },
                         AemNodeTranslated::Dropdown {
                             uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                             name: "f2".into(),
                             label: t(&[("de", "Währung"), ("en", "Currency")]),
                             options: vec![AemOptionTranslated {
@@ -748,6 +856,7 @@ mod tests {
             children: vec![
                 AemNodeTranslated::TextDraw {
                     uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                     name: "a".into(),
                     content: t(&[("de", "Hinweis"), ("en", "Note A")]),
                     dor_exclude: false,
@@ -756,6 +865,7 @@ mod tests {
                 },
                 AemNodeTranslated::TextDraw {
                     uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                     name: "b".into(),
                     content: t(&[("de", "Hinweis"), ("en", "Note B")]),
                     dor_exclude: false,
@@ -781,6 +891,7 @@ mod tests {
             title: t(&[("en", "Form"), ("de", "Formular")]),
             children: vec![AemNodeTranslated::TextField {
                 uuid: Uuid::nil(),
+                passthrough: Default::default(),
                 name: "f1".into(),
                 label: t(&[("en", "Last name"), ("de", "Nachname")]),
                 mandatory: false,
@@ -825,6 +936,7 @@ mod tests {
             children: vec![
                 AemNodeTranslated::TextDraw {
                     uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                     name: "a".into(),
                     content: t(&[("de", "Wort"), ("en", "Word")]),
                     dor_exclude: false,
@@ -833,6 +945,7 @@ mod tests {
                 },
                 AemNodeTranslated::TextDraw {
                     uuid: Uuid::nil(),
+                    passthrough: Default::default(),
                     name: "b".into(),
                     content: t(&[("de", "Wort"), ("fr", "Mot")]),
                     dor_exclude: false,

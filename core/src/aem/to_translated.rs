@@ -14,12 +14,14 @@
 //! non-text field is copied verbatim, so `lift` is the structural inverse of
 //! `lower` (`lower(lift(node)).0 == node`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+
+use uuid::Uuid;
 
 use super::parser::TranslationData;
 use super::to_structured::lookup_translation_entry;
 use super::translated::{AemI18nText, AemNodeTranslated, AemOptionTranslated};
-use super::{AemNode, AemOption};
+use super::{AemNode, AemOption, Passthrough};
 
 /// Lift a single-language [`AemNode`] tree (plus Sling translations) into the
 /// multilingual [`AemNodeTranslated`] working tree.
@@ -32,11 +34,13 @@ pub fn aem_to_translated(
     translations: &TranslationData,
     languages: &[String],
     master_language: &str,
+    raw_by_uuid: &HashMap<Uuid, Passthrough>,
 ) -> AemNodeTranslated {
     let ctx = LiftContext {
         translations,
         languages,
         master_language,
+        raw_by_uuid,
     };
     lift_node(root, &ctx)
 }
@@ -45,9 +49,16 @@ struct LiftContext<'a> {
     translations: &'a TranslationData,
     languages: &'a [String],
     master_language: &'a str,
+    /// Per-node fidelity passthrough captured on load, keyed by uuid.
+    raw_by_uuid: &'a HashMap<Uuid, Passthrough>,
 }
 
 impl LiftContext<'_> {
+    /// The fidelity passthrough for a node (empty if none was captured).
+    fn passthrough(&self, uuid: &Uuid) -> Passthrough {
+        self.raw_by_uuid.get(uuid).cloned().unwrap_or_default()
+    }
+
     /// Build the per-language text for `default` (the node's master-language
     /// string) at the given component/property. Always seeds the master
     /// language so lowering returns `default` unchanged.
@@ -105,6 +116,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::Panel {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             title: ctx.text(title, name, "jcr:title"),
             children: ctx.children(children),
@@ -129,6 +141,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::TextField {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             label: ctx.text(label, name, "jcr:title"),
             mandatory: *mandatory,
@@ -149,6 +162,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::NumberField {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             label: ctx.text(label, name, "jcr:title"),
             mandatory: *mandatory,
@@ -168,6 +182,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::DatePicker {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             label: ctx.text(label, name, "jcr:title"),
             mandatory: *mandatory,
@@ -190,6 +205,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::Dropdown {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             label: ctx.text(label, name, "jcr:title"),
             options: ctx.options(options, name),
@@ -215,6 +231,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::Checkbox {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             label: ctx.text(label, name, "jcr:title"),
             options: ctx.options(options, name),
@@ -241,6 +258,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::RadioButton {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             label: ctx.text(label, name, "jcr:title"),
             options: ctx.options(options, name),
@@ -262,6 +280,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             dor_colspan,
         } => AemNodeTranslated::TextDraw {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             content: ctx.text(content, name, "_value"),
             dor_exclude: *dor_exclude,
@@ -277,6 +296,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             dor_colspan,
         } => AemNodeTranslated::TitleDraw {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             content: ctx.text(content, name, "_value"),
             heading_level: *heading_level,
@@ -293,6 +313,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::Repeatable {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             title: ctx.text(title, name, "jcr:title"),
             children: ctx.children(children),
@@ -307,16 +328,19 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::Fragment {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             frag_ref: frag_ref.clone(),
             bind_ref: bind_ref.clone(),
         },
         AemNode::Preface { uuid, name } => AemNodeTranslated::Preface {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
         },
         AemNode::Appendix { uuid, name } => AemNodeTranslated::Appendix {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
         },
         AemNode::FootnotePlaceholder {
@@ -325,6 +349,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             colspan,
         } => AemNodeTranslated::FootnotePlaceholder {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             colspan: *colspan,
         },
@@ -341,6 +366,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             bind_ref,
         } => AemNodeTranslated::Custom {
             uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
             name: name.clone(),
             template_key: template_key.clone(),
             label: ctx.text(label, name, "jcr:title"),

@@ -115,11 +115,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             eprintln!("{}", msg);
         }
-        PipelineEvent::PlainRender { label, image } => {
-            let mut png_bytes = Vec::new();
-            if let Ok(()) = encode_rgba_to_png(&image, &mut png_bytes) {
-                let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
-                plain_images.insert(label, b64);
+        PipelineEvent::PlainRender { label, images } => {
+            // One render per page now; key each page (single page keeps the bare
+            // label, multi-page gets a `_p{n}` suffix).
+            for (i, image) in images.iter().enumerate() {
+                let mut png_bytes = Vec::new();
+                if let Ok(()) = encode_rgba_to_png(image, &mut png_bytes) {
+                    let b64 = base64::prelude::BASE64_STANDARD.encode(&png_bytes);
+                    let key = if images.len() == 1 {
+                        label.clone()
+                    } else {
+                        format!("{label}_p{i}")
+                    };
+                    plain_images.insert(key, b64);
+                }
             }
         }
         PipelineEvent::Warning(msg) => eprintln!("Warning: {}", msg),

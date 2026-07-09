@@ -116,20 +116,20 @@ enum XmlKind {
 }
 
 #[derive(Debug)]
-struct ParsedXmlDocument {
-    nodes: Vec<ParsedXmlNode>,
+pub(crate) struct ParsedXmlDocument {
+    pub(crate) nodes: Vec<ParsedXmlNode>,
 }
 
 #[derive(Debug)]
-struct ParsedXmlNode {
-    tag: String,
-    path: String,
-    attributes: BTreeMap<String, String>,
-    parent: Option<usize>,
-    children: Vec<usize>,
+pub(crate) struct ParsedXmlNode {
+    pub(crate) tag: String,
+    pub(crate) path: String,
+    pub(crate) attributes: BTreeMap<String, String>,
+    pub(crate) parent: Option<usize>,
+    pub(crate) children: Vec<usize>,
 }
 
-fn parse_xml_document(xml: &str) -> ParsedXmlDocument {
+pub(crate) fn parse_xml_document(xml: &str) -> ParsedXmlDocument {
     use quick_xml::Reader;
     use quick_xml::events::Event;
 
@@ -209,6 +209,37 @@ fn node_descriptor(tag: &str, attributes: &BTreeMap<String, String>) -> String {
     } else {
         tag.to_string()
     }
+}
+
+/// Return every element (as a path) that declares a duplicate attribute key.
+/// quick-xml keeps only the last value for a duplicated key, so this re-scans
+/// the raw start tags rather than the parsed BTreeMap.
+#[cfg(test)]
+pub(crate) fn duplicate_attribute_elements(xml: &str) -> Vec<String> {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().check_end_names = false;
+    let mut offenders = Vec::new();
+    loop {
+        let event = match reader.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => e,
+            Ok(Event::Eof) => break,
+            Err(e) => panic!("Failed to parse XML for duplicate-attribute scan: {e}"),
+            _ => continue,
+        };
+        let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+        let mut seen = BTreeSet::new();
+        for attr in event.attributes().with_checks(false) {
+            let Ok(attr) = attr else { continue };
+            let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
+            if !seen.insert(key.clone()) {
+                offenders.push(format!("<{tag}> has duplicate attribute {key}"));
+            }
+        }
+    }
+    offenders
 }
 
 fn validate_namespaces(doc: &ParsedXmlDocument, violations: &mut Vec<String>) {

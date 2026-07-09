@@ -10,7 +10,7 @@
     name="PN_BR"
     summaryExclusion="true"
     textIsRich="true"
-    validateOnStepCompletion="{Boolean}false">
+    validateOnStepCompletion="{Boolean}false"{{ extra_attributes }}>
     <layout
         jcr:primaryType="nt:unstructured"
         sling:resourceType="{{ variables.default_layout }}"
@@ -45,8 +45,9 @@
             <items
                 jcr:primaryType="nt:unstructured"
                 sling:resourceType="{{ variables.default_layout }}"/>
-            <fd:rules jcr:primaryType="nt:unstructured"/>
+            {% if not has_passthrough_rules %}<fd:rules jcr:primaryType="nt:unstructured"/>{% endif %}
             <fd:scripts jcr:primaryType="nt:unstructured"/>
-        </{{ element_name }}>
+            {{ raw_children }}
+</{{ element_name }}>
     </items>
 </panel_{{ uuid }}>
