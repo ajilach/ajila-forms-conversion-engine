@@ -139,7 +139,7 @@
                                 formrange_aftype="Single"
                                 formrange_code="{{ variables.form_code }}"
                                 guideNodeClass="guideTextDraw"
-                                name="metadata"
+                                name="metadataTextDraw"
                                 visible="false">
                                 <entities jcr:primaryType="nt:unstructured">
                                     <item0
