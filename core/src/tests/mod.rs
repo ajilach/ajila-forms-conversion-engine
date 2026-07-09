@@ -15021,7 +15021,7 @@ fn test_ubs_profile_aem_output_matches_legacy() {
         "Profile output should have preview or summary panel"
     );
     assert!(
-        profile_xml.contains("name=\"metadata\""),
+        profile_xml.contains("name=\"metadataTextDraw\""),
         "Profile output should have metadata element"
     );
     assert!(
