@@ -30,12 +30,12 @@
             jcr:title="{{ title }}"
             sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
             dorExcludeDescription="true"
-            {% if name is starting_with("PN_FormConfigurator") %}dorExclusion="true"{% endif %}
+            {% if name is starting_with("PN_FormConfigurator") %}dorExclusion="true" summaryExclusion="true"{% endif %}
             dorFieldStyling="{{ variables.dor_field_styling }}"
             guideNodeClass="guidePanel"
             name="{{ name }}Title"
             textIsRich="true"
-            {% if is_page %}jumpToFieldButtonVisible="true"{% endif %}
+            {% if is_page and name is not starting_with("PN_FormConfigurator") %}jumpToFieldButtonVisible="true"{% endif %}
             validateOnStepCompletion="{Boolean}false">
             <layout jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}" columns="1" dorLayoutType="columnar" nonNavigable="{Boolean}true" toolbarPosition="Bottom"/>
             <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
