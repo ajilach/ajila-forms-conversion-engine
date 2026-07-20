@@ -4,7 +4,7 @@
     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
     jcr:lastModifiedBy="{{ author }}"
     jcr:primaryType="nt:unstructured"
-    sling:resourceType="{{ variables.resource_type_base }}/panel"
+    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
     dorExcludeDescription="true"
     dorExcludeTitle="true"
     guideNodeClass="guidePanel"
