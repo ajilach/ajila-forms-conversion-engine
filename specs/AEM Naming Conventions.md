@@ -18,6 +18,7 @@ All AEM component names follow the pattern `PREFIX_<CamelCaseName>_<shortUuid>`.
 | Buttons                        | `BT_`      |
 | Static Text                    | `ST_`      |
 | Telephone                      | `TEL_`     |
+| Title                          | `TTL_`     |
 | Textbox Multiline              | `TXTM_`    |
 | Email                          | `EML_`     |
 | Image                          | `IMG_`     |

@@ -11,7 +11,7 @@
 //! (translations ride along separately in the dictionary). Comparing all
 //! languages would flag every non-master string as missing.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::aem::{AemNode, AemOption};
 use crate::structured::{FieldType, StructuredNode, TableNode};
@@ -29,12 +29,23 @@ pub struct ReviewReport {
     /// Distinct input texts (labels, options, headings, paragraphs, …) with no
     /// verbatim match anywhere in the output.
     pub missing_text: Vec<String>,
+    /// Naming-convention violations: output nodes whose `name` does not match
+    /// the `PREFIX_<CamelCase>_<shortUuid>` convention for their component type,
+    /// plus any names that collide across the tree. Empty when all names conform.
+    pub naming_issues: Vec<String>,
     /// Human-readable observations (field-count mismatch, empty tree, truncation).
     pub notes: Vec<String>,
 }
 
 /// Cap on how many missing texts to list, so the report stays readable.
 const MAX_MISSING: usize = 200;
+
+/// Cap on how many naming issues to list, so the report stays readable.
+const MAX_NAMING_ISSUES: usize = 200;
+
+/// Length of the trailing short-UUID segment in a generated node name
+/// (mirrors `SHORT_UUID_LEN` in the converter).
+const SHORT_UUID_LEN: usize = 8;
 
 /// Review the converted AEM `output` against the engine's parse of the `input`
 /// (the merged structured tree), comparing text in `master_language`.
@@ -52,6 +63,18 @@ pub fn review_output(
     let mut output_texts: Vec<String> = Vec::new();
     let mut output_fields = 0usize;
     collect_output(output, &mut output_texts, &mut output_fields);
+
+    // Naming-convention check: every named node must follow the
+    // `PREFIX_<CamelCase>_<shortUuid>` convention (with a prefix valid for its
+    // component type), and names must be unique across the tree.
+    let mut naming_issues: Vec<String> = Vec::new();
+    let mut name_counts: BTreeMap<String, usize> = BTreeMap::new();
+    check_naming(output, &mut naming_issues, &mut name_counts);
+    for (name, count) in &name_counts {
+        if *count > 1 {
+            naming_issues.push(format!("duplicate node name {name:?} used {count} times"));
+        }
+    }
 
     // Normalize both sides and build the output lookup set.
     let output_set: BTreeSet<String> = output_texts
@@ -99,12 +122,22 @@ pub fn review_output(
         ));
         missing.truncate(MAX_MISSING);
     }
+    if !naming_issues.is_empty() {
+        notes.push(format!(
+            "{} naming-convention issue(s) found",
+            naming_issues.len()
+        ));
+    }
+    if naming_issues.len() > MAX_NAMING_ISSUES {
+        naming_issues.truncate(MAX_NAMING_ISSUES);
+    }
 
     ReviewReport {
         coverage,
         input_field_count: input_fields,
         output_field_count: output_fields,
         missing_text: missing,
+        naming_issues,
         notes,
     }
 }
@@ -247,6 +280,150 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
     }
 }
 
+// ── Naming conventions ───────────────────────────────────────────────────────
+//
+// The converter names every node `PREFIX_<CamelCase>_<shortUuid>` (see
+// `core/src/aem/converter.rs::make_name`). The prefix identifies the component
+// type, but the mapping is many-to-many: e.g. a `TBL_` name is a table Panel,
+// an `IMG_` name is a TextDraw, and `EML_`/`TEL_` names are TextFields. Each
+// variant below lists every prefix it may legitimately carry. `Custom` nodes
+// keep the name of whatever element they replaced, so any known prefix is valid.
+
+/// All component-name prefixes the converter emits.
+const ALL_PREFIXES: &[&str] = &[
+    "PN_affrg", "PN", "TXT", "EML", "TEL", "NB", "DATE", "DD", "CB", "RB", "ST", "TTL", "IMG",
+    "TBL", "RP", "PRF", "APX", "FNP",
+];
+
+/// The prefixes a given node variant may legitimately use. An empty slice means
+/// the node has no name to check (`Root`).
+fn allowed_prefixes(node: &AemNode) -> &'static [&'static str] {
+    match node {
+        AemNode::Root { .. } => &[],
+        AemNode::Panel { .. } => &["PN", "TBL"],
+        AemNode::TextField { .. } => &["TXT", "EML", "TEL"],
+        AemNode::NumberField { .. } => &["NB"],
+        AemNode::DatePicker { .. } => &["DATE"],
+        AemNode::Dropdown { .. } => &["DD"],
+        AemNode::Checkbox { .. } => &["CB"],
+        AemNode::RadioButton { .. } => &["RB"],
+        AemNode::TextDraw { .. } => &["ST", "IMG"],
+        AemNode::TitleDraw { .. } => &["TTL"],
+        AemNode::Repeatable { .. } => &["RP"],
+        AemNode::Fragment { .. } => &["PN_affrg"],
+        AemNode::Preface { .. } => &["PRF"],
+        AemNode::Appendix { .. } => &["APX"],
+        AemNode::FootnotePlaceholder { .. } => &["FNP"],
+        AemNode::Custom { .. } => ALL_PREFIXES,
+    }
+}
+
+/// A node's `name`, or `None` for the nameless `Root`.
+fn node_name(node: &AemNode) -> Option<&str> {
+    match node {
+        AemNode::Root { .. } => None,
+        AemNode::Panel { name, .. }
+        | AemNode::TextField { name, .. }
+        | AemNode::NumberField { name, .. }
+        | AemNode::DatePicker { name, .. }
+        | AemNode::Dropdown { name, .. }
+        | AemNode::Checkbox { name, .. }
+        | AemNode::RadioButton { name, .. }
+        | AemNode::TextDraw { name, .. }
+        | AemNode::TitleDraw { name, .. }
+        | AemNode::Repeatable { name, .. }
+        | AemNode::Fragment { name, .. }
+        | AemNode::Preface { name, .. }
+        | AemNode::Appendix { name, .. }
+        | AemNode::FootnotePlaceholder { name, .. }
+        | AemNode::Custom { name, .. } => Some(name),
+    }
+}
+
+/// A short human label for a node variant, used in issue messages.
+fn node_kind(node: &AemNode) -> &'static str {
+    match node {
+        AemNode::Root { .. } => "Root",
+        AemNode::Panel { .. } => "Panel",
+        AemNode::TextField { .. } => "TextField",
+        AemNode::NumberField { .. } => "NumberField",
+        AemNode::DatePicker { .. } => "DatePicker",
+        AemNode::Dropdown { .. } => "Dropdown",
+        AemNode::Checkbox { .. } => "Checkbox",
+        AemNode::RadioButton { .. } => "RadioButton",
+        AemNode::TextDraw { .. } => "TextDraw",
+        AemNode::TitleDraw { .. } => "TitleDraw",
+        AemNode::Repeatable { .. } => "Repeatable",
+        AemNode::Fragment { .. } => "Fragment",
+        AemNode::Preface { .. } => "Preface",
+        AemNode::Appendix { .. } => "Appendix",
+        AemNode::FootnotePlaceholder { .. } => "FootnotePlaceholder",
+        AemNode::Custom { .. } => "Custom",
+    }
+}
+
+/// A node's children, or an empty slice for leaves.
+fn node_children(node: &AemNode) -> &[AemNode] {
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => children,
+        _ => &[],
+    }
+}
+
+/// Split a trailing `_<8 lowercase-hex>` short-UUID suffix off a name, returning
+/// the head (prefix + optional CamelCase) and the suffix.
+fn split_short_uuid(name: &str) -> Option<(&str, &str)> {
+    let (head, tail) = name.rsplit_once('_')?;
+    let is_short_uuid = tail.len() == SHORT_UUID_LEN
+        && tail
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+    if is_short_uuid && !head.is_empty() {
+        Some((head, tail))
+    } else {
+        None
+    }
+}
+
+/// Whether `name` conforms to `PREFIX_<CamelCase>_<shortUuid>` (or the degraded
+/// `PREFIX_<shortUuid>`) for one of the `allowed` prefixes.
+fn name_conforms(name: &str, allowed: &[&str]) -> bool {
+    let Some((head, _uuid)) = split_short_uuid(name) else {
+        return false;
+    };
+    allowed.iter().any(|p| {
+        // `PREFIX_<uuid>` — head is exactly the prefix (empty CamelCase part).
+        head == *p
+            // `PREFIX_<CamelCase>_<uuid>` — head is prefix + `_` + alphanumeric.
+            || head
+                .strip_prefix(p)
+                .and_then(|rest| rest.strip_prefix('_'))
+                .is_some_and(|camel| !camel.is_empty() && camel.chars().all(|c| c.is_ascii_alphanumeric()))
+    })
+}
+
+/// Walk the output tree, recording naming-convention violations and tallying
+/// each name for the tree-wide uniqueness check.
+fn check_naming(node: &AemNode, issues: &mut Vec<String>, counts: &mut BTreeMap<String, usize>) {
+    if let Some(name) = node_name(node) {
+        *counts.entry(name.to_string()).or_insert(0) += 1;
+        let allowed = allowed_prefixes(node);
+        if !allowed.is_empty() && !name_conforms(name, allowed) {
+            issues.push(format!(
+                "{} node name {name:?} does not match PREFIX_<CamelCase>_<shortUuid> \
+                 (expected prefix one of: {})",
+                node_kind(node),
+                allowed.join(", "),
+            ));
+        }
+    }
+    for child in node_children(node) {
+        check_naming(child, issues, counts);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,5 +487,87 @@ mod tests {
             report.missing_text
         );
         assert!(report.coverage < 1.0);
+    }
+
+    #[test]
+    fn converter_output_has_no_naming_issues() {
+        let input = sample_input();
+        let aem = crate::convert_to_aem(&input, &AemConfig::test_default("TEST"));
+        let report = review_output(&input, &aem, "en");
+        assert!(
+            report.naming_issues.is_empty(),
+            "converter output should be convention-clean, got {:?}",
+            report.naming_issues
+        );
+    }
+
+    #[test]
+    fn conforming_names_are_accepted() {
+        assert!(name_conforms("TXT_FirstName_ab12cd34", &["TXT", "EML", "TEL"]));
+        assert!(name_conforms("DATE_ab12cd34", &["DATE"])); // degraded: empty CamelCase
+        assert!(name_conforms("PN_affrg_Address1_00ff11aa", &["PN_affrg"]));
+        assert!(name_conforms("TBL_Summary_deadbeef", &["PN", "TBL"]));
+    }
+
+    #[test]
+    fn nonconforming_names_are_rejected() {
+        assert!(!name_conforms("firstName", &["TXT"])); // no prefix, no uuid
+        assert!(!name_conforms("TXT_FirstName", &["TXT"])); // missing short-uuid
+        assert!(!name_conforms("XYZ_FirstName_ab12cd34", &["TXT"])); // wrong prefix
+        assert!(!name_conforms("TXT_First Name_ab12cd34", &["TXT"])); // space in CamelCase
+        assert!(!name_conforms("DATE_ab12cd3", &["DATE"])); // 7-char suffix, not 8
+        assert!(!name_conforms("NB_Age_ABCDEF12", &["NB"])); // uppercase hex
+    }
+
+    #[test]
+    fn bad_name_is_reported() {
+        let aem = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::TextField {
+                uuid: uuid::Uuid::nil(),
+                name: "not_a_valid_name".into(),
+                label: "First name".into(),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+            }],
+        };
+        let report = review_output(&[], &aem, "en");
+        assert!(
+            report.naming_issues.iter().any(|i| i.contains("not_a_valid_name")),
+            "expected the malformed name to be flagged, got {:?}",
+            report.naming_issues
+        );
+        assert!(report.notes.iter().any(|n| n.contains("naming-convention")));
+    }
+
+    #[test]
+    fn duplicate_names_are_reported() {
+        let field = |name: &str| AemNode::NumberField {
+            uuid: uuid::Uuid::nil(),
+            name: name.into(),
+            label: "Age".into(),
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        };
+        let aem = AemNode::Root {
+            title: "Form".into(),
+            children: vec![field("NB_Age_ab12cd34"), field("NB_Age_ab12cd34")],
+        };
+        let report = review_output(&[], &aem, "en");
+        assert!(
+            report
+                .naming_issues
+                .iter()
+                .any(|i| i.contains("duplicate") && i.contains("NB_Age_ab12cd34")),
+            "expected duplicate-name issue, got {:?}",
+            report.naming_issues
+        );
     }
 }

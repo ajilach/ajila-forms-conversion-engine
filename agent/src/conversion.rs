@@ -278,7 +278,9 @@ validate_aem_package; run review_output (coverage vs the source, master language
 non-master languages with search_xfa; compare the rendered pages against the source images (and, if \
 an AEM connection is configured, upload_to_aem then fetch_aem_form_html / fetch_aem_dor_pdf). Judge \
 ANALOGY to the source AND conformance to the CONVERSION PLAN appended below, and confirm every point \
-in any prior REVIEW FEEDBACK is now fixed. Checklist: naming prefixes + uniqueness; first-level \
+in any prior REVIEW FEEDBACK is now fixed. Checklist: naming prefixes + uniqueness (trust \
+review_output's naming_issues field — a deterministic check of PREFIX_<CamelCase>_<shortUuid> per \
+component type plus tree-wide name uniqueness; treat any listed issue as a defect); first-level \
 sections are pages and nothing deeper is; exactly one rendered TitleDraw heading per section (a Panel \
 title does not render); banking = affrg_BankingRelationship1 inside a PN_BR sole-child wrapper with \
 dor_exclude; address uses the entity AddressBlock fragment; DoR exclusions set; no invented text; \
