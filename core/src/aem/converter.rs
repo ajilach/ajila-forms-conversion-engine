@@ -530,7 +530,7 @@ fn inject_page_edge_templates(
     let last_page_idx = page_indices.last().copied().unwrap_or(first_page_idx);
 
     if insert_preface {
-        let name = ctx.make_name("PRF", "Preface");
+        let name = ctx.make_name("PN", "Preface");
         let uuid = ctx.uuid(&name);
         let preface = AemNode::Preface { uuid, name };
         if let AemNode::Panel {
@@ -543,7 +543,7 @@ fn inject_page_edge_templates(
     }
 
     if insert_appendix {
-        let name = ctx.make_name("APX", "Appendix");
+        let name = ctx.make_name("PN", "Appendix");
         let uuid = ctx.uuid(&name);
         let appendix = AemNode::Appendix { uuid, name };
         if let AemNode::Panel {
@@ -1028,7 +1028,7 @@ fn place_footnote_placeholders(
         };
 
         if has_footnotes {
-            let name = ctx.make_name("FNP", "FootnotePlaceholder");
+            let name = ctx.make_name("ST", "FootnotePlaceholder");
             let uuid = ctx.uuid(&name);
             let placeholder = AemNode::FootnotePlaceholder {
                 uuid,
@@ -1568,7 +1568,7 @@ fn convert_field(
         }
 
         FieldType::Textarea { max_length } => {
-            let name = ctx.make_name("TXT", &source_text);
+            let name = ctx.make_name("TXTM", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
                 uuid,
@@ -1734,7 +1734,7 @@ fn convert_repeatable(
     _colspan: u32,
     _dor_colspan: Option<u32>,
 ) -> AemNode {
-    let name = ctx.make_name("RP", "");
+    let name = ctx.make_name("RCP", "");
     let uuid = ctx.uuid(&name);
     let inner = convert_node(&r.item, config, ctx, config.grid_columns, None);
     let children = inner.into_iter().collect();

@@ -283,25 +283,29 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
 // ── Naming conventions ───────────────────────────────────────────────────────
 //
 // The converter names every node `PREFIX_<CamelCase>_<shortUuid>` (see
-// `core/src/aem/converter.rs::make_name`). The prefix identifies the component
-// type, but the mapping is many-to-many: e.g. a `TBL_` name is a table Panel,
-// an `IMG_` name is a TextDraw, and `EML_`/`TEL_` names are TextFields. Each
-// variant below lists every prefix it may legitimately carry. `Custom` nodes
-// keep the name of whatever element they replaced, so any known prefix is valid.
+// `core/src/aem/converter.rs::make_name`), and the prefixes are those defined in
+// `specs/AEM Naming Conventions.md` (the authoritative source). The prefix
+// identifies the component type, but the mapping is many-to-many: e.g. a `TBL_`
+// name is a (flattened) table Panel, an `IMG_` name is a TextDraw, and
+// `TXTM_`/`EML_`/`TEL_` names are TextFields. Each variant below lists every
+// prefix it may legitimately carry. `Custom` nodes keep the name of whatever
+// element they replaced, so any known prefix is valid. Fragments are exempt —
+// they follow the fragment library's own naming conventions.
 
-/// All component-name prefixes the converter emits.
+/// All component-name prefixes the converter emits (spec-conforming).
 const ALL_PREFIXES: &[&str] = &[
-    "PN_affrg", "PN", "TXT", "EML", "TEL", "NB", "DATE", "DD", "CB", "RB", "ST", "TTL", "IMG",
-    "TBL", "RP", "PRF", "APX", "FNP",
+    "PN", "TXT", "TXTM", "EML", "TEL", "NB", "DATE", "DD", "CB", "RB", "ST", "TTL", "IMG", "TBL",
+    "RCP",
 ];
 
 /// The prefixes a given node variant may legitimately use. An empty slice means
-/// the node has no name to check (`Root`).
+/// the node's name is not checked (`Root` has no name; `Fragment` follows the
+/// fragment library's own conventions).
 fn allowed_prefixes(node: &AemNode) -> &'static [&'static str] {
     match node {
         AemNode::Root { .. } => &[],
         AemNode::Panel { .. } => &["PN", "TBL"],
-        AemNode::TextField { .. } => &["TXT", "EML", "TEL"],
+        AemNode::TextField { .. } => &["TXT", "TXTM", "EML", "TEL"],
         AemNode::NumberField { .. } => &["NB"],
         AemNode::DatePicker { .. } => &["DATE"],
         AemNode::Dropdown { .. } => &["DD"],
@@ -309,11 +313,12 @@ fn allowed_prefixes(node: &AemNode) -> &'static [&'static str] {
         AemNode::RadioButton { .. } => &["RB"],
         AemNode::TextDraw { .. } => &["ST", "IMG"],
         AemNode::TitleDraw { .. } => &["TTL"],
-        AemNode::Repeatable { .. } => &["RP"],
-        AemNode::Fragment { .. } => &["PN_affrg"],
-        AemNode::Preface { .. } => &["PRF"],
-        AemNode::Appendix { .. } => &["APX"],
-        AemNode::FootnotePlaceholder { .. } => &["FNP"],
+        AemNode::Repeatable { .. } => &["RCP"],
+        // Fragments use the fragment library's own naming conventions — exempt.
+        AemNode::Fragment { .. } => &[],
+        AemNode::Preface { .. } => &["PN"],
+        AemNode::Appendix { .. } => &["PN"],
+        AemNode::FootnotePlaceholder { .. } => &["ST"],
         AemNode::Custom { .. } => ALL_PREFIXES,
     }
 }
@@ -503,10 +508,13 @@ mod tests {
 
     #[test]
     fn conforming_names_are_accepted() {
-        assert!(name_conforms("TXT_FirstName_ab12cd34", &["TXT", "EML", "TEL"]));
+        assert!(name_conforms("TXT_FirstName_ab12cd34", &["TXT", "TXTM", "EML", "TEL"]));
+        assert!(name_conforms("TXTM_Comments_ab12cd34", &["TXT", "TXTM", "EML", "TEL"]));
         assert!(name_conforms("DATE_ab12cd34", &["DATE"])); // degraded: empty CamelCase
-        assert!(name_conforms("PN_affrg_Address1_00ff11aa", &["PN_affrg"]));
+        assert!(name_conforms("RCP_deadbeef", &["RCP"]));
         assert!(name_conforms("TBL_Summary_deadbeef", &["PN", "TBL"]));
+        // A prefix containing an underscore is matched whole, not split.
+        assert!(name_conforms("PN_affrg_Address1_00ff11aa", &["PN_affrg"]));
     }
 
     #[test]

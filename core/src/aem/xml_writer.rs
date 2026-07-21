@@ -590,7 +590,10 @@ fn build_node_context(
             ctx.insert("children", &render_children(children, config, vis, pass));
             ctx.insert("bind_ref", bind_ref);
 
-            let panel_name = format!("RCP_{}", name);
+            // The outer panel is already `RCP_…`; suffix (rather than re-prefix)
+            // the inner repeatable panel so it stays under the same prefix
+            // without producing a doubled `RCP_RCP_…` name.
+            let panel_name = format!("{}_repeat", name);
             ctx.insert("panel_name", &panel_name);
         }
 
@@ -1127,7 +1130,7 @@ mod tests {
             title: "Form".into(),
             children: vec![AemNode::Repeatable {
                 uuid: fixed_uuid(),
-                name: "RP_1".into(),
+                name: "RCP_1".into(),
                 title: "Repeat Section".into(),
                 children: vec![],
                 min_occur: 1,
@@ -1138,7 +1141,7 @@ mod tests {
         let xml = generate_aem_xml(&root, &test_config());
         assert!(xml.contains("minOccur=\"1\""), "missing minOccur");
         assert!(xml.contains("maxOccur=\"10\""), "missing maxOccur");
-        assert!(xml.contains("name=\"RP_1\""));
+        assert!(xml.contains("name=\"RCP_1\""));
     }
 
     #[test]
@@ -1658,7 +1661,7 @@ mod tests {
 
             let node = AemNode::Preface {
                 uuid: fixed_uuid(),
-                name: "PRF_Preface_abcdef01".into(),
+                name: "PN_Preface_abcdef01".into(),
             };
 
             let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
@@ -1701,7 +1704,7 @@ mod tests {
 
         let node = AemNode::Preface {
             uuid: fixed_uuid(),
-            name: "PRF_Preface_abcdef01".into(),
+            name: "PN_Preface_abcdef01".into(),
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
@@ -1882,10 +1885,10 @@ mod tests {
 
         let expected_remove_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "RCP_Test.instanceManager.removeInstance(this.parent.index);",
-            "\\var len = RCP_Test.instanceManager.instances.length;",
+            "Test_repeat.instanceManager.removeInstance(this.parent.index);",
+            "\\var len = Test_repeat.instanceManager.instances.length;",
             "\\for (var i = 0; i &lt; len; i++) {",
-            "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &lt; 5) {",
             "\\Test.BT_Add.visible = true;",
@@ -1936,10 +1939,10 @@ mod tests {
 
         let expected_add_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "RCP_Test.instanceManager.addInstance();",
-            "\\var len = RCP_Test.instanceManager.instances.length;",
+            "Test_repeat.instanceManager.addInstance();",
+            "\\var len = Test_repeat.instanceManager.instances.length;",
             "\\for (var i = 0; i &lt; len; i++) {",
-            "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &gt;= 5) {",
             "\\this.visible = false;",
@@ -1990,9 +1993,9 @@ mod tests {
 
         let expected_add_init = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "var len = RCP_Test.instanceManager.instances.length;",
+            "var len = Test_repeat.instanceManager.instances.length;",
             "\\for (var i = 0; i &lt; len; i++) {",
-            "\\RCP_Test.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &gt;= 5) {",
             "\\this.visible = false;",
