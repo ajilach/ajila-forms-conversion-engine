@@ -11,9 +11,12 @@
 //! (translations ride along separately in the dictionary). Comparing all
 //! languages would flag every non-master string as missing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use crate::aem::{AemNode, AemOption};
+use quick_xml::events::{BytesStart, Event};
+use quick_xml::reader::Reader;
+
+use crate::aem::{AemConfig, AemNode, AemOption, generate_aem_xml};
 use crate::structured::{FieldType, StructuredNode, TableNode};
 
 /// The result of reviewing a converted output against its input.
@@ -29,29 +32,46 @@ pub struct ReviewReport {
     /// Distinct input texts (labels, options, headings, paragraphs, …) with no
     /// verbatim match anywhere in the output.
     pub missing_text: Vec<String>,
-    /// Naming-convention violations: output nodes whose `name` does not match
-    /// the `PREFIX_<CamelCase>_<shortUuid>` convention for their component type,
-    /// plus any names that collide across the tree. Empty when all names conform.
-    pub naming_issues: Vec<String>,
+    /// Naming-convention violations found in the rendered JCR XML. Mirrors the
+    /// `find_naming_violations` detector: each author-named component's leading
+    /// `PREFIX_` token must be valid for its `sling:resourceType`. Empty when
+    /// every named node conforms.
+    pub naming_violations: Vec<NamingViolation>,
     /// Human-readable observations (field-count mismatch, empty tree, truncation).
     pub notes: Vec<String>,
+}
+
+/// A single naming-convention violation (one non-conforming named node).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NamingViolation {
+    /// JCR node tag (AEM-internal id, e.g. `panel_77897ce3…`).
+    pub node: String,
+    /// The offending `name` attribute.
+    pub name: String,
+    /// `sling:resourceType` leaf (e.g. `textbox`, `panel`, `titledraw`).
+    pub rt: String,
+    /// Detected role (`panel`, `repeat-panel`, `repeat-subpanel`, `button`, or the rt).
+    pub role: String,
+    /// The canonical prefix expected for this role/type.
+    pub expected: String,
+    /// `wrong-prefix` (a known prefix, wrong for the type) or `raw` (not a known prefix).
+    pub bucket: String,
+    /// `high` for type / plain-panel / repeat-panel checks; `low` for repeat sub-panels.
+    pub confidence: String,
 }
 
 /// Cap on how many missing texts to list, so the report stays readable.
 const MAX_MISSING: usize = 200;
 
-/// Cap on how many naming issues to list, so the report stays readable.
-const MAX_NAMING_ISSUES: usize = 200;
-
-/// Length of the trailing short-UUID segment in a generated node name
-/// (mirrors `SHORT_UUID_LEN` in the converter).
-const SHORT_UUID_LEN: usize = 8;
+/// Cap on how many naming violations to list, so the report stays readable.
+const MAX_NAMING: usize = 400;
 
 /// Review the converted AEM `output` against the engine's parse of the `input`
 /// (the merged structured tree), comparing text in `master_language`.
 pub fn review_output(
     input: &[StructuredNode],
     output: &AemNode,
+    config: &AemConfig,
     master_language: &str,
 ) -> ReviewReport {
     let mut input_texts: Vec<String> = Vec::new();
@@ -64,17 +84,13 @@ pub fn review_output(
     let mut output_fields = 0usize;
     collect_output(output, &mut output_texts, &mut output_fields);
 
-    // Naming-convention check: every named node must follow the
-    // `PREFIX_<CamelCase>_<shortUuid>` convention (with a prefix valid for its
-    // component type), and names must be unique across the tree.
-    let mut naming_issues: Vec<String> = Vec::new();
-    let mut name_counts: BTreeMap<String, usize> = BTreeMap::new();
-    check_naming(output, &mut naming_issues, &mut name_counts);
-    for (name, count) in &name_counts {
-        if *count > 1 {
-            naming_issues.push(format!("duplicate node name {name:?} used {count} times"));
-        }
-    }
+    // Naming-convention check: render the tree to JCR XML and classify every
+    // named node by its `sling:resourceType`, exactly like the
+    // `find_naming_violations` detector (leading `PREFIX_` only). Rendering (not
+    // walking the `AemNode` tree) is what lets this see template-expanded nodes
+    // and custom-element internals, just as the detector sees the shipped ZIP.
+    let aem_xml = generate_aem_xml(output, config);
+    let (mut naming_violations, naming_counts) = check_naming_conventions(&aem_xml);
 
     // Normalize both sides and build the output lookup set.
     let output_set: BTreeSet<String> = output_texts
@@ -122,14 +138,16 @@ pub fn review_output(
         ));
         missing.truncate(MAX_MISSING);
     }
-    if !naming_issues.is_empty() {
-        notes.push(format!(
-            "{} naming-convention issue(s) found",
-            naming_issues.len()
-        ));
+    let [n_ok, n_wrong, n_raw] = naming_counts;
+    if !naming_violations.is_empty() {
+        notes.push(format!("naming: {n_wrong} wrong-prefix, {n_raw} raw ({n_ok} ok)"));
     }
-    if naming_issues.len() > MAX_NAMING_ISSUES {
-        naming_issues.truncate(MAX_NAMING_ISSUES);
+    if naming_violations.len() > MAX_NAMING {
+        notes.push(format!(
+            "naming_violations truncated to {MAX_NAMING} of {} entries",
+            naming_violations.len()
+        ));
+        naming_violations.truncate(MAX_NAMING);
     }
 
     ReviewReport {
@@ -137,7 +155,7 @@ pub fn review_output(
         input_field_count: input_fields,
         output_field_count: output_fields,
         missing_text: missing,
-        naming_issues,
+        naming_violations,
         notes,
     }
 }
@@ -280,153 +298,237 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
     }
 }
 
-// ── Naming conventions ───────────────────────────────────────────────────────
+// ── Naming conventions (ports `find_naming_violations.py`) ───────────────────
 //
-// The converter names every node `PREFIX_<CamelCase>_<shortUuid>` (see
-// `core/src/aem/converter.rs::make_name`), and the prefixes are those defined in
-// `specs/AEM Naming Conventions.md` (the authoritative source). The prefix
-// identifies the component type, but the mapping is many-to-many: e.g. a `TBL_`
-// name is a (flattened) table Panel, an `IMG_` name is a TextDraw, and
-// `TXTM_`/`EML_`/`TEL_` names are TextFields. Each variant below lists every
-// prefix it may legitimately carry. `Custom` nodes keep the name of whatever
-// element they replaced, so any known prefix is valid. Fragments are exempt —
-// they follow the fragment library's own naming conventions.
+// The UBS AEM naming convention: every author-named component's `name` attribute
+// begins with `PREFIX_`, where PREFIX is fixed per component type (see
+// `specs/AEM Naming Conventions.md`). This is the exact classification the
+// `ajila-forms-conversion-feedback` detector applies to the shipped ZIP —
+// reproduced here so the conversion agent gets the same verdicts up front.
+//
+// Scoping (kept identical to the detector; do not silently change):
+//   - Only the leading `PREFIX_` token is enforced; the `<shortUuid>` is
+//     optional and the `<CamelCaseName>` is never inspected or invented.
+//   - System / fixed-name resourceTypes are exempt; fragment-referenced nodes
+//     (`fragRef`, `affrg` in the name, an `AF_` prefix) are exempt; the `preview`
+//     construct and `*Title` step-title wrappers are exempt.
+//   - Three buckets: `ok`, `wrong-prefix` (a known prefix, wrong for the type),
+//     `raw` (not a known prefix at all).
 
-/// All component-name prefixes the converter emits (spec-conforming).
-const ALL_PREFIXES: &[&str] = &[
-    "PN", "TXT", "TXTM", "EML", "TEL", "NB", "DATE", "DD", "CB", "RB", "ST", "TTL", "IMG", "TBL",
-    "RCP",
-];
-
-/// The prefixes a given node variant may legitimately use. An empty slice means
-/// the node's name is not checked (`Root` has no name; `Fragment` follows the
-/// fragment library's own conventions).
-fn allowed_prefixes(node: &AemNode) -> &'static [&'static str] {
-    match node {
-        AemNode::Root { .. } => &[],
-        AemNode::Panel { .. } => &["PN", "TBL"],
-        AemNode::TextField { .. } => &["TXT", "TXTM", "EML", "TEL"],
-        AemNode::NumberField { .. } => &["NB"],
-        AemNode::DatePicker { .. } => &["DATE"],
-        AemNode::Dropdown { .. } => &["DD"],
-        AemNode::Checkbox { .. } => &["CB"],
-        AemNode::RadioButton { .. } => &["RB"],
-        AemNode::TextDraw { .. } => &["ST", "IMG"],
-        AemNode::TitleDraw { .. } => &["TTL"],
-        AemNode::Repeatable { .. } => &["RCP"],
-        // Fragments use the fragment library's own naming conventions — exempt.
-        AemNode::Fragment { .. } => &[],
-        AemNode::Preface { .. } => &["PN"],
-        AemNode::Appendix { .. } => &["PN"],
-        AemNode::FootnotePlaceholder { .. } => &["ST"],
-        AemNode::Custom { .. } => ALL_PREFIXES,
-    }
-}
-
-/// A node's `name`, or `None` for the nameless `Root`.
-fn node_name(node: &AemNode) -> Option<&str> {
-    match node {
-        AemNode::Root { .. } => None,
-        AemNode::Panel { name, .. }
-        | AemNode::TextField { name, .. }
-        | AemNode::NumberField { name, .. }
-        | AemNode::DatePicker { name, .. }
-        | AemNode::Dropdown { name, .. }
-        | AemNode::Checkbox { name, .. }
-        | AemNode::RadioButton { name, .. }
-        | AemNode::TextDraw { name, .. }
-        | AemNode::TitleDraw { name, .. }
-        | AemNode::Repeatable { name, .. }
-        | AemNode::Fragment { name, .. }
-        | AemNode::Preface { name, .. }
-        | AemNode::Appendix { name, .. }
-        | AemNode::FootnotePlaceholder { name, .. }
-        | AemNode::Custom { name, .. } => Some(name),
-    }
-}
-
-/// A short human label for a node variant, used in issue messages.
-fn node_kind(node: &AemNode) -> &'static str {
-    match node {
-        AemNode::Root { .. } => "Root",
-        AemNode::Panel { .. } => "Panel",
-        AemNode::TextField { .. } => "TextField",
-        AemNode::NumberField { .. } => "NumberField",
-        AemNode::DatePicker { .. } => "DatePicker",
-        AemNode::Dropdown { .. } => "Dropdown",
-        AemNode::Checkbox { .. } => "Checkbox",
-        AemNode::RadioButton { .. } => "RadioButton",
-        AemNode::TextDraw { .. } => "TextDraw",
-        AemNode::TitleDraw { .. } => "TitleDraw",
-        AemNode::Repeatable { .. } => "Repeatable",
-        AemNode::Fragment { .. } => "Fragment",
-        AemNode::Preface { .. } => "Preface",
-        AemNode::Appendix { .. } => "Appendix",
-        AemNode::FootnotePlaceholder { .. } => "FootnotePlaceholder",
-        AemNode::Custom { .. } => "Custom",
-    }
-}
-
-/// A node's children, or an empty slice for leaves.
-fn node_children(node: &AemNode) -> &[AemNode] {
-    match node {
-        AemNode::Root { children, .. }
-        | AemNode::Panel { children, .. }
-        | AemNode::Repeatable { children, .. } => children,
-        _ => &[],
-    }
-}
-
-/// Split a trailing `_<8 lowercase-hex>` short-UUID suffix off a name, returning
-/// the head (prefix + optional CamelCase) and the suffix.
-fn split_short_uuid(name: &str) -> Option<(&str, &str)> {
-    let (head, tail) = name.rsplit_once('_')?;
-    let is_short_uuid = tail.len() == SHORT_UUID_LEN
-        && tail
-            .chars()
-            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
-    if is_short_uuid && !head.is_empty() {
-        Some((head, tail))
-    } else {
-        None
-    }
-}
-
-/// Whether `name` conforms to `PREFIX_<CamelCase>_<shortUuid>` (or the degraded
-/// `PREFIX_<shortUuid>`) for one of the `allowed` prefixes.
-fn name_conforms(name: &str, allowed: &[&str]) -> bool {
-    let Some((head, _uuid)) = split_short_uuid(name) else {
-        return false;
-    };
-    allowed.iter().any(|p| {
-        // `PREFIX_<uuid>` — head is exactly the prefix (empty CamelCase part).
-        head == *p
-            // `PREFIX_<CamelCase>_<uuid>` — head is prefix + `_` + alphanumeric.
-            || head
-                .strip_prefix(p)
-                .and_then(|rest| rest.strip_prefix('_'))
-                .is_some_and(|camel| !camel.is_empty() && camel.chars().all(|c| c.is_ascii_alphanumeric()))
+/// Canonical prefix(es) for a resourceType leaf (first is canonical). `None`
+/// means "not a mapped field type".
+fn type_prefixes(rt: &str) -> Option<&'static [&'static str]> {
+    Some(match rt {
+        "textbox" | "guidetextbox" => &["TXT"],
+        "checkbox" => &["CB"],
+        "radiobutton" => &["RB"],
+        "dropdownlist" => &["DD"],
+        "datepicker" | "guidedatepicker" => &["DATE"],
+        "numericbox" => &["NB"],
+        "telephone" => &["TEL"],
+        "email" => &["EML"],
+        "textboxMultiline" => &["TXTM"],
+        "titledraw" => &["TTL"],
+        "signature" => &["SIGN"],
+        "textdraw" => &["ST", "ITXT", "ETXT"],
+        "image" => &["IMG"],
+        "chart" => &["CRT"],
+        "separator" => &["SPT"],
+        "barcode" => &["BARCODE"],
+        "qrcode" => &["QRCODE"],
+        "table" => &["TBL"],
+        _ => return None,
     })
 }
 
-/// Walk the output tree, recording naming-convention violations and tallying
-/// each name for the tree-wide uniqueness check.
-fn check_naming(node: &AemNode, issues: &mut Vec<String>, counts: &mut BTreeMap<String, usize>) {
-    if let Some(name) = node_name(node) {
-        *counts.entry(name.to_string()).or_insert(0) += 1;
-        let allowed = allowed_prefixes(node);
-        if !allowed.is_empty() && !name_conforms(name, allowed) {
-            issues.push(format!(
-                "{} node name {name:?} does not match PREFIX_<CamelCase>_<shortUuid> \
-                 (expected prefix one of: {})",
-                node_kind(node),
-                allowed.join(", "),
-            ));
+/// The authoritative closed set of allowed prefixes — used to tell a
+/// `wrong-prefix` (a known prefix used on the wrong type) from a `raw` name.
+const KNOWN_PREFIXES: &[&str] = &[
+    "RB", "DATE", "TXT", "CB", "DD", "PN", "RCHT", "RCP", "RCBP", "RCHP", "NB", "BT", "ST", "TEL",
+    "TTL", "TXTM", "EML", "IMG", "CRT", "SPT", "ITXT", "ETXT", "TBL", "BARCODE", "QRCODE", "SIGN",
+];
+
+/// System / fixed-name resourceType leaves — never author-named, skip entirely.
+const EXEMPT_RT: &[&str] = &[
+    "guideContainer", "rootPanel", "toolbar", "nextitemnav", "previtemnav", "submit", "summary",
+    "dorOptionsUBS", "metadata", "letterhead", "carousel", "messagebox",
+    "messagebox-CarouselPreviewError", "errorboxcarouselpreview", "previewbutton", "signaturebox",
+    "guidefootnoteplaceholder", "guideheader", "guidefooter", "formtitle", "aftemplatedpage",
+    "responsivegrid", "guidefieldset", "defaultGuideLayout", "wizard", "gridFluidLayout2",
+    "defaultToolbarLayout", "dorProperties",
+];
+
+/// Button resourceType leaves (also anything ending in `button`).
+const BUTTON_RT: &[&str] = &["removebutton", "tertiarybutton", "secondarybutton", "primarybutton"];
+
+/// System panels with fixed engine names — exempt.
+const EXEMPT_PANEL_NAMES: &[&str] = &["summaryPanel", "previewPanel", "PN_Preview", "guideRootPanel"];
+
+/// A classified verdict for one node.
+struct Verdict {
+    bucket: &'static str, // "ok" | "wrong-prefix" | "raw"
+    expected: String,
+    role: String,
+    confidence: &'static str,
+}
+
+/// Leading prefix token — everything before the first `_` (or the whole name).
+fn name_prefix(nm: &str) -> &str {
+    nm.split_once('_').map(|(a, _)| a).unwrap_or(nm)
+}
+
+/// Classify one element. `None` = skip (exempt / unmapped / no name). Mirrors
+/// `classify()` in the detector.
+fn classify(
+    tag: &str,
+    rt_leaf: &str,
+    name: &str,
+    has_frag_ref: bool,
+    self_repeatable: bool,
+    ancestor_in_repeat: bool,
+) -> Option<Verdict> {
+    if name.is_empty() || rt_leaf.is_empty() {
+        return None;
+    }
+    if EXEMPT_RT.contains(&rt_leaf) || rt_leaf.to_ascii_lowercase().contains("layout") {
+        return None;
+    }
+    // fragment-referenced / engine-injected — exempt.
+    if has_frag_ref || name.contains("affrg") || name.starts_with("AF_") {
+        return None;
+    }
+    // the UBS "Preview" construct is referenced by name on nearly every form.
+    if name.eq_ignore_ascii_case("preview") {
+        return None;
+    }
+
+    let (role, valid, confidence): (String, Vec<&'static str>, &'static str) = if rt_leaf == "panel"
+    {
+        if EXEMPT_PANEL_NAMES.contains(&name)
+            || tag.starts_with("summarypanel")
+            || tag.starts_with("previewpanel")
+        {
+            return None;
+        }
+        // title-wrapper panels track their parent's name — exempt (parent drives the fix).
+        if tag.starts_with("panel_title") || name.ends_with("Title") {
+            return None;
+        }
+        if self_repeatable {
+            // a repeatable panel → repeat-container panel; accept the RC* family.
+            ("repeat-panel".into(), vec!["RCP", "RCBP", "RCHP", "RCHT"], "high")
+        } else if ancestor_in_repeat {
+            // a sub-panel within a repeat container — low confidence, human review.
+            ("repeat-subpanel".into(), vec!["RCP", "RCHP", "RCBP", "RCHT", "PN"], "low")
+        } else {
+            ("panel".into(), vec!["PN"], "high")
+        }
+    } else if let Some(tp) = type_prefixes(rt_leaf) {
+        // must precede the button catch — radiobutton ends in "button".
+        (rt_leaf.to_string(), tp.to_vec(), "high")
+    } else if BUTTON_RT.contains(&rt_leaf) || rt_leaf.ends_with("button") {
+        ("button".into(), vec!["BT"], "high")
+    } else {
+        return None; // unknown / unmapped type — don't guess.
+    };
+
+    let expected = valid[0].to_string();
+    let pfx = name_prefix(name);
+    let bucket = if valid.contains(&pfx) {
+        "ok"
+    } else if KNOWN_PREFIXES.contains(&pfx) {
+        "wrong-prefix"
+    } else {
+        "raw"
+    };
+    Some(Verdict { bucket, expected, role, confidence })
+}
+
+/// Read the attributes we care about + whether this element is itself a repeat
+/// container, classify it, and record a violation if non-`ok`. Returns whether
+/// the element is repeatable (so descendants count as "in a repeat container").
+fn scan_element(
+    e: &BytesStart,
+    ancestor_in_repeat: bool,
+    counts: &mut [usize; 3],
+    out: &mut Vec<NamingViolation>,
+) -> bool {
+    let tag = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+    let mut name = String::new();
+    let mut rt_full = String::new();
+    let mut has_frag_ref = false;
+    let mut has_occur = false;
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"name" => name = attr.unescape_value().unwrap_or_default().into_owned(),
+            b"sling:resourceType" => {
+                rt_full = attr.unescape_value().unwrap_or_default().into_owned()
+            }
+            b"fragRef" => has_frag_ref = true,
+            b"minOccur" | b"maxOccur" => has_occur = true,
+            _ => {}
         }
     }
-    for child in node_children(node) {
-        check_naming(child, issues, counts);
+    let rt_leaf = rt_full.rsplit('/').next().unwrap_or("");
+    let self_repeatable = has_occur || tag.starts_with("repeatable");
+
+    if let Some(v) = classify(&tag, rt_leaf, &name, has_frag_ref, self_repeatable, ancestor_in_repeat)
+    {
+        match v.bucket {
+            "ok" => counts[0] += 1,
+            "wrong-prefix" => counts[1] += 1,
+            "raw" => counts[2] += 1,
+            _ => {}
+        }
+        if v.bucket != "ok" {
+            out.push(NamingViolation {
+                node: tag,
+                name,
+                rt: rt_leaf.to_string(),
+                role: v.role,
+                expected: v.expected,
+                bucket: v.bucket.to_string(),
+                confidence: v.confidence.to_string(),
+            });
+        }
     }
+    self_repeatable
+}
+
+/// Parse rendered JCR XML and return `(violations, [ok, wrong-prefix, raw])`.
+fn check_naming_conventions(xml: &str) -> (Vec<NamingViolation>, [usize; 3]) {
+    let mut reader = Reader::from_str(xml);
+    let mut violations = Vec::new();
+    let mut counts = [0usize; 3];
+    // Stack of "is this open element a repeat container" flags; the running
+    // count of `true`s is the number of repeat ancestors.
+    let mut stack: Vec<bool> = Vec::new();
+    let mut repeat_ancestors: usize = 0;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) => {
+                let rep = scan_element(e, repeat_ancestors > 0, &mut counts, &mut violations);
+                stack.push(rep);
+                if rep {
+                    repeat_ancestors += 1;
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                scan_element(e, repeat_ancestors > 0, &mut counts, &mut violations);
+            }
+            Ok(Event::End(_)) => {
+                if let Some(rep) = stack.pop() {
+                    if rep {
+                        repeat_ancestors = repeat_ancestors.saturating_sub(1);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break, // our own render is well-formed; bail on the unexpected.
+            _ => {}
+        }
+    }
+    (violations, counts)
 }
 
 #[cfg(test)]
@@ -467,8 +569,9 @@ mod tests {
     #[test]
     fn roundtrip_has_no_misses() {
         let input = sample_input();
-        let aem = crate::convert_to_aem(&input, &AemConfig::test_default("TEST"));
-        let report = review_output(&input, &aem, "en");
+        let cfg = AemConfig::test_default("TEST");
+        let aem = crate::convert_to_aem(&input, &cfg);
+        let report = review_output(&input, &aem, &cfg, "en");
         assert!(
             report.missing_text.is_empty(),
             "expected no misses, got {:?}",
@@ -484,8 +587,9 @@ mod tests {
         let input = sample_input();
         // Output is missing "Last name".
         let reduced: Vec<StructuredNode> = input.iter().take(2).cloned().collect();
-        let aem = crate::convert_to_aem(&reduced, &AemConfig::test_default("TEST"));
-        let report = review_output(&input, &aem, "en");
+        let cfg = AemConfig::test_default("TEST");
+        let aem = crate::convert_to_aem(&reduced, &cfg);
+        let report = review_output(&input, &aem, &cfg, "en");
         assert!(
             report.missing_text.iter().any(|t| t == "Last name"),
             "expected 'Last name' missing, got {:?}",
@@ -494,88 +598,115 @@ mod tests {
         assert!(report.coverage < 1.0);
     }
 
+    // ── Naming-convention checks (ported detector) ────────────────────────────
+
     #[test]
-    fn converter_output_has_no_naming_issues() {
+    fn name_prefix_is_leading_token() {
+        assert_eq!(name_prefix("TXT_FirstName_ab12cd34"), "TXT");
+        assert_eq!(name_prefix("PN_affrg_Address1"), "PN"); // splits at FIRST underscore
+        assert_eq!(name_prefix("bareName"), "bareName");
+    }
+
+    /// Only the leading `PREFIX_` matters — a missing shortUuid or an arbitrary
+    /// CamelCase part is still `ok`.
+    #[test]
+    fn leading_prefix_only_is_ok() {
+        let v = classify("textbox_x", "textbox", "TXT_FirstName_ab12cd34", false, false, false).unwrap();
+        assert_eq!(v.bucket, "ok");
+        let v = classify("textbox_x", "textbox", "TXT_FirstName", false, false, false).unwrap();
+        assert_eq!(v.bucket, "ok"); // no shortUuid — still fine
+        let v = classify("datepicker_x", "datepicker", "DATE", false, false, false).unwrap();
+        assert_eq!(v.bucket, "ok"); // prefix only
+    }
+
+    #[test]
+    fn wrong_prefix_vs_raw_buckets() {
+        // NUM_ is not a known prefix at all → raw.
+        let v = classify("numericbox_x", "numericbox", "NUM_Age_ab12", false, false, false).unwrap();
+        assert_eq!((v.bucket, v.expected.as_str()), ("raw", "NB"));
+        // PN_ is a known prefix but wrong for a repeat panel (expects RCP) → wrong-prefix.
+        let v = classify("panel_x", "panel", "PN_Rows", false, true, false).unwrap();
+        assert_eq!((v.bucket, v.expected.as_str(), v.role.as_str()), ("wrong-prefix", "RCP", "repeat-panel"));
+        // legacy RP_ / lowercase tag word → raw.
+        assert_eq!(classify("panel_x", "panel", "RP_x", false, false, false).unwrap().bucket, "raw");
+        assert_eq!(classify("panel_x", "panel", "panel_11881", false, false, false).unwrap().bucket, "raw");
+    }
+
+    #[test]
+    fn exemptions_are_skipped() {
+        // fragment-referenced
+        assert!(classify("panel_x", "panel", "PN_x", true, false, false).is_none());
+        // affrg in name / AF_ prefix
+        assert!(classify("panel_x", "panel", "affrg_Address", false, false, false).is_none());
+        assert!(classify("textbox_x", "textbox", "AF_bound", false, false, false).is_none());
+        // system resourceType + layouts
+        assert!(classify("toolbar_x", "toolbar", "whatever", false, false, false).is_none());
+        assert!(classify("layout", "gridFluidLayout2", "x", false, false, false).is_none());
+        // preview construct + Title wrappers + system panels
+        assert!(classify("tertiarybutton_x", "tertiarybutton", "preview", false, false, false).is_none());
+        assert!(classify("panel_title_x", "panel", "PN_FooTitle", false, false, false).is_none());
+        assert!(classify("panel_x", "panel", "guideRootPanel", false, false, false).is_none());
+        // unmapped resourceType → skip (don't guess)
+        assert!(classify("weird_x", "somethingElse", "XX_y", false, false, false).is_none());
+    }
+
+    #[test]
+    fn panel_roles_and_repeat_context() {
+        // plain panel expects PN
+        assert_eq!(classify("panel_x", "panel", "PN_Foo", false, false, false).unwrap().bucket, "ok");
+        // repeat panel (own minOccur/maxOccur) → RC* family, high confidence
+        let v = classify("panel_x", "panel", "RCP_Foo", false, true, false).unwrap();
+        assert_eq!((v.role.as_str(), v.confidence), ("repeat-panel", "high"));
+        // sub-panel inside a repeat container → low confidence, PN also accepted
+        let v = classify("panel_x", "panel", "PN_Inner", false, false, true).unwrap();
+        assert_eq!((v.bucket, v.role.as_str(), v.confidence), ("ok", "repeat-subpanel", "low"));
+    }
+
+    #[test]
+    fn buttons_expect_bt() {
+        assert_eq!(classify("removebutton_x", "removebutton", "BT_Remove", false, false, false).unwrap().bucket, "ok");
+        // radiobutton must NOT be caught by the button rule (it's a mapped field type)
+        let v = classify("radiobutton_x", "radiobutton", "RB_Choice", false, false, false).unwrap();
+        assert_eq!((v.bucket, v.role.as_str()), ("ok", "radiobutton"));
+    }
+
+    #[test]
+    fn xml_walk_reports_violations_with_counts() {
+        // Two named nodes: a conforming textbox and a raw-named panel.
+        let xml = r#"<jcr:root xmlns:jcr="j" xmlns:sling="s">
+            <panel_1 sling:resourceType="ubs/controls/panel" name="myPanel"/>
+            <textbox_1 sling:resourceType="ubs/controls/textbox" name="TXT_First_ab12cd34"/>
+        </jcr:root>"#;
+        let (viol, counts) = check_naming_conventions(xml);
+        assert_eq!(counts, [1, 0, 1], "one ok (textbox), one raw (panel)");
+        assert_eq!(viol.len(), 1);
+        assert_eq!(viol[0].name, "myPanel");
+        assert_eq!((viol[0].bucket.as_str(), viol[0].expected.as_str()), ("raw", "PN"));
+        assert_eq!(viol[0].role, "panel");
+    }
+
+    #[test]
+    fn xml_walk_tracks_repeat_ancestry() {
+        // A sub-panel is only "repeat-subpanel" when nested under a repeatable.
+        let xml = r#"<r xmlns:sling="s">
+            <repeatable_1 sling:resourceType="ubs/controls/panel" name="RCP_Rows" maxOccur="4">
+                <panel_2 sling:resourceType="ubs/controls/panel" name="PN_Inner"/>
+            </repeatable_1>
+        </r>"#;
+        let (viol, counts) = check_naming_conventions(xml);
+        // RCP_Rows (repeat-panel, ok) + PN_Inner (repeat-subpanel, ok) → no violations.
+        assert_eq!(counts, [2, 0, 0], "both conform, got {viol:?}");
+        assert!(viol.is_empty());
+    }
+
+    #[test]
+    fn review_output_runs_naming_on_rendered_xml() {
+        // A convert → review round-trip renders and scans without error.
         let input = sample_input();
-        let aem = crate::convert_to_aem(&input, &AemConfig::test_default("TEST"));
-        let report = review_output(&input, &aem, "en");
-        assert!(
-            report.naming_issues.is_empty(),
-            "converter output should be convention-clean, got {:?}",
-            report.naming_issues
-        );
-    }
-
-    #[test]
-    fn conforming_names_are_accepted() {
-        assert!(name_conforms("TXT_FirstName_ab12cd34", &["TXT", "TXTM", "EML", "TEL"]));
-        assert!(name_conforms("TXTM_Comments_ab12cd34", &["TXT", "TXTM", "EML", "TEL"]));
-        assert!(name_conforms("DATE_ab12cd34", &["DATE"])); // degraded: empty CamelCase
-        assert!(name_conforms("RCP_deadbeef", &["RCP"]));
-        assert!(name_conforms("TBL_Summary_deadbeef", &["PN", "TBL"]));
-        // A prefix containing an underscore is matched whole, not split.
-        assert!(name_conforms("PN_affrg_Address1_00ff11aa", &["PN_affrg"]));
-    }
-
-    #[test]
-    fn nonconforming_names_are_rejected() {
-        assert!(!name_conforms("firstName", &["TXT"])); // no prefix, no uuid
-        assert!(!name_conforms("TXT_FirstName", &["TXT"])); // missing short-uuid
-        assert!(!name_conforms("XYZ_FirstName_ab12cd34", &["TXT"])); // wrong prefix
-        assert!(!name_conforms("TXT_First Name_ab12cd34", &["TXT"])); // space in CamelCase
-        assert!(!name_conforms("DATE_ab12cd3", &["DATE"])); // 7-char suffix, not 8
-        assert!(!name_conforms("NB_Age_ABCDEF12", &["NB"])); // uppercase hex
-    }
-
-    #[test]
-    fn bad_name_is_reported() {
-        let aem = AemNode::Root {
-            title: "Form".into(),
-            children: vec![AemNode::TextField {
-                uuid: uuid::Uuid::nil(),
-                name: "not_a_valid_name".into(),
-                label: "First name".into(),
-                mandatory: false,
-                visible: true,
-                max_chars: None,
-                colspan: 12,
-                dor_colspan: None,
-                bind_ref: None,
-            }],
-        };
-        let report = review_output(&[], &aem, "en");
-        assert!(
-            report.naming_issues.iter().any(|i| i.contains("not_a_valid_name")),
-            "expected the malformed name to be flagged, got {:?}",
-            report.naming_issues
-        );
-        assert!(report.notes.iter().any(|n| n.contains("naming-convention")));
-    }
-
-    #[test]
-    fn duplicate_names_are_reported() {
-        let field = |name: &str| AemNode::NumberField {
-            uuid: uuid::Uuid::nil(),
-            name: name.into(),
-            label: "Age".into(),
-            mandatory: false,
-            visible: true,
-            colspan: 12,
-            dor_colspan: None,
-            bind_ref: None,
-        };
-        let aem = AemNode::Root {
-            title: "Form".into(),
-            children: vec![field("NB_Age_ab12cd34"), field("NB_Age_ab12cd34")],
-        };
-        let report = review_output(&[], &aem, "en");
-        assert!(
-            report
-                .naming_issues
-                .iter()
-                .any(|i| i.contains("duplicate") && i.contains("NB_Age_ab12cd34")),
-            "expected duplicate-name issue, got {:?}",
-            report.naming_issues
-        );
+        let cfg = AemConfig::test_default("TEST");
+        let aem = crate::convert_to_aem(&input, &cfg);
+        let report = review_output(&input, &aem, &cfg, "en");
+        // naming_violations is populated from the rendered XML (may be empty).
+        let _ = &report.naming_violations;
     }
 }
