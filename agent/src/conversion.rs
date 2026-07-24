@@ -294,10 +294,17 @@ sections are pages and nothing deeper is; exactly one rendered TitleDraw heading
 title does not render); banking = affrg_BankingRelationship1 inside a PN_BR sole-child wrapper with \
 dor_exclude; address uses the entity AddressBlock fragment; DoR exclusions set; no invented text; \
 every language present and non-stub; cascading dropdowns implemented as static visibility-gated \
-variants (never a runtime option mutation); every fillable source field present. End by calling \
-submit_review with approved=true ONLY if the form is fully correct; otherwise approved=false and \
-report = a detailed, actionable message listing every issue (with node paths where possible). Do not \
-fix anything yourself.";
+variants (never a runtime option mutation); every fillable source field present. \
+ENGINE-INTRINSIC issues — some defects come from the conversion engine itself (fixed template output, \
+resourceType assignments, lowering behaviour) and CANNOT be changed by the Author via the tree editors \
+(e.g. email / telephone / multiline fields render as a plain `textbox` resourceType, so review_output \
+buckets their EML_/TEL_/TXTM_ names as wrong-prefix). When an issue is genuinely engine-intrinsic and \
+not authorable, mark it DONE: do NOT count it against approval and do NOT send it back to the Author — \
+instead note it separately as a known engine limitation for the operator. Only return issues the Author \
+can actually fix by editing the tree. End by calling submit_review with approved=true ONLY if every \
+remaining issue is either resolved or engine-intrinsic (not authorable); otherwise approved=false and \
+report = a detailed, actionable message listing every AUTHORABLE issue (with node paths where possible), \
+noting any engine-intrinsic limitations separately. Do not fix anything yourself.";
 
 /// The result of executing one tool call, to be returned to the model as a
 /// `tool_result` content block.

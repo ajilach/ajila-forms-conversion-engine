@@ -35,6 +35,7 @@ pub fn SettingsPage(
     let settings_for_port = settings.clone();
     let settings_for_apikey = settings.clone();
     let settings_for_model = settings.clone();
+    let settings_for_review = settings.clone();
     let settings_for_aem_host = settings.clone();
     let settings_for_aem_user = settings.clone();
     let settings_for_aem_pass = settings.clone();
@@ -278,6 +279,32 @@ pub fn SettingsPage(
                                         "{model_id}"
                                     }
                                 }
+                            }
+                        }
+                        div { class: "settings-row",
+                            div { class: "settings-row-info",
+                                span { class: "settings-row-label", "Max review rounds" }
+                                span { class: "settings-row-desc",
+                                    "How many Reviewer → Author fix rounds before finalizing with whatever is built. Higher = more self-correction, more tokens."
+                                }
+                            }
+                            input {
+                                class: "settings-input-port",
+                                r#type: "number",
+                                min: "1",
+                                step: "1",
+                                value: "{settings_for_review.max_review_rounds}",
+                                onchange: {
+                                    let on_changed = on_settings_changed;
+                                    let s = settings_for_review.clone();
+                                    move |e: Event<FormData>| {
+                                        if let Ok(v) = e.value().parse::<usize>() {
+                                            let mut new_s = s.clone();
+                                            new_s.max_review_rounds = v.max(1);
+                                            on_changed.call(new_s);
+                                        }
+                                    }
+                                },
                             }
                         }
                     }

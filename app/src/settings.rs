@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 /// Key under which the serialized settings are stored.
 const SETTINGS_KEY: &str = "app";
 
+/// Default cap on Reviewer → Author-fix rounds in the conversion pipeline.
+pub const DEFAULT_MAX_REVIEW_ROUNDS: usize = 3;
+
 /// Render operator-configured extra instructions as a prompt section, or an
 /// empty string when none are set. Appended after the built-in guidance so the
 /// hard constraints still take precedence.
@@ -36,6 +39,11 @@ pub struct AppSettings {
     pub anthropic_api_key: String,
     /// Anthropic model used for AI features (e.g. "claude-opus-4-8").
     pub anthropic_model: String,
+    /// Maximum Reviewer → Author-fix rounds in the conversion pipeline before
+    /// finalizing with whatever is built. Missing/0 is normalized to
+    /// [`DEFAULT_MAX_REVIEW_ROUNDS`] in [`AppSettings::load`].
+    #[serde(default)]
+    pub max_review_rounds: usize,
     /// Base URL of the AEM author instance for package upload
     /// (e.g. "http://localhost:4502").
     pub aem_host: String,
@@ -80,6 +88,7 @@ impl Default for AppSettings {
             live_preview_port: 3718,
             anthropic_api_key: String::new(),
             anthropic_model: "claude-opus-4-8".to_string(),
+            max_review_rounds: DEFAULT_MAX_REVIEW_ROUNDS,
             aem_host: "http://localhost:4502".to_string(),
             aem_username: "admin".to_string(),
             aem_password: "admin".to_string(),
@@ -150,6 +159,9 @@ impl AppSettings {
         }
         if self.evict_trigger_bytes == 0 {
             self.evict_trigger_bytes = d.evict_trigger_bytes;
+        }
+        if self.max_review_rounds == 0 {
+            self.max_review_rounds = d.max_review_rounds;
         }
     }
 

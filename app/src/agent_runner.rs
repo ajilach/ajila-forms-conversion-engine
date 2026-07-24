@@ -63,8 +63,6 @@ const MAX_VALIDATE_REPEATS: usize = 3;
 /// toward incremental authoring before giving up (avoids an endless loop if the
 /// model keeps trying to emit one oversized call regardless).
 const MAX_MAX_TOKEN_NUDGES: usize = 3;
-/// How many Reviewer→Author fix rounds before finalizing with a warning.
-const MAX_REVIEW_ROUNDS: usize = 3;
 
 /// Injected when a turn is cut off at the output-token cap — almost always
 /// mid-way through one oversized tool call (a monolithic `set_aem_translated`
@@ -439,7 +437,8 @@ async fn run_conversion(
 
     // ── Stage 3: Reviewer → (Author fix)* ───────────────────────────────────
     let mut approved = false;
-    for round in 0..MAX_REVIEW_ROUNDS {
+    let max_review_rounds = settings.max_review_rounds.max(1);
+    for round in 0..max_review_rounds {
         push_step(&mut processing_state, stage_header("Reviewer", &format!("reviewing (round {})", round + 1)));
         if run_role(
             &mut agent,
