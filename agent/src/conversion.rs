@@ -142,7 +142,15 @@ position — never leave a language blank or collapse to one); give each fillabl
 component type, options (real labels AND values), required/visible state and column width; nest \
 fields into Panels and use Repeatable for repeating sections; where content differs by configurator \
 selection, include each variant once — keep shared content shared, and NEVER reuse a node `name` \
-(that collides in AEM). PAGES: the Root is laid out as a wizard, so ONLY its direct-child Panels \
+(that collides in AEM). \
+NAMING: give every node a `name` beginning with the canonical PREFIX_ for its component TYPE, per the AEM \
+Naming Conventions — PN_ panel, TXT_ text box, TXTM_ multiline, NB_ number box, DATE_ date, DD_ dropdown, \
+CB_ checkbox, RB_ radio, TEL_ telephone, EML_ email, TTL_ heading/title, ST_ static text (ITXT_/ETXT_ \
+info/error text), IMG_ image, TBL_ table, SPT_ separator, RCP_/RCHP_/RCBP_/RCHT_ repeat-container panels, \
+BT_ button, SIGN_ signature (consult the naming-conventions reference doc for the full table). Only the \
+leading PREFIX_ is enforced — the rest of the name is free — and the Reviewer flags any component whose \
+leading prefix does not match its resourceType (review_output's naming_violations, bucketed wrong-prefix/raw). \
+PAGES: the Root is laid out as a wizard, so ONLY its direct-child Panels \
 become pages (wizard steps). Set `is_page: true` on each first-level section Panel — the top-level \
 sections of the form, in source order — and `is_page: false` on every Panel nested below them \
 (inner groupings, column wrappers, conditional panels, fields inside a section). So a new page \
