@@ -33317,3 +33317,84 @@ fn passthrough_survives_serde_snapshot_round_trip() {
         "passthrough must survive the snapshot round-trip intact"
     );
 }
+
+// ============================================================================
+// Conversion-feedback registry invariants (profiles/ubs/aem/root.xml)
+// ============================================================================
+
+/// Render the real UBS root template around a single trivial child, so the
+/// assertions below run against exactly the XML production emits.
+fn ubs_root_xml() -> String {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".to_string(), "AAAI".to_string());
+    vars.insert("formrange_entity".to_string(), "019".to_string());
+    let ctx = crate::Context::new("en".to_string(), vars);
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+
+    let root = AemNode::Root {
+        title: "Test Form".into(),
+        children: vec![],
+    };
+    generate_aem_xml(&root, &config)
+}
+
+/// The wizard toolbar's Submit and Back buttons must run the UBS navigation
+/// helpers rather than the rule editor's built-in Submit Form action, so that
+/// submission goes through the UBS validation/error path (feedback registry
+/// PROBLEM-toolbar-nav-handler, UBS directive 2026-07-28, reference form AAOV).
+/// `nextitemnav` is deliberately out of scope and stays on the old namespace.
+#[test]
+fn toolbar_submit_and_back_run_ubs_navigation_helpers() {
+    let xml = ubs_root_xml();
+
+    assert!(
+        xml.contains("window.forms.ubs.navigation.submit(submitErrorMessage);"),
+        "Submit must call the UBS navigation helper. Got:\n{}",
+        xml
+    );
+    assert!(
+        xml.contains("window.forms.ubs.navigation.previousStep(this);"),
+        "Back must call the UBS navigation helper. Got:\n{}",
+        xml
+    );
+    assert!(
+        !xml.contains("SUBMIT_FORM"),
+        "the built-in Submit Form visual rule must be gone. Got:\n{}",
+        xml
+    );
+    // The Submit button's navigation-visibility script is untouched by the rule.
+    assert!(
+        xml.contains("this.visible=(!this.panel.navigationContext.hasNextItem);"),
+        "fd:navigationChange must survive. Got:\n{}",
+        xml
+    );
+}
+
+/// Every form carries the global FormMetadata fragment as its first wizard
+/// step — hidden and DoR-excluded (feedback registry PROBLEM-formmetadata-step,
+/// reference form AAOV_033).
+#[test]
+fn root_panel_starts_with_formmetadata_fragment_step() {
+    let xml = ubs_root_xml();
+
+    let frag = xml
+        .find("/content/dam/formsanddocuments/afforms_global_fragmentlib/formmetadata")
+        .unwrap_or_else(|| panic!("FormMetadata fragment step missing. Got:\n{}", xml));
+    assert!(
+        xml.contains("name=\"FormMetadata\""),
+        "the FormMetadata step must be named FormMetadata. Got:\n{}",
+        xml
+    );
+    // It is the first child of the root panel's items, i.e. before the toolbar.
+    let toolbar = xml.find("name=\"toolbar\"").expect("toolbar missing");
+    assert!(
+        frag < toolbar,
+        "FormMetadata must be the first step. Got:\n{}",
+        xml
+    );
+}

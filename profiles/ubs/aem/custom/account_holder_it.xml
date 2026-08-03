@@ -5,7 +5,6 @@
     jcr:lastModifiedBy="admin"
     jcr:primaryType="nt:unstructured"
     sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
-    css="stepTitle"
     dorExcludeDescription="true"
     dorExcludeTitle="true"
     dorFieldStyling="Default"

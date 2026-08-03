@@ -362,7 +362,15 @@ const EXEMPT_RT: &[&str] = &[
 const BUTTON_RT: &[&str] = &["removebutton", "tertiarybutton", "secondarybutton", "primarybutton"];
 
 /// System panels with fixed engine names — exempt.
-const EXEMPT_PANEL_NAMES: &[&str] = &["summaryPanel", "previewPanel", "PN_Preview", "guideRootPanel"];
+const EXEMPT_PANEL_NAMES: &[&str] = &[
+    "summaryPanel",
+    "previewPanel",
+    "PN_Preview",
+    "guideRootPanel",
+    // The global FormMetadata fragment step carries the fragment's own fixed
+    // name, so the `PN_` convention does not apply to it.
+    "FormMetadata",
+];
 
 /// A classified verdict for one node.
 struct Verdict {

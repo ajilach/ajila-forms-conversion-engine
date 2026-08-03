@@ -1734,6 +1734,88 @@ mod tests {
         );
     }
 
+    /// The `PN_BR` wrapper must carry `css="ubs-margin-20"` so the banking
+    /// block gets the standard vertical spacing (feedback registry
+    /// PROBLEM-banking-relationship-margin, UBS directive 2026-07-27).
+    #[test]
+    fn preface_wrapper_carries_ubs_margin_class() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "preface".into(),
+            include_str!("../../../profiles/ubs/aem/preface.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ajila-forms-customers/ajila-forms-ubs/components".into(),
+        );
+
+        let node = AemNode::Preface {
+            uuid: fixed_uuid(),
+            name: "PN_Preface_abcdef01".into(),
+        };
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+
+        let pn_br = xml.find("name=\"PN_BR\"").expect("PN_BR wrapper missing");
+        let css = xml
+            .find("css=\"ubs-margin-20\"")
+            .unwrap_or_else(|| panic!("PN_BR wrapper must carry ubs-margin-20. Got:\n{}", xml));
+        assert!(
+            css < pn_br,
+            "the margin class must sit on the PN_BR wrapper. Got:\n{}",
+            xml
+        );
+    }
+
+    /// Date pickers must not pre-fill today's date: a pre-filled current date
+    /// silently becomes wrong data on any form not submitted the same day
+    /// (feedback registry PROBLEM-datepicker-current-date-default). The
+    /// unchecked state is the attribute being ABSENT, not `false`.
+    #[test]
+    fn datepicker_does_not_default_to_current_date() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "datepicker".into(),
+            include_str!("../../../profiles/ubs/aem/datepicker.xml").into(),
+        );
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ajila-forms-customers/ajila-forms-ubs/components".into(),
+        );
+        config
+            .user_vars
+            .insert("css_datepicker".into(), "widget_datepicker".into());
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "Default".into());
+
+        let node = AemNode::DatePicker {
+            uuid: fixed_uuid(),
+            name: "DATE_1".into(),
+            label: "Date".into(),
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        };
+        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+
+        assert!(
+            xml.contains("guideNodeClass=\"guideDatePicker\""),
+            "expected the real datepicker template to render. Got:\n{}",
+            xml
+        );
+        assert!(
+            !xml.contains("defaultToCurrentDate"),
+            "date pickers must not carry defaultToCurrentDate. Got:\n{}",
+            xml
+        );
+    }
+
     /// For a `PN_FormConfigurator` page panel, the full `dorExclusion` must sit
     /// on the generated `…Title` sub-panel, NOT on the parent panel (the parent
     /// only carries `dorExcludeTitle`/`dorExcludeDescription`). This mirrors the

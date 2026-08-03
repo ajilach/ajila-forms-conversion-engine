@@ -5,6 +5,7 @@
     jcr:lastModifiedBy="{{ author }}"
     jcr:primaryType="nt:unstructured"
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+    css="ubs-margin-20"
     dorExclusion="true"
     guideNodeClass="guidePanel"
     name="PN_BR"

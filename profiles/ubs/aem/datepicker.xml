@@ -7,7 +7,6 @@
     {% if label and label != "" %}jcr:title="{{ label }}"{% endif %}
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/datepicker"
     css="{{ variables.css_datepicker }}"
-    defaultToCurrentDate="true"
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guideDatePicker"

@@ -25,15 +25,17 @@ branches don't collide at merge.
 ## FEEDBACK-remove-the-preview-step-without-losing-dor-metadata-config — Remove the preview step without losing DoR/metadata config
 **Feedback pattern:** 'Remove the preview section' feedback — the previewpanel hosts the invisible doroptionsubs + metadata components.
 **Root cause:** Preview step is optional (120/286 packages lack it) but carries mandatory config nodes.
-**Fix applied:** Move doroptionsubs + metadata verbatim into summaryPanel/items after submitErrorMessage, then delete previewpanel and the toolbar 'preview' tertiarybutton (its rules reference the carousel).
+**Fix applied:** Move doroptionsubs + metadata verbatim into summaryPanel/items after submitErrorMessage, then delete previewpanel and the toolbar 'preview' tertiarybutton (its rules reference the carousel; 146/168 no-preview forms also carry no toolbar preview button — refs AAAE/AAAN/AACR/AABA).
 **First seen:** AAGO_019
 
+**Seen again:** AABJ_019
 ## FEEDBACK-english-shows-in-the-german-version-despite-a-populated-dictionary — English shows in the German version despite a populated dictionary
 **Feedback pattern:** 'EN text in DE version' feedback with a populated de.xml present.
 **Root cause:** Individual dictionary entries are untranslated stubs (message == English key), or the key mismatches the authored draw text by a trailing &#xa; — AEM falls back to the English source per string.
 **Fix applied:** Diff every visible _value/jcr:title against fd_-prefixed keys in assets/dictionary/de.xml (a separate ZIP entry — extract/repack it alongside the form XML); fix messages / add exact-match keys, translations verbatim from the form's <LANG> PDF XFA or the corpus-majority message. Strings identical in the PDF's German are correct untranslated.
 **First seen:** AAGO_019
 
+**Seen again:** AABJ_019
 ## FEEDBACK-two-legal-guardian-signature-blocks-for-minderjaehrige — Two legal-guardian signature blocks for Minderjaehrige
 **Feedback pattern:** Only one signature block shows when 'Minderjaehrige' is selected (RB_FormularAdressat == "2").
 **Root cause:** TWO things must be right, and `minOccur` is the *lesser* one. (1) The `affrg_LegalGuardianSignature1` fragment panel (name `PN_SignatureIndividual`) must have `minOccur=2` (maxOccur 2 or 4 — corpus varies). (2) **The decisive one:** the conditional show/hide CONTAINER for that signature section must drive its visibility through the legacy UBS hook — an `fd:scripts` `fd:visible` calling `window.forms.ubs.showAFShowDor(this)` / `hideAFHideDor(this)` — **not** a stock machine-generated `fd:rules` Hide/Show. In this legacy runtime the initial `minOccur` instances are *materialised by the `showAFShowDor` init hook*, not by stock AF's min-occur engine, so a form re-converted with a plain `fd:rules` visibility (empty `fd:scripts`) sets `minOccur=2` correctly yet still renders ONE block — the hook never fires. **General lesson: a repeatable panel that "won't repeat" in this corpus is a VISIBILITY-MECHANISM problem, not an occur-value problem.**
