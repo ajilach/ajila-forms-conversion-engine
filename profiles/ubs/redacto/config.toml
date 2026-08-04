@@ -1,0 +1,47 @@
+# =============================================================================
+# UBS Redacto Output Profile
+# =============================================================================
+#
+# Emits a PostgreSQL dump for the Ajila Redacto platform (schema app_redacto).
+# Use with:  blueprint --profile ubs --redacto input/<text-only>.pdf
+#
+# Template syntax: Tera (Jinja2-style)
+#   Namespaces:
+#     xfa.*        — raw XFA <variables><text> from the PDF
+#     variables.*  — user-defined intermediate values (below)
+
+# Business identifier of the document, e.g. "aaad_001".
+# Written to documents.document_id and configuration.document.id (varchar(50)).
+document_id = "{{ xfa.formrange_code | lower }}_{{ xfa.formrange_entity }}"
+
+# Human-readable title, rendered into the HTML <title>.
+title = "{{ xfa.formrange_code }}_{{ xfa.formrange_entity }}"
+
+# Stylesheet resolved from the Redacto bundle (styles/<name>).
+style = "ubs-default.css"
+
+# Page header and footer, exposed to the stylesheet as ${meta:header} /
+# ${meta:footer}. The footer keeps its literal spacing (white-space: pre-wrap).
+header = "{% if variables.edition %}Edition {{ variables.edition }}{% endif %}"
+footer = "{{ variables.footer_code }}"
+
+# Authoring user recorded as the document owner. Redacto rejects authoring
+# writes against a document that has no (USER, OWNER, DOCUMENT) ownership row.
+owner_id = "admin"
+
+master_language = "en"
+
+# Lifecycle status of the generated variants: DRAFT keeps them editable.
+status = "DRAFT"
+
+# styledPanel classes defined in ubs-default.css.
+grid_panel_style = "layout-split-block"
+footnote_panel_style = "footnote"
+
+[variables]
+# Edition label shown in the page header. XFA forms do not carry one, so this
+# is a profile-level default that can be overridden per conversion run.
+edition = "{{ xfa.edition | default(value='') }}"
+
+# Left-hand footer code (form number, entity, date, print key).
+footer_code = "{{ xfa.footer | default(value='') }}"

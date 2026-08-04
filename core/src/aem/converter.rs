@@ -8,9 +8,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
-    HeadingLevel, HeadingNode, ImageNode, InlineNode, InputValue, ListNode, NameValue,
-    ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
+    AEM_TAGS, ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
+    HeadingLevel, HeadingNode, ImageNode, InputValue, ListNode, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
+    collect_footnote_nodes, inline_text_to_html_with, strip_footnote_marker,
 };
 
 // ============================================================================
@@ -33,8 +34,7 @@ pub(crate) struct FootnoteEmbed {
 /// Collects all `FootnoteNode`s with a marker and generates a deterministic
 /// HTML ID for each.
 pub(crate) fn build_footnote_embeds(nodes: &[StructuredNode]) -> Vec<FootnoteEmbed> {
-    let mut footnotes: Vec<&FootnoteNode> = Vec::new();
-    collect_all_footnotes(nodes, &mut footnotes);
+    let footnotes: Vec<&FootnoteNode> = collect_footnote_nodes(nodes);
     footnotes
         .into_iter()
         .filter_map(|f| {
@@ -90,18 +90,6 @@ pub(crate) fn embed_footnotes_in_value(
         }
     }
     result
-}
-
-/// Strip the leading marker number and whitespace from footnote text.
-///
-/// E.g. `"1 Once opted up..."` → `"Once opted up..."`.
-fn strip_footnote_marker(html: &str, marker: &str) -> String {
-    let trimmed = html.trim_start();
-    if let Some(rest) = trimmed.strip_prefix(marker) {
-        rest.trim_start().to_string()
-    } else {
-        html.to_string()
-    }
 }
 
 use super::fragment_parser::ParsedFragment;
@@ -344,8 +332,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     // Also collect all language variants of H2 titles for custom element matching.
     let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
     let mut section_all_titles: Vec<Vec<String>> = Vec::new();
-    let mut footnotes: Vec<&FootnoteNode> = Vec::new();
-    collect_all_footnotes(nodes, &mut footnotes);
+    let footnotes: Vec<&FootnoteNode> = collect_footnote_nodes(nodes);
 
     // Build footnote embeds for inline embedding in text node values.
     ctx.footnote_embeds = build_footnote_embeds(nodes);
@@ -984,20 +971,6 @@ fn resolve_page_index(page_target: i32, page_indices: &[usize]) -> Option<usize>
 // ============================================================================
 // Footnote placement
 // ============================================================================
-
-/// Recursively collect all footnote nodes from the structured tree.
-fn collect_all_footnotes<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
-    for node in nodes {
-        match node {
-            StructuredNode::Footnote(f) => out.push(f),
-            StructuredNode::Group(g) => collect_all_footnotes(&g.children, out),
-            StructuredNode::Conditional(c) => {
-                collect_all_footnotes(std::slice::from_ref(c.content.as_ref()), out);
-            }
-            _ => {}
-        }
-    }
-}
 
 /// Place `FootnotePlaceholder` nodes at the end of page panels that contain
 /// embedded footnote references (detected by the presence of
@@ -2720,51 +2693,9 @@ fn remove_empty_panels(nodes: &mut Vec<AemNode>) {
 // Helpers
 // ============================================================================
 
-/// Convert `InlineText` to a simple HTML string.
+/// Convert `InlineText` to a simple HTML string using the AEM tag vocabulary.
 pub(crate) fn inline_text_to_html(text: &TranslatedText, language: &str) -> String {
-    let inline = text.get(language).or_else(|| text.0.values().next());
-    match inline {
-        Some(t) => {
-            let mut out = String::new();
-            for node in &t.0 {
-                inline_node_to_html(node, &mut out);
-            }
-            out
-        }
-        None => String::new(),
-    }
-}
-
-fn inline_node_to_html(node: &InlineNode, out: &mut String) {
-    match node {
-        InlineNode::Text(s) => {
-            out.push_str(&escape_html(s));
-        }
-        InlineNode::Link(link) => {
-            out.push_str("<a href=\"");
-            out.push_str(&escape_html(&link.href));
-            out.push_str("\">");
-            for child in &link.content.0 {
-                inline_node_to_html(child, out);
-            }
-            out.push_str("</a>");
-        }
-        InlineNode::Strong(inner) => {
-            out.push_str("<b>");
-            inline_node_to_html(inner, out);
-            out.push_str("</b>");
-        }
-        InlineNode::Emphasis(inner) => {
-            out.push_str("<i>");
-            inline_node_to_html(inner, out);
-            out.push_str("</i>");
-        }
-        InlineNode::Superscript(inner) => {
-            out.push_str("<sup>");
-            inline_node_to_html(inner, out);
-            out.push_str("</sup>");
-        }
-    }
+    inline_text_to_html_with(text, language, AEM_TAGS)
 }
 
 use crate::util::{base64_encode, escape_html};

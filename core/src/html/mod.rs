@@ -7,6 +7,7 @@ use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
     HeadingLevel, HeadingNode, ImageNode, InlineNode, InlineText, InputValue, ListNode,
     ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatedText,
+    collect_footnote_nodes,
 };
 use crate::xfa::scripting::SomPath;
 use serde::Deserialize;
@@ -207,7 +208,7 @@ pub fn generate_html(nodes: &[StructuredNode], config: &HtmlConfig) -> String {
     }
 
     // Render footnotes as the last elements
-    let footnotes = collect_all_footnotes(nodes);
+    let footnotes = collect_footnote_nodes(nodes);
     if !footnotes.is_empty() {
         html.push_str("      <div class=\"footnotes\">\n");
         for f in &footnotes {
@@ -237,7 +238,7 @@ pub fn generate_form_body(nodes: &[StructuredNode]) -> String {
     }
 
     // Render footnotes as the last elements
-    let footnotes = collect_all_footnotes(nodes);
+    let footnotes = collect_footnote_nodes(nodes);
     if !footnotes.is_empty() {
         html.push_str("<div class=\"footnotes\">\n");
         for f in &footnotes {
@@ -269,25 +270,6 @@ impl GeneratorContext {
         self.id_counter += 1;
         format!("{}_{}", prefix, self.id_counter)
     }
-}
-
-/// Recursively collect all footnote nodes from the structured tree.
-fn collect_all_footnotes(nodes: &[StructuredNode]) -> Vec<&FootnoteNode> {
-    let mut out = Vec::new();
-    fn walk<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
-        for node in nodes {
-            match node {
-                StructuredNode::Footnote(f) => out.push(f),
-                StructuredNode::Group(g) => walk(&g.children, out),
-                StructuredNode::Conditional(c) => {
-                    walk(std::slice::from_ref(c.content.as_ref()), out);
-                }
-                _ => {}
-            }
-        }
-    }
-    walk(nodes, &mut out);
-    out
 }
 
 /// Generate HTML for a single node

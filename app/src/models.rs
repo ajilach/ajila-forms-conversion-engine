@@ -63,6 +63,9 @@ pub struct ProcessingState {
     pub html_preview: Option<String>,
     pub aem_package: Option<Vec<u8>>,
     pub xsd_schema: Option<String>,
+    /// PostgreSQL dump for the Redacto platform (text-only documents).
+    #[serde(default)]
+    pub redacto_sql: Option<String>,
     pub error: Option<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
@@ -118,6 +121,7 @@ impl PartialEq for ProcessingState {
             && self.html_preview == other.html_preview
             && self.aem_package == other.aem_package
             && self.xsd_schema == other.xsd_schema
+            && self.redacto_sql == other.redacto_sql
             && self.error == other.error
             && self.warnings == other.warnings
             && self.ai_mode == other.ai_mode

@@ -54,6 +54,13 @@ struct Args {
     #[arg(long)]
     xsd: bool,
 
+    /// Export the form as a PostgreSQL dump for the Redacto platform.
+    ///
+    /// Intended for documents without input fields; any field encountered is
+    /// skipped and reported as a warning.
+    #[arg(long)]
+    redacto: bool,
+
     /// Name of an embedded profile containing per-output configs.
     #[arg(long)]
     profile: Option<String>,
@@ -262,6 +269,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
         std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;
         info!("XSD: {}", xsd_path.display());
+    }
+
+    // Redacto PostgreSQL dump
+    if args.redacto {
+        let profile_name = require_profile_name(args.profile.as_deref())?;
+        let redacto_config = blueprint::load_redacto_config(profile_name, &output.merged.context)
+            .map_err(|e| format!("Failed to load Redacto profile: {e}"))?;
+        let resolved = blueprint::resolve_redacto_languages(&output.merged.content, &redacto_config);
+        let dump = blueprint::generate_redacto_dump(&output.merged.content, &resolved);
+        for warning in &dump.warnings {
+            eprintln!("Warning: {}", warning);
+        }
+        let sql_path = PathBuf::from(format!("{}_{}.sql", merged_name, suffix));
+        std::fs::write(&sql_path, dump.to_sql())
+            .map_err(|e| format!("Failed to write Redacto SQL: {}", e))?;
+        info!("Redacto SQL: {}", sql_path.display());
     }
 
     Ok(())

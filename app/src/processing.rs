@@ -194,4 +194,12 @@ pub fn regenerate_outputs(
         }
         state.xsd_schema = Some(blueprint::to_xsd(&envelope.content, &xsd_config));
     }
+
+    // Redacto SQL dump
+    if let Some(profile_name) = profile
+        && blueprint::has_redacto_config(profile_name)
+        && let Ok(redacto_config) = blueprint::load_redacto_config(profile_name, &envelope.context)
+    {
+        state.redacto_sql = Some(blueprint::to_redacto_sql(&envelope.content, &redacto_config));
+    }
 }

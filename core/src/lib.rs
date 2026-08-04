@@ -76,11 +76,13 @@ pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
+pub mod redacto;
 pub mod reference_db;
 pub mod review;
 #[cfg(feature = "semantic-matching")]
 pub mod semantic;
 pub mod structured;
+pub mod template;
 pub mod util;
 pub mod xfa;
 pub mod xsd;
@@ -97,9 +99,9 @@ pub use context::Context;
 
 // Embedded profile loading
 pub use profiles::{
-    AemConnection, has_aem_config, has_html_config, has_xsd_config, list_profiles,
-    load_aem_config, load_aem_connection, load_aem_fragments, load_aem_profile,
-    load_html_custom_styles, load_profile_fonts, load_xsd_config,
+    AemConnection, has_aem_config, has_html_config, has_redacto_config, has_xsd_config,
+    list_profiles, load_aem_config, load_aem_connection, load_aem_fragments, load_aem_profile,
+    load_html_custom_styles, load_profile_fonts, load_redacto_config, load_xsd_config,
 };
 
 // Flattened layer
@@ -220,6 +222,15 @@ pub use xsd::{
     resolve_section_name_with_heading,
 };
 
+// Redacto generation
+pub use redacto::{
+    AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, INITIAL_VERSION,
+    ObjectType, OwnerType, OwnershipRow, OwnershipType, RedactoComponent, RedactoConfig,
+    RedactoConfiguration, RedactoDocumentMeta, RedactoDump, RedactoProfile, RelationRow,
+    Status as RedactoStatus, asset_ref, generate_redacto_dump, generate_redacto_sql,
+    render_block_html, sql_string,
+};
+
 // XFA layer
 pub use xfa::scripting::{SomPath, XfaForm};
 pub use xfa::{XfaNode, XfaNodeKind};
@@ -283,6 +294,9 @@ pub enum Error {
     /// AEM configuration could not be constructed (missing XFA variables).
     #[error("AEM config error: {0}")]
     AemConfig(String),
+    /// A profile template string could not be rendered.
+    #[error("Template error: {0}")]
+    Template(String),
     /// Profile loading failed (fonts, config, etc.).
     #[error("Profile error: {0}")]
     Profile(String),
@@ -1250,6 +1264,15 @@ pub fn to_xsd(content: &[StructuredNode], config: &XsdConfig) -> String {
     generate_xsd(content, config)
 }
 
+/// Generate a PostgreSQL dump for the Redacto platform from structured nodes.
+///
+/// Intended for documents without input fields; any field encountered is
+/// skipped and reported in [`RedactoDump::warnings`].
+pub fn to_redacto_sql(content: &[StructuredNode], config: &RedactoConfig) -> String {
+    let config = resolve_redacto_languages(content, config);
+    generate_redacto_sql(content, &config)
+}
+
 /// Convert structured nodes to a complete AEM FileVault content package (ZIP).
 ///
 /// Returns the raw ZIP bytes ready to be written to disk.
@@ -1321,6 +1344,20 @@ fn ensure_aem_bind_config(config: &AemConfig) {
 /// provided config. The master language is taken from the config as-is
 /// (set via the TOML profile or the constructor).
 pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> AemConfig {
+    let detected_langs = collect_languages(content);
+    let mut config = config.clone();
+    if !detected_langs.is_empty() {
+        config.languages = detected_langs.into_iter().collect();
+    }
+    config
+}
+
+/// Fill [`RedactoConfig::languages`] from the languages present in `content`,
+/// keeping the configured languages when the content carries none.
+pub fn resolve_redacto_languages(
+    content: &[StructuredNode],
+    config: &RedactoConfig,
+) -> RedactoConfig {
     let detected_langs = collect_languages(content);
     let mut config = config.clone();
     if !detected_langs.is_empty() {

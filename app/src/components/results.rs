@@ -91,6 +91,7 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
     let has_download_group = state.merged_json.is_some()
         || state.aem_package.is_some()
         || state.xsd_schema.is_some()
+        || state.redacto_sql.is_some()
         || !state.agent_steps.is_empty();
 
     rsx! {
@@ -212,6 +213,17 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                                     move |_| download_file(xsd_data.as_bytes(), &xsd_filename, "application/xml")
                                 },
                                 "XSD Schema"
+                            }
+                        }
+                        if let Some(ref sql_data) = state.redacto_sql {
+                            button {
+                                class: "btn btn-secondary btn-lg",
+                                onclick: {
+                                    let sql_data = sql_data.clone();
+                                    let sql_filename = filename("redacto", &state.form_code, "sql");
+                                    move |_| download_file(sql_data.as_bytes(), &sql_filename, "application/sql")
+                                },
+                                "Redacto SQL"
                             }
                         }
                         if !state.agent_steps.is_empty() {

@@ -27,7 +27,6 @@ mod package_writer;
 pub mod parser;
 pub mod profile;
 pub mod script_engine;
-pub mod template;
 pub mod to_structured;
 pub mod to_translated;
 pub mod translated;
@@ -35,6 +34,7 @@ pub mod xml_edit;
 mod xml_writer;
 pub mod xml_validation;
 
+pub use crate::template;
 pub use converter::convert_to_aem;
 pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
 pub use package_writer::{

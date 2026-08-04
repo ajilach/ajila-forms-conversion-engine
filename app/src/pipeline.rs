@@ -203,6 +203,22 @@ pub async fn run_blueprint_pipeline(
                     state.xsd_schema = Some(blueprint::to_xsd(&merged.content, &xsd_config));
                 }
 
+                state.step_progress = Some(0.95);
+                on_progress(&state);
+
+                if let Some(ref profile_name) = profile
+                    && blueprint::has_redacto_config(profile_name)
+                    && !merged.context.variables.is_empty()
+                {
+                    let redacto_config =
+                        match blueprint::load_redacto_config(profile_name, &merged.context) {
+                            Ok(cfg) => cfg,
+                            Err(e) => fail!(format!("Failed to load Redacto profile: {e}")),
+                        };
+                    state.redacto_sql =
+                        Some(blueprint::to_redacto_sql(&merged.content, &redacto_config));
+                }
+
                 state.step_progress = Some(1.0);
                 on_progress(&state);
 

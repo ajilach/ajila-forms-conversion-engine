@@ -600,3 +600,129 @@ pub fn collect_aem_fragment_refs(root: &crate::aem::AemNode) -> Vec<(String, Opt
     });
     fragments
 }
+
+// ============================================================================
+// Redacto helpers
+// ============================================================================
+
+/// Build a `RedactoConfig` for tests with fixed identity fields and a fixed
+/// `created` timestamp, so only the random UUIDs vary between runs.
+pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig {
+    crate::redacto::RedactoConfig {
+        document_id: "test_001".into(),
+        title: "TEST_001".into(),
+        form_path: "/content/forms/af/redacto-documents/test_001".into(),
+        style: "ubs-default.css".into(),
+        header: "Edition January 2026".into(),
+        footer: "61000 E       001 TEST    01.01.2026        N1".into(),
+        owner_id: "admin".into(),
+        schema: "redacto-document/v1".into(),
+        status: crate::redacto::Status::Draft,
+        grid_panel_style: "layout-split-block".into(),
+        footnote_panel_style: "footnote".into(),
+        languages: languages.iter().map(|l| l.to_string()).collect(),
+        master_language: languages.first().copied().unwrap_or("en").to_string(),
+        created: "2026-01-01 00:00:00.000".into(),
+    }
+}
+
+/// Load `profiles/ubs/redacto/config.toml` from disk and resolve it against
+/// `ctx` (mirrors [`load_ubs_profile`]).
+pub fn load_ubs_redacto_config(ctx: &crate::Context) -> crate::redacto::RedactoConfig {
+    let path = profiles_path("ubs/redacto/config.toml");
+    let toml_str = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    let profile: crate::redacto::RedactoProfile =
+        toml::from_str(&toml_str).expect("Failed to parse UBS redacto config.toml");
+    crate::redacto::RedactoConfig::from_profile(&profile, ctx)
+        .expect("Failed to create RedactoConfig")
+}
+
+/// Run the pipeline for `pdfs` and produce the Redacto dump with `config`
+/// (mirrors [`build_aem_test_output`]).
+///
+/// The config is passed in rather than loaded from the UBS profile: that
+/// profile derives the document identity from XFA variables, which a plain
+/// (non-XFA) text PDF does not have.
+pub(super) fn build_redacto_test_dump(
+    pdfs: &[(&str, &str)],
+    config: &crate::redacto::RedactoConfig,
+) -> crate::redacto::RedactoDump {
+    let envelopes: Vec<_> = pdfs
+        .iter()
+        .map(|(file, lang)| {
+            crate::run_exhaustive_to_envelope(input_path(file), lang)
+                .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"))
+        })
+        .collect();
+
+    let content = if envelopes.len() == 1 {
+        envelopes.into_iter().next().unwrap().content
+    } else {
+        crate::structured::merge_translations(envelopes, None)
+            .expect("Failed to merge translations")
+            .content
+    };
+
+    let config = crate::resolve_redacto_languages(&content, config);
+    crate::redacto::generate_redacto_dump(&content, &config)
+}
+
+/// All `asset_version.content` strings for one language, in insertion order.
+pub fn redacto_contents_for(dump: &crate::redacto::RedactoDump, lang: &str) -> Vec<String> {
+    dump.asset_versions
+        .iter()
+        .filter(|v| v.language == lang)
+        .map(|v| v.content.clone())
+        .collect()
+}
+
+/// The single `documents` row of a dump.
+pub fn redacto_configuration(
+    dump: &crate::redacto::RedactoDump,
+) -> &crate::redacto::RedactoConfiguration {
+    assert_eq!(dump.documents.len(), 1, "expected exactly one document row");
+    &dump.documents[0].configuration
+}
+
+/// Flatten a component tree into `"assetContainer(n)"` / `"styledPanel(style)"`
+/// labels, depth-first, for order assertions.
+pub fn flatten_redacto_components(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
+    fn walk(components: &[crate::redacto::RedactoComponent], out: &mut Vec<String>) {
+        for component in components {
+            match component {
+                crate::redacto::RedactoComponent::AssetContainer { assets, .. } => {
+                    out.push(format!("assetContainer({})", assets.len()));
+                }
+                crate::redacto::RedactoComponent::StyledPanel {
+                    style, components, ..
+                } => {
+                    out.push(format!("styledPanel({style})"));
+                    walk(components, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&cfg.components, &mut out);
+    out
+}
+
+/// Every asset reference in a configuration, depth-first.
+pub fn redacto_referenced_assets(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
+    fn walk(components: &[crate::redacto::RedactoComponent], out: &mut Vec<String>) {
+        for component in components {
+            match component {
+                crate::redacto::RedactoComponent::AssetContainer { assets, .. } => {
+                    out.extend(assets.iter().cloned());
+                }
+                crate::redacto::RedactoComponent::StyledPanel { components, .. } => {
+                    walk(components, out)
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&cfg.components, &mut out);
+    out
+}

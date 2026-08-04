@@ -1,4 +1,4 @@
-//! Tera template rendering for AEM profile variable resolution.
+//! Tera template rendering for output-profile variable resolution.
 //!
 //! Provides functions to build template contexts, resolve user-defined
 //! variables iteratively, and render individual template strings.
@@ -24,7 +24,7 @@ pub fn build_context(
 /// Render a single Tera template string with the given context.
 pub fn render_string(template: &str, ctx: &Context) -> Result<String, crate::Error> {
     Tera::one_off(template, ctx, false)
-        .map_err(|e| crate::Error::AemConfig(format!("template render error: {}", e)))
+        .map_err(|e| crate::Error::Template(format!("template render error: {}", e)))
 }
 
 /// Resolve the `[variables]` section of a profile.

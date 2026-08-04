@@ -1,13 +1,13 @@
-//! Embedded profile loading for AEM / HTML / XSD outputs.
+//! Embedded profile loading for AEM / HTML / XSD / Redacto outputs.
 //!
 //! The entire `profiles/` directory is baked into the core crate at compile
 //! time. Consumers (CLI, app, server) should load profile data through this
 //! module instead of duplicating profile I/O logic.
 
 use crate::{
-    AemConfig, AemProfile, Context, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily,
-    ResolvedFontVariant, XsdConfig, XsdProfile, build_xsd_config_from_type_sources,
-    parse_fragment_content,
+    AemConfig, AemProfile, Context, HtmlCustomStyles, HtmlProfile, RedactoConfig, RedactoProfile,
+    ResolvedFontFamily, ResolvedFontVariant, XsdConfig, XsdProfile,
+    build_xsd_config_from_type_sources, parse_fragment_content,
 };
 use include_dir::{Dir, include_dir};
 use serde::de::DeserializeOwned;
@@ -42,6 +42,18 @@ pub fn has_html_config(name: &str) -> bool {
 /// Return whether `{profile}/xsd/config.toml` exists.
 pub fn has_xsd_config(name: &str) -> bool {
     has_profile_config(name, "xsd")
+}
+
+/// Return whether `{profile}/redacto/config.toml` exists.
+pub fn has_redacto_config(name: &str) -> bool {
+    has_profile_config(name, "redacto")
+}
+
+/// Load and resolve `{profile}/redacto/config.toml` against a document context.
+pub fn load_redacto_config(name: &str, ctx: &Context) -> Result<RedactoConfig, String> {
+    let profile: RedactoProfile = read_profile_config_toml(name, "redacto")?;
+    RedactoConfig::from_profile(&profile, ctx)
+        .map_err(|e| format!("Failed to build Redacto config: {e}"))
 }
 
 /// Load and parse `{profile}/aem/config.toml` and all top-level `*.xml`
@@ -649,9 +661,11 @@ mod tests {
         assert!(has_aem_config("ubs"));
         assert!(has_html_config("ubs"));
         assert!(has_xsd_config("ubs"));
+        assert!(has_redacto_config("ubs"));
         assert!(!has_aem_config("missing-profile"));
         assert!(!has_html_config("missing-profile"));
         assert!(!has_xsd_config("missing-profile"));
+        assert!(!has_redacto_config("missing-profile"));
     }
 
     #[test]

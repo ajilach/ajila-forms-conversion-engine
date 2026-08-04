@@ -33398,3 +33398,552 @@ fn root_panel_starts_with_formmetadata_fragment_step() {
         xml
     );
 }
+
+// ============================================================================
+// Redacto output tests
+// ============================================================================
+
+/// Build the components used by most Redacto tests.
+mod redacto_fixtures {
+    use crate::structured::{
+        FootnoteNode, GridLayout, GridLayoutElement, GroupNode, HeadingLevel, HeadingNode,
+        InlineNode, InlineText, LinkNode, ListItem, ListNode, ParagraphNode, StructuredNode,
+        TranslatedText,
+    };
+
+    pub fn heading(level: u8, text: &str) -> StructuredNode {
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::from_u8(level),
+            content: TranslatedText::plain(text),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn paragraph(text: &str) -> StructuredNode {
+        StructuredNode::Paragraph(ParagraphNode {
+            content: TranslatedText::plain(text),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn paragraph_inline(nodes: Vec<InlineNode>) -> StructuredNode {
+        StructuredNode::Paragraph(ParagraphNode {
+            content: TranslatedText::single("default", InlineText(nodes)),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn link(href: &str, text: &str) -> InlineNode {
+        InlineNode::Link(LinkNode {
+            href: href.into(),
+            content: InlineText(vec![InlineNode::Text(text.into())]),
+        })
+    }
+
+    pub fn list(style: crate::document::ListStyleType, items: &[&str]) -> StructuredNode {
+        StructuredNode::List(ListNode {
+            list_style: style,
+            items: items
+                .iter()
+                .map(|t| ListItem {
+                    content: TranslatedText::plain(*t),
+                    sublist: None,
+                })
+                .collect(),
+        })
+    }
+
+    pub fn footnote(marker: &str, text: &str) -> StructuredNode {
+        StructuredNode::Footnote(FootnoteNode {
+            content: TranslatedText::plain(text),
+            marker: Some(marker.into()),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn group(children: Vec<StructuredNode>) -> StructuredNode {
+        StructuredNode::Group(GroupNode { children })
+    }
+
+    pub fn grid(columns: usize, elements: Vec<StructuredNode>) -> StructuredNode {
+        StructuredNode::GridLayout(GridLayout {
+            columns,
+            elements: elements
+                .into_iter()
+                .map(|node| GridLayoutElement { span: 1, node })
+                .collect(),
+        })
+    }
+}
+
+#[test]
+fn redacto_heading_levels_are_emitted_verbatim() {
+    use redacto_fixtures::heading;
+
+    let nodes: Vec<_> = (1..=6).map(|level| heading(level, "Title")).collect();
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    let contents = helpers::redacto_contents_for(&dump, "en");
+    assert_eq!(contents.len(), 6);
+    for (index, level) in (1..=6).enumerate() {
+        assert_eq!(contents[index], format!("<h{level}>Title</h{level}>"));
+    }
+    assert!(
+        dump.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        dump.warnings
+    );
+}
+
+#[test]
+fn redacto_inline_formatting_uses_quill_tags() {
+    use crate::structured::InlineNode;
+    use redacto_fixtures::{link, paragraph_inline};
+
+    let nodes = vec![paragraph_inline(vec![
+        InlineNode::Strong(Box::new(InlineNode::Text("bold".into()))),
+        InlineNode::Emphasis(Box::new(InlineNode::Text("italic".into()))),
+        InlineNode::Superscript(Box::new(InlineNode::Text("sup".into()))),
+        link("https://example.com", "here"),
+    ])];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    let content = &helpers::redacto_contents_for(&dump, "en")[0];
+    assert_eq!(
+        content,
+        "<p><strong>bold</strong><em>italic</em><sup>sup</sup>\
+         <a href=\"https://example.com\">here</a></p>"
+    );
+    assert!(
+        !content.contains("<b>") && !content.contains("<i>"),
+        "AEM tag vocabulary leaked into Redacto content: {content}"
+    );
+}
+
+#[test]
+fn redacto_empty_paragraph_becomes_spacer() {
+    use redacto_fixtures::paragraph;
+
+    let nodes = vec![paragraph("   ")];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(helpers::redacto_contents_for(&dump, "en"), ["<p><br></p>"]);
+}
+
+#[test]
+fn redacto_lists_use_ol_and_ul_without_inline_styles() {
+    use crate::document::ListStyleType;
+    use crate::structured::{ListItem, ListNode, StructuredNode, TranslatedText};
+    use redacto_fixtures::list;
+
+    let ordered = list(ListStyleType::Decimal, &["one", "two"]);
+    let unordered = list(ListStyleType::Dash, &["a"]);
+    let nested = StructuredNode::List(ListNode {
+        list_style: ListStyleType::Disc,
+        items: vec![ListItem {
+            content: TranslatedText::plain("outer"),
+            sublist: Some(Box::new(ListNode {
+                list_style: ListStyleType::Decimal,
+                items: vec![ListItem {
+                    content: TranslatedText::plain("inner"),
+                    sublist: None,
+                }],
+            })),
+        }],
+    });
+
+    let dump = crate::generate_redacto_dump(
+        &[ordered, unordered, nested],
+        &helpers::test_redacto_config(&["en"]),
+    );
+    let contents = helpers::redacto_contents_for(&dump, "en");
+
+    assert_eq!(contents[0], "<ol><li>one</li><li>two</li></ol>");
+    assert_eq!(contents[1], "<ul><li>a</li></ul>");
+    assert_eq!(
+        contents[2],
+        "<ul><li>outer<ol><li>inner</li></ol></li></ul>",
+        "a sublist belongs inside its parent <li>"
+    );
+    for content in &contents {
+        assert!(
+            !content.contains("list-style-type"),
+            "Quill lists carry no inline style: {content}"
+        );
+    }
+}
+
+#[test]
+fn redacto_footnotes_are_linked_and_collected_into_a_panel() {
+    use crate::structured::InlineNode;
+    use redacto_fixtures::{footnote, paragraph_inline};
+
+    let body = paragraph_inline(vec![
+        InlineNode::Text("Every client".into()),
+        InlineNode::Superscript(Box::new(InlineNode::Text("1".into()))),
+        InlineNode::Text(" is affected.".into()),
+    ]);
+    let nodes = vec![
+        body,
+        footnote("1", "1 All personal designations apply equally to all genders."),
+    ];
+
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let contents = helpers::redacto_contents_for(&dump, "en");
+
+    assert_eq!(
+        contents[0],
+        "<p>Every client<sup><a href=\"#footnote-1\">1</a></sup> is affected.</p>"
+    );
+    assert_eq!(
+        contents[1],
+        "<p id=\"footnote-1\"><sup>1</sup> All personal designations apply equally to all genders.</p>",
+        "the leading marker must be stripped from the body before re-adding it"
+    );
+
+    let cfg = helpers::redacto_configuration(&dump);
+    assert_eq!(
+        helpers::flatten_redacto_components(cfg),
+        [
+            "assetContainer(1)".to_string(),
+            "styledPanel(footnote)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+        "footnote assets belong in a trailing footnote panel"
+    );
+}
+
+#[test]
+fn redacto_grid_layout_becomes_a_styled_panel() {
+    use redacto_fixtures::{grid, paragraph};
+
+    let nodes = vec![grid(2, vec![paragraph("left"), paragraph("right")])];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let cfg = helpers::redacto_configuration(&dump);
+
+    assert_eq!(
+        helpers::flatten_redacto_components(cfg),
+        [
+            "styledPanel(layout-split-block)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+        "each grid element becomes its own container inside the panel"
+    );
+    assert!(dump.warnings.is_empty(), "{:?}", dump.warnings);
+}
+
+#[test]
+fn redacto_grid_layout_with_unsupported_column_count_warns() {
+    use redacto_fixtures::{grid, paragraph};
+
+    let nodes = vec![grid(
+        3,
+        vec![paragraph("a"), paragraph("b"), paragraph("c")],
+    )];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(dump.warnings.len(), 1, "{:?}", dump.warnings);
+    assert!(dump.warnings[0].contains("3 columns"), "{:?}", dump.warnings);
+}
+
+#[test]
+fn redacto_group_is_flattened_into_the_surrounding_container() {
+    use redacto_fixtures::{group, paragraph};
+
+    let nodes = vec![group(vec![
+        paragraph("one"),
+        paragraph("two"),
+        paragraph("three"),
+    ])];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let cfg = helpers::redacto_configuration(&dump);
+
+    assert_eq!(
+        helpers::flatten_redacto_components(cfg),
+        ["assetContainer(3)".to_string()],
+        "a group must not introduce a panel"
+    );
+    assert_eq!(dump.assets.len(), 3);
+}
+
+#[test]
+fn redacto_consecutive_blocks_share_one_asset_container() {
+    use redacto_fixtures::{grid, heading, paragraph};
+
+    let nodes = vec![
+        heading(1, "Title"),
+        paragraph("one"),
+        grid(2, vec![paragraph("left"), paragraph("right")]),
+        paragraph("after"),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "assetContainer(2)".to_string(),
+            "styledPanel(layout-split-block)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+        "a panel closes the open run; the following blocks start a new one"
+    );
+}
+
+#[test]
+fn redacto_field_is_skipped_with_a_warning() {
+    use crate::structured::{FieldId, FieldNode, FieldType, StructuredNode, TranslatedText};
+    use redacto_fixtures::paragraph;
+
+    let nodes = vec![
+        paragraph("text"),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::random(),
+            som_path: None,
+            label: Some(TranslatedText::plain("Last name")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+            required: false,
+        }),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(dump.assets.len(), 1, "the field must not produce an asset");
+    assert_eq!(dump.warnings.len(), 1, "{:?}", dump.warnings);
+    assert!(
+        dump.warnings[0].contains("Last name") && dump.warnings[0].contains("text-only"),
+        "{:?}",
+        dump.warnings
+    );
+}
+
+#[test]
+fn redacto_row_counts_and_foreign_keys_are_consistent() {
+    use redacto_fixtures::{heading, paragraph};
+
+    let nodes = vec![heading(1, "Title"), paragraph("one"), paragraph("two")];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["de", "en"]));
+
+    assert_eq!(dump.assets.len(), 3);
+    assert_eq!(dump.asset_versions.len(), 6, "3 assets x 2 languages");
+    assert_eq!(dump.documents.len(), 1);
+    assert_eq!(dump.document_versions.len(), 2);
+    assert_eq!(dump.ownerships.len(), 4, "1 document owner + 3 asset origins");
+    assert_eq!(dump.relations.len(), 3);
+
+    let asset_pks: std::collections::HashSet<&str> =
+        dump.assets.iter().map(|a| a.id.as_str()).collect();
+    for version in &dump.asset_versions {
+        assert!(
+            asset_pks.contains(version.asset_fk_id.as_str()),
+            "asset_version references an unknown asset"
+        );
+        assert_eq!(version.version, crate::INITIAL_VERSION);
+    }
+    for version in &dump.document_versions {
+        assert_eq!(version.document_fk_id, dump.documents[0].id);
+    }
+
+    // Every asset is referenced exactly once, by its `-ver-1` business id.
+    let expected: Vec<String> = dump
+        .assets
+        .iter()
+        .map(|a| crate::asset_ref(&a.asset_id, crate::INITIAL_VERSION))
+        .collect();
+    let referenced = helpers::redacto_referenced_assets(helpers::redacto_configuration(&dump));
+    assert_eq!(referenced, expected);
+    assert_eq!(
+        dump.relations
+            .iter()
+            .map(|r| r.object_id.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    // Technical primary keys are never leaked as business identifiers.
+    for asset in &dump.assets {
+        assert_ne!(asset.id, asset.asset_id);
+    }
+}
+
+#[test]
+fn redacto_empty_language_list_falls_back_to_the_master_language() {
+    use redacto_fixtures::paragraph;
+
+    let mut config = helpers::test_redacto_config(&["de"]);
+    config.languages.clear();
+
+    let dump = crate::generate_redacto_dump(&[paragraph("text")], &config);
+
+    assert_eq!(dump.assets.len(), 1);
+    assert_eq!(
+        dump.asset_versions.len(),
+        1,
+        "an asset without any version could never be resolved by Redacto"
+    );
+    assert_eq!(dump.asset_versions[0].language, "de");
+    assert_eq!(dump.document_versions.len(), 1);
+    assert_eq!(dump.document_versions[0].language, "de");
+}
+
+#[test]
+fn redacto_document_owner_ownership_is_present_exactly_once() {
+    use crate::redacto::{ObjectType, OwnerType, OwnershipType};
+    use redacto_fixtures::paragraph;
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[paragraph("text")], &config);
+
+    let owner_rows: Vec<_> = dump
+        .ownerships
+        .iter()
+        .filter(|o| o.owner_type == OwnerType::User)
+        .collect();
+    assert_eq!(owner_rows.len(), 1, "the document owner row is mandatory");
+    assert_eq!(dump.ownerships[0].owner_id, config.owner_id);
+    assert_eq!(dump.ownerships[0].ownership_type, OwnershipType::Owner);
+    assert_eq!(dump.ownerships[0].object_id, config.document_id);
+    assert_eq!(dump.ownerships[0].object_type, ObjectType::Document);
+
+    assert_eq!(dump.ownerships[1].owner_type, OwnerType::Document);
+    assert_eq!(dump.ownerships[1].ownership_type, OwnershipType::Origin);
+    assert_eq!(dump.ownerships[1].object_type, ObjectType::Text);
+}
+
+#[test]
+fn redacto_configuration_json_round_trips() {
+    use redacto_fixtures::{grid, paragraph};
+
+    let dump = crate::generate_redacto_dump(
+        &[paragraph("text"), grid(2, vec![paragraph("l"), paragraph("r")])],
+        &helpers::test_redacto_config(&["en"]),
+    );
+    let cfg = helpers::redacto_configuration(&dump);
+
+    let json = serde_json::to_string(cfg).expect("serialize configuration");
+    assert!(json.contains("\"$schema\":\"redacto-document/v1\""), "{json}");
+    assert!(json.contains("\"type\":\"assetContainer\""), "{json}");
+    assert!(json.contains("\"type\":\"styledPanel\""), "{json}");
+
+    let parsed: crate::RedactoConfiguration =
+        serde_json::from_str(&json).expect("deserialize configuration");
+    assert_eq!(&parsed, cfg);
+}
+
+#[test]
+fn redacto_sql_string_escaping() {
+    use crate::redacto::sql_string;
+
+    assert_eq!(sql_string("plain"), "'plain'");
+    assert_eq!(sql_string("O'Brien"), "'O''Brien'");
+    assert_eq!(sql_string("a\tb"), "e'a\\tb'");
+    assert_eq!(sql_string("a\nb"), "e'a\\nb'");
+    assert_eq!(sql_string("back\\slash"), "e'back\\\\slash'");
+    assert_eq!(
+        sql_string("it's\ttabbed"),
+        "e'it''s\\ttabbed'",
+        "quote doubling still applies inside an escape-string literal"
+    );
+}
+
+#[test]
+fn redacto_sql_emits_tables_in_dependency_order() {
+    use redacto_fixtures::{footnote, paragraph};
+
+    let dump = crate::generate_redacto_dump(
+        &[paragraph("text"), footnote("1", "1 note")],
+        &helpers::test_redacto_config(&["de", "en"]),
+    );
+    let sql = dump.to_sql();
+
+    let position = |table: &str| {
+        sql.find(&format!("INSERT INTO app_redacto.{table} "))
+            .unwrap_or_else(|| panic!("no INSERT for {table}:\n{sql}"))
+    };
+    let order = [
+        position("assets"),
+        position("asset_version"),
+        position("documents"),
+        position("document_version"),
+        position("ownerships"),
+        position("relations"),
+    ];
+    assert!(
+        order.windows(2).all(|w| w[0] < w[1]),
+        "tables must be inserted in foreign-key order: {order:?}"
+    );
+
+    assert_eq!(
+        sql.matches("INSERT INTO ").count(),
+        dump.row_count(),
+        "every row must produce exactly one statement"
+    );
+    assert!(sql.starts_with("-- Generated by"));
+    assert!(sql.contains("BEGIN;") && sql.trim_end().ends_with("COMMIT;"));
+}
+
+#[test]
+fn redacto_ubs_profile_resolves_document_identity() {
+    let variables = std::collections::HashMap::from([
+        ("formrange_code".to_string(), "AAAD".to_string()),
+        ("formrange_entity".to_string(), "001".to_string()),
+    ]);
+    let ctx = crate::Context::new("en".into(), variables);
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.document_id, "aaad_001");
+    assert_eq!(config.title, "AAAD_001");
+    assert_eq!(
+        config.form_path,
+        "/content/forms/af/redacto-documents/aaad_001"
+    );
+    assert_eq!(config.style, "ubs-default.css");
+    assert_eq!(config.owner_id, "admin");
+    assert_eq!(config.status, crate::RedactoStatus::Draft);
+    assert_eq!(config.grid_panel_style, "layout-split-block");
+    assert_eq!(config.footnote_panel_style, "footnote");
+}
+
+#[test]
+fn redacto_text_only_pdf_produces_assets() {
+    let dump = helpers::build_redacto_test_dump(
+        &[("form_ev_da-1-druck_de.pdf", "de")],
+        &helpers::test_redacto_config(&["de"]),
+    );
+
+    assert!(
+        dump.assets.len() > 5,
+        "expected a text-heavy document, got {} assets",
+        dump.assets.len()
+    );
+    assert_eq!(dump.documents.len(), 1);
+    assert_eq!(
+        dump.asset_versions.len(),
+        dump.assets.len() * dump.document_versions.len(),
+        "every asset needs one version per document language"
+    );
+    assert_eq!(dump.relations.len(), dump.assets.len());
+    assert_eq!(dump.ownerships.len(), dump.assets.len() + 1);
+
+    let referenced = helpers::redacto_referenced_assets(helpers::redacto_configuration(&dump));
+    assert_eq!(
+        referenced.len(),
+        dump.assets.len(),
+        "the configuration must reference every generated asset"
+    );
+
+    let sql = dump.to_sql();
+    assert_eq!(sql.matches("INSERT INTO ").count(), dump.row_count());
+}

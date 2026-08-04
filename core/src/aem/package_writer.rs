@@ -569,7 +569,7 @@ fn generate_filter_xml(roots: &[String]) -> String {
 }
 
 fn generate_properties_xml(package_name: &str, author: &str) -> String {
-    let now = iso_now();
+    let now = crate::util::iso_now();
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
@@ -594,7 +594,7 @@ fn generate_properties_xml(package_name: &str, author: &str) -> String {
 }
 
 fn generate_definition_xml(package_name: &str, author: &str, roots: &[String]) -> String {
-    let now = iso_now();
+    let now = crate::util::iso_now();
     let mut buf = Cursor::new(Vec::new());
     {
         let mut w = Writer::new_with_indent(&mut buf, b' ', 4);
@@ -641,54 +641,6 @@ fn generate_definition_xml(package_name: &str, author: &str, roots: &[String]) -
     }
     let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 definition xml");
     reformat_attributes(&raw)
-}
-
-/// Produce an ISO 8601 timestamp like `2026-02-16T12:00:00.000+00:00`.
-fn iso_now() -> String {
-    #[cfg(not(target_arch = "wasm32"))]
-    let (secs, millis) = {
-        use std::time::SystemTime;
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default();
-        (now.as_secs(), now.subsec_millis())
-    };
-    #[cfg(target_arch = "wasm32")]
-    let (secs, millis) = {
-        let ms = js_sys::Date::now() as u64;
-        (ms / 1000, (ms % 1000) as u32)
-    };
-
-    // Simple UTC timestamp (no chrono dependency)
-    let days = secs / 86400;
-    let day_secs = secs % 86400;
-    let hours = day_secs / 3600;
-    let minutes = (day_secs % 3600) / 60;
-    let seconds = day_secs % 60;
-
-    // Calculate date from days since epoch (1970-01-01)
-    let (year, month, day) = days_to_ymd(days);
-
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}+00:00",
-        year, month, day, hours, minutes, seconds, millis
-    )
-}
-
-/// Convert days since 1970-01-01 to (year, month, day).
-fn days_to_ymd(days: u64) -> (u64, u64, u64) {
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
 }
 
 // ============================================================================
