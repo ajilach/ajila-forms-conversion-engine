@@ -33980,6 +33980,45 @@ fn redacto_ubs_profile_resolves_document_identity() {
     assert_eq!(config.status, crate::RedactoStatus::Draft);
     assert_eq!(config.grid_panel_style, "layout-split-block");
     assert_eq!(config.footnote_panel_style, "footnote");
+    assert_eq!(config.column_panel_style, "layout-split");
+}
+
+#[test]
+fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
+    // The footer is page furniture, not a text asset: it is assembled from the
+    // XFA `Footer_Line_*` variables into `document.footer`, which the Redacto
+    // stylesheet renders in the bottom-left margin box.
+    let variables = std::collections::HashMap::from([
+        ("formrange_code".to_string(), "AAEV".to_string()),
+        ("formrange_entity".to_string(), "019".to_string()),
+        ("Footer_Line_txtformid".to_string(), "66300".to_string()),
+        ("Footer_Line_txtlanguage".to_string(), "EN".to_string()),
+        ("Footer_Line_txtvversion".to_string(), "V0".to_string()),
+        ("Footer_Line_MANCode".to_string(), "019".to_string()),
+        ("Footer_Line_txtversiondate".to_string(), "31.10.2019".to_string()),
+        ("Footer_Line_txtjversion".to_string(), "N1".to_string()),
+    ]);
+    let ctx = crate::Context::new("en".into(), variables);
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.footer, "66300 EN V0 019 AAEV 31.10.2019 N1");
+}
+
+#[test]
+fn redacto_ubs_profile_footer_is_resilient_to_missing_variables() {
+    // A document without the footer variables must still resolve (the fields
+    // default to empty) rather than fail the whole conversion.
+    let variables = std::collections::HashMap::from([
+        ("formrange_code".to_string(), "AAEV".to_string()),
+        ("formrange_entity".to_string(), "019".to_string()),
+    ]);
+    let ctx = crate::Context::new("en".into(), variables);
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    // Only the always-present form code survives; the rest collapse to blanks.
+    assert!(config.footer.contains("AAEV"), "footer: {:?}", config.footer);
 }
 
 #[test]
