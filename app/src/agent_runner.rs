@@ -503,7 +503,7 @@ async fn run_conversion(
 
     ensure_built_and_uploaded(&mut agent, &settings, &mut processing_state).await;
     finalize(
-        &agent,
+        &mut agent,
         &profile,
         structured_session,
         start,
@@ -732,7 +732,7 @@ async fn ensure_built_and_uploaded(
 
 /// Build the final `ProcessingState` from the agent's working trees.
 fn finalize(
-    agent: &ConversionAgent,
+    agent: &mut ConversionAgent,
     profile: &Option<String>,
     structured_session: String,
     start: std::time::Instant,
@@ -746,9 +746,22 @@ fn finalize(
     };
     let merged_json = serde_json::to_string_pretty(&envelope).ok();
     let form_code = agent.form_code();
-    // The agent builds the AEM package itself, but not the Redacto dump —
-    // derive it from the same structured content it finished with.
-    let redacto_sql = crate::processing::redacto_sql_for(&envelope, profile.as_deref());
+
+    // The agent authors an AEM adaptive form and never fills its structured
+    // tree, so the Redacto dump is built from the converted source document
+    // instead — the same content the CLI exports, and the right shape for a
+    // text-only Redacto document. Only pay for the extraction when the profile
+    // actually has a Redacto section.
+    let redacto_sql = if profile.as_deref().is_some_and(blueprint::has_redacto_config) {
+        let source = DocumentEnvelope {
+            context: agent.context().clone(),
+            content: agent.source_structured().to_vec(),
+            state_count: 1,
+        };
+        crate::processing::redacto_sql_for(&source, profile.as_deref())
+    } else {
+        None
+    };
 
     let mut state = processing_state.write();
     state.step = ProcessingStep::Complete;

@@ -695,8 +695,26 @@ impl ConversionAgent {
     }
 
     /// The current working structured tree.
+    ///
+    /// Empty on a fresh run: the agent authors the AEM tree directly and only
+    /// seeds this when resuming a session. Use
+    /// [`source_structured`](Self::source_structured) for the converted source
+    /// document.
     pub fn structured(&self) -> &[StructuredNode] {
         &self.structured
+    }
+
+    /// The merged structured tree of the current source PDFs — the plain
+    /// conversion of the document, identical to what the CLI produces.
+    ///
+    /// Builds and caches the extractor if the run has not needed it yet, so
+    /// this is free once the agent has read the source (the usual case) and a
+    /// full conversion otherwise. Returns an empty slice if extraction fails.
+    pub fn source_structured(&mut self) -> &[StructuredNode] {
+        match self.extractor(&serde_json::json!({})) {
+            Ok(extractor) => &extractor.merged,
+            Err(_) => &[],
+        }
     }
 
     /// The most recently built AEM package (ZIP), if any.
@@ -1688,6 +1706,33 @@ fn render_pdf_pages(pdf: &[u8]) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fresh agent authors the AEM tree directly and never fills
+    /// `structured`, so anything deriving output from the source document must
+    /// go through `source_structured` instead. Regression guard: exporting from
+    /// `structured()` silently produced an empty document.
+    #[test]
+    fn source_structured_holds_the_converted_document_while_structured_is_empty() {
+        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../core/input/AAEV_019_EN.pdf");
+        let bytes = std::fs::read(&pdf).expect("read AAEV_019_EN.pdf");
+
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            vec![("AAEV_019_EN.pdf".to_string(), bytes)],
+            None,
+            "test-source-structured".into(),
+        );
+
+        assert!(
+            agent.structured().is_empty(),
+            "a fresh agent has no working structured tree"
+        );
+        assert!(
+            !agent.source_structured().is_empty(),
+            "the converted source document must be reachable for non-AEM exports"
+        );
+    }
 
     #[test]
     fn source_key_defaults_to_current() {
