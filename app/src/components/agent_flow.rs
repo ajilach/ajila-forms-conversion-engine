@@ -39,6 +39,13 @@ fn package_filename(form_code: &Option<String>) -> String {
     }
 }
 
+fn redacto_filename(form_code: &Option<String>) -> String {
+    match form_code {
+        Some(code) => format!("redacto-{code}.sql"),
+        None => "redacto.sql".to_string(),
+    }
+}
+
 /// Human-friendly duration, e.g. `"1m 18s"` or `"42s"`.
 fn format_elapsed(secs: u64) -> String {
     if secs >= 60 {
@@ -636,6 +643,27 @@ fn RunBox(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // ---- Redacto dump: shown independently of the AEM package,
+                // since a text-only document may not produce a useful one ----
+                if let Some(ref sql_data) = state.redacto_sql {
+                    div { class: "ag-result-actions",
+                        button {
+                            class: "btn btn-secondary",
+                            title: "Download the Redacto PostgreSQL dump (document, components and text assets)",
+                            onclick: {
+                                let sql_data = sql_data.clone();
+                                let sql_filename = redacto_filename(&state.form_code);
+                                move |_| download_file(
+                                    sql_data.as_bytes(),
+                                    &sql_filename,
+                                    "application/sql",
+                                )
+                            },
+                            "⬇ Download Redacto SQL"
                         }
                     }
                 }

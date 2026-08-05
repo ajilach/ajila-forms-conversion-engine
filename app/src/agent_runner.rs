@@ -746,6 +746,9 @@ fn finalize(
     };
     let merged_json = serde_json::to_string_pretty(&envelope).ok();
     let form_code = agent.form_code();
+    // The agent builds the AEM package itself, but not the Redacto dump —
+    // derive it from the same structured content it finished with.
+    let redacto_sql = crate::processing::redacto_sql_for(&envelope, profile.as_deref());
 
     let mut state = processing_state.write();
     state.step = ProcessingStep::Complete;
@@ -753,6 +756,7 @@ fn finalize(
     state.envelope = Some(envelope);
     state.merged_json = merged_json;
     state.aem_package = agent.package();
+    state.redacto_sql = redacto_sql;
     state.form_code = form_code;
     state.agent_aem_session = agent.aem_session();
     state.aem_uploaded = agent.aem_uploaded();
@@ -760,7 +764,6 @@ fn finalize(
     state.elapsed_secs = Some(start.elapsed().as_secs());
     drop(state);
 
-    let _ = profile;
     current_session.set(Some(structured_session));
 }
 

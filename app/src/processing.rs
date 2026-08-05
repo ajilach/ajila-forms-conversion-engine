@@ -196,10 +196,71 @@ pub fn regenerate_outputs(
     }
 
     // Redacto SQL dump
-    if let Some(profile_name) = profile
-        && blueprint::has_redacto_config(profile_name)
-        && let Ok(redacto_config) = blueprint::load_redacto_config(profile_name, &envelope.context)
-    {
-        state.redacto_sql = Some(blueprint::to_redacto_sql(&envelope.content, &redacto_config));
+    state.redacto_sql = redacto_sql_for(envelope, profile);
+}
+
+/// Generate the Redacto PostgreSQL dump for `envelope`, if the profile has a
+/// `redacto/config.toml` and its templates resolve against the document.
+///
+/// Returns `None` when the profile has no Redacto section or the document does
+/// not carry the XFA variables the profile's identity templates need. Shared by
+/// the standard pipeline and the agent run, which otherwise fills
+/// [`ProcessingState`] itself.
+pub fn redacto_sql_for(envelope: &DocumentEnvelope, profile: Option<&str>) -> Option<String> {
+    let profile_name = profile?;
+    if !blueprint::has_redacto_config(profile_name) {
+        return None;
+    }
+    let config = blueprint::load_redacto_config(profile_name, &envelope.context).ok()?;
+    Some(blueprint::to_redacto_sql(&envelope.content, &config))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueprint::structured::{ParagraphNode, StructuredNode, TranslatedText};
+
+    fn envelope_with(variables: &[(&str, &str)]) -> DocumentEnvelope {
+        let vars = variables
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        DocumentEnvelope {
+            context: blueprint::Context::new("de".into(), vars),
+            content: vec![StructuredNode::Paragraph(ParagraphNode {
+                content: TranslatedText::plain("Ein Textabschnitt."),
+                som_path: None,
+                source_name: None,
+            })],
+            state_count: 1,
+        }
+    }
+
+    /// The download button in both UIs is driven purely by
+    /// `ProcessingState::redacto_sql`, so this is the whole data path.
+    #[test]
+    fn redacto_sql_is_generated_for_the_ubs_profile() {
+        let envelope = envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);
+
+        let sql = redacto_sql_for(&envelope, Some("ubs")).expect("ubs profile yields a dump");
+
+        assert!(sql.contains("INSERT INTO app_redacto.documents "), "{sql}");
+        assert!(sql.contains("'aaad_001'"), "{sql}");
+        assert!(sql.contains("<p>Ein Textabschnitt.</p>"), "{sql}");
+    }
+
+    #[test]
+    fn redacto_sql_is_absent_without_a_profile_or_config() {
+        let envelope = envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);
+
+        assert!(redacto_sql_for(&envelope, None).is_none());
+        assert!(redacto_sql_for(&envelope, Some("missing-profile")).is_none());
+    }
+
+    /// A document without the XFA variables the profile's identity templates
+    /// need must skip the dump, not abort the conversion.
+    #[test]
+    fn redacto_sql_is_skipped_when_identity_variables_are_missing() {
+        assert!(redacto_sql_for(&envelope_with(&[]), Some("ubs")).is_none());
     }
 }

@@ -206,18 +206,11 @@ pub async fn run_blueprint_pipeline(
                 state.step_progress = Some(0.95);
                 on_progress(&state);
 
-                if let Some(ref profile_name) = profile
-                    && blueprint::has_redacto_config(profile_name)
-                    && !merged.context.variables.is_empty()
-                {
-                    let redacto_config =
-                        match blueprint::load_redacto_config(profile_name, &merged.context) {
-                            Ok(cfg) => cfg,
-                            Err(e) => fail!(format!("Failed to load Redacto profile: {e}")),
-                        };
-                    state.redacto_sql =
-                        Some(blueprint::to_redacto_sql(&merged.content, &redacto_config));
-                }
+                // The Redacto profile derives the document identity from XFA
+                // variables, so it can legitimately not resolve for a given
+                // document. That must not abort the conversion.
+                state.redacto_sql =
+                    crate::processing::redacto_sql_for(&merged, profile.as_deref());
 
                 state.step_progress = Some(1.0);
                 on_progress(&state);
