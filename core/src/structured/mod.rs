@@ -247,6 +247,35 @@ pub struct ImageNode {
 #[serde(rename_all = "camelCase")]
 pub struct GroupNode {
     pub children: Vec<StructuredNode>,
+
+    /// `true` when the source laid this group out as a multi-column text flow
+    /// (detected as `GroupKind::ColumnSection`).
+    ///
+    /// The children are stored in reading order — left column top-to-bottom,
+    /// then right column — so consumers that ignore this flag still render the
+    /// document correctly, just in a single column. Output targets that can
+    /// express a column flow (e.g. the Redacto `layout-split` panel) use it to
+    /// restore the original two-column appearance.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub column_flow: bool,
+}
+
+impl GroupNode {
+    /// A plain group of children, with no column flow.
+    pub fn new(children: Vec<StructuredNode>) -> Self {
+        GroupNode {
+            children,
+            column_flow: false,
+        }
+    }
+
+    /// A group whose children were laid out as a multi-column text flow.
+    pub fn columns(children: Vec<StructuredNode>) -> Self {
+        GroupNode {
+            children,
+            column_flow: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

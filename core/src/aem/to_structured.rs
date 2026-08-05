@@ -88,7 +88,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             if nodes.is_empty() {
                 None
             } else {
-                Some(StructuredNode::Group(GroupNode { children: nodes }))
+                Some(StructuredNode::Group(GroupNode { children: nodes, column_flow: false }))
             }
         }
 
@@ -139,6 +139,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             } else {
                 StructuredNode::Group(GroupNode {
                     children: panel_children,
+                    column_flow: false,
                 })
             };
 
@@ -435,6 +436,7 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             } else {
                 StructuredNode::Group(GroupNode {
                     children: panel_children,
+                    column_flow: false,
                 })
             };
 

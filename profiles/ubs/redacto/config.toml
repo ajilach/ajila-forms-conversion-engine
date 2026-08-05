@@ -37,6 +37,10 @@ status = "DRAFT"
 # styledPanel classes defined in ubs-default.css.
 grid_panel_style = "layout-split-block"
 footnote_panel_style = "footnote"
+# Applied to a section the source laid out as a multi-column text flow.
+# `layout-split` sets column-count: 2 with column-fill: balance, so the
+# renderer reflows the section across two balanced columns.
+column_panel_style = "layout-split"
 
 [variables]
 # Edition label shown in the page header. XFA forms do not carry one, so this

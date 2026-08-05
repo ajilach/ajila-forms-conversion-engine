@@ -620,6 +620,7 @@ pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig 
         status: crate::redacto::Status::Draft,
         grid_panel_style: "layout-split-block".into(),
         footnote_panel_style: "footnote".into(),
+        column_panel_style: "layout-split".into(),
         languages: languages.iter().map(|l| l.to_string()).collect(),
         master_language: languages.first().copied().unwrap_or("en").to_string(),
         created: "2026-01-01 00:00:00.000".into(),

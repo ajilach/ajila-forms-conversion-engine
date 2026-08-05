@@ -22,6 +22,8 @@ const DEFAULT_STYLE: &str = "ubs-default.css";
 const DEFAULT_OWNER_ID: &str = "admin";
 /// Default panel style for a two-column grid layout.
 const DEFAULT_GRID_PANEL_STYLE: &str = "layout-split-block";
+/// Default panel style for a multi-column text flow.
+const DEFAULT_COLUMN_PANEL_STYLE: &str = "layout-split";
 /// Default panel style wrapping the trailing footnote assets.
 const DEFAULT_FOOTNOTE_PANEL_STYLE: &str = "footnote";
 /// Default language when the content carries none.
@@ -83,6 +85,11 @@ pub struct RedactoProfile {
     #[serde(default)]
     pub footnote_panel_style: Option<String>,
 
+    /// `styledPanel` style applied to a multi-column text flow.
+    /// Defaults to `layout-split`.
+    #[serde(default)]
+    pub column_panel_style: Option<String>,
+
     /// Primary language code. Defaults to `en`.
     #[serde(default)]
     pub master_language: Option<String>,
@@ -118,6 +125,8 @@ pub struct RedactoConfig {
     pub grid_panel_style: String,
     /// `styledPanel` style wrapping the trailing footnote assets.
     pub footnote_panel_style: String,
+    /// `styledPanel` style applied to a multi-column text flow.
+    pub column_panel_style: String,
     /// Languages that receive an `asset_version` / `document_version` row.
     pub languages: Vec<String>,
     /// Primary language code.
@@ -205,6 +214,10 @@ impl RedactoConfig {
                 .footnote_panel_style
                 .clone()
                 .unwrap_or_else(|| DEFAULT_FOOTNOTE_PANEL_STYLE.into()),
+            column_panel_style: profile
+                .column_panel_style
+                .clone()
+                .unwrap_or_else(|| DEFAULT_COLUMN_PANEL_STYLE.into()),
             languages: vec![master_language.clone()],
             master_language,
             created: crate::util::sql_now(),

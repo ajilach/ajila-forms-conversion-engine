@@ -366,6 +366,7 @@ impl RecursiveMerger {
                         } else {
                             StructuredNode::Group(GroupNode {
                                 children: remaining_nodes,
+                                column_flow: false,
                             })
                         };
 
@@ -577,7 +578,7 @@ impl RecursiveMerger {
         current_idx: usize,
     ) -> StructuredNode {
         match node {
-            StructuredNode::Group(_g) => {
+            StructuredNode::Group(group) => {
                 // Create sub-inputs for children using the group at current_idx
                 let child_inputs: Vec<MergeInput> = inputs
                     .iter()
@@ -601,6 +602,7 @@ impl RecursiveMerger {
                     let merged_children = Self::merge_by_selection_hierarchy(&child_inputs, 0);
                     StructuredNode::Group(GroupNode {
                         children: merged_children,
+                        column_flow: group.column_flow,
                     })
                 }
             }
@@ -670,6 +672,7 @@ impl RecursiveMerger {
                     } else {
                         StructuredNode::Group(GroupNode {
                             children: merged_items,
+                            column_flow: false,
                         })
                     };
 
@@ -715,6 +718,7 @@ impl RecursiveMerger {
                     } else {
                         StructuredNode::Group(GroupNode {
                             children: merged_contents,
+                            column_flow: false,
                         })
                     };
 
@@ -940,7 +944,7 @@ fn wrap_children(children: Vec<StructuredNode>) -> StructuredNode {
     if children.len() == 1 {
         children.into_iter().next().unwrap()
     } else {
-        StructuredNode::Group(GroupNode { children })
+        StructuredNode::Group(GroupNode { children, column_flow: false })
     }
 }
 
@@ -1086,7 +1090,7 @@ fn recurse_into_node(node: StructuredNode) -> StructuredNode {
     match node {
         StructuredNode::Group(g) => {
             let children = hoist_common_from_sibling_conditionals(g.children);
-            StructuredNode::Group(GroupNode { children })
+            StructuredNode::Group(GroupNode { children, column_flow: false })
         }
         StructuredNode::Conditional(c) => {
             let inner = unwrap_to_children(&c.content);
@@ -1709,7 +1713,7 @@ mod tests {
             content: Box::new(if content.len() == 1 {
                 content.into_iter().next().unwrap()
             } else {
-                StructuredNode::Group(GroupNode { children: content })
+                StructuredNode::Group(GroupNode { children: content, column_flow: false })
             }),
         })
     }
@@ -1797,6 +1801,7 @@ mod tests {
         // A single common node whose recursive weight ≥ 3 (e.g., a Group with 3 children).
         let heavy_common = StructuredNode::Group(GroupNode {
             children: vec![para("child1"), para("child2"), para("child3")],
+            column_flow: false,
         });
 
         let nodes = vec![
@@ -1994,7 +1999,7 @@ mod tests {
             ),
         ];
 
-        let nodes = vec![StructuredNode::Group(GroupNode { children: inner })];
+        let nodes = vec![StructuredNode::Group(GroupNode { children: inner, column_flow: false })];
 
         let result = hoist_common_from_sibling_conditionals(nodes);
 
@@ -2113,6 +2118,7 @@ mod tests {
     fn test_recursive_node_count_group() {
         let g = StructuredNode::Group(GroupNode {
             children: vec![para("a"), para("b"), para("c")],
+            column_flow: false,
         });
         assert_eq!(recursive_node_count(&g), 4); // 1 (group) + 3 (children)
     }
@@ -2121,6 +2127,7 @@ mod tests {
     fn test_recursive_node_count_nested() {
         let inner = StructuredNode::Group(GroupNode {
             children: vec![para("a"), para("b")],
+            column_flow: false,
         });
         let outer = cond("F", "v", vec![inner]);
         // Conditional(1) + Group(1) + 2 paragraphs = 4

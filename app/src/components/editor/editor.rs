@@ -1344,12 +1344,10 @@ pub fn StructuredEditor(props: StructuredEditorProps) -> Element {
                                 items: vec![ListItem::simple(make_text("New item"))],
                             }),
                             NewNodeType::Group => {
-                                StructuredNode::Group(GroupNode { children: vec![] })
+                                StructuredNode::Group(GroupNode::new(vec![]))
                             }
                             NewNodeType::Repeatable => StructuredNode::Repeatable(RepeatableNode {
-                                item: Box::new(StructuredNode::Group(GroupNode {
-                                    children: vec![],
-                                })),
+                                item: Box::new(StructuredNode::Group(GroupNode::new(vec![]))),
                                 min_occurrences: 1,
                                 max_occurrences: None,
                             }),

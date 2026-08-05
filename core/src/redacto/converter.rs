@@ -119,6 +119,21 @@ impl<'a> DumpBuilder<'a> {
                         });
                     }
                 }
+                StructuredNode::Group(group) if group.column_flow => {
+                    // The source laid this section out as a multi-column text
+                    // flow. Redacto reproduces it with a panel whose CSS sets
+                    // `column-count`, so the children stay a single ordered run
+                    // and the renderer balances them across the columns.
+                    flush_run(&mut run, &mut components);
+                    let nested = self.walk(&group.children);
+                    if !nested.is_empty() {
+                        components.push(RedactoComponent::StyledPanel {
+                            id: new_id(),
+                            style: self.config.column_panel_style.clone(),
+                            components: nested,
+                        });
+                    }
+                }
                 StructuredNode::Group(group) => {
                     // A group is a purely structural wrapper; inline it so its
                     // children stay in the surrounding run.

@@ -956,6 +956,7 @@ mod tests {
                             source_name: None,
                         }),
                     ],
+                    column_flow: false,
                 })),
             })
         };
@@ -977,6 +978,7 @@ mod tests {
                             source_name: None,
                         }),
                     ],
+                    column_flow: false,
                 })),
             })
         };

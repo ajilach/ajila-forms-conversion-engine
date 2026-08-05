@@ -33466,7 +33466,11 @@ mod redacto_fixtures {
     }
 
     pub fn group(children: Vec<StructuredNode>) -> StructuredNode {
-        StructuredNode::Group(GroupNode { children })
+        StructuredNode::Group(GroupNode::new(children))
+    }
+
+    pub fn column_section(children: Vec<StructuredNode>) -> StructuredNode {
+        StructuredNode::Group(GroupNode::columns(children))
     }
 
     pub fn grid(columns: usize, elements: Vec<StructuredNode>) -> StructuredNode {
@@ -33693,6 +33697,68 @@ fn redacto_consecutive_blocks_share_one_asset_container() {
             "assetContainer(1)".to_string(),
         ],
         "a panel closes the open run; the following blocks start a new one"
+    );
+}
+
+#[test]
+fn redacto_column_flow_group_becomes_a_layout_split_panel() {
+    use redacto_fixtures::{column_section, heading, paragraph};
+
+    let nodes = vec![
+        heading(1, "Title"),
+        column_section(vec![heading(2, "Background"), paragraph("a"), paragraph("b")]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            // The full-width title stays outside the columns.
+            "assetContainer(1)".to_string(),
+            "styledPanel(layout-split)".to_string(),
+            // One ordered run inside the panel: the CSS balances it across
+            // the two columns rather than us pinning content to a side.
+            "assetContainer(3)".to_string(),
+        ],
+    );
+    assert!(dump.warnings.is_empty(), "{:?}", dump.warnings);
+}
+
+#[test]
+fn redacto_plain_group_does_not_become_a_panel() {
+    use redacto_fixtures::{group, paragraph};
+
+    let dump = crate::generate_redacto_dump(
+        &[group(vec![paragraph("a"), paragraph("b")])],
+        &helpers::test_redacto_config(&["en"]),
+    );
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        ["assetContainer(2)".to_string()],
+        "only a column flow may introduce a layout panel"
+    );
+}
+
+#[test]
+fn column_section_groups_are_flagged_as_column_flow() {
+    // The two-column body of AAEV must survive conversion as a column flow,
+    // otherwise the Redacto export silently collapses it to a single column.
+    let content = crate::run_exhaustive_to_merged(helpers::input_path("AAEV_019_EN.pdf"))
+        .expect("convert AAEV_019_EN.pdf");
+
+    let mut column_groups = 0;
+    helpers::walk_structured_nodes(&content, &mut |node| {
+        if let crate::structured::StructuredNode::Group(g) = node
+            && g.column_flow
+        {
+            column_groups += 1;
+        }
+    });
+
+    assert!(
+        column_groups > 0,
+        "the two-column body should be flagged as a column flow"
     );
 }
 

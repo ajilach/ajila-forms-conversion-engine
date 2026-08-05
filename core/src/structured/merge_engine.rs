@@ -373,7 +373,7 @@ pub(crate) fn merge_duplicate_conditionals(nodes: Vec<StructuredNode>) -> Vec<St
                 children.append(&mut extra[i]);
                 StructuredNode::Conditional(ConditionalNode {
                     condition: c.condition,
-                    content: Box::new(StructuredNode::Group(GroupNode { children })),
+                    content: Box::new(StructuredNode::Group(GroupNode { children, column_flow: false })),
                 })
             } else {
                 node
@@ -1060,6 +1060,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
                 .iter()
                 .map(|child| localize_structured_node(child, lang))
                 .collect(),
+            column_flow: group.column_flow,
         }),
         StructuredNode::Conditional(conditional) => StructuredNode::Conditional(ConditionalNode {
             condition: conditional.condition.clone(),
@@ -1934,7 +1935,7 @@ fn merge_node(
         }
         (StructuredNode::Group(a), StructuredNode::Group(b)) => {
             let children = merge_node_lists(&a.children, base_lang, &b.children, other_lang);
-            StructuredNode::Group(GroupNode { children })
+            StructuredNode::Group(GroupNode { children, column_flow: false })
         }
         (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
             StructuredNode::Conditional(ConditionalNode {

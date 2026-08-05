@@ -1030,6 +1030,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                             // Multiple paragraphs - wrap in a GroupNode
                             return Some(StructuredNode::Group(GroupNode {
                                 children: paragraphs,
+                                column_flow: false,
                             }));
                         } else if paragraphs.len() == 1 {
                             // Single paragraph - return it directly
@@ -1133,7 +1134,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let item = if children.len() == 1 {
                     children.into_iter().next().unwrap()
                 } else {
-                    StructuredNode::Group(GroupNode { children })
+                    StructuredNode::Group(GroupNode { children, column_flow: false })
                 };
 
                 // Script-managed sections (no buttons) → plain Group, not Repeatable
@@ -1187,7 +1188,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else if children.len() == 1 {
                     children.into_iter().next()
                 } else {
-                    Some(StructuredNode::Group(GroupNode { children }))
+                    Some(StructuredNode::Group(GroupNode { children, column_flow: false }))
                 }
             }
 
@@ -1201,7 +1202,10 @@ impl<'a, 'b> Converter<'a, 'b> {
                 } else if children.len() == 1 {
                     children.into_iter().next()
                 } else {
-                    Some(StructuredNode::Group(GroupNode { children }))
+                    // Flagged as a column flow so targets that can express one
+                    // (e.g. the Redacto `layout-split` panel) can restore the
+                    // source's two-column appearance.
+                    Some(StructuredNode::Group(GroupNode::columns(children)))
                 }
             }
 
@@ -1217,7 +1221,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let content = if children.len() == 1 {
                     children.into_iter().next().unwrap()
                 } else {
-                    StructuredNode::Group(GroupNode { children })
+                    StructuredNode::Group(GroupNode { children, column_flow: false })
                 };
                 Some(StructuredNode::Conditional(ConditionalNode {
                     condition: FieldCondition {
@@ -1237,7 +1241,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                 let content = if children.len() == 1 {
                     children.into_iter().next().unwrap()
                 } else {
-                    StructuredNode::Group(GroupNode { children })
+                    StructuredNode::Group(GroupNode { children, column_flow: false })
                 };
 
                 let mapped = self
@@ -1461,6 +1465,7 @@ impl<'a, 'b> Converter<'a, 'b> {
                             // Multiple paragraphs - wrap in a GroupNode
                             return Some(StructuredNode::Group(GroupNode {
                                 children: paragraphs,
+                                column_flow: false,
                             }));
                         } else if paragraphs.len() == 1 {
                             // Single paragraph - return it directly
@@ -1798,6 +1803,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             });
             return Some(StructuredNode::Group(GroupNode {
                 children: vec![field_node, suffix_paragraph],
+                column_flow: false,
             }));
         }
 
@@ -2059,6 +2065,7 @@ impl<'a, 'b> Converter<'a, 'b> {
             1 => Some(result_nodes.into_iter().next().unwrap()),
             _ => Some(StructuredNode::Group(GroupNode {
                 children: result_nodes,
+                column_flow: false,
             })),
         }
     }

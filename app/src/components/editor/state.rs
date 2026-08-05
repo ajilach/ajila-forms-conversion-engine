@@ -2113,13 +2113,13 @@ mod tests {
 
     #[test]
     fn get_node_at_path_still_resolves_regular_nodes() {
-        let content = vec![StructuredNode::Group(blueprint::GroupNode {
-            children: vec![StructuredNode::Paragraph(ParagraphNode {
+        let content = vec![StructuredNode::Group(blueprint::GroupNode::new(vec![
+            StructuredNode::Paragraph(ParagraphNode {
                 content: TranslatedText::plain("Hello"),
                 som_path: None,
                 source_name: None,
-            })],
-        })];
+            }),
+        ]))];
 
         let path = vec![PathSegment::Child(0), PathSegment::Child(0)];
         let node = get_node_at_path(&content, &path).expect("regular child path should resolve");
@@ -2129,12 +2129,12 @@ mod tests {
 
     #[test]
     fn collect_selectable_paths_includes_descendants() {
-        let content = vec![StructuredNode::Group(blueprint::GroupNode {
-            children: vec![StructuredNode::List(ListNode {
+        let content = vec![StructuredNode::Group(blueprint::GroupNode::new(vec![
+            StructuredNode::List(ListNode {
                 list_style: blueprint::document::ListStyleType::Disc,
                 items: vec![ListItem::simple(TranslatedText::plain("Nested item"))],
-            })],
-        })];
+            }),
+        ]))];
 
         let paths = collect_selectable_paths(&content);
 
@@ -2209,18 +2209,16 @@ mod tests {
         use blueprint::{ConditionalNode, GroupNode, InputValue};
 
         // A group containing a field plus a conditional that references that field.
-        let group = StructuredNode::Group(GroupNode {
-            children: vec![
-                make_field("form.trigger", "Trigger"),
-                StructuredNode::Conditional(ConditionalNode {
-                    condition: FieldCondition {
-                        field_name: FieldId::from("form.trigger"),
-                        value: InputValue::Bool(true),
-                    },
-                    content: Box::new(make_field("form.dependent", "Dependent")),
-                }),
-            ],
-        });
+        let group = StructuredNode::Group(GroupNode::new(vec![
+            make_field("form.trigger", "Trigger"),
+            StructuredNode::Conditional(ConditionalNode {
+                condition: FieldCondition {
+                    field_name: FieldId::from("form.trigger"),
+                    value: InputValue::Bool(true),
+                },
+                content: Box::new(make_field("form.dependent", "Dependent")),
+            }),
+        ]));
         let mut content = vec![group];
 
         let mut paths = HashSet::new();

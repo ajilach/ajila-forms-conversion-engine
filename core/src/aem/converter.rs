@@ -3492,6 +3492,7 @@ mod tests {
                     required: false,
                 }),
             ],
+            column_flow: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
