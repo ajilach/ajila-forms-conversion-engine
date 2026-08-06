@@ -12,35 +12,7 @@
 
 use blueprint::{AemI18nText, AemNodeTranslated};
 
-/// Where to insert a node into a child list.
-pub enum InsertPos {
-    First,
-    Last,
-    Before(usize),
-    After(usize),
-}
-
-/// Parse the `position` argument: `"first"`, `"last"`, `{"before":<i>}` or `{"after":<i>}`.
-pub fn parse_insert_pos(v: &serde_json::Value) -> Result<InsertPos, String> {
-    if let Some(s) = v.as_str() {
-        return match s {
-            "first" => Ok(InsertPos::First),
-            "last" => Ok(InsertPos::Last),
-            other => Err(format!(
-                "invalid position '{other}'; expected \"first\", \"last\", {{\"before\":<i>}} or {{\"after\":<i>}}"
-            )),
-        };
-    }
-    if let Some(obj) = v.as_object() {
-        if let Some(i) = obj.get("before").and_then(|x| x.as_u64()) {
-            return Ok(InsertPos::Before(i as usize));
-        }
-        if let Some(i) = obj.get("after").and_then(|x| x.as_u64()) {
-            return Ok(InsertPos::After(i as usize));
-        }
-    }
-    Err("invalid position; expected \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>}".into())
-}
+pub use crate::tree_edit::{InsertPos, parse_insert_pos};
 
 fn node_type(node: &AemNodeTranslated) -> &'static str {
     use AemNodeTranslated::*;
@@ -242,7 +214,7 @@ fn walk(node: &AemNodeTranslated, path: &str, out: &mut String) {
             .0
             .values()
             .find(|s| !s.is_empty())
-            .map(|s| excerpt(s))
+            .map(|s| crate::tree_edit::excerpt(s))
             .unwrap_or_default();
         if !excerpt.is_empty() {
             out.push_str(&format!(" \"{excerpt}\""));
@@ -275,14 +247,6 @@ fn show(path: &str) -> String {
     }
 }
 
-fn excerpt(s: &str) -> String {
-    let s = s.trim().replace('\n', " ");
-    if s.chars().count() > 50 {
-        format!("{}…", s.chars().take(50).collect::<String>())
-    } else {
-        s
-    }
-}
 
 #[cfg(test)]
 mod tests {

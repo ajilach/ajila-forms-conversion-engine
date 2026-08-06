@@ -17,3 +17,7 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["clock"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 regex-lite = "0.1"
+
+[dev-dependencies]
+# The tool executor is async; the tests drive it directly.
+tokio = { version = "1", features = ["macros", "rt"] }

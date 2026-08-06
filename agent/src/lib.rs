@@ -18,6 +18,8 @@ pub mod db;
 pub mod image_encode;
 pub mod references;
 pub mod session;
+pub mod structured_edit;
+pub mod tree_edit;
 
 pub use conversion::{
     ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, REVIEWER_ADDENDUM, ReviewResult,

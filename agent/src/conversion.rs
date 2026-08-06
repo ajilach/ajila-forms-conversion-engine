@@ -24,10 +24,23 @@ use blueprint::{
 /// Error returned by the AEM-tree tools when nothing has been authored yet.
 const NO_AEM_TREE: &str = "No AEM tree yet; author it with set_aem_translated.";
 
+/// Error returned by the structured-tree tools when nothing has been authored
+/// yet.
+const NO_STRUCTURED_TREE: &str =
+    "No structured tree yet; seed one with seed_structured_from_state.";
+
 /// Returned when AEM-only machinery is reached in a run aimed at another target.
 /// Should be unreachable through the app (roles are never offered out-of-scope
 /// tools) but not through MCP, which serves the flat catalog.
 const AEM_ONLY_STATE: &str = "This run targets Redacto; no AEM state exists.";
+
+/// The tools that only mean anything for [`OutputTarget::Redacto`].
+///
+/// The structured-tree editors are deliberately *not* here: they operate on
+/// [`ConversionAgent::structured`], which both targets have (an AEM run seeds it
+/// when resuming a session). Only building and reviewing the dump needs the
+/// Redacto state.
+const REDACTO_ONLY_TOOLS: &[&str] = &["build_redacto_dump", "review_redacto_output"];
 
 /// The tools that only mean anything for [`OutputTarget::Aem`].
 ///
@@ -641,8 +654,6 @@ struct AemState {
 ///
 /// The authored document itself lives in [`ConversionAgent::structured`], which
 /// both targets share; this is only what building the dump produces.
-// The Redacto tools that fill this land with the structured authoring surface.
-#[allow(dead_code)]
 #[derive(Default)]
 struct RedactoState {
     /// The dump from the most recent `build_redacto_dump`, reused by `finalize`
@@ -689,7 +700,6 @@ impl TargetState {
         }
     }
 
-    #[allow(dead_code)]
     fn redacto_mut(&mut self) -> Option<&mut RedactoState> {
         match self {
             TargetState::Redacto(state) => Some(state),
@@ -1053,6 +1063,48 @@ impl ConversionAgent {
         crate::db::insert_edit(&sid, label, &json);
     }
 
+    /// Common tail of every structured-tree edit: invalidate the built dump,
+    /// then snapshot the tree into the edit history.
+    ///
+    /// Recording into `structured_session` (the primary session, not the derived
+    /// `#aem` one) is what makes a Redacto run reopenable: `session::restore`
+    /// already prefers a non-empty structured snapshot, so it needs no changes.
+    fn structured_edited(&mut self, label: &str) {
+        if let Some(redacto) = self.target.redacto_mut() {
+            redacto.dump = None;
+        }
+        if let Ok(json) = serde_json::to_string(&self.structured) {
+            crate::db::insert_edit(&self.structured_session, label, &json);
+        }
+    }
+
+    /// Build the Redacto dump for the working structured tree, and cache it.
+    ///
+    /// The context comes from the merged source envelope rather than
+    /// [`context`](Self::context) so the recovered master-page header reaches
+    /// the profile's `page.header`.
+    fn build_redacto(&mut self) -> Result<(RedactoDump, blueprint::RedactoConfig), String> {
+        let profile = self
+            .profile
+            .clone()
+            .ok_or("No profile selected — the Redacto dump needs a profile.")?;
+        let ctx = self.source_envelope().context;
+        let (dump, config) =
+            blueprint::to_redacto_dump_for_profile(&profile, &ctx, &self.structured)?;
+        if let Some(redacto) = self.target.redacto_mut() {
+            redacto.dump = Some(dump.clone());
+        }
+        Ok((dump, config))
+    }
+
+    /// The dump from the most recent `build_redacto_dump`, if one succeeded.
+    pub fn redacto_dump(&self) -> Option<&RedactoDump> {
+        match &self.target {
+            TargetState::Redacto(state) => state.dump.as_ref(),
+            TargetState::Aem(_) => None,
+        }
+    }
+
     /// Common tail of every AEM-tree edit: invalidate the package, then snapshot.
     fn aem_translated_edited(&mut self, label: &str) {
         if let Some(aem) = self.target.aem_mut() {
@@ -1144,7 +1196,67 @@ impl ConversionAgent {
                 with_source(state_label.clone()),
                 serde_json::json!(["state_label"]),
             ),
-            // §2 structured tree
+            // §2a structured tree (Redacto target) — seeded, then refined.
+            t(
+                "seed_structured_from_state",
+                "Load the engine's clean structured tree for ONE state as the working tree, replacing whatever is there. START HERE: the engine already got the block structure, the inline markup, the list nesting, the footnote markers and the multi-column sections right for that state — you only have to add the OTHER languages to each node. Far cheaper and far more faithful than emitting the tree yourself with set_structured. Pick the state in the master language, then layer in the rest with set_structured_field.",
+                state_label.clone(),
+                serde_json::json!(["state_label"]),
+            ),
+            t(
+                "set_structured",
+                "Set the WHOLE working structured tree as a JSON array of StructuredNode (call get_schema('structured') for the exact shape). Rarely needed: prefer seed_structured_from_state followed by targeted edits, which cannot silently drop a node or a language.",
+                serde_json::json!({"nodes": {"type":"array"}}),
+                serde_json::json!(["nodes"]),
+            ),
+            t(
+                "get_structured_outline",
+                "Map the working structured tree: one line per node — `<path>  <type> <summary>  <flags>`. Flags: `⚠ text?` / `⚠ label?` (missing or placeholder text), `⚠ no-options` (empty choice list), `⚠ unsupported` (a node the Redacto output cannot represent: fields, images, conditionals, repeatables). Paths are `/`-separated walks from the top level, e.g. `0/children/2`, `5/rows/0/cells/1`.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "get_structured_node",
+                "Return the node (its whole subtree) at `path` as JSON. Inspect it before editing to see the exact field shapes — in particular that every text is a per-language map like {\"de\":[…],\"en\":[…]}.",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
+            ),
+            t(
+                "set_structured_field",
+                "Set one field of the node at `path`. `field` is a node key such as `content`, `level`, `label`, `items`, `columnFlow`; `value` is the raw JSON for it (match the shape from get_structured_node). This is how you add a language: read the node, then write back its `content` map with every language present. Validated by round-trip; a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_structured_node).",
+                serde_json::json!({"path": {"type":"string"}, "field": {"type":"string"}, "value": {}}),
+                serde_json::json!(["path", "field", "value"]),
+            ),
+            t(
+                "replace_structured_node",
+                "Replace the whole node at `path` with `node`, a JSON object parseable as a StructuredNode (must include its `type`). Use to change a node's type or rebuild it.",
+                serde_json::json!({"path": {"type":"string"}, "node": {"type":"object"}}),
+                serde_json::json!(["path", "node"]),
+            ),
+            t(
+                "insert_structured_node",
+                "Insert `node` (a StructuredNode JSON object) into a child list. `parent_path` is empty/\"root\" for the top level, or the path of a Group. `position` is \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>}.",
+                serde_json::json!({"parent_path": {"type":"string"}, "node": {"type":"object"}, "position": {"type":["string","object"]}}),
+                serde_json::json!(["parent_path", "node", "position"]),
+            ),
+            t(
+                "remove_structured_node",
+                "Remove the node at `path` from its list (top-level nodes and Group children only).",
+                serde_json::json!({"path": {"type":"string"}}),
+                serde_json::json!(["path"]),
+            ),
+            t(
+                "build_redacto_dump",
+                "Build the Redacto PostgreSQL dump from the working structured tree and report what it contains: languages, document id, per-table row counts, `problems` and `warnings`. Run it after every substantive change. A `problem` means the dump is not shippable (no text assets at all, a language missing its variants); a `warning` means content was dropped in translation to the Redacto model. Resolve every problem before you stop.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "review_redacto_output",
+                "Fidelity review: compare the engine's parse of the source against the text that actually reaches the generated dump, and report input text with no match, plus a coverage score. Compares the master language only. Reviews the DUMP, not the working tree — that is the artefact that ships.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
             // §2 multilingual AEM tree (AemNodeTranslated) — authored directly.
             t(
                 "set_aem_translated",
@@ -1325,8 +1437,8 @@ impl ConversionAgent {
             // §8 control
             t(
                 "get_schema",
-                "Return the JSON schema for the 'aem_translated' tree (the shape you author with set_aem_translated and the granular editors).",
-                serde_json::json!({"kind": {"type":"string","enum":["aem_translated"]}}),
+                "Return the JSON schema for a working tree: 'aem_translated' (what set_aem_translated and the AEM editors take) or 'structured' (what set_structured and the structured editors take).",
+                serde_json::json!({"kind": {"type":"string","enum":["aem_translated","structured"]}}),
                 serde_json::json!(["kind"]),
             ),
             t(
@@ -1361,13 +1473,16 @@ impl ConversionAgent {
     /// actually wrong instead of failing deeper down with something misleading
     /// like "No AEM tree yet".
     fn target_refusal(&self, name: &str) -> Option<String> {
-        if AEM_ONLY_TOOLS.contains(&name) && self.target.aem().is_none() {
-            return Some(format!(
+        let wrong_target = (AEM_ONLY_TOOLS.contains(&name)
+            && self.target.target() != OutputTarget::Aem)
+            || (REDACTO_ONLY_TOOLS.contains(&name)
+                && self.target.target() != OutputTarget::Redacto);
+        wrong_target.then(|| {
+            format!(
                 "{name} is not available for the {} output target.",
                 self.target.target().label()
-            ));
-        }
-        None
+            )
+        })
     }
 
     pub async fn execute(&mut self, name: &str, input: &serde_json::Value) -> ToolReply {
@@ -1498,6 +1613,151 @@ impl ConversionAgent {
                     },
                     Err(e) => ToolReply::Error(e),
                 }
+            }
+            // §2a structured tree (Redacto target)
+            "seed_structured_from_state" => {
+                let label = input["state_label"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let seeded = match self.extractor(input) {
+                    Ok(ex) => ex.state_structured(&label),
+                    Err(e) => Err(e),
+                };
+                match seeded {
+                    Ok(nodes) => {
+                        let count = nodes.len();
+                        self.structured = nodes;
+                        self.structured_edited(&format!("AI: seed structured from {label}"));
+                        ToolReply::Text(format!(
+                            "OK — working structured tree seeded from '{label}' \
+                             ({count} top-level nodes). Use get_structured_outline to \
+                             review it, then add the other languages."
+                        ))
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "set_structured" => {
+                let v = input.get("nodes").cloned().unwrap_or_else(|| input.clone());
+                match serde_json::from_value::<Vec<StructuredNode>>(v) {
+                    Ok(nodes) => {
+                        let count = nodes.len();
+                        self.structured = nodes;
+                        self.structured_edited("AI: set structured tree");
+                        ToolReply::Text(format!("OK — working structured tree set ({count} top-level nodes)."))
+                    }
+                    Err(e) => ToolReply::Error(format!("Invalid StructuredNode JSON: {e}")),
+                }
+            }
+            "get_structured_outline" => {
+                if self.structured.is_empty() {
+                    return ToolReply::Error(NO_STRUCTURED_TREE.into());
+                }
+                ToolReply::Text(crate::structured_edit::outline(&self.structured))
+            }
+            "get_structured_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                match crate::structured_edit::resolve_mut(&mut self.structured, &path) {
+                    Ok(node) => {
+                        ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "set_structured_field" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let field = input["field"].as_str().unwrap_or_default().to_string();
+                let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                let result =
+                    crate::structured_edit::set_field(&mut self.structured, &path, &field, value);
+                match result {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: set {field} on {path}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "replace_structured_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let result = crate::structured_edit::replace_node(&mut self.structured, &path, node);
+                match result {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: replace {path}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "insert_structured_node" => {
+                let parent = input["parent_path"].as_str().unwrap_or_default().to_string();
+                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let pos = match crate::structured_edit::parse_insert_pos(
+                    input.get("position").unwrap_or(&serde_json::Value::Null),
+                ) {
+                    Ok(p) => p,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                let result =
+                    crate::structured_edit::insert_node(&mut self.structured, &parent, node, pos);
+                match result {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: insert into {parent}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "remove_structured_node" => {
+                let path = input["path"].as_str().unwrap_or_default().to_string();
+                let result = crate::structured_edit::remove_node(&mut self.structured, &path);
+                match result {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: remove {path}"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "build_redacto_dump" => {
+                if self.structured.is_empty() {
+                    return ToolReply::Error(NO_STRUCTURED_TREE.into());
+                }
+                match self.build_redacto() {
+                    Ok((dump, config)) => {
+                        let validation = blueprint::validate_dump(&dump, &config);
+                        ToolReply::Text(
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "document_id": config.document_id,
+                                "title": config.title,
+                                "languages": config.languages,
+                                "header": config.header,
+                                "assets": validation.counts.assets,
+                                "asset_versions": validation.counts.asset_versions,
+                                "document_versions": validation.counts.document_versions,
+                                "rows": validation.counts.rows,
+                                "problems": validation.problems,
+                                "warnings": validation.warnings,
+                            }))
+                            .unwrap_or_default(),
+                        )
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
+            "review_redacto_output" => {
+                if self.structured.is_empty() {
+                    return ToolReply::Error(NO_STRUCTURED_TREE.into());
+                }
+                let (dump, config) = match self.build_redacto() {
+                    Ok(pair) => pair,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                let source = self.source_envelope().content;
+                let report = blueprint::review_redacto(&source, &dump, &config.master_language);
+                ToolReply::Text(serde_json::to_string_pretty(&report).unwrap_or_default())
             }
             // §2 multilingual AEM tree (AemNodeTranslated)
             "set_aem_translated" => {
@@ -1859,10 +2119,15 @@ impl ConversionAgent {
             }
 
             // §8 control
-            "get_schema" => ToolReply::Text(
-                serde_json::to_string_pretty(&blueprint::aem_translated_schema())
-                    .unwrap_or_default(),
-            ),
+            "get_schema" => {
+                // Unknown/absent `kind` keeps returning the AEM schema, which is
+                // what every caller predating the structured target expects.
+                let schema = match input["kind"].as_str() {
+                    Some("structured") => blueprint::structured_schema(),
+                    _ => blueprint::aem_translated_schema(),
+                };
+                ToolReply::Text(serde_json::to_string_pretty(&schema).unwrap_or_default())
+            }
             "get_profile_info" => match self.config() {
                 Ok(c) => ToolReply::Text(format!(
                     "form_code: {}\nlanguages: {:?}\nmaster_language: {}\nform_path: {}\nform_dir: {}\nbind_to_xsd: {}\nuse_fragments: {}",
@@ -2081,6 +2346,143 @@ mod tests {
                 "the refusal must name the target, got: {refusal}"
             );
         }
+    }
+
+    /// The guard is symmetric: building a Redacto dump makes no sense in a run
+    /// that is authoring an AEM form.
+    #[test]
+    fn redacto_tools_are_refused_under_the_aem_target() {
+        let agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-aem-only-guard".into(),
+            OutputTarget::Aem,
+        );
+
+        for tool in REDACTO_ONLY_TOOLS {
+            let refusal = agent
+                .target_refusal(tool)
+                .unwrap_or_else(|| panic!("{tool} must be refused under the AEM target"));
+            assert!(refusal.contains("not available for the AEM"), "{refusal}");
+        }
+    }
+
+    /// The structured editors belong to neither target exclusively: a resumed
+    /// AEM session seeds the same tree.
+    #[test]
+    fn structured_editors_are_available_under_both_targets() {
+        for target in [OutputTarget::Aem, OutputTarget::Redacto] {
+            let agent = ConversionAgent::new(
+                Some("ubs".into()),
+                Vec::new(),
+                None,
+                format!("test-shared-{}", target.as_str()),
+                target,
+            );
+            for tool in [
+                "set_structured",
+                "get_structured_outline",
+                "get_structured_node",
+                "set_structured_field",
+                "seed_structured_from_state",
+            ] {
+                assert!(
+                    agent.target_refusal(tool).is_none(),
+                    "{tool} must be available under {target:?}"
+                );
+            }
+        }
+    }
+
+    /// `get_schema` declared a `kind` argument but ignored it, so the structured
+    /// schema was unreachable even though `blueprint::structured_schema()` had
+    /// always been there.
+    #[tokio::test]
+    async fn get_schema_dispatches_on_kind() {
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-schema".into(),
+            OutputTarget::Redacto,
+        );
+
+        let structured = reply_text(agent.execute("get_schema", &serde_json::json!({"kind": "structured"})).await);
+        assert!(
+            structured.contains("StructuredNode"),
+            "expected the structured schema, got: {}",
+            &structured[..200.min(structured.len())]
+        );
+
+        // Absent or unknown `kind` keeps the historical AEM answer.
+        for input in [serde_json::json!({}), serde_json::json!({"kind": "nonsense"})] {
+            let aem = reply_text(agent.execute("get_schema", &input).await);
+            assert!(aem.contains("AemNodeTranslated"), "got: {}", &aem[..200.min(aem.len())]);
+        }
+    }
+
+    fn reply_text(reply: ToolReply) -> String {
+        match reply {
+            ToolReply::Text(t) => t,
+            ToolReply::Error(e) => panic!("unexpected tool error: {e}"),
+            ToolReply::Image { .. } => panic!("unexpected image reply"),
+        }
+    }
+
+    /// The whole point of the Redacto target: the agent seeds the engine's clean
+    /// per-state tree and the dump is generated from that, so the artefact that
+    /// ships is the one it worked on — with the markup, footnotes and multi-column
+    /// layout the engine already got right.
+    #[tokio::test]
+    async fn seeding_from_a_state_yields_a_shippable_redacto_dump() {
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            vec![fixture("AAEV_019_EN.pdf")],
+            None,
+            "test-redacto-seed".into(),
+            OutputTarget::Redacto,
+        );
+
+        // Nothing authored yet: the dump tool must say so rather than emit an
+        // empty document.
+        match agent.execute("build_redacto_dump", &serde_json::json!({})).await {
+            ToolReply::Error(e) => assert_eq!(e, NO_STRUCTURED_TREE),
+            _ => panic!("an unseeded tree must not build a dump"),
+        }
+
+        let states = reply_text(agent.execute("list_states", &serde_json::json!({})).await);
+        let label = serde_json::from_str::<serde_json::Value>(&states).unwrap()[0]["label"]
+            .as_str()
+            .expect("a state label")
+            .to_string();
+
+        let seeded = reply_text(
+            agent
+                .execute(
+                    "seed_structured_from_state",
+                    &serde_json::json!({"state_label": label}),
+                )
+                .await,
+        );
+        assert!(seeded.starts_with("OK"), "{seeded}");
+        assert!(
+            !agent.structured().is_empty(),
+            "seeding must fill the working tree"
+        );
+
+        let built = reply_text(agent.execute("build_redacto_dump", &serde_json::json!({})).await);
+        let report: serde_json::Value = serde_json::from_str(&built).unwrap();
+        assert_eq!(
+            report["problems"].as_array().map(Vec::len),
+            Some(0),
+            "seeded content must produce a shippable dump: {built}"
+        );
+        assert!(
+            report["assets"].as_u64().unwrap_or(0) > 5,
+            "expected a text-heavy document: {built}"
+        );
+        assert!(agent.redacto_dump().is_some(), "the dump must be cached for finalize");
     }
 
     /// The same tools stay reachable under the AEM target — the guard is about
