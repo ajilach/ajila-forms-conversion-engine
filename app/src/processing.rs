@@ -155,6 +155,10 @@ pub fn regenerate_outputs(
     profile: Option<&str>,
 ) {
     state.envelope = Some(envelope.clone());
+    // The AEM package below is rebuilt from the structured content, so any
+    // previously authored AEM tree no longer describes it. Callers that still
+    // have an authoritative tree (a restored session) re-attach it afterwards.
+    state.aem_translated = None;
 
     // JSON
     if let Ok(json) = serde_json::to_string_pretty(envelope) {

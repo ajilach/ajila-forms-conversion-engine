@@ -25,8 +25,11 @@ use blueprint::{
 const NO_AEM_TREE: &str = "No AEM tree yet; author it with set_aem_translated.";
 
 /// All language codes appearing in any text field of a working tree (used to
-/// keep a pre-loaded template's languages alive through lowering).
-fn collect_translated_languages(tree: &AemNodeTranslated) -> std::collections::BTreeSet<String> {
+/// keep a pre-loaded template's languages alive through lowering, and to pick
+/// the languages a restored tree is lowered with — see [`crate::session`]).
+pub(crate) fn collect_translated_languages(
+    tree: &AemNodeTranslated,
+) -> std::collections::BTreeSet<String> {
     fn add(text: &AemI18nText, out: &mut std::collections::BTreeSet<String>) {
         out.extend(text.languages().map(String::from));
     }
@@ -676,6 +679,17 @@ impl ConversionAgent {
         self.structured = nodes;
     }
 
+    /// Seed the working AEM tree from a restored session, so feedback is applied
+    /// to the tree the previous run actually authored instead of re-deriving one
+    /// from the source.
+    ///
+    /// Deliberately does *not* snapshot: the tree came out of the history, and
+    /// re-recording it would add a no-op entry to every resumed session.
+    pub fn seed_aem_translated(&mut self, tree: AemNodeTranslated) {
+        self.aem_translated = Some(tree);
+        self.package = None;
+    }
+
     // ── Public accessors (for the driving loop's result finalization) ─────────
 
     /// `true` once the agent has called the `finish` tool.
@@ -715,6 +729,15 @@ impl ConversionAgent {
             Ok(extractor) => &extractor.merged,
             Err(_) => &[],
         }
+    }
+
+    /// The working AEM (translated) tree — what the agent actually authored.
+    ///
+    /// This is the run's real product: the structured tree stays empty, so any
+    /// consumer that wants the authored document (the editors, the recorded
+    /// snapshot) must go through here rather than [`structured`](Self::structured).
+    pub fn aem_translated(&self) -> Option<&AemNodeTranslated> {
+        self.aem_translated.as_ref()
     }
 
     /// The most recently built AEM package (ZIP), if any.

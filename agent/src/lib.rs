@@ -2,9 +2,9 @@
 //!
 //! This crate holds the framework-agnostic core that drives the form-conversion
 //! engine via tools: the [`ConversionAgent`] (its tool catalog and executor),
-//! the edit-history store ([`db`]), the per-profile reference store
-//! ([`references`]), the AEM HTTP client ([`aem_client`]), and image encoding
-//! helpers ([`image_encode`]).
+//! the edit-history store ([`db`]) and the restore path that reads it back
+//! ([`session`]), the per-profile reference store ([`references`]), the AEM HTTP
+//! client ([`aem_client`]), and image encoding helpers ([`image_encode`]).
 //!
 //! It carries **no UI (Dioxus) and no LLM** dependency, so it can be embedded in
 //! the desktop app *and* in a standalone MCP server. The LLM agent loop that
@@ -17,6 +17,7 @@ pub mod conversion;
 pub mod db;
 pub mod image_encode;
 pub mod references;
+pub mod session;
 
 pub use conversion::{
     ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, REVIEWER_ADDENDUM, ReviewResult,

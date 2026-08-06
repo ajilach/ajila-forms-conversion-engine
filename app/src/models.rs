@@ -124,6 +124,15 @@ pub struct ProcessingState {
     /// This is the structured representation before JSON serialization.
     #[serde(skip)]
     pub envelope: Option<DocumentEnvelope>,
+    /// The AEM tree as it was actually authored — by the conversion agent, or
+    /// recovered from a restored session's `#aem` history.
+    ///
+    /// The AEM editor opens on this when present instead of re-deriving a tree
+    /// from [`Self::envelope`]: an agent run authors the AEM tree directly, so
+    /// re-deriving would discard its work. `None` for pipeline runs and after a
+    /// structure edit regenerates the package.
+    #[serde(skip)]
+    pub aem_translated: Option<blueprint::AemNodeTranslated>,
 }
 
 impl PartialEq for ProcessingState {
@@ -153,6 +162,7 @@ impl PartialEq for ProcessingState {
             && self.elapsed_secs == other.elapsed_secs
             && self.context_used_tokens == other.context_used_tokens
             && self.context_window == other.context_window
+            && self.aem_translated == other.aem_translated
         // Note: envelope is skipped in comparison since DocumentEnvelope doesn't impl PartialEq
     }
 }

@@ -22,7 +22,7 @@ use agent::{
     ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, REVIEWER_ADDENDUM, SHARED_PREAMBLE,
     SYSTEM_PROMPT, ToolReply,
 };
-use blueprint::{DocumentEnvelope, StructuredNode};
+use blueprint::DocumentEnvelope;
 
 use crate::models::{
     AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
@@ -336,14 +336,10 @@ pub async fn run_agent_feedback(
 ) {
     let start = std::time::Instant::now();
 
-    // Seed the agent with the latest structured tree from the continuing session
-    // so feedback applies to the prior result. (The prior AEM tree itself is not
-    // yet re-hydrated here — the Author re-derives it from the source guided by the
-    // pinned feedback; full AEM-tree resume is a follow-up.)
-    let prior: Vec<StructuredNode> = crate::db::latest_seq(&structured_session)
-        .and_then(|seq| crate::db::snapshot_at(&structured_session, seq))
-        .and_then(|json| serde_json::from_str::<Vec<StructuredNode>>(&json).ok())
-        .unwrap_or_default();
+    // Seed the agent from the continuing session so feedback applies to the prior
+    // result: both the structured content and the AEM tree the last run authored,
+    // so the Author refines that tree instead of re-deriving one from the source.
+    let prior = crate::session::restore(&structured_session, profile.as_deref());
 
     let mut agent = ConversionAgent::new(
         profile.clone(),
@@ -351,7 +347,12 @@ pub async fn run_agent_feedback(
         settings.aem_connection(),
         structured_session.clone(),
     );
-    agent.seed_structured(prior);
+    if let Some(prior) = prior {
+        agent.seed_structured(prior.envelope.content);
+        if let Some(tree) = prior.aem_translated {
+            agent.seed_aem_translated(tree);
+        }
+    }
 
     run_conversion(
         agent,
@@ -893,13 +894,30 @@ fn finalize(
     processing_state: &mut Signal<ProcessingState>,
     current_session: &mut Signal<Option<String>>,
 ) {
+    // The agent authors the AEM tree directly and leaves its structured tree
+    // empty, so lift the authored tree back into structured content — otherwise
+    // both editors open on an empty document.
+    let aem_translated = agent.aem_translated().cloned();
+    let mut content = agent.structured().to_vec();
+    if content.is_empty()
+        && let Some(tree) = &aem_translated
+    {
+        content = crate::session::structured_from_aem_tree(tree, profile.as_deref());
+    }
     let envelope = DocumentEnvelope {
         context: agent.context().clone(),
-        content: agent.structured().to_vec(),
+        content,
         state_count: 1,
     };
     let merged_json = serde_json::to_string_pretty(&envelope).ok();
     let form_code = agent.form_code();
+
+    // Record the result in the structured history, so the run can be reopened
+    // from the session browser. Without this the session holds nothing but the
+    // empty seed and there is nothing to load.
+    if let Ok(json) = serde_json::to_string(&envelope) {
+        crate::db::insert_edit(&structured_session, "Agent conversion", &json);
+    }
 
     // The agent authors an AEM adaptive form and never fills its structured
     // tree, so the Redacto dump is built from the converted source document
@@ -921,6 +939,7 @@ fn finalize(
     state.step = ProcessingStep::Complete;
     state.ai_mode = true;
     state.envelope = Some(envelope);
+    state.aem_translated = aem_translated;
     state.merged_json = merged_json;
     state.aem_package = agent.package();
     state.redacto_sql = redacto_sql;

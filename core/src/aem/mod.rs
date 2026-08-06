@@ -50,7 +50,10 @@ pub use profile::{AemConnectionProfile, AemProfile};
 pub use script_engine::AemScriptEngine;
 pub use to_structured::aem_to_structured;
 pub use to_translated::aem_to_translated;
-pub use translated::{AemI18nText, AemNodeTranslated, AemOptionTranslated, I18nDict, LowerConflict};
+pub use translated::{
+    AemI18nText, AemNodeTranslated, AemOptionTranslated, I18nDict, LowerConflict,
+    translation_data_from_master_dict,
+};
 pub use xml_edit::{
     InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
     remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,

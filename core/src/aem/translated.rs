@@ -24,6 +24,23 @@ use crate::structured::FieldId;
 /// master-language text → { language code → translated text }.
 pub type I18nDict = HashMap<String, HashMap<String, String>>;
 
+/// Re-key a lowered [`I18nDict`] into the [`TranslationData`] form the lift back
+/// up reads translations from.
+///
+/// [`AemNodeTranslated::lower`] keys its dictionary by master text, while both
+/// [`crate::aem_to_translated`] and [`crate::aem_to_structured`] resolve a text
+/// through the Sling dictionary — whose fragment-dictionary fallback key is
+/// `fd_<master text>`. Converting between the two is what makes
+/// lower → edit → lift round trip without losing translations.
+pub fn translation_data_from_master_dict(dict: I18nDict) -> super::parser::TranslationData {
+    super::parser::TranslationData {
+        entries: dict
+            .into_iter()
+            .map(|(text, langs)| (format!("fd_{text}"), langs))
+            .collect(),
+    }
+}
+
 /// A user-visible AEM text value in every available language (lang code → HTML
 /// string). Serialized transparently as a plain `{ "de": "…", "en": "…" }` map.
 #[derive(
@@ -847,6 +864,97 @@ mod tests {
         let mut conflicts = Vec::new();
         emit_translations(&AemI18nText::default(), "de", &langs(), &mut dict, &mut conflicts);
         assert!(dict.is_empty());
+    }
+
+    /// The AEM editor edits a *lowered* tree and records the lift back up, so a
+    /// lower → lift round trip must preserve every translation. Without the
+    /// `fd_`-keyed re-keying the lift finds no dictionary entry and every
+    /// non-master language is silently dropped.
+    #[test]
+    fn lower_then_lift_round_trips_translations() {
+        let tree = AemNodeTranslated::Root {
+            title: t(&[("de", "Formular"), ("en", "Form")]),
+            children: vec![AemNodeTranslated::TextField {
+                uuid: Uuid::from_u128(7),
+                passthrough: Default::default(),
+                name: "f1".into(),
+                label: t(&[("de", "Nachname"), ("en", "Last name")]),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+            }],
+        };
+
+        let (node, dict) = tree.lower("de", &langs());
+        let translations = translation_data_from_master_dict(dict);
+        let lifted = crate::aem::aem_to_translated(
+            &node,
+            &translations,
+            &langs(),
+            "de",
+            &std::collections::HashMap::new(),
+        );
+
+        match &lifted {
+            AemNodeTranslated::Root { children, .. } => match &children[0] {
+                AemNodeTranslated::TextField { label, .. } => {
+                    assert_eq!(label.get("de"), Some("Nachname"));
+                    assert_eq!(
+                        label.get("en"),
+                        Some("Last name"),
+                        "the non-master label must survive the round trip"
+                    );
+                }
+                other => panic!("expected a text field, got {other:?}"),
+            },
+            other => panic!("expected a root, got {other:?}"),
+        }
+    }
+
+    /// Fidelity passthrough lives outside `AemNode`, so a round trip has to
+    /// re-attach it explicitly or editing an agent-authored tree strips it.
+    #[test]
+    fn lift_reattaches_passthrough_by_uuid() {
+        let uuid = Uuid::from_u128(9);
+        let mut raw_attributes = BTreeMap::new();
+        raw_attributes.insert("myProp".to_string(), "{Boolean}true".to_string());
+        let passthrough = Passthrough {
+            raw_attributes,
+            raw_children: vec![],
+        };
+        let tree = AemNodeTranslated::Root {
+            title: t(&[("de", "Formular")]),
+            children: vec![AemNodeTranslated::TextField {
+                uuid,
+                passthrough: passthrough.clone(),
+                name: "f1".into(),
+                label: t(&[("de", "Nachname")]),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+            }],
+        };
+
+        let (node, dict) = tree.lower("de", &langs());
+        let lifted = crate::aem::aem_to_translated(
+            &node,
+            &translation_data_from_master_dict(dict),
+            &langs(),
+            "de",
+            &tree.passthrough_map(),
+        );
+
+        assert_eq!(
+            lifted.passthrough_map().get(&uuid),
+            Some(&passthrough),
+            "passthrough must be restored from the map, not lost with the lowering"
+        );
     }
 
     #[test]

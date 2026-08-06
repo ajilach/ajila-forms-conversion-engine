@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-use blueprint::{AemConfig, AemConnection, AemNode};
+use blueprint::{AemConfig, AemConnection, AemNode, AemNodeTranslated, aem::Passthrough};
 
 use super::node_renderer::{AemNodeItem, AemNodeWrapper};
 use super::smart_edit::{self, AemSmartEditResult};
@@ -55,6 +55,76 @@ fn build_translation_dict(
 fn build_zip(root: &AemNode, cfg: &AemConfig, node_tr: &NodeTranslations) -> Vec<u8> {
     let dict = build_translation_dict(root, node_tr);
     blueprint::to_aem_package_from_node_with_translations(root, cfg, dict)
+}
+
+/// What the history needs in order to record the edited tree in the multilingual
+/// shape it stores.
+///
+/// The editor works on a single-language [`AemNode`] plus a per-language label
+/// overlay, while the history holds [`AemNodeTranslated`] — the shape the
+/// conversion agent writes. Recording means lifting the two back together.
+#[derive(Clone)]
+struct SnapshotCtx {
+    master_lang: String,
+    languages: Vec<String>,
+    /// Fidelity passthrough (raw attributes and unmodeled children) recovered
+    /// from the session's own history. `AemNode` cannot carry it, so it has to
+    /// be re-attached on every lift or editing an agent-authored tree strips it.
+    passthrough: HashMap<Uuid, Passthrough>,
+}
+
+/// Lift the edited tree plus its per-language overlay into the multilingual
+/// snapshot shape.
+fn lift_snapshot(
+    root: &AemNode,
+    node_tr: &NodeTranslations,
+    ctx: &SnapshotCtx,
+) -> AemNodeTranslated {
+    let translations =
+        blueprint::translation_data_from_master_dict(build_translation_dict(root, node_tr));
+    blueprint::aem_to_translated(
+        root,
+        &translations,
+        &ctx.languages,
+        &ctx.master_lang,
+        &ctx.passthrough,
+    )
+}
+
+/// Serialize a history snapshot exactly as the store holds it.
+fn snapshot_json(root: &AemNode, node_tr: &NodeTranslations, ctx: &SnapshotCtx) -> Option<String> {
+    serde_json::to_string(&lift_snapshot(root, node_tr, ctx)).ok()
+}
+
+/// Read a history row back into the editor's `(tree, overlay)` pair.
+///
+/// Accepts both shapes the `#aem` history holds: the multilingual tree (the
+/// agent's rows, and everything written since the history was unified) and the
+/// bare [`AemNode`] rows the editor wrote before that, which carry no
+/// translations of their own.
+fn parse_snapshot(json: &str, ctx: &SnapshotCtx) -> Option<(AemNode, NodeTranslations)> {
+    if let Ok(tree) = serde_json::from_str::<AemNodeTranslated>(json) {
+        let (root, dict) = tree.lower(&ctx.master_lang, &ctx.languages);
+        let overlay = overlay_from_dict(&root, &dict);
+        return Some((root, overlay));
+    }
+    let root = serde_json::from_str::<AemNode>(json).ok()?;
+    Some((root, NodeTranslations::new()))
+}
+
+/// Seed the per-node overlay by matching each node's master label against a
+/// master-text-keyed dictionary — the inverse of [`build_translation_dict`].
+fn overlay_from_dict(
+    root: &AemNode,
+    dict: &HashMap<String, HashMap<String, String>>,
+) -> NodeTranslations {
+    let mut out = NodeTranslations::new();
+    for_each_labeled(root, |uuid, label| {
+        if let Some(map) = dict.get(label) {
+            out.insert(uuid, map.clone());
+        }
+    });
+    out
 }
 
 /// Wrapper so `AemNode` can be a prop.
@@ -112,6 +182,14 @@ pub struct AemEditorProps {
     /// Form-content translations from the source document (master-text → lang map),
     /// used to seed the per-language label overlay.
     pub content_translations: HashMap<String, HashMap<String, String>>,
+    /// The multilingual tree [`Self::root`] was lowered from, when the document
+    /// has one (an agent run, or a restored session).
+    ///
+    /// Kept as the history baseline: it is richer than anything that can be
+    /// lifted back out of `root`, so re-recording a lift of it at mount would
+    /// quietly replace the authored tree with a lossier copy. It is also the
+    /// only source of the fidelity passthrough, which `AemNode` cannot carry.
+    pub authored: Option<AemNodeTranslated>,
     pub api_key: String,
     pub model: String,
     /// Extra operator instructions appended to the Smart AEM Edit prompt.
@@ -137,12 +215,31 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
     let mut feedback_text = use_signal(String::new);
     let mut status_msg = use_signal(|| None::<(bool, String)>);
 
+    // How this editor records history: the store holds multilingual trees (the
+    // shape the conversion agent writes), so every snapshot is a lift of the
+    // edited `AemNode` plus its per-language overlay.
+    let snapshot_ctx = use_signal(|| SnapshotCtx {
+        master_lang: props.master_lang.clone(),
+        languages: props.languages.clone(),
+        passthrough: props
+            .authored
+            .as_ref()
+            .map(|tree| tree.passthrough_map())
+            .unwrap_or_default(),
+    });
+
+    // Seed the per-language label overlay (uuid → lang → text) by matching each
+    // node's master label against the source document's translations.
+    let node_translations =
+        use_signal(|| overlay_from_dict(&props.root.0, &props.content_translations));
+
     // Edit-history session (desktop only). The session has no `sessions` row,
     // so it never shows up in the document session browser; undo/redo and the
     // sidebar work purely off the `edits` table. `None` on web, where there is
     // no local database (the history signals are then inert).
     let session_id = use_signal(|| -> Option<String> {
-        let json = serde_json::to_string(&props.root.0).ok()?;
+        let ctx = snapshot_ctx.read().clone();
+        let overlay = node_translations.read().clone();
         match props.session_id.clone() {
             // Stable session from the parent — persists across openings. The
             // tree is re-derived from the structured content every time the
@@ -151,15 +248,24 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             // append it as a distinct "Regenerated from structure" entry
             // instead of overwriting the prior history.
             Some(sid) => {
-                let latest = db::latest_seq(&sid).and_then(|seq| db::snapshot_at(&sid, seq));
-                match latest {
-                    // Unchanged since the last snapshot: just resume.
-                    Some(prev) if prev == json => {}
-                    Some(_) => {
-                        db::insert_edit(&sid, "Regenerated from structure", &json);
-                    }
-                    None => {
-                        db::insert_edit(&sid, "Initial structure", &json);
+                let latest = db::latest_seq(&sid)
+                    .and_then(|seq| db::snapshot_at(&sid, seq))
+                    .and_then(|json| serde_json::from_str::<AemNodeTranslated>(&json).ok());
+                // We opened on the authored tree itself: resume on it rather
+                // than recording a lift of its own lowering back over it.
+                let opened_on_history =
+                    props.authored.is_some() && latest.as_ref() == props.authored.as_ref();
+                if !opened_on_history {
+                    let lifted = lift_snapshot(&props.root.0, &overlay, &ctx);
+                    if let Ok(json) = serde_json::to_string(&lifted)
+                        && latest.as_ref() != Some(&lifted)
+                    {
+                        let label = if latest.is_some() {
+                            "Regenerated from structure"
+                        } else {
+                            "Initial structure"
+                        };
+                        db::insert_edit(&sid, label, &json);
                     }
                 }
                 Some(sid)
@@ -167,6 +273,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             // No parent session (e.g. web): fall back to an ephemeral local one.
             None => {
                 let sid = Uuid::new_v4().to_string();
+                let json = snapshot_json(&props.root.0, &overlay, &ctx)?;
                 db::insert_edit(&sid, "Initial structure", &json)?;
                 Some(sid)
             }
@@ -404,8 +511,11 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             && let Some(sid) = session_id.read().clone()
         {
             let after_seq = *undo_seq.read();
-            if let Ok(json) = serde_json::to_string(&*root.read())
-                && let Some(seq) = db::record_edit(&sid, after_seq, label, &json)
+            if let Some(json) = snapshot_json(
+                &root.read(),
+                &node_translations.read(),
+                &snapshot_ctx.read(),
+            ) && let Some(seq) = db::record_edit(&sid, after_seq, label, &json)
             {
                 undo_seq.set(seq);
                 history_version += 1;
@@ -443,8 +553,14 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
         let Some(json) = db::snapshot_at(&sid, target_seq) else {
             return;
         };
-        if let Ok(node) = serde_json::from_str::<AemNode>(&json) {
+        // Rows written by the conversion agent are multilingual trees, so this
+        // has to lower them back down — parsing them as `AemNode` fails, which
+        // is why clicking an agent step used to do nothing at all.
+        if let Some((node, overlay)) = parse_snapshot(&json, &snapshot_ctx.read()) {
             root.set(node);
+            if !overlay.is_empty() {
+                node_translations.set(overlay);
+            }
             undo_seq.set(target_seq);
             selection.write().clear();
             history_version += 1;
@@ -522,7 +638,7 @@ pub fn AemEditor(props: AemEditorProps) -> Element {
             }
 
             // Smart edit review panel
-            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, session_id, undo_seq, history_version, status_msg, selection, aem_config, connection, node_translations, api_key, model, smart_edit_instructions, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
+            {render_smart_panel(smart_state, rejected_ids, feedback_text, root, session_id, undo_seq, history_version, status_msg, selection, aem_config, connection, node_translations, snapshot_ctx, api_key, model, smart_edit_instructions, profile, plain_images_signal(&props.plain_images), props.source_pdfs.clone())}
 
             // Node tree
             div { class: "aem-editor-tree",
@@ -629,6 +745,7 @@ fn render_smart_panel(
     aem_config: Signal<AemConfig>,
     connection: Signal<Option<AemConnection>>,
     node_translations: Signal<NodeTranslations>,
+    snapshot_ctx: Signal<SnapshotCtx>,
     api_key: Signal<String>,
     model: Signal<String>,
     smart_edit_instructions: Signal<String>,
@@ -752,7 +869,7 @@ fn render_smart_panel(
                                     // undo/redo and the sidebar stay in sync.
                                     if let Some(sid) = session_id.read().clone() {
                                         let after_seq = *undo_seq.read();
-                                        if let Ok(json) = serde_json::to_string(&*root.read())
+                                        if let Some(json) = snapshot_json(&root.read(), &node_translations.read(), &snapshot_ctx.read())
                                             && let Some(seq) = db::record_edit(&sid, after_seq, "Smart AEM Edit", &json)
                                         {
                                             undo_seq.set(seq);
@@ -786,5 +903,113 @@ fn render_smart_panel(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blueprint::AemI18nText;
+
+    fn ctx() -> SnapshotCtx {
+        SnapshotCtx {
+            master_lang: "de".into(),
+            languages: vec!["de".into(), "en".into()],
+            passthrough: HashMap::new(),
+        }
+    }
+
+    fn text(entries: &[(&str, &str)]) -> AemI18nText {
+        AemI18nText(
+            entries
+                .iter()
+                .map(|(l, t)| (l.to_string(), t.to_string()))
+                .collect(),
+        )
+    }
+
+    /// One bilingual field under the root.
+    fn agent_tree() -> AemNodeTranslated {
+        AemNodeTranslated::Root {
+            title: text(&[("de", "Formular"), ("en", "Form")]),
+            children: vec![AemNodeTranslated::TextField {
+                uuid: Uuid::from_u128(3),
+                passthrough: Default::default(),
+                name: "f1".into(),
+                label: text(&[("de", "Nachname"), ("en", "Last name")]),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+            }],
+        }
+    }
+
+    fn first_label(root: &AemNode) -> String {
+        let mut out = String::new();
+        for_each_labeled(root, |_, label| {
+            if out.is_empty() {
+                out = label.to_string();
+            }
+        });
+        out
+    }
+
+    /// The bug: the conversion agent records multilingual trees, so parsing a
+    /// history row as `AemNode` failed and clicking an agent step in the history
+    /// sidebar did nothing at all.
+    #[test]
+    fn agent_written_row_loads_with_its_translations() {
+        let json = serde_json::to_string(&agent_tree()).unwrap();
+
+        let (root, overlay) = parse_snapshot(&json, &ctx()).expect("an agent row must load");
+
+        assert_eq!(first_label(&root), "Nachname", "master text fills the tree");
+        assert_eq!(
+            overlay.get(&Uuid::from_u128(3)).and_then(|m| m.get("en")),
+            Some(&"Last name".to_string()),
+            "the per-language overlay must come back from the snapshot"
+        );
+    }
+
+    /// Rows the editor wrote before the history was unified are single-language
+    /// `AemNode`s and must still load.
+    #[test]
+    fn legacy_editor_row_still_loads() {
+        let (node, _) = agent_tree().lower("de", &["de".to_string(), "en".to_string()]);
+        let json = serde_json::to_string(&node).unwrap();
+
+        let (root, overlay) = parse_snapshot(&json, &ctx()).expect("a legacy row must load");
+
+        assert_eq!(first_label(&root), "Nachname");
+        assert!(
+            overlay.is_empty(),
+            "a single-language row carries no translations of its own"
+        );
+    }
+
+    /// What the editor records must be readable back as what it was editing,
+    /// otherwise undo/redo silently loses the other languages.
+    #[test]
+    fn recorded_snapshot_round_trips_through_the_history() {
+        let ctx = ctx();
+        let (node, dict) = agent_tree().lower(&ctx.master_lang, &ctx.languages);
+        let overlay = overlay_from_dict(&node, &dict);
+
+        let json = snapshot_json(&node, &overlay, &ctx).expect("snapshot serializes");
+        let (back, back_overlay) = parse_snapshot(&json, &ctx).expect("snapshot loads");
+
+        // `AemNode` has no `PartialEq`, so compare its serialization.
+        assert_eq!(
+            serde_json::to_string(&back).unwrap(),
+            serde_json::to_string(&node).unwrap(),
+            "the tree must survive a record → load cycle"
+        );
+        assert_eq!(
+            back_overlay, overlay,
+            "so must the per-language label overlay"
+        );
     }
 }

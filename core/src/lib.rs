@@ -191,8 +191,8 @@ pub use aem::{
     generate_aem_package_from_node_with_passthrough,
     generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
     generate_aem_xml, parse_aem_zip,
-    parse_fragment_content, scan_fragments, validate_aem_dam_xml, validate_aem_form_xml,
-    validate_xml_wellformed,
+    parse_fragment_content, scan_fragments, translation_data_from_master_dict,
+    validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
     InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
     remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,
 };

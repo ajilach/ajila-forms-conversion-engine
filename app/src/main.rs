@@ -13,7 +13,7 @@ mod settings;
 // The headless engine layer (edit-history store, reference store, AEM client)
 // lives in the `agent` crate. Re-export it under the historical `crate::*`
 // paths so the rest of the app is unchanged.
-pub use agent::{aem_client, db, references};
+pub use agent::{aem_client, db, references, session};
 
 use dioxus::prelude::*;
 
@@ -79,6 +79,10 @@ fn App() -> Element {
     // and discards them, so we warn before that happens.
     let mut aem_modified = use_signal(|| false);
     let mut aem_xml_modified = use_signal(|| false);
+    // Why loading a previous session failed, shown above the upload area. A
+    // session whose snapshots hold no document must say so rather than looking
+    // like a dead button.
+    let mut session_error = use_signal(|| None::<String>);
 
     let profiles = blueprint::list_profiles();
 
@@ -88,6 +92,7 @@ fn App() -> Element {
         current_session.set(None);
         aem_modified.set(false);
         aem_xml_modified.set(false);
+        session_error.set(None);
 
         let profile = selected_profile.read().clone();
 
@@ -147,6 +152,7 @@ fn App() -> Element {
         current_session.set(None);
         aem_modified.set(false);
         aem_xml_modified.set(false);
+        session_error.set(None);
         // Retain the PDF sources so Smart Edit gets the same tools as AI processing.
         source_pdfs.set(pdfs.clone());
 
@@ -231,30 +237,36 @@ fn App() -> Element {
         });
     };
 
-    // Continue a previous editing session: load its latest snapshot and
-    // regenerate all derived outputs, then mark the document as complete.
+    // Continue a previous editing session: load its recorded state (structured
+    // document plus the AEM tree that was authored), regenerate all derived
+    // outputs, then mark the document as complete.
     let mut on_continue_session = move |session_id: String| {
-        let Some(seq) = db::latest_seq(&session_id) else {
-            return;
-        };
-        let Some(json) = db::snapshot_at(&session_id, seq) else {
-            return;
-        };
-        let Ok(envelope) = serde_json::from_str::<DocumentEnvelope>(&json) else {
-            return;
-        };
-
         // Restore the profile the session was created with so outputs are
-        // regenerated with the matching capabilities.
+        // regenerated with the matching capabilities. Resolved first: the AEM
+        // tree is lowered with this profile's master language.
         if let Some(profile) = db::session_profile(&session_id) {
             selected_profile.set(Some(profile));
         }
-
         let profile = selected_profile.read().clone();
+
+        let Some(restored) = session::restore(&session_id, profile.as_deref()) else {
+            session_error.set(Some(format!(
+                "That session holds no document to load (session {}).",
+                &session_id[..8.min(session_id.len())]
+            )));
+            return;
+        };
+        session_error.set(None);
+
+        let envelope = restored.envelope;
         let mut state = processing_state.write();
         state.step = ProcessingStep::Complete;
         state.error = None;
         processing::regenerate_outputs(&mut state, &envelope, profile.as_deref());
+        // Re-attach the authored tree that `regenerate_outputs` just cleared: it
+        // is the tree the session actually recorded, so the AEM editor must open
+        // on it rather than on the one just re-derived from the structure.
+        state.aem_translated = restored.aem_translated;
         drop(state);
 
         // Reopened sessions don't carry the source PDFs, so Smart Edit falls
@@ -364,34 +376,50 @@ fn App() -> Element {
                     .and_then(|p| blueprint::load_aem_config(p, &envelope.context).ok());
                 match config {
                     Some(cfg) => {
-                        let root = blueprint::convert_to_aem(&envelope.content, &cfg);
                         let conn = app_settings.read().aem_connection();
                         let master_lang = cfg.master_language.clone();
-                        let content_translations = blueprint::aem_translations_from_content(
-                            &envelope.content,
-                            &cfg.master_language,
-                        );
+                        // The tree the agent authored (or a restored session
+                        // recovered), when there is one.
+                        let authored = processing_state.read().aem_translated.clone();
                         // Show a tab per locale present anywhere in the document —
                         // mirroring the structured editor, which derives its tabs
                         // from the document itself rather than the AEM config alone.
                         // Union: config languages + master + context languages +
-                        // every locale appearing in the content translations.
-                        let languages: Vec<String> = {
-                            let mut set: std::collections::BTreeSet<String> =
-                                std::collections::BTreeSet::new();
-                            set.insert(cfg.master_language.clone());
-                            set.extend(cfg.languages.iter().cloned());
-                            for l in envelope.context.language().split(',') {
-                                let l = l.trim();
-                                if !l.is_empty() {
-                                    set.insert(l.to_string());
-                                }
+                        // the authored tree's own locales, which must be listed
+                        // before lowering or lowering drops them.
+                        let mut locales: std::collections::BTreeSet<String> =
+                            std::collections::BTreeSet::new();
+                        locales.insert(cfg.master_language.clone());
+                        locales.extend(cfg.languages.iter().cloned());
+                        for l in envelope.context.language().split(',') {
+                            let l = l.trim();
+                            if !l.is_empty() {
+                                locales.insert(l.to_string());
                             }
-                            for langs in content_translations.values() {
-                                set.extend(langs.keys().cloned());
-                            }
-                            set.into_iter().collect()
+                        }
+                        if let Some(tree) = &authored {
+                            locales.extend(session::tree_languages(tree, profile.as_deref()));
+                        }
+                        // An authored tree *is* the AEM document; re-deriving one
+                        // from the structured content would discard it (and for an
+                        // agent run, whose structured tree is empty, would open the
+                        // editor on nothing).
+                        let lower_with: Vec<String> = locales.iter().cloned().collect();
+                        let (root, content_translations) = match &authored {
+                            Some(tree) => tree.lower(&cfg.master_language, &lower_with),
+                            None => (
+                                blueprint::convert_to_aem(&envelope.content, &cfg),
+                                blueprint::aem_translations_from_content(
+                                    &envelope.content,
+                                    &cfg.master_language,
+                                ),
+                            ),
                         };
+                        // Then add any locale only the content translations name.
+                        for langs in content_translations.values() {
+                            locales.extend(langs.keys().cloned());
+                        }
+                        let languages: Vec<String> = locales.into_iter().collect();
                         let form_code = cfg.form_code.clone();
                         rsx! {
                             div { class: "editor-page",
@@ -404,6 +432,7 @@ fn App() -> Element {
                                     master_lang,
                                     languages,
                                     content_translations,
+                                    authored,
                                     api_key: app_settings.read().active_api_key().to_string(),
                                     model: app_settings.read().active_model().to_string(),
                                     smart_edit_instructions: app_settings.read().aem_smart_edit_instructions.clone(),
@@ -526,6 +555,14 @@ fn App() -> Element {
             // (non-agent) processing and "Continue editing".
             div { class: "app-scrollable",
                 div { class: "app-container",
+
+                    // Why the last "load previous session" click did nothing.
+                    if let Some(message) = session_error.read().clone() {
+                        div { class: "progress-error",
+                            strong { "Could not load: " }
+                            "{message}"
+                        }
+                    }
 
                     // File Upload Section
                     FileUploadSection {
