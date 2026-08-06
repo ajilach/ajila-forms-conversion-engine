@@ -54,5 +54,6 @@ edition = "{{ xfa.edition | default(value='') }}"
 
 # Left-hand footer code, assembled from the master-page footer fields. Each
 # lookup defaults to empty so the template still resolves on documents that
-# lack the footer variables (e.g. a plain, non-UBS text PDF).
-footer_code = "{{ xfa.Footer_Line_txtformid | default(value='') }} {{ xfa.Footer_Line_txtlanguage | default(value='') }} {{ xfa.Footer_Line_txtvversion | default(value='') }} {{ xfa.Footer_Line_MANCode | default(value='') }} {{ xfa.formrange_code | default(value='') }} {{ xfa.Footer_Line_txtversiondate | default(value='') }} {{ xfa.Footer_Line_txtjversion | default(value='') }}"
+# lack the footer variables (e.g. a plain, non-UBS text PDF). Fields are
+# separated by four spaces, preserved by the stylesheet's white-space: pre-wrap.
+footer_code = "{{ xfa.Footer_Line_txtformid | default(value='') }}    {{ xfa.Footer_Line_txtlanguage | default(value='') }}    {{ xfa.Footer_Line_txtvversion | default(value='') }}    {{ xfa.Footer_Line_MANCode | default(value='') }}    {{ xfa.formrange_code | default(value='') }}    {{ xfa.Footer_Line_txtversiondate | default(value='') }}    {{ xfa.Footer_Line_txtjversion | default(value='') }}"

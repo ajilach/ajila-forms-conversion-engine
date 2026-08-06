@@ -34002,7 +34002,10 @@ fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
 
     let config = helpers::load_ubs_redacto_config(&ctx);
 
-    assert_eq!(config.footer, "66300 EN V0 019 AAEV 31.10.2019 N1");
+    assert_eq!(
+        config.footer,
+        "66300    EN    V0    019    AAEV    31.10.2019    N1"
+    );
 }
 
 #[test]
