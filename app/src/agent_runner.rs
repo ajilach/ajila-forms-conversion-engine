@@ -924,18 +924,31 @@ fn finalize(
     // instead — the same content the CLI exports, and the right shape for a
     // text-only Redacto document. Only pay for the extraction when the profile
     // actually has a Redacto section.
+    //
+    // The envelope comes from `source_envelope()` rather than being assembled
+    // from `agent.context()`: only the extractor's context carries the recovered
+    // master-page header, which the Redacto profile reinstates as `page.header`.
+    let mut warnings: Vec<String> = Vec::new();
     let redacto_sql = if profile.as_deref().is_some_and(blueprint::has_redacto_config) {
-        let source = DocumentEnvelope {
-            context: agent.context().clone(),
-            content: agent.source_structured().to_vec(),
-            state_count: 1,
-        };
-        crate::processing::redacto_sql_for(&source, profile.as_deref())
+        let source = agent.source_envelope();
+        let sql = crate::processing::redacto_sql_for(&source, profile.as_deref());
+        // An empty source is not necessarily an empty document: when the
+        // language variants are too dissimilar to merge, the engine yields
+        // nothing and every derived output would silently be empty.
+        if sql.is_none()
+            && let Some(reason) = agent.source_merge_error()
+        {
+            warnings.push(format!(
+                "No Redacto dump: the source language variants could not be merged ({reason})."
+            ));
+        }
+        sql
     } else {
         None
     };
 
     let mut state = processing_state.write();
+    state.warnings.extend(warnings);
     state.step = ProcessingStep::Complete;
     state.ai_mode = true;
     state.envelope = Some(envelope);

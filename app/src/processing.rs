@@ -204,11 +204,15 @@ pub fn regenerate_outputs(
 }
 
 /// Generate the Redacto PostgreSQL dump for `envelope`, if the profile has a
-/// `redacto/config.toml` and its templates resolve against the document.
+/// `redacto/config.toml`, its templates resolve against the document, and the
+/// document actually has content to emit.
 ///
-/// Returns `None` when the profile has no Redacto section or the document does
-/// not carry the XFA variables the profile's identity templates need. Shared by
-/// the standard pipeline and the agent run, which otherwise fills
+/// Returns `None` when the profile has no Redacto section, the document does
+/// not carry the XFA variables the profile's identity templates need, or the
+/// dump would contain no text assets at all. That last case is the important
+/// one: a contentless dump is still valid SQL describing an empty document, so
+/// without this guard it reaches the download button looking like a result.
+/// Shared by the standard pipeline and the agent run, which otherwise fills
 /// [`ProcessingState`] itself.
 pub fn redacto_sql_for(envelope: &DocumentEnvelope, profile: Option<&str>) -> Option<String> {
     let profile_name = profile?;
@@ -216,7 +220,12 @@ pub fn redacto_sql_for(envelope: &DocumentEnvelope, profile: Option<&str>) -> Op
         return None;
     }
     let config = blueprint::load_redacto_config(profile_name, &envelope.context).ok()?;
-    Some(blueprint::to_redacto_sql(&envelope.content, &config))
+    let config = blueprint::resolve_redacto_languages(&envelope.content, &config);
+    let dump = blueprint::generate_redacto_dump(&envelope.content, &config);
+    if dump.assets.is_empty() {
+        return None;
+    }
+    Some(dump.to_sql())
 }
 
 #[cfg(test)]
@@ -266,5 +275,47 @@ mod tests {
     #[test]
     fn redacto_sql_is_skipped_when_identity_variables_are_missing() {
         assert!(redacto_sql_for(&envelope_with(&[]), Some("ubs")).is_none());
+    }
+
+    /// Regression: an empty structured tree used to yield a syntactically valid
+    /// dump with a `documents` row and no assets at all, which reached the
+    /// download button as an importable file describing an empty document. A
+    /// dump with no content is a failure, not an output.
+    #[test]
+    fn redacto_sql_for_empty_content_returns_none() {
+        let mut envelope =
+            envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);
+        envelope.content = Vec::new();
+
+        assert!(
+            redacto_sql_for(&envelope, Some("ubs")).is_none(),
+            "a dump with no content assets must not be offered for download"
+        );
+    }
+
+    /// The same guard for a document whose content carries no *renderable*
+    /// blocks: input fields alone produce zero assets, which is the shape a
+    /// non-text-only document takes.
+    #[test]
+    fn redacto_sql_for_field_only_content_returns_none() {
+        use blueprint::structured::{FieldNode, FieldType};
+
+        let mut envelope =
+            envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);
+        envelope.content = vec![StructuredNode::Field(FieldNode {
+            name: "first_name".into(),
+            som_path: None,
+            label: Some(TranslatedText::plain("First name")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+            required: false,
+        })];
+
+        assert!(redacto_sql_for(&envelope, Some("ubs")).is_none());
     }
 }

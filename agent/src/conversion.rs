@@ -481,7 +481,16 @@ struct StateRec {
 struct Extractor {
     states: Vec<StateRec>,
     xfa: Vec<(String, String)>,
-    merged: Vec<StructuredNode>,
+    /// The merged multilingual envelope — content *and* context. The context is
+    /// the only carrier of [`Context::header`], which `Blueprint::context()`
+    /// never sets (only `merged_structured()` does), so consumers that want the
+    /// recovered master-page header must read it from here.
+    merged: DocumentEnvelope,
+    /// Why the cross-language merge failed, if it did (`merged.content` is empty
+    /// in that case). Swallowing this is what produced silently empty Redacto
+    /// dumps: a document whose language variants are too dissimilar to merge
+    /// looked exactly like a document with no content.
+    merge_error: Option<String>,
 }
 
 impl Extractor {
@@ -532,18 +541,34 @@ impl Extractor {
             }
         }
 
-        let merged = match envelopes.len() {
-            0 => Vec::new(),
-            1 => envelopes.into_iter().next().unwrap().content,
-            _ => blueprint::merge_translations(envelopes, semantic)
-                .map(|e| e.content)
-                .unwrap_or_default(),
+        // Each single-PDF `merged_structured()` succeeds even when the
+        // cross-language merge does not, so keep the first envelope's context as
+        // the base: it carries the recovered master-page header, which would
+        // otherwise be lost exactly when the merge fails.
+        let base_context = envelopes
+            .first()
+            .map(|e| e.context.clone())
+            .unwrap_or_else(|| Context::with_language("en"));
+        let empty = |context: Context| DocumentEnvelope {
+            context,
+            content: Vec::new(),
+            state_count: 1,
+        };
+
+        let (merged, merge_error) = match envelopes.len() {
+            0 => (empty(base_context), None),
+            1 => (envelopes.into_iter().next().unwrap(), None),
+            _ => match blueprint::merge_translations(envelopes, semantic) {
+                Ok(env) => (env, None),
+                Err(e) => (empty(base_context), Some(e.to_string())),
+            },
         };
 
         Extractor {
             states,
             xfa,
             merged,
+            merge_error,
         }
     }
 
@@ -726,8 +751,39 @@ impl ConversionAgent {
     /// full conversion otherwise. Returns an empty slice if extraction fails.
     pub fn source_structured(&mut self) -> &[StructuredNode] {
         match self.extractor(&serde_json::json!({})) {
-            Ok(extractor) => &extractor.merged,
+            Ok(extractor) => &extractor.merged.content,
             Err(_) => &[],
+        }
+    }
+
+    /// The merged source [`DocumentEnvelope`] — [`source_structured`](Self::source_structured)
+    /// plus the context it was extracted with.
+    ///
+    /// Prefer this over pairing `source_structured()` with
+    /// [`context`](Self::context) when building an output: only this context
+    /// carries [`Context::header`], the master-page header the analysis
+    /// recovers. `ConversionAgent::context` is taken from `Blueprint::context()`
+    /// before any analysis has run and always has `header: None`.
+    pub fn source_envelope(&mut self) -> DocumentEnvelope {
+        match self.extractor(&serde_json::json!({})) {
+            Ok(extractor) => extractor.merged.clone(),
+            Err(_) => DocumentEnvelope {
+                context: self.context.clone(),
+                content: Vec::new(),
+                state_count: 1,
+            },
+        }
+    }
+
+    /// Why the source's cross-language merge failed, if it did.
+    ///
+    /// A `Some` here means [`source_structured`](Self::source_structured) is
+    /// empty for a reason worth reporting rather than because the document has
+    /// no content.
+    pub fn source_merge_error(&mut self) -> Option<String> {
+        match self.extractor(&serde_json::json!({})) {
+            Ok(extractor) => extractor.merge_error.clone(),
+            Err(_) => None,
         }
     }
 
@@ -820,7 +876,7 @@ impl ConversionAgent {
         let mut cfg = if !self.structured.is_empty() {
             blueprint::resolve_aem_languages(&self.structured, &cfg)
         } else if let Ok(ex) = self.extractor(&serde_json::Value::Null) {
-            blueprint::resolve_aem_languages(&ex.merged, &cfg)
+            blueprint::resolve_aem_languages(&ex.merged.content, &cfg)
         } else {
             cfg
         };
@@ -1159,8 +1215,15 @@ impl ConversionAgent {
             "get_source_info" => match self.extractor(input) {
                 Ok(ex) => {
                     let langs: Vec<&str> = ex.states.iter().map(|s| s.context.language()).collect();
+                    // Report the cross-language merge outcome: when it fails the
+                    // engine's merged tree is empty, and any output derived from
+                    // it would silently be empty too.
+                    let merge = match &ex.merge_error {
+                        Some(e) => format!("FAILED - {e}"),
+                        None => "ok".to_string(),
+                    };
                     ToolReply::Text(format!(
-                        "states: {}, languages: {:?}, xfa_pdfs: {}",
+                        "states: {}, languages: {:?}, xfa_pdfs: {}, merge: {merge}",
                         ex.states.len(),
                         dedup(langs),
                         ex.xfa.len()
@@ -1445,7 +1508,7 @@ impl ConversionAgent {
                     Err(e) => return ToolReply::Error(e),
                 };
                 let merged = match self.extractor(&serde_json::Value::Null) {
-                    Ok(ex) => ex.merged.clone(),
+                    Ok(ex) => ex.merged.content.clone(),
                     Err(e) => return ToolReply::Error(e),
                 };
                 let config = match self.config() {
@@ -1754,6 +1817,65 @@ mod tests {
         assert!(
             !agent.source_structured().is_empty(),
             "the converted source document must be reachable for non-AEM exports"
+        );
+    }
+
+    fn fixture(name: &str) -> (String, Vec<u8>) {
+        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input").join(name);
+        let bytes = std::fs::read(&pdf).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        (name.to_string(), bytes)
+    }
+
+    /// A single-PDF source keeps the whole merged envelope, not just its
+    /// content. Regression guard for the master-page header: `Context::header`
+    /// is set only by `merged_structured()`, so an output built from
+    /// `agent.context()` (which is `Blueprint::context()`, always
+    /// `header: None`) silently loses it.
+    #[test]
+    fn source_envelope_carries_the_recovered_header() {
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            vec![fixture("AAEV_019_EN.pdf")],
+            None,
+            "test-source-envelope".into(),
+        );
+
+        assert!(
+            agent.context().header.is_none(),
+            "the agent's own context is taken before any analysis has run"
+        );
+        assert!(
+            agent.source_envelope().context.header.is_some(),
+            "the merged envelope must carry the header the analysis recovered"
+        );
+        assert!(agent.source_merge_error().is_none(), "one PDF needs no merge");
+    }
+
+    /// Regression: `Extractor::build` used to swallow a cross-language merge
+    /// failure with `unwrap_or_default()`, leaving an empty merged tree that was
+    /// indistinguishable from a document with no content. Every output derived
+    /// from it — the Redacto dump in particular — then came out silently empty.
+    #[test]
+    fn extractor_merge_failure_is_reported_not_swallowed() {
+        // Two unrelated forms: far below the structural-similarity threshold
+        // `merge_translations` requires of language variants of one document.
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            vec![fixture("AAAA_019_DE.pdf"), fixture("AABH_019_EN.pdf")],
+            None,
+            "test-merge-error".into(),
+        );
+
+        let reason = agent
+            .source_merge_error()
+            .expect("a failed merge must be reported");
+        assert!(
+            reason.to_lowercase().contains("similar"),
+            "the reason must name the structural-similarity check, got: {reason}"
+        );
+        assert!(
+            agent.source_structured().is_empty(),
+            "a failed merge yields no content — which is precisely why it must be reported"
         );
     }
 
