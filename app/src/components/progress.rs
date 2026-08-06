@@ -3,10 +3,53 @@ use dioxus::prelude::*;
 use super::spinner::Spinner;
 use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 
+/// The error box, extended with Retry / Give up when an agent run is paused on a
+/// failed request (see `agent_runner::turn_with_retry`). Rendered by both the
+/// agent-mode and the staged-pipeline layouts.
+#[component]
+fn ErrorBox(
+    error: String,
+    retry_pending: bool,
+    on_retry: EventHandler<()>,
+    on_give_up: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "progress-error",
+            strong {
+                if retry_pending {
+                    "Paused: "
+                } else {
+                    "Error: "
+                }
+            }
+            "{error}"
+            if retry_pending {
+                div { class: "ag-retry-actions",
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        title: "Re-send the request that failed and continue the run",
+                        onclick: move |_| on_retry.call(()),
+                        "↻ Retry"
+                    }
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: move |_| on_give_up.call(()),
+                        "Give up"
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn ProgressDisplay(
     state: ProcessingState,
     on_image_click: EventHandler<(String, Vec<String>)>,
+    /// Resume a paused agent run by re-sending the request that failed.
+    on_retry: EventHandler<()>,
+    /// Abandon a paused agent run instead of retrying it.
+    on_give_up: EventHandler<()>,
 ) -> Element {
     // AI processing shows the staged pipeline up to state rendering, then a
     // single "AI Generation" step takes over (same StepIndicator style, fewer
@@ -98,9 +141,11 @@ pub fn ProgressDisplay(
                 }
 
                 if let Some(error) = &state.error {
-                    div { class: "progress-error",
-                        strong { "Error: " }
-                        "{error}"
+                    ErrorBox {
+                        error: error.clone(),
+                        retry_pending: state.retry_pending,
+                        on_retry,
+                        on_give_up,
                     }
                 }
             }
@@ -196,9 +241,11 @@ pub fn ProgressDisplay(
             }
 
             if let Some(error) = &state.error {
-                div { class: "progress-error",
-                    strong { "Error: " }
-                    "{error}"
+                ErrorBox {
+                    error: error.clone(),
+                    retry_pending: state.retry_pending,
+                    on_retry,
+                    on_give_up,
                 }
             }
         }

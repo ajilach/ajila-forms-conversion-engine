@@ -35,6 +35,15 @@ pub enum AgentStepStatus {
     Error,
 }
 
+/// What the user chose when an agent run paused on a failed API turn.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum RetryAction {
+    /// Re-send the failed turn and carry on.
+    Retry,
+    /// Give up on the run (the agent keeps whatever it had built).
+    Cancel,
+}
+
 /// One entry in the Agent Processing activity panel.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentStep {
@@ -67,6 +76,16 @@ pub struct ProcessingState {
     #[serde(default)]
     pub redacto_sql: Option<String>,
     pub error: Option<String>,
+    /// `true` while an agent run is paused on a failed API turn, waiting for the
+    /// user to press Retry (or give up). The run's future is still alive — the
+    /// agent, its working tree and the stage history are all held in memory — so
+    /// a retry resumes at the failed turn instead of restarting the run.
+    #[serde(default, skip)]
+    pub retry_pending: bool,
+    /// The user's answer to a pending retry prompt, set by the progress UI and
+    /// consumed by the paused agent loop.
+    #[serde(default, skip)]
+    pub retry_action: Option<RetryAction>,
     #[serde(default)]
     pub warnings: Vec<String>,
     /// When `true`, the progress UI shows the AI-processing step layout
@@ -123,6 +142,8 @@ impl PartialEq for ProcessingState {
             && self.xsd_schema == other.xsd_schema
             && self.redacto_sql == other.redacto_sql
             && self.error == other.error
+            && self.retry_pending == other.retry_pending
+            && self.retry_action == other.retry_action
             && self.warnings == other.warnings
             && self.ai_mode == other.ai_mode
             && self.agent_steps == other.agent_steps

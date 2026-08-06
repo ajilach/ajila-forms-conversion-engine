@@ -549,6 +549,14 @@ fn App() -> Element {
                         ProgressDisplay {
                             state: processing_state.read().clone(),
                             on_image_click: move |(name, data)| enlarged_image.set(Some((name, data))),
+                            // Answer a paused agent run's retry prompt (see
+                            // `agent_runner::turn_with_retry`).
+                            on_retry: move |_| {
+                                processing_state.write().retry_action = Some(models::RetryAction::Retry);
+                            },
+                            on_give_up: move |_| {
+                                processing_state.write().retry_action = Some(models::RetryAction::Cancel);
+                            },
                         }
                     }
 

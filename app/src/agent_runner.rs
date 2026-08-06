@@ -24,7 +24,9 @@ use agent::{
 };
 use blueprint::{DocumentEnvelope, StructuredNode};
 
-use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
+use crate::models::{
+    AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
+};
 use crate::platform::tool_result_message;
 
 /// Fallback output-token cap per agent turn, used for models we don't recognize
@@ -55,6 +57,20 @@ fn max_output_tokens_for(model: &str) -> u32 {
         AGENT_MAX_TOKENS
     }
 }
+
+/// How many times a *transient* API failure (timeout, dropped connection,
+/// overload, rate limit, 5xx) is retried automatically before the run pauses and
+/// asks the user. A turn that fails mid-stream has not been appended to the
+/// stage history, so re-sending it is safe — the request is simply rebuilt from
+/// the unchanged history.
+const MAX_AUTO_RETRIES: usize = 6;
+/// Base delay before the first automatic retry, doubled on each further attempt
+/// and capped at [`MAX_RETRY_BACKOFF_SECS`].
+const RETRY_BACKOFF_SECS: u64 = 5;
+/// Ceiling for the exponential retry backoff.
+const MAX_RETRY_BACKOFF_SECS: u64 = 60;
+/// How often the paused loop checks whether the user pressed Retry.
+const RETRY_POLL_MS: u64 = 200;
 
 /// How many consecutive `validate_aem_package` calls with identical output
 /// are allowed before a stage gives up (avoids an endless validate loop).
@@ -518,12 +534,155 @@ struct RoleOutcome {
     final_text: String,
 }
 
+// ── Turn-level failure recovery ────────────────────────────────────────────────
+
+/// Whether an [`crate::platform::anthropic_stream_turn`] error looks transient —
+/// i.e. worth re-sending the same turn unchanged. Covers the failure mode you get
+/// when the machine is left alone during a long run (the connection is dropped
+/// while the response streams, surfacing as `error decoding response body … timed
+/// out`) plus the API's own retryable statuses.
+fn is_transient_error(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    const TRANSIENT: &[&str] = &[
+        "timed out",
+        "timeout",
+        "error decoding response body",
+        "error reading a body from connection",
+        "connection reset",
+        "connection closed",
+        "connection refused",
+        "broken pipe",
+        "incomplete message",
+        "dns error",
+        "os error 50", // network is down
+        "os error 51", // network unreachable
+        "os error 54", // connection reset by peer
+        "os error 64", // host is down
+        "os error 65", // no route to host
+        "overloaded",
+        "rate_limit",
+        "rate limit",
+        "internal server error",
+        "api_error",
+    ];
+    if TRANSIENT.iter().any(|needle| e.contains(needle)) {
+        return true;
+    }
+    // `Anthropic API error (429 Too Many Requests): …` — retry the statuses the
+    // API documents as retryable, but not 4xx client errors we'd just repeat.
+    ["(429", "(500", "(502", "(503", "(504", "(529"]
+        .iter()
+        .any(|status| e.contains(status))
+}
+
+/// Pause a stage on a failed turn and wait for the user to press Retry or give
+/// up. Keeping the run's future alive is the whole point: the agent, its working
+/// tree and this stage's history stay in memory, so Retry re-sends exactly the
+/// turn that failed rather than restarting the conversion from scratch.
+async fn await_user_retry(
+    processing_state: &mut Signal<ProcessingState>,
+    role: &str,
+    err: &str,
+) -> RetryAction {
+    {
+        let mut s = processing_state.write();
+        s.error = Some(format!("Agent failed ({role}): {err}"));
+        s.retry_pending = true;
+        s.retry_action = None;
+    }
+    push_step(
+        processing_state,
+        thought(format!(
+            "Paused after a failed request ({err}). Press Retry to resume from this step."
+        )),
+    );
+
+    let action = loop {
+        let pending = processing_state.read().retry_action;
+        if let Some(action) = pending {
+            break action;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(RETRY_POLL_MS)).await;
+    };
+
+    {
+        let mut s = processing_state.write();
+        s.retry_pending = false;
+        s.retry_action = None;
+        if action == RetryAction::Retry {
+            s.error = None;
+        }
+    }
+    if action == RetryAction::Retry {
+        push_step(
+            processing_state,
+            thought("Retrying the failed request…".into()),
+        );
+    }
+    action
+}
+
+/// Run one turn, absorbing transient failures: automatic retries with
+/// exponential backoff first, then a pause that hands the decision to the user
+/// via the Retry button. `None` means the user gave up.
+async fn turn_with_retry(
+    history: &mut Vec<serde_json::Value>,
+    tools: &[serde_json::Value],
+    role: &Role,
+    system: &str,
+    agent_max_tokens: u32,
+    settings: &crate::settings::AppSettings,
+    processing_state: &mut Signal<ProcessingState>,
+) -> Option<crate::platform::TurnOutput> {
+    let mut auto_retries = 0usize;
+    loop {
+        match crate::platform::anthropic_stream_turn(
+            history,
+            tools,
+            &settings.anthropic_api_key,
+            &settings.anthropic_model,
+            agent_max_tokens,
+            Some(system),
+        )
+        .await
+        {
+            Ok(turn) => return Some(turn),
+            Err(e) => {
+                if is_transient_error(&e) && auto_retries < MAX_AUTO_RETRIES {
+                    let wait =
+                        (RETRY_BACKOFF_SECS << auto_retries.min(4)).min(MAX_RETRY_BACKOFF_SECS);
+                    auto_retries += 1;
+                    push_step(
+                        processing_state,
+                        thought(format!(
+                            "Request failed ({e}) — retrying in {wait}s \
+                             (attempt {auto_retries} of {MAX_AUTO_RETRIES})."
+                        )),
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                    continue;
+                }
+                match await_user_retry(processing_state, role.name, &e).await {
+                    RetryAction::Retry => {
+                        // A user-driven retry resets the automatic budget, so a
+                        // long unattended stall can be resumed repeatedly.
+                        auto_retries = 0;
+                        continue;
+                    }
+                    RetryAction::Cancel => return None,
+                }
+            }
+        }
+    }
+}
+
 /// Drive one role stage to completion: fresh bounded history seeded with
 /// `seed_user_msg`, the role's filtered tool subset, and its `system` prompt, over
 /// the SAME [`crate::platform::anthropic_stream_turn`] path as every other stage
 /// (so eviction / caching / budget / retry / off-thread prep / the context-window
 /// indicator are all inherited unchanged). Returns the last non-tool assistant
-/// message; `None` if a fatal API error was surfaced.
+/// message; `None` if a request failed and the user gave up instead of retrying
+/// (see [`turn_with_retry`]).
 async fn run_role(
     agent: &mut ConversionAgent,
     role: &Role,
@@ -546,23 +705,18 @@ async fn run_role(
     let mut consecutive_max_tokens: usize = 0;
 
     for _ in 0..role.max_iterations {
-        let turn = match crate::platform::anthropic_stream_turn(
+        // Transient failures are retried automatically, then handed to the user's
+        // Retry button — a dropped connection must not throw away a long run.
+        let turn = turn_with_retry(
             &mut history,
             &tools,
-            &settings.anthropic_api_key,
-            &settings.anthropic_model,
+            role,
+            system,
             agent_max_tokens,
-            Some(system),
+            settings,
+            processing_state,
         )
-        .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                processing_state.write().error =
-                    Some(format!("Agent failed ({}): {e}", role.name));
-                return None;
-            }
-        };
+        .await?;
 
         // Per-stage context-window fill indicator.
         if turn.prompt_tokens > 0 {
@@ -833,6 +987,35 @@ mod tests {
         assert_eq!(summarize_input(&serde_json::json!({})), "");
         let long = serde_json::json!({"q": "x".repeat(500)});
         assert!(summarize_input(&long).chars().count() <= 121);
+    }
+
+    #[test]
+    fn transient_errors_are_retried_automatically() {
+        // The failure seen when the machine is left alone mid-run.
+        assert!(is_transient_error(
+            "Anthropic API error: error decoding response body — error reading a body \
+             from connection — timed out"
+        ));
+        assert!(is_transient_error(
+            "Anthropic API error (529 ): {\"type\":\"overloaded_error\"}"
+        ));
+        assert!(is_transient_error(
+            "Anthropic API error (429 Too Many Requests): rate limit"
+        ));
+        assert!(is_transient_error(
+            "Anthropic API error (503 Service Unavailable): upstream"
+        ));
+        // Client-side mistakes would just fail again — those go straight to the
+        // user's Retry prompt instead of burning automatic attempts.
+        assert!(!is_transient_error(
+            "Anthropic API error (401 Unauthorized): invalid x-api-key"
+        ));
+        assert!(!is_transient_error(
+            "Anthropic API error (400 Bad Request): prompt is too long"
+        ));
+        assert!(!is_transient_error(
+            "Anthropic API key is not configured. Open Settings and paste your API key."
+        ));
     }
 
     #[test]

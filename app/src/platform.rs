@@ -891,6 +891,28 @@ async fn prepare_request_body(
     .map_err(|e| format!("Request preparation task failed: {e}"))?
 }
 
+/// How long a streamed turn may go without receiving any bytes before the
+/// request is failed. The SSE stream emits deltas (and periodic pings)
+/// continuously, so a long silence means the connection is dead — typically
+/// because the machine slept or the network dropped mid-run. Failing fast turns
+/// that into a retryable error (see `agent_runner::turn_with_retry`) instead of a
+/// run that hangs forever on a socket nobody is talking on.
+const STREAM_READ_TIMEOUT_SECS: u64 = 300;
+
+/// The shared HTTP client for streamed Messages API turns: one connection pool
+/// for the whole run, with an inactivity timeout on the response body.
+fn streaming_client() -> reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .read_timeout(std::time::Duration::from_secs(STREAM_READ_TIMEOUT_SECS))
+                .build()
+                .unwrap_or_default()
+        })
+        .clone()
+}
+
 /// Run **one** streamed assistant turn against the Messages API with `tools`
 /// available, append the assistant message to `history`, and return its text +
 /// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:
@@ -924,7 +946,7 @@ pub async fn anthropic_stream_turn(
     // whole run.
     let mut target = prompt_token_target(model, max_tokens);
     const MIN_TARGET: usize = 16_000;
-    let client = reqwest::Client::new();
+    let client = streaming_client();
 
     let (response, sent_estimate) = loop {
         let prepared = prepare_request_body(

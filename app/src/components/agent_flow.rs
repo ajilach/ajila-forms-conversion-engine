@@ -10,7 +10,9 @@ use dioxus::prelude::*;
 
 use super::file_upload::read_upload_files;
 use super::spinner::Spinner;
-use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
+use crate::models::{
+    AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
+};
 use crate::platform::download_file;
 
 /// Which phase of the agent flow is currently shown.
@@ -19,6 +21,9 @@ enum Phase {
     Upload,
     Running,
     Done,
+    /// The run ended on an error (including the user giving up on a paused,
+    /// retryable request) — the box reports it and offers a fresh start.
+    Failed,
 }
 
 /// Lifecycle of the on-demand "Upload to AEM" action, surfaced inside the button.
@@ -118,6 +123,8 @@ pub fn AgentFlow(
     let processing = *is_processing.read();
     let phase = if state.step == ProcessingStep::Complete {
         Phase::Done
+    } else if !processing && state.error.is_some() {
+        Phase::Failed
     } else if processing || state.step != ProcessingStep::Idle {
         Phase::Running
     } else {
@@ -140,7 +147,7 @@ pub fn AgentFlow(
                                 on_start: move |files: Vec<(String, Vec<u8>)>| on_ai_process.call(files),
                             }
                         },
-                        Phase::Running | Phase::Done => rsx! {
+                        Phase::Running | Phase::Done | Phase::Failed => rsx! {
                             RunBox {
                                 phase,
                                 state: state.clone(),
@@ -150,6 +157,14 @@ pub fn AgentFlow(
                                 timeline_open,
                                 feedback,
                                 on_feedback: move |text: String| on_feedback.call(text),
+                                // Answer a paused run's retry prompt; the agent loop
+                                // polls these on the shared processing state.
+                                on_retry: move |_| {
+                                    processing_state.write().retry_action = Some(RetryAction::Retry);
+                                },
+                                on_give_up: move |_| {
+                                    processing_state.write().retry_action = Some(RetryAction::Cancel);
+                                },
                                 on_new: move |_| {
                                     uploaded_files.set(Vec::new());
                                     feedback.set(String::new());
@@ -327,6 +342,8 @@ fn UploadBox(
 
 /// The box while the agent runs and once it finishes: header, phase rail,
 /// source files, the collapsible activity timeline, and (when done) feedback.
+/// A failed request pauses the run instead of ending it, and is surfaced here as
+/// a Retry / Give up prompt.
 #[component]
 fn RunBox(
     phase: Phase,
@@ -337,9 +354,16 @@ fn RunBox(
     mut timeline_open: Signal<bool>,
     mut feedback: Signal<String>,
     on_feedback: EventHandler<String>,
+    /// Resume a paused run by re-sending the request that failed.
+    on_retry: EventHandler<()>,
+    /// Abandon a paused run instead of retrying it.
+    on_give_up: EventHandler<()>,
     on_new: EventHandler<()>,
 ) -> Element {
     let done = phase == Phase::Done;
+    let failed = phase == Phase::Failed;
+    // The run is alive but waiting on the user's answer to a failed request.
+    let paused = state.retry_pending;
     let open = *timeline_open.read();
     let steps = &state.agent_steps;
     let latest = steps.last();
@@ -367,11 +391,16 @@ fn RunBox(
     let mut upload_state = use_signal(|| UploadState::Idle);
 
     rsx! {
-        section { class: if done { "ag-box done" } else { "ag-box" },
+        section {
+            class: if done { "ag-box done" } else if failed { "ag-box failed" } else { "ag-box" },
             // ---- Header ----
             div { class: "ag-top",
                 if done {
                     div { class: "ag-badge ok", "✓" }
+                } else if failed {
+                    div { class: "ag-badge err", "✗" }
+                } else if paused {
+                    div { class: "ag-badge warn", "⏸" }
                 } else {
                     div { class: "ag-badge run",
                         Spinner { size: "md" }
@@ -381,6 +410,10 @@ fn RunBox(
                     h2 { class: "ag-title",
                         if done {
                             "Finished"
+                        } else if failed {
+                            "Agent stopped"
+                        } else if paused {
+                            "Agent paused"
                         } else {
                             "Agent is working"
                         }
@@ -402,7 +435,7 @@ fn RunBox(
                         }
                     }
                 }
-                if done {
+                if done || failed {
                     div { class: "ag-actions",
                         button {
                             class: "btn btn-secondary btn-sm",
@@ -430,9 +463,19 @@ fn RunBox(
                         span { class: "pn", "✓" }
                         span { class: "pl", "Finish" }
                     }
+                } else if failed {
+                    div { class: "ag-phase failed",
+                        span { class: "pn", "✗" }
+                        span { class: "pl", "Convert" }
+                    }
+                    div { class: "ag-pbar" }
+                    div { class: "ag-phase",
+                        span { class: "pn", "3" }
+                        span { class: "pl", "Finish" }
+                    }
                 } else {
-                    div { class: "ag-phase active",
-                        span { class: "pn", "●" }
+                    div { class: if paused { "ag-phase paused" } else { "ag-phase active" },
+                        span { class: "pn", if paused { "⏸" } else { "●" } }
                         span { class: "pl", "Convert" }
                     }
                     div { class: "ag-pbar" }
@@ -553,15 +596,40 @@ fn RunBox(
                                     }
                                 }
                             }
-                            if let Some(error) = &state.error {
-                                div { class: "progress-error",
-                                    strong { "Error: " }
-                                    "{error}"
-                                }
-                            }
                             div { id: "agent-flow-end" }
                         }
                     }
+                }
+            }
+
+            // ---- Failed request: retry (or give up) without losing the run ----
+            if paused {
+                div { class: "ag-retry",
+                    div { class: "ag-retry-title", "The request to Claude failed — the run is paused." }
+                    if let Some(error) = &state.error {
+                        div { class: "ag-retry-msg", "{error}" }
+                    }
+                    div { class: "ag-retry-hint",
+                        "Everything the agent has built so far is still in memory. Retry re-sends only \
+                         the step that failed."
+                    }
+                    div { class: "ag-retry-actions",
+                        button {
+                            class: "btn btn-primary",
+                            onclick: move |_| on_retry.call(()),
+                            "↻ Retry"
+                        }
+                        button {
+                            class: "btn btn-secondary",
+                            onclick: move |_| on_give_up.call(()),
+                            "Give up"
+                        }
+                    }
+                }
+            } else if let Some(error) = &state.error {
+                div { class: "progress-error",
+                    strong { "Error: " }
+                    "{error}"
                 }
             }
 
