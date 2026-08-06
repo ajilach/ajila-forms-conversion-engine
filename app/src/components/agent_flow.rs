@@ -13,7 +13,7 @@ use super::spinner::Spinner;
 use crate::models::{
     AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
 };
-use crate::platform::download_file;
+use crate::platform::{download_file, show_html_preview};
 
 /// Which phase of the agent flow is currently shown.
 #[derive(PartialEq, Clone, Copy)]
@@ -35,20 +35,38 @@ enum UploadState {
     Error(String),
 }
 
-/// Build a download filename like `forms-package-<code>.zip`, or
+/// Build a download filename like `forms-package-<code>.zip`, falling back to
 /// `forms-package.zip` when the form code is unknown.
-fn package_filename(form_code: &Option<String>) -> String {
+fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
     match form_code {
-        Some(code) => format!("forms-package-{code}.zip"),
-        None => "forms-package.zip".to_string(),
+        Some(code) => format!("{prefix}-{code}.{ext}"),
+        None => format!("{prefix}.{ext}"),
     }
 }
 
-fn redacto_filename(form_code: &Option<String>) -> String {
-    match form_code {
-        Some(code) => format!("redacto-{code}.sql"),
-        None => "redacto.sql".to_string(),
+/// Render the activity timeline as a Markdown transcript of the run.
+fn agent_log_markdown(steps: &[crate::models::AgentStep]) -> String {
+    let mut out = String::from("# Agent Conversion Log\n\n");
+    for step in steps {
+        match step.kind {
+            AgentStepKind::Thought => {
+                out.push_str(&format!("> {}\n\n", step.label.replace('\n', "\n> ")));
+            }
+            AgentStepKind::Tool => {
+                let icon = match step.status {
+                    AgentStepStatus::Done => "✓",
+                    AgentStepStatus::Error => "✗",
+                    AgentStepStatus::Running => "…",
+                };
+                if step.detail.is_empty() {
+                    out.push_str(&format!("- {icon} `{}`\n", step.label));
+                } else {
+                    out.push_str(&format!("- {icon} `{}` — {}\n", step.label, step.detail));
+                }
+            }
+        }
     }
+    out
 }
 
 /// Human-friendly duration, e.g. `"1m 18s"` or `"42s"`.
@@ -642,6 +660,20 @@ fn RunBox(
                 }
             }
 
+            // Non-fatal problems the run reported — a Redacto dump that could not
+            // be built, a cross-language merge that failed. Without this the run
+            // looks clean while an output is silently missing.
+            if !state.warnings.is_empty() {
+                div { class: "progress-warnings",
+                    strong { "Warnings:" }
+                    ul {
+                        for warning in state.warnings.iter() {
+                            li { "{warning}" }
+                        }
+                    }
+                }
+            }
+
             // ---- Result + feedback (done only) ----
             if done {
                 if state.aem_uploaded && let Some(path) = state.aem_form_path.as_ref() {
@@ -651,32 +683,46 @@ fn RunBox(
                     }
                 }
 
-                // ---- Package actions: download CRX, upload to AEM ----
-                if let Some(ref aem_data) = state.aem_package {
-                    {
-                        let st = upload_state.read().clone();
-                        let uploading = st == UploadState::Uploading;
-                        let no_connection = aem_connection.is_none();
-                        let upload_title = match &st {
-                            UploadState::Error(msg) => msg.clone(),
-                            _ if no_connection => {
-                                "Configure the AEM connection in Settings to enable this".to_string()
-                            }
-                            _ => "Upload and install the package on the configured AEM instance".to_string(),
-                        };
-
-                        rsx! {
-                            div { class: "ag-result-actions",
-                                button {
-                                    class: "btn btn-secondary",
-                                    title: "Download the AEM content package (CRX) as a ZIP",
-                                    onclick: {
-                                        let aem_data = aem_data.clone();
-                                        let zip_filename = package_filename(&state.form_code);
-                                        move |_| download_file(&aem_data, &zip_filename, "application/zip")
-                                    },
-                                    "⬇ Download CRX package"
+                // ---- Row A: act on the result ----
+                div { class: "ag-result-actions",
+                    if let Some(ref aem_data) = state.aem_package {
+                        button {
+                            class: "btn btn-secondary",
+                            title: "Download the AEM content package (CRX) as a ZIP",
+                            onclick: {
+                                let aem_data = aem_data.clone();
+                                let zip_filename = filename("forms-package", &state.form_code, "zip");
+                                move |_| download_file(&aem_data, &zip_filename, "application/zip")
+                            },
+                            "⬇ Download CRX package"
+                        }
+                    }
+                    if let Some(ref html) = state.html_preview {
+                        button {
+                            class: "btn btn-secondary",
+                            title: "Render the converted document as a standalone HTML page and open it in the browser",
+                            onclick: {
+                                let html = html.clone();
+                                let preview_filename = filename("preview", &state.form_code, "html");
+                                move |_| show_html_preview(html.clone(), &preview_filename)
+                            },
+                            "◹ HTML preview"
+                        }
+                    }
+                    if let Some(ref aem_data) = state.aem_package {
+                        {
+                            let st = upload_state.read().clone();
+                            let uploading = st == UploadState::Uploading;
+                            let no_connection = aem_connection.is_none();
+                            let upload_title = match &st {
+                                UploadState::Error(msg) => msg.clone(),
+                                _ if no_connection => {
+                                    "Configure the AEM connection in Settings to enable this".to_string()
                                 }
+                                _ => "Upload and install the package on the configured AEM instance".to_string(),
+                            };
+
+                            rsx! {
                                 button {
                                     class: "btn btn-primary",
                                     disabled: uploading || no_connection,
@@ -724,23 +770,72 @@ fn RunBox(
                     }
                 }
 
-                // ---- Redacto dump: shown independently of the AEM package,
-                // since a text-only document may not produce a useful one ----
-                if let Some(ref sql_data) = state.redacto_sql {
-                    div { class: "ag-result-actions",
+                // ---- Row B: take a copy. Outside the AEM-package guard, since a
+                // Redacto run produces no package but still yields a dump, the
+                // structure and the log ----
+                div { class: "ag-downloads",
+                    span { class: "ag-downloads-label", "Also download" }
+                    if let Some(ref sql_data) = state.redacto_sql {
                         button {
-                            class: "btn btn-secondary",
-                            title: "Download the Redacto PostgreSQL dump (document, components and text assets)",
+                            class: "btn btn-secondary btn-sm",
+                            title: "The Redacto PostgreSQL dump (document, components and text assets)",
                             onclick: {
                                 let sql_data = sql_data.clone();
-                                let sql_filename = redacto_filename(&state.form_code);
+                                let sql_filename = filename("redacto", &state.form_code, "sql");
                                 move |_| download_file(
                                     sql_data.as_bytes(),
                                     &sql_filename,
                                     "application/sql",
                                 )
                             },
-                            "⬇ Download Redacto SQL"
+                            "Redacto SQL"
+                        }
+                    }
+                    if let Some(ref json_data) = state.merged_json {
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            title: "The structured document the outputs were generated from",
+                            onclick: {
+                                let json_data = json_data.clone();
+                                let json_filename = filename("structure", &state.form_code, "json");
+                                move |_| download_file(
+                                    json_data.as_bytes(),
+                                    &json_filename,
+                                    "application/json",
+                                )
+                            },
+                            "Structure JSON"
+                        }
+                    }
+                    if let Some(ref xsd_data) = state.xsd_schema {
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            title: "The XML Schema Definition for the converted form",
+                            onclick: {
+                                let xsd_data = xsd_data.clone();
+                                let xsd_filename = filename("schema", &state.form_code, "xsd");
+                                move |_| download_file(
+                                    xsd_data.as_bytes(),
+                                    &xsd_filename,
+                                    "application/xml",
+                                )
+                            },
+                            "XSD schema"
+                        }
+                    }
+                    if !state.agent_steps.is_empty() {
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            title: "The agent's full activity timeline as a Markdown transcript",
+                            onclick: {
+                                let steps = state.agent_steps.clone();
+                                let log_filename = filename("agent-log", &state.form_code, "md");
+                                move |_| {
+                                    let md = agent_log_markdown(&steps);
+                                    download_file(md.as_bytes(), &log_filename, "text/markdown");
+                                }
+                            },
+                            "Agent log"
                         }
                     }
                 }
@@ -797,5 +892,74 @@ fn tl_dot_inner(status: &AgentStepStatus) -> Element {
         AgentStepStatus::Error => rsx! {
             span { class: "af-err", "✗" }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::AgentStep;
+
+    fn step(kind: AgentStepKind, label: &str, detail: &str, status: AgentStepStatus) -> AgentStep {
+        AgentStep {
+            id: String::new(),
+            kind,
+            label: label.to_string(),
+            detail: detail.to_string(),
+            status,
+        }
+    }
+
+    #[test]
+    fn filename_falls_back_when_the_form_code_is_unknown() {
+        assert_eq!(
+            filename("forms-package", &Some("AAEV".into()), "zip"),
+            "forms-package-AAEV.zip"
+        );
+        assert_eq!(filename("redacto", &None, "sql"), "redacto.sql");
+    }
+
+    /// The log is the only durable record of a run once the window is closed, so
+    /// every step kind has to survive the transcript.
+    #[test]
+    fn agent_log_renders_thoughts_and_tool_calls() {
+        let md = agent_log_markdown(&[
+            step(AgentStepKind::Thought, "Analysing", "", AgentStepStatus::Done),
+            step(
+                AgentStepKind::Tool,
+                "build_aem_package",
+                "12 components",
+                AgentStepStatus::Done,
+            ),
+            step(
+                AgentStepKind::Tool,
+                "upload_to_aem",
+                "",
+                AgentStepStatus::Error,
+            ),
+        ]);
+
+        assert!(md.starts_with("# Agent Conversion Log\n\n"), "{md}");
+        assert!(md.contains("> Analysing\n"), "{md}");
+        assert!(
+            md.contains("- ✓ `build_aem_package` — 12 components\n"),
+            "{md}"
+        );
+        // A detail-less tool call must not leave a dangling em dash.
+        assert!(md.contains("- ✗ `upload_to_aem`\n"), "{md}");
+    }
+
+    /// A multi-line thought has to stay inside the blockquote, otherwise the
+    /// continuation lines render as body text.
+    #[test]
+    fn agent_log_keeps_multiline_thoughts_quoted() {
+        let md = agent_log_markdown(&[step(
+            AgentStepKind::Thought,
+            "First line\nSecond line",
+            "",
+            AgentStepStatus::Done,
+        )]);
+
+        assert!(md.contains("> First line\n> Second line\n"), "{md}");
     }
 }

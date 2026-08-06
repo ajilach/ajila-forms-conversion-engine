@@ -3540,6 +3540,20 @@ body > div, #main {
     gap: var(--space-3);
     margin-top: var(--space-5);
 }
+/* Secondary "take a copy" row — deliberately quieter than the action row above
+   it, so the done screen keeps a single focal point. */
+.ag-downloads {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+.ag-downloads-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-right: var(--space-2);
+}
 .ag-fb {
     margin-top: var(--space-5);
     padding-top: var(--space-5);

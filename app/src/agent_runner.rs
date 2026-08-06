@@ -528,6 +528,13 @@ async fn run_conversion(
     mut processing_state: Signal<ProcessingState>,
     mut current_session: Signal<Option<String>>,
 ) {
+    // Load the selected profile's fonts so on-demand renders have the right
+    // typefaces (the font store is global, shared with rendering). Both a fresh
+    // run and a feedback re-run funnel through here, so this covers both.
+    if let Some(profile_name) = profile.as_deref() {
+        let _ = blueprint::load_profile_fonts(profile_name);
+    }
+
     let model = settings.anthropic_model.clone();
     let agent_max_tokens = max_output_tokens_for(&model);
     let extra = crate::settings::extra_instructions_block(&settings.agent_instructions);
@@ -1172,6 +1179,12 @@ fn finalize(
     let merged_json = serde_json::to_string_pretty(&envelope).ok();
     let form_code = agent.form_code();
 
+    // Derived exports for the done screen. The form code has to be resolved
+    // first: it names the form the schema describes.
+    let html_preview = crate::processing::html_preview_for(&envelope, profile.as_deref());
+    let xsd_schema =
+        crate::processing::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref());
+
     // Record the result in the structured history, so the run can be reopened
     // from the session browser. Without this the session holds nothing but the
     // empty seed and there is nothing to load.
@@ -1186,6 +1199,8 @@ fn finalize(
     state.envelope = Some(envelope);
     state.aem_translated = aem_translated;
     state.merged_json = merged_json;
+    state.html_preview = html_preview;
+    state.xsd_schema = xsd_schema;
     state.aem_package = agent.package();
     state.redacto_sql = redacto_sql;
     state.form_code = form_code;

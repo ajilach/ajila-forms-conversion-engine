@@ -177,12 +177,6 @@ fn App() -> Element {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            // Load the selected profile's fonts so on-demand renders have the
-            // right typefaces (the font store is global, shared with rendering).
-            if let Some(profile_name) = profile.as_deref() {
-                let _ = blueprint::load_profile_fonts(profile_name);
-            }
-
             // Hand the whole conversion to the autonomous agent: it drives the
             // engine via tools (extract → structure → convert → AEM → package →
             // upload/verify), versioning each step, and finalizes the result.
