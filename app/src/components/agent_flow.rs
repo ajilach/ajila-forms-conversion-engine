@@ -8,8 +8,8 @@
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 
-use super::file_upload::read_upload_files;
 use super::spinner::Spinner;
+use crate::upload::read_upload_files;
 use crate::models::{
     AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
 };

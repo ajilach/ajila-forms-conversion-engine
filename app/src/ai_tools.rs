@@ -270,7 +270,7 @@ impl ToolExecutor for FormToolContext {
                         let encoded: Result<Vec<String>, String> = imgs
                             .iter()
                             .map(|img| {
-                                crate::pipeline::encode_rgba_to_jpeg(img, 82)
+                                agent::image_encode::encode_rgba_to_jpeg(img, 82)
                                     .map(|jpeg| base64::prelude::BASE64_STANDARD.encode(&jpeg))
                                     .map_err(|e| format!("Encode failed: {e}"))
                             })
