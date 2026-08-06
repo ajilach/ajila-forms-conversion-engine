@@ -125,7 +125,7 @@ fn tool_catalog() -> Vec<serde_json::Value> {
         validate_from_file_spec(),
         upload_from_file_spec(),
     ];
-    let probe = ConversionAgent::new(None, Vec::new(), None, String::new());
+    let probe = ConversionAgent::new(None, Vec::new(), None, String::new(), blueprint::OutputTarget::Aem);
     specs.extend(probe.tools());
     specs
 }
@@ -247,7 +247,7 @@ impl Blueprint {
         // tool result. The count also distinguishes "no references exist" from a
         // profile mismatch returning an empty list.
         let ref_count = agent::references::count(profile.as_deref().unwrap_or_default());
-        let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone());
+        let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone(), blueprint::OutputTarget::Aem);
         *self.agent.lock().await = Some(new_agent);
 
         let ref_note = if ref_count > 0 {

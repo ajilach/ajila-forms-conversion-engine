@@ -297,6 +297,7 @@ pub async fn run_agent(
         files.clone(),
         settings.aem_connection(),
         structured_session.clone(),
+        blueprint::OutputTarget::Aem,
     );
 
     let template_note = if has_template {
@@ -346,6 +347,7 @@ pub async fn run_agent_feedback(
         pdfs,
         settings.aem_connection(),
         structured_session.clone(),
+        blueprint::OutputTarget::Aem,
     );
     if let Some(prior) = prior {
         agent.seed_structured(prior.envelope.content);

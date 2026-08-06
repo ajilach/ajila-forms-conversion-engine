@@ -18,11 +18,40 @@ use std::collections::HashMap;
 
 use blueprint::{
     AemConfig, AemConnection, AemI18nText, AemNode, AemNodeTranslated, AemOptionTranslated, Context,
-    DocumentEnvelope, StructuredNode,
+    DocumentEnvelope, OutputTarget, RedactoDump, StructuredNode,
 };
 
 /// Error returned by the AEM-tree tools when nothing has been authored yet.
 const NO_AEM_TREE: &str = "No AEM tree yet; author it with set_aem_translated.";
+
+/// Returned when AEM-only machinery is reached in a run aimed at another target.
+/// Should be unreachable through the app (roles are never offered out-of-scope
+/// tools) but not through MCP, which serves the flat catalog.
+const AEM_ONLY_STATE: &str = "This run targets Redacto; no AEM state exists.";
+
+/// The tools that only mean anything for [`OutputTarget::Aem`].
+///
+/// Checked once at the top of [`ConversionAgent::execute`] so a Redacto run
+/// rejects them with a clear reason rather than failing deeper down with
+/// something misleading like "No AEM tree yet".
+const AEM_ONLY_TOOLS: &[&str] = &[
+    "set_aem_translated",
+    "get_aem_translated",
+    "get_aem_translated_outline",
+    "get_aem_translated_node",
+    "set_aem_translated_field",
+    "replace_aem_translated_node",
+    "insert_aem_translated_node",
+    "remove_aem_translated_node",
+    "build_aem_package",
+    "get_package_info",
+    "read_package_file",
+    "validate_aem_package",
+    "review_output",
+    "upload_to_aem",
+    "fetch_aem_form_html",
+    "fetch_aem_dor_pdf",
+];
 
 /// All language codes appearing in any text field of a working tree (used to
 /// keep a pre-loaded template's languages alive through lowering, and to pick
@@ -592,29 +621,101 @@ impl Extractor {
 
 // ── The agent ────────────────────────────────────────────────────────────────
 
+/// Everything a run aimed at [`OutputTarget::Aem`] accumulates.
+#[derive(Default)]
+struct AemState {
+    config: Option<AemConfig>,
+    /// The working multilingual AEM tree the agent authors directly. Lowered to
+    /// `(AemNode, translations)` at build/review time.
+    tree: Option<AemNodeTranslated>,
+    package: Option<Vec<u8>>,
+    /// The derived `#aem` edit-history session id, once anything is snapshotted.
+    session: Option<String>,
+    /// Set once the package has been uploaded + installed on AEM.
+    uploaded: bool,
+    /// JCR path of the uploaded form on AEM (for the "done" screen).
+    form_path: Option<String>,
+}
+
+/// Everything a run aimed at [`OutputTarget::Redacto`] accumulates.
+///
+/// The authored document itself lives in [`ConversionAgent::structured`], which
+/// both targets share; this is only what building the dump produces.
+// The Redacto tools that fill this land with the structured authoring surface.
+#[allow(dead_code)]
+#[derive(Default)]
+struct RedactoState {
+    /// The dump from the most recent `build_redacto_dump`, reused by `finalize`
+    /// so the shipped SQL is the one the agent last saw validated.
+    dump: Option<RedactoDump>,
+}
+
+/// The per-target half of the agent's state.
+///
+/// Splitting it makes an AEM tool structurally unreachable in a Redacto run
+/// rather than merely un-offered: the app filters tools by role name, but MCP
+/// serves the flat catalog, so the guarantee has to live here.
+enum TargetState {
+    Aem(Box<AemState>),
+    Redacto(RedactoState),
+}
+
+impl TargetState {
+    fn new(target: OutputTarget) -> Self {
+        match target {
+            OutputTarget::Aem => TargetState::Aem(Box::default()),
+            OutputTarget::Redacto => TargetState::Redacto(RedactoState::default()),
+        }
+    }
+
+    fn target(&self) -> OutputTarget {
+        match self {
+            TargetState::Aem(_) => OutputTarget::Aem,
+            TargetState::Redacto(_) => OutputTarget::Redacto,
+        }
+    }
+
+    fn aem(&self) -> Option<&AemState> {
+        match self {
+            TargetState::Aem(state) => Some(state),
+            TargetState::Redacto(_) => None,
+        }
+    }
+
+    fn aem_mut(&mut self) -> Option<&mut AemState> {
+        match self {
+            TargetState::Aem(state) => Some(state),
+            TargetState::Redacto(_) => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn redacto_mut(&mut self) -> Option<&mut RedactoState> {
+        match self {
+            TargetState::Redacto(state) => Some(state),
+            TargetState::Aem(_) => None,
+        }
+    }
+}
+
 pub struct ConversionAgent {
     profile: Option<String>,
     context: Context,
-    aem_config: Option<AemConfig>,
     conn: Option<AemConnection>,
     current_pdfs: Vec<(String, Vec<u8>)>,
     extractors: HashMap<String, Extractor>,
 
-    /// Kept only to feed `config()`'s language detection before any tree is
-    /// authored (via the extractor's merged tree); not agent-editable anymore.
+    /// The working structured tree. Under [`OutputTarget::Redacto`] this is what
+    /// the agent authors and the dump is generated from; under
+    /// [`OutputTarget::Aem`] it stays empty (the agent authors the AEM tree
+    /// directly) and only feeds `config()`'s language detection when a resumed
+    /// session seeded it.
     structured: Vec<StructuredNode>,
-    /// The working multilingual AEM tree the agent authors directly. Lowered to
-    /// `(AemNode, translations)` at build/review time.
-    aem_translated: Option<AemNodeTranslated>,
-    package: Option<Vec<u8>>,
+
+    /// State belonging to the output target this run aims at.
+    target: TargetState,
 
     structured_session: String,
-    aem_session: Option<String>,
-
-    /// Set once the package has been uploaded + installed on AEM.
-    aem_uploaded: bool,
-    /// JCR path of the uploaded form on AEM (for the "done" screen).
-    aem_form_path: Option<String>,
 
     /// Sentence-embedding model backing semantic `search_references`. Loaded
     /// lazily on first use (~200ms) and reused for the rest of the run.
@@ -632,11 +733,16 @@ impl ConversionAgent {
     /// PDFs are the conversion source; the ZIP (if any) is parsed into an
     /// `AemNodeTranslated` and pre-loaded as the working tree, acting as an
     /// editable template the agent modifies instead of authoring from scratch.
+    ///
+    /// `target` fixes what the run produces, and with it which half of the
+    /// agent's state exists at all: an uploaded template is only meaningful for
+    /// [`OutputTarget::Aem`] and is ignored otherwise.
     pub fn new(
         profile: Option<String>,
         files: Vec<(String, Vec<u8>)>,
         conn: Option<AemConnection>,
         structured_session: String,
+        target: OutputTarget,
     ) -> Self {
         let pdfs: Vec<(String, Vec<u8>)> = files
             .iter()
@@ -650,7 +756,6 @@ impl ConversionAgent {
             .iter()
             .find(|(_, b)| blueprint::aem::detect_aem_zip(b))
             .and_then(|(_, b)| blueprint::Blueprint::from_aem_zip(b).ok());
-        let aem_translated = template_bp.as_ref().and_then(|bp| bp.aem_translated());
 
         let context = pdfs
             .iter()
@@ -662,30 +767,47 @@ impl ConversionAgent {
             .or_else(|| template_bp.as_ref().map(|bp| bp.context()))
             .unwrap_or_else(|| Context::with_language("en"));
 
+        let mut target_state = TargetState::new(target);
+        if let Some(aem) = target_state.aem_mut() {
+            aem.tree = template_bp.as_ref().and_then(|bp| bp.aem_translated());
+        }
+
         let mut agent = Self {
             profile,
             context,
-            aem_config: None,
             conn,
             current_pdfs: pdfs,
             extractors: HashMap::new(),
             structured: Vec::new(),
-            aem_translated,
-            package: None,
+            target: target_state,
             structured_session,
-            aem_session: None,
-            aem_uploaded: false,
-            aem_form_path: None,
             matcher: None,
             finished: false,
             review: None,
         };
         // Record the pre-loaded template as the initial AEM edit so it shows in
         // the AEM edit history (no-op when no template was uploaded).
-        if agent.aem_translated.is_some() {
+        if agent.aem_tree().is_some() {
             agent.aem_translated_edited("Template (from uploaded package)");
         }
         agent
+    }
+
+    // ── Target-state access ──────────────────────────────────────────────────
+
+    /// The output target this run aims at.
+    pub fn target(&self) -> OutputTarget {
+        self.target.target()
+    }
+
+    /// The working AEM tree, if this is an AEM run that has one.
+    fn aem_tree(&self) -> Option<&AemNodeTranslated> {
+        self.target.aem().and_then(|s| s.tree.as_ref())
+    }
+
+    /// Mutable access to the working AEM tree, if this is an AEM run with one.
+    fn aem_tree_mut(&mut self) -> Option<&mut AemNodeTranslated> {
+        self.target.aem_mut().and_then(|s| s.tree.as_mut())
     }
 
     /// Lazily load (and cache) the sentence-embedding model used by semantic
@@ -711,8 +833,10 @@ impl ConversionAgent {
     /// Deliberately does *not* snapshot: the tree came out of the history, and
     /// re-recording it would add a no-op entry to every resumed session.
     pub fn seed_aem_translated(&mut self, tree: AemNodeTranslated) {
-        self.aem_translated = Some(tree);
-        self.package = None;
+        if let Some(aem) = self.target.aem_mut() {
+            aem.tree = Some(tree);
+            aem.package = None;
+        }
     }
 
     // ── Public accessors (for the driving loop's result finalization) ─────────
@@ -793,32 +917,35 @@ impl ConversionAgent {
     /// consumer that wants the authored document (the editors, the recorded
     /// snapshot) must go through here rather than [`structured`](Self::structured).
     pub fn aem_translated(&self) -> Option<&AemNodeTranslated> {
-        self.aem_translated.as_ref()
+        self.aem_tree()
     }
 
     /// The most recently built AEM package (ZIP), if any.
     pub fn package(&self) -> Option<Vec<u8>> {
-        self.package.clone()
+        self.target.aem().and_then(|s| s.package.clone())
     }
 
     /// The resolved form code, if the AEM config has been loaded.
     pub fn form_code(&self) -> Option<String> {
-        self.aem_config.as_ref().map(|c| c.form_code.clone())
+        self.target
+            .aem()
+            .and_then(|s| s.config.as_ref())
+            .map(|c| c.form_code.clone())
     }
 
     /// The derived AEM edit-history session id, if any AEM snapshot was taken.
     pub fn aem_session(&self) -> Option<String> {
-        self.aem_session.clone()
+        self.target.aem().and_then(|s| s.session.clone())
     }
 
     /// Whether the package has been uploaded + installed on AEM.
     pub fn aem_uploaded(&self) -> bool {
-        self.aem_uploaded
+        self.target.aem().is_some_and(|s| s.uploaded)
     }
 
     /// The JCR path of the uploaded form, once uploaded.
     pub fn aem_form_path(&self) -> Option<String> {
-        self.aem_form_path.clone()
+        self.target.aem().and_then(|s| s.form_path.clone())
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -856,21 +983,37 @@ impl ConversionAgent {
         Ok(self.extractors.get(&key).unwrap())
     }
 
+    /// The resolved AEM configuration. AEM-only by construction: a Redacto run
+    /// has no `AemState` to cache it on, and its language resolution (which
+    /// prefers the AEM profile's list) is the wrong answer for a Redacto
+    /// document — that uses `resolve_redacto_languages` instead.
     fn config(&mut self) -> Result<AemConfig, String> {
-        if self.aem_config.is_none() {
-            let p = self
-                .profile
-                .clone()
-                .ok_or("No profile selected — AEM conversion needs a profile.")?;
-            self.aem_config = Some(blueprint::load_aem_config(&p, &self.context)?);
-        }
-        let cfg = self.aem_config.clone().unwrap();
+        let cached = self
+            .target
+            .aem()
+            .ok_or(AEM_ONLY_STATE)?
+            .config
+            .clone();
+        let cfg = match cached {
+            Some(cfg) => cfg,
+            None => {
+                let p = self
+                    .profile
+                    .clone()
+                    .ok_or("No profile selected — AEM conversion needs a profile.")?;
+                let loaded = blueprint::load_aem_config(&p, &self.context)?;
+                if let Some(aem) = self.target.aem_mut() {
+                    aem.config = Some(loaded.clone());
+                }
+                loaded
+            }
+        };
         // Reflect the languages actually present in the document so
         // get_profile_info and the package builder never misreport a
         // multilingual form as en-only. `resolve_aem_languages` only overrides
         // when it detects ≥1 language, so monolingual flows keep the default.
         // Resolved per-call (not cached) because set_structured mutates
-        // self.structured without touching self.aem_config. Prefer the working
+        // self.structured without touching the cached config. Prefer the working
         // tree once seeded; otherwise fall back to the merged source extraction
         // so the languages are reported even before the tree is seeded.
         let mut cfg = if !self.structured.is_empty() {
@@ -883,7 +1026,7 @@ impl ConversionAgent {
         // Carry any languages present in the working tree (e.g. a pre-loaded
         // template) into the config so they survive lowering — important for
         // template-only runs where there is no PDF source to detect them from.
-        if let Some(tree) = &self.aem_translated {
+        if let Some(tree) = self.aem_tree() {
             for lang in collect_translated_languages(tree) {
                 if !cfg.languages.contains(&lang) {
                     cfg.languages.push(lang);
@@ -896,22 +1039,25 @@ impl ConversionAgent {
 
     /// Snapshot the working AEM (translated) tree for versioning.
     fn snapshot_aem_translated(&mut self, label: &str) {
-        let Some(ref tree) = self.aem_translated else {
+        let derived_session = format!("{}#aem", self.structured_session);
+        let Some(aem) = self.target.aem_mut() else {
+            return;
+        };
+        let Some(ref tree) = aem.tree else {
             return;
         };
         let Ok(json) = serde_json::to_string(tree) else {
             return;
         };
-        let sid = self
-            .aem_session
-            .get_or_insert_with(|| format!("{}#aem", self.structured_session))
-            .clone();
+        let sid = aem.session.get_or_insert(derived_session).clone();
         crate::db::insert_edit(&sid, label, &json);
     }
 
     /// Common tail of every AEM-tree edit: invalidate the package, then snapshot.
     fn aem_translated_edited(&mut self, label: &str) {
-        self.package = None;
+        if let Some(aem) = self.target.aem_mut() {
+            aem.package = None;
+        }
         self.snapshot_aem_translated(label);
     }
 
@@ -919,7 +1065,7 @@ impl ConversionAgent {
     /// the master-text-keyed translation dictionary the package writer consumes.
     fn lower_aem_translated(&mut self) -> Result<(AemNode, I18nDict), String> {
         let cfg = self.config()?;
-        let tree = self.aem_translated.as_ref().ok_or(NO_AEM_TREE)?;
+        let tree = self.aem_tree().ok_or(NO_AEM_TREE)?;
         Ok(tree.lower(&cfg.master_language, &cfg.languages))
     }
 
@@ -1209,7 +1355,26 @@ impl ConversionAgent {
 
     // ── Tool execution (async: some tools hit the network) ──────────────────────
 
+    /// Why `name` cannot run under this run's output target, if it cannot.
+    ///
+    /// One guard for the whole AEM family, so a mis-targeted call says what is
+    /// actually wrong instead of failing deeper down with something misleading
+    /// like "No AEM tree yet".
+    fn target_refusal(&self, name: &str) -> Option<String> {
+        if AEM_ONLY_TOOLS.contains(&name) && self.target.aem().is_none() {
+            return Some(format!(
+                "{name} is not available for the {} output target.",
+                self.target.target().label()
+            ));
+        }
+        None
+    }
+
     pub async fn execute(&mut self, name: &str, input: &serde_json::Value) -> ToolReply {
+        if let Some(refusal) = self.target_refusal(name) {
+            return ToolReply::Error(refusal);
+        }
+
         match name {
             // §1 extraction
             "get_source_info" => match self.extractor(input) {
@@ -1339,24 +1504,26 @@ impl ConversionAgent {
                 let v = input.get("root").cloned().unwrap_or_else(|| input.clone());
                 match serde_json::from_value::<AemNodeTranslated>(v) {
                     Ok(node) => {
-                        self.aem_translated = Some(node);
+                        if let Some(aem) = self.target.aem_mut() {
+                            aem.tree = Some(node);
+                        }
                         self.aem_translated_edited("AI: set AEM (translated) tree");
                         ToolReply::Text("OK — working AEM tree set (package invalidated).".into())
                     }
                     Err(e) => ToolReply::Error(format!("Invalid AemNodeTranslated JSON: {e}")),
                 }
             }
-            "get_aem_translated" => match &self.aem_translated {
+            "get_aem_translated" => match self.aem_tree() {
                 Some(n) => ToolReply::Text(serde_json::to_string_pretty(n).unwrap_or_default()),
                 None => ToolReply::Error(NO_AEM_TREE.into()),
             },
-            "get_aem_translated_outline" => match &self.aem_translated {
+            "get_aem_translated_outline" => match self.aem_tree() {
                 Some(n) => ToolReply::Text(crate::aem_translated_edit::outline(n)),
                 None => ToolReply::Error(NO_AEM_TREE.into()),
             },
             "get_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                match self.aem_translated.as_mut() {
+                match self.aem_tree_mut() {
                     Some(root) => match crate::aem_translated_edit::resolve_mut(root, &path) {
                         Ok(node) => {
                             ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
@@ -1373,7 +1540,7 @@ impl ConversionAgent {
                     return ToolReply::Error("`field` must not be empty.".into());
                 }
                 let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
-                let result = match self.aem_translated.as_mut() {
+                let result = match self.aem_tree_mut() {
                     Some(root) => crate::aem_translated_edit::set_field(root, &path, &field, value),
                     None => return ToolReply::Error(NO_AEM_TREE.into()),
                 };
@@ -1388,7 +1555,7 @@ impl ConversionAgent {
             "replace_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
-                let result = match self.aem_translated.as_mut() {
+                let result = match self.aem_tree_mut() {
                     Some(root) => crate::aem_translated_edit::replace_node(root, &path, node),
                     None => return ToolReply::Error(NO_AEM_TREE.into()),
                 };
@@ -1410,7 +1577,7 @@ impl ConversionAgent {
                     Ok(p) => p,
                     Err(e) => return ToolReply::Error(e),
                 };
-                let result = match self.aem_translated.as_mut() {
+                let result = match self.aem_tree_mut() {
                     Some(root) => crate::aem_translated_edit::insert_node(root, &parent, node, pos),
                     None => return ToolReply::Error(NO_AEM_TREE.into()),
                 };
@@ -1424,7 +1591,7 @@ impl ConversionAgent {
             }
             "remove_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                let result = match self.aem_translated.as_mut() {
+                let result = match self.aem_tree_mut() {
                     Some(root) => crate::aem_translated_edit::remove_node(root, &path),
                     None => return ToolReply::Error(NO_AEM_TREE.into()),
                 };
@@ -1452,8 +1619,7 @@ impl ConversionAgent {
                 // preserves what the typed model doesn't represent. Empty for
                 // from-XFA trees, so their output is unchanged.
                 let passthrough = self
-                    .aem_translated
-                    .as_ref()
+                    .aem_tree()
                     .map(|t| t.passthrough_map())
                     .unwrap_or_default();
                 let pkg = blueprint::to_aem_package_from_node_with_passthrough(
@@ -1463,10 +1629,12 @@ impl ConversionAgent {
                     &passthrough,
                 );
                 let size = pkg.len();
-                self.package = Some(pkg);
+                if let Some(aem) = self.target.aem_mut() {
+                    aem.package = Some(pkg);
+                }
                 ToolReply::Text(format!("Built package ({size} bytes)."))
             }
-            "get_package_info" => match &self.package {
+            "get_package_info" => match self.target.aem().and_then(|s| s.package.as_ref()) {
                 Some(pkg) => {
                     let files = crate::references::unzip_package(pkg).unwrap_or_default();
                     let paths: Vec<&String> = files.iter().map(|(p, _)| p).collect();
@@ -1480,7 +1648,7 @@ impl ConversionAgent {
             },
             "read_package_file" => {
                 let path = input["path"].as_str().unwrap_or_default();
-                match &self.package {
+                match self.target.aem().and_then(|s| s.package.as_ref()) {
                     Some(pkg) => match crate::references::unzip_package(pkg) {
                         Ok(files) => match files.iter().find(|(p, _)| p == path) {
                             Some((_, c)) => ToolReply::Text(c.clone()),
@@ -1492,7 +1660,7 @@ impl ConversionAgent {
                 }
             }
             "validate_aem_package" => {
-                let Some(pkg) = self.package.clone() else {
+                let Some(pkg) = self.target.aem().and_then(|s| s.package.clone()) else {
                     return ToolReply::Error(
                         "No package built yet; call build_aem_package.".into(),
                     );
@@ -1556,7 +1724,7 @@ impl ConversionAgent {
                 let Some(conn) = self.conn.clone() else {
                     return ToolReply::Error("No AEM connection configured.".into());
                 };
-                let Some(pkg) = self.package.clone() else {
+                let Some(pkg) = self.target.aem().and_then(|s| s.package.clone()) else {
                     return ToolReply::Error(
                         "No package built yet; call build_aem_package.".into(),
                     );
@@ -1569,8 +1737,10 @@ impl ConversionAgent {
                     .await
                 {
                     Ok(()) => {
-                        self.aem_uploaded = true;
-                        self.aem_form_path = Some(form_jcr_path(&cfg));
+                        if let Some(aem) = self.target.aem_mut() {
+                            aem.uploaded = true;
+                            aem.form_path = Some(form_jcr_path(&cfg));
+                        }
                         ToolReply::Text("Uploaded and installed on AEM.".into())
                     }
                     Err(e) => ToolReply::Error(e),
@@ -1808,6 +1978,7 @@ mod tests {
             vec![("AAEV_019_EN.pdf".to_string(), bytes)],
             None,
             "test-source-structured".into(),
+            OutputTarget::Aem,
         );
 
         assert!(
@@ -1838,6 +2009,7 @@ mod tests {
             vec![fixture("AAEV_019_EN.pdf")],
             None,
             "test-source-envelope".into(),
+            OutputTarget::Aem,
         );
 
         assert!(
@@ -1864,6 +2036,7 @@ mod tests {
             vec![fixture("AAAA_019_DE.pdf"), fixture("AABH_019_EN.pdf")],
             None,
             "test-merge-error".into(),
+            OutputTarget::Aem,
         );
 
         let reason = agent
@@ -1877,6 +2050,58 @@ mod tests {
             agent.source_structured().is_empty(),
             "a failed merge yields no content — which is precisely why it must be reported"
         );
+    }
+
+    /// The app never offers an out-of-scope tool to a role, but MCP serves the
+    /// flat catalog, so the target split has to refuse them itself — and say why
+    /// rather than reporting a missing tree.
+    #[test]
+    fn aem_tools_are_refused_under_the_redacto_target() {
+        let agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-redacto-guard".into(),
+            OutputTarget::Redacto,
+        );
+
+        assert_eq!(agent.target(), OutputTarget::Redacto);
+        assert!(agent.aem_translated().is_none());
+        assert!(agent.package().is_none());
+        assert!(!agent.aem_uploaded());
+        assert!(agent.aem_session().is_none());
+        assert!(agent.form_code().is_none());
+
+        for tool in AEM_ONLY_TOOLS {
+            let refusal = agent
+                .target_refusal(tool)
+                .unwrap_or_else(|| panic!("{tool} must be refused under the Redacto target"));
+            assert!(
+                refusal.contains("not available for the Redacto"),
+                "the refusal must name the target, got: {refusal}"
+            );
+        }
+    }
+
+    /// The same tools stay reachable under the AEM target — the guard is about
+    /// the target, not about the tools.
+    #[test]
+    fn aem_tools_are_reachable_under_the_aem_target() {
+        let agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-aem-guard".into(),
+            OutputTarget::Aem,
+        );
+
+        assert_eq!(agent.target(), OutputTarget::Aem);
+        for tool in AEM_ONLY_TOOLS {
+            assert!(
+                agent.target_refusal(tool).is_none(),
+                "{tool} must be available under the AEM target"
+            );
+        }
     }
 
     #[test]
@@ -1910,6 +2135,7 @@ mod tests {
             Vec::new(),
             None,
             "test-config-languages".into(),
+            OutputTarget::Aem,
         );
         // The ubs profile templates reference a couple of xfa vars; supply the
         // minimal context so load_aem_config succeeds without a real PDF.
