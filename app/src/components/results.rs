@@ -125,41 +125,46 @@ pub fn ResultsSection(props: ResultsSectionProps) -> Element {
                                 },
                                 "✎ Edit Structure"
                             }
-                            button {
-                                class: "btn btn-secondary btn-lg",
-                                onclick: {
-                                    let on_aem_edit = props.on_aem_edit;
-                                    let envelope_clone = envelope.clone();
-                                    let aem_xml_modified = props.aem_xml_modified;
-                                    move |_| {
-                                        // Editing the AEM tree regenerates the content XML,
-                                        // so warn if the raw XML has unsaved edits.
-                                        if aem_xml_modified {
-                                            pending_edit.set(Some(PendingEdit::Aem));
-                                        } else {
-                                            on_aem_edit.call(envelope_clone.clone());
+                            // The AEM views open on a tree derived from the AEM
+                            // package. A run aimed at another output target never
+                            // builds one, so they would open on nothing.
+                            if state.aem_package.is_some() {
+                                button {
+                                    class: "btn btn-secondary btn-lg",
+                                    onclick: {
+                                        let on_aem_edit = props.on_aem_edit;
+                                        let envelope_clone = envelope.clone();
+                                        let aem_xml_modified = props.aem_xml_modified;
+                                        move |_| {
+                                            // Editing the AEM tree regenerates the content XML,
+                                            // so warn if the raw XML has unsaved edits.
+                                            if aem_xml_modified {
+                                                pending_edit.set(Some(PendingEdit::Aem));
+                                            } else {
+                                                on_aem_edit.call(envelope_clone.clone());
+                                            }
                                         }
-                                    }
-                                },
-                                "✎ Edit AEM"
-                            }
-                            button {
-                                class: "btn btn-secondary btn-lg",
-                                onclick: {
-                                    let on_aem_xml_edit = props.on_aem_xml_edit;
-                                    let envelope_clone = envelope.clone();
-                                    move |_| on_aem_xml_edit.call(envelope_clone.clone())
-                                },
-                                "✎ Edit content XML"
-                            }
-                            button {
-                                class: "btn btn-secondary btn-lg",
-                                onclick: {
-                                    let on_aem_preview = props.on_aem_preview;
-                                    let envelope_clone = envelope.clone();
-                                    move |_| on_aem_preview.call(envelope_clone.clone())
-                                },
-                                "⊞ Preview AEM"
+                                    },
+                                    "✎ Edit AEM"
+                                }
+                                button {
+                                    class: "btn btn-secondary btn-lg",
+                                    onclick: {
+                                        let on_aem_xml_edit = props.on_aem_xml_edit;
+                                        let envelope_clone = envelope.clone();
+                                        move |_| on_aem_xml_edit.call(envelope_clone.clone())
+                                    },
+                                    "✎ Edit content XML"
+                                }
+                                button {
+                                    class: "btn btn-secondary btn-lg",
+                                    onclick: {
+                                        let on_aem_preview = props.on_aem_preview;
+                                        let envelope_clone = envelope.clone();
+                                        move |_| on_aem_preview.call(envelope_clone.clone())
+                                    },
+                                    "⊞ Preview AEM"
+                                }
                             }
                         }
                         if let Some(ref html_preview) = state.html_preview {

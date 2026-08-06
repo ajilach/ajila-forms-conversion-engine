@@ -46,6 +46,7 @@ pub fn FileUploadSection(
     is_processing: bool,
     profiles: Vec<String>,
     selected_profile: Signal<Option<String>>,
+    selected_target: Signal<blueprint::OutputTarget>,
     on_process: EventHandler<Vec<(String, Vec<u8>)>>,
     /// Generate the structured document from the uploaded PDFs via the LLM.
     on_ai_process: EventHandler<Vec<(String, Vec<u8>)>>,

@@ -19,8 +19,9 @@
 use dioxus::prelude::*;
 
 use agent::{
-    ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, REVIEWER_ADDENDUM, SHARED_PREAMBLE,
-    SYSTEM_PROMPT, ToolReply,
+    ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, REDACTO_ANALYST_ADDENDUM,
+    REDACTO_AUTHOR_ADDENDUM, REDACTO_REVIEWER_ADDENDUM, REDACTO_SHARED_PREAMBLE,
+    REDACTO_SYSTEM_PROMPT, REVIEWER_ADDENDUM, SHARED_PREAMBLE, SYSTEM_PROMPT, ToolReply,
 };
 use blueprint::DocumentEnvelope;
 
@@ -105,11 +106,15 @@ struct Role {
     name: &'static str,
     allowed_tools: &'static [&'static str],
     max_iterations: usize,
+    /// The tool whose repeated identical output means the stage is going in
+    /// circles. `None` for stages that have no such tool.
+    stuck_tool: Option<&'static str>,
 }
 
 const ANALYST: Role = Role {
     name: "Analyst",
     max_iterations: 25,
+    stuck_tool: None,
     allowed_tools: &[
         "get_source_info",
         "get_profile_info",
@@ -134,6 +139,7 @@ const ANALYST: Role = Role {
 const AUTHOR: Role = Role {
     name: "Author",
     max_iterations: 110,
+    stuck_tool: Some("validate_aem_package"),
     // No `finish` — the Author never terminates the run; a stage ends on the
     // natural no-tool-use turn. The Reviewer owns termination via `submit_review`.
     allowed_tools: &[
@@ -175,6 +181,7 @@ const AUTHOR: Role = Role {
 const REVIEWER: Role = Role {
     name: "Reviewer",
     max_iterations: 30,
+    stuck_tool: Some("validate_aem_package"),
     allowed_tools: &[
         "build_aem_package",
         "get_package_info",
@@ -194,6 +201,101 @@ const REVIEWER: Role = Role {
     ],
 };
 
+// ── Redacto roles ────────────────────────────────────────────────────────────
+//
+// A Redacto document is text only, so these stages never touch the AEM tree.
+// They also drop `get_profile_info`, which reports the AEM configuration and
+// would be misleading here; `get_source_info` is the authority on languages.
+// The reference *packages* are AEM content and are pure token cost for a text
+// document, so only the reference documentation is offered.
+
+const REDACTO_ANALYST: Role = Role {
+    name: "Analyst",
+    max_iterations: 25,
+    stuck_tool: None,
+    allowed_tools: &[
+        "get_source_info",
+        "list_states",
+        "explore_states",
+        "get_xfa",
+        "search_xfa",
+        "get_plain_state_image",
+        "get_annotated_state_image",
+        "get_flattened_structure_for_state",
+        "list_reference_docs",
+        "read_reference_doc",
+        "grep_reference_docs",
+    ],
+};
+
+const REDACTO_AUTHOR: Role = Role {
+    name: "Author",
+    max_iterations: 110,
+    stuck_tool: Some("build_redacto_dump"),
+    // No `finish` — as with the AEM Author, the Reviewer owns termination.
+    allowed_tools: &[
+        "get_source_info",
+        "list_states",
+        "get_schema",
+        "get_xfa",
+        "search_xfa",
+        "get_flattened_structure_for_state",
+        "get_plain_state_image",
+        "get_annotated_state_image",
+        "seed_structured_from_state",
+        "set_structured",
+        "get_structured_outline",
+        "get_structured_node",
+        "set_structured_field",
+        "replace_structured_node",
+        "insert_structured_node",
+        "remove_structured_node",
+        "build_redacto_dump",
+        "review_redacto_output",
+        "read_reference_doc",
+        "grep_reference_docs",
+    ],
+};
+
+const REDACTO_REVIEWER: Role = Role {
+    name: "Reviewer",
+    max_iterations: 30,
+    stuck_tool: Some("build_redacto_dump"),
+    allowed_tools: &[
+        "get_structured_outline",
+        "get_structured_node",
+        "build_redacto_dump",
+        "review_redacto_output",
+        "get_plain_state_image",
+        "get_annotated_state_image",
+        "search_xfa",
+        "get_source_info",
+        "submit_review",
+    ],
+};
+
+/// The three stages for one output target.
+struct TargetRoles {
+    analyst: &'static Role,
+    author: &'static Role,
+    reviewer: &'static Role,
+}
+
+fn roles_for(target: blueprint::OutputTarget) -> TargetRoles {
+    match target {
+        blueprint::OutputTarget::Aem => TargetRoles {
+            analyst: &ANALYST,
+            author: &AUTHOR,
+            reviewer: &REVIEWER,
+        },
+        blueprint::OutputTarget::Redacto => TargetRoles {
+            analyst: &REDACTO_ANALYST,
+            author: &REDACTO_AUTHOR,
+            reviewer: &REDACTO_REVIEWER,
+        },
+    }
+}
+
 /// The agent's full tool catalog filtered to the names a role may call. Leaves
 /// [`ConversionAgent::tools`]/`execute` untouched (so MCP keeps the flat catalog);
 /// a role is simply never *offered* out-of-scope tools.
@@ -211,14 +313,34 @@ fn role_tools(agent: &ConversionAgent, allowed: &[&str]) -> Vec<serde_json::Valu
 
 // ── Per-role system-prompt composition (plan + reviews pinned in `system`) ─────
 
-fn sys_analyst(extra: &str) -> String {
-    format!("{SHARED_PREAMBLE}{extra}\n\n{ANALYST_ADDENDUM}")
+fn sys_analyst(target: blueprint::OutputTarget, extra: &str) -> String {
+    match target {
+        blueprint::OutputTarget::Aem => format!("{SHARED_PREAMBLE}{extra}\n\n{ANALYST_ADDENDUM}"),
+        blueprint::OutputTarget::Redacto => {
+            format!("{REDACTO_SHARED_PREAMBLE}{extra}\n\n{REDACTO_ANALYST_ADDENDUM}")
+        }
+    }
 }
 
 /// The Author reuses the full [`SYSTEM_PROMPT`] authoring body, then the addendum,
 /// then the pinned CONVERSION PLAN and every accumulated REVIEW FEEDBACK round.
-fn sys_author(extra: &str, template_note: &str, plan: &str, reviews: &[String]) -> String {
-    let mut s = format!("{SYSTEM_PROMPT}{extra}{template_note}\n\n{AUTHOR_ADDENDUM}");
+fn sys_author(
+    target: blueprint::OutputTarget,
+    extra: &str,
+    template_note: &str,
+    plan: &str,
+    reviews: &[String],
+) -> String {
+    let mut s = match target {
+        blueprint::OutputTarget::Aem => {
+            format!("{SYSTEM_PROMPT}{extra}{template_note}\n\n{AUTHOR_ADDENDUM}")
+        }
+        // No template note: an uploaded content package is an AEM artefact and
+        // is not pre-loaded for this target.
+        blueprint::OutputTarget::Redacto => {
+            format!("{REDACTO_SYSTEM_PROMPT}{extra}\n\n{REDACTO_AUTHOR_ADDENDUM}")
+        }
+    };
     if !plan.trim().is_empty() {
         s.push_str("\n\n## CONVERSION PLAN\n");
         s.push_str(plan);
@@ -227,8 +349,18 @@ fn sys_author(extra: &str, template_note: &str, plan: &str, reviews: &[String]) 
     s
 }
 
-fn sys_reviewer(extra: &str, plan: &str, reviews: &[String]) -> String {
-    let mut s = format!("{SHARED_PREAMBLE}{extra}\n\n{REVIEWER_ADDENDUM}");
+fn sys_reviewer(
+    target: blueprint::OutputTarget,
+    extra: &str,
+    plan: &str,
+    reviews: &[String],
+) -> String {
+    let mut s = match target {
+        blueprint::OutputTarget::Aem => format!("{SHARED_PREAMBLE}{extra}\n\n{REVIEWER_ADDENDUM}"),
+        blueprint::OutputTarget::Redacto => {
+            format!("{REDACTO_SHARED_PREAMBLE}{extra}\n\n{REDACTO_REVIEWER_ADDENDUM}")
+        }
+    };
     if !plan.trim().is_empty() {
         s.push_str("\n\n## CONVERSION PLAN\n");
         s.push_str(plan);
@@ -256,6 +388,7 @@ fn append_reviews(s: &mut String, heading: &str, reviews: &[String]) {
 pub async fn run_agent(
     files: Vec<(String, Vec<u8>)>,
     profile: Option<String>,
+    target: blueprint::OutputTarget,
     settings: crate::settings::AppSettings,
     session_label: String,
     mut processing_state: Signal<ProcessingState>,
@@ -297,10 +430,12 @@ pub async fn run_agent(
         files.clone(),
         settings.aem_connection(),
         structured_session.clone(),
-        blueprint::OutputTarget::Aem,
+        target,
     );
 
-    let template_note = if has_template {
+    // An uploaded content package is an AEM artefact; it is not pre-loaded for
+    // any other target, so don't tell the Author it was.
+    let template_note = if has_template && target == blueprint::OutputTarget::Aem {
         "\n\nA template AEM tree from an uploaded content package has been pre-loaded as the \
 working tree. Inspect it with get_aem_translated_outline and modify it to match the source \
 instead of authoring from scratch."
@@ -312,6 +447,7 @@ instead of authoring from scratch."
         agent,
         settings,
         profile,
+        target,
         structured_session,
         start,
         template_note,
@@ -330,6 +466,7 @@ pub async fn run_agent_feedback(
     feedback: String,
     pdfs: Vec<(String, Vec<u8>)>,
     profile: Option<String>,
+    target: blueprint::OutputTarget,
     settings: crate::settings::AppSettings,
     structured_session: String,
     processing_state: Signal<ProcessingState>,
@@ -347,10 +484,11 @@ pub async fn run_agent_feedback(
         pdfs,
         settings.aem_connection(),
         structured_session.clone(),
-        blueprint::OutputTarget::Aem,
+        target,
     );
     if let Some(prior) = prior {
         agent.seed_structured(prior.envelope.content);
+        // A no-op for a Redacto run, which has no AEM tree to seed.
         if let Some(tree) = prior.aem_translated {
             agent.seed_aem_translated(tree);
         }
@@ -360,6 +498,7 @@ pub async fn run_agent_feedback(
         agent,
         settings,
         profile,
+        target,
         structured_session,
         start,
         "",
@@ -381,6 +520,7 @@ async fn run_conversion(
     mut agent: ConversionAgent,
     settings: crate::settings::AppSettings,
     profile: Option<String>,
+    target: blueprint::OutputTarget,
     structured_session: String,
     start: std::time::Instant,
     template_note: &str,
@@ -404,6 +544,7 @@ async fn run_conversion(
         )),
     );
 
+    let roles = roles_for(target);
     let mut plan = String::new();
     let mut reviews: Vec<String> = Vec::new();
 
@@ -415,8 +556,8 @@ async fn run_conversion(
         push_step(&mut processing_state, stage_header("Analyst", "analysing the source and researching precedents"));
         let Some(outcome) = run_role(
             &mut agent,
-            &ANALYST,
-            &sys_analyst(&extra),
+            roles.analyst,
+            &sys_analyst(target, &extra),
             "Analyse the source form and produce the detailed CONVERSION PLAN. \
              Your final message is the plan.",
             agent_max_tokens,
@@ -441,8 +582,8 @@ async fn run_conversion(
     };
     if run_role(
         &mut agent,
-        &AUTHOR,
-        &sys_author(&extra, template_note, &plan, &reviews),
+        roles.author,
+        &sys_author(target, &extra, template_note, &plan, &reviews),
         author_seed,
         agent_max_tokens,
         &settings,
@@ -461,8 +602,8 @@ async fn run_conversion(
         push_step(&mut processing_state, stage_header("Reviewer", &format!("reviewing (round {})", round + 1)));
         if run_role(
             &mut agent,
-            &REVIEWER,
-            &sys_reviewer(&extra, &plan, &reviews),
+            roles.reviewer,
+            &sys_reviewer(target, &extra, &plan, &reviews),
             "Review the built form end to end against the source and the CONVERSION PLAN, \
              then finish by calling submit_review.",
             agent_max_tokens,
@@ -490,8 +631,8 @@ async fn run_conversion(
                 push_step(&mut processing_state, stage_header("Author", &format!("applying review feedback (round {})", round + 1)));
                 if run_role(
                     &mut agent,
-                    &AUTHOR,
-                    &sys_author(&extra, template_note, &plan, &reviews),
+                    roles.author,
+                    &sys_author(target, &extra, template_note, &plan, &reviews),
                     "Apply the REVIEW FEEDBACK in your instructions, then build_aem_package and \
                      validate_aem_package.",
                     agent_max_tokens,
@@ -520,10 +661,16 @@ async fn run_conversion(
         );
     }
 
-    ensure_built_and_uploaded(&mut agent, &settings, &mut processing_state).await;
+    // Building and uploading a CRX package is AEM-only; for any other target the
+    // dump the Author already validated is the artefact, and calling this would
+    // paint a failed build step on an otherwise successful run.
+    if target == blueprint::OutputTarget::Aem {
+        ensure_built_and_uploaded(&mut agent, &settings, &mut processing_state).await;
+    }
     finalize(
         &mut agent,
         &profile,
+        target,
         structured_session,
         start,
         &mut processing_state,
@@ -797,7 +944,7 @@ async fn run_role(
             }
 
             // Detect a stuck validate loop: same output N times in a row.
-            if tc.name == "validate_aem_package" {
+            if role.stuck_tool == Some(tc.name.as_str()) {
                 let output = match &reply {
                     ToolReply::Text(s) => s.clone(),
                     ToolReply::Error(s) => format!("error:{s}"),
@@ -887,30 +1034,141 @@ async fn ensure_built_and_uploaded(
     }
 }
 
+/// The artefacts a finished run produces, assembled from the agent's working
+/// state.
+///
+/// Split out of [`finalize`] so the target-dependent part is a pure function —
+/// the rule it enforces (the artefact that ships is the one the agent worked on)
+/// is exactly what needs a test, and a `Signal` write cannot be tested.
+struct Outputs {
+    envelope: DocumentEnvelope,
+    aem_translated: Option<blueprint::AemNodeTranslated>,
+    redacto_sql: Option<String>,
+    warnings: Vec<String>,
+}
+
+fn build_outputs(
+    agent: &mut ConversionAgent,
+    target: blueprint::OutputTarget,
+    profile: &Option<String>,
+) -> Outputs {
+    let mut warnings: Vec<String> = Vec::new();
+
+    match target {
+        blueprint::OutputTarget::Redacto => {
+            // The authored structured tree IS the document. Never fall back to
+            // `structured_from_aem_tree` here: that conversion drops every
+            // non-master language onto a `default` pseudo-language and strips
+            // the inline markup, which would turn a loud failure into a dump
+            // that imports a multilingual document as one fake locale.
+            let content = agent.structured().to_vec();
+            // Only the extractor's context carries the master-page header the
+            // analysis recovered; `agent.context()` never has it.
+            let context = agent.source_envelope().context;
+
+            // Prefer the dump the Author last built and validated, so the SQL
+            // that ships is the SQL that was reviewed.
+            let redacto_sql = agent
+                .redacto_dump()
+                .filter(|dump| !dump.assets.is_empty())
+                .map(|dump| dump.to_sql())
+                .or_else(|| {
+                    let envelope = DocumentEnvelope {
+                        context: context.clone(),
+                        content: content.clone(),
+                        state_count: 1,
+                    };
+                    crate::processing::redacto_sql_for(&envelope, profile.as_deref())
+                });
+
+            if redacto_sql.is_none() {
+                warnings.push(if content.is_empty() {
+                    "No Redacto dump: the agent did not author any content.".to_string()
+                } else {
+                    "No Redacto dump: the authored document produced no text assets."
+                        .to_string()
+                });
+            }
+
+            Outputs {
+                envelope: DocumentEnvelope {
+                    context,
+                    content,
+                    state_count: 1,
+                },
+                aem_translated: None,
+                redacto_sql,
+                warnings,
+            }
+        }
+        blueprint::OutputTarget::Aem => {
+            // The agent authors the AEM tree directly and leaves its structured
+            // tree empty, so lift the authored tree back into structured content
+            // — otherwise both editors open on an empty document.
+            let aem_translated = agent.aem_translated().cloned();
+            let mut content = agent.structured().to_vec();
+            if content.is_empty()
+                && let Some(tree) = &aem_translated
+            {
+                content = crate::session::structured_from_aem_tree(tree, profile.as_deref());
+            }
+
+            // A Redacto dump is still offered as a byproduct when the profile has
+            // a Redacto section, built from the converted source document — the
+            // same content the CLI exports. `source_envelope()` rather than
+            // `agent.context()` so the recovered master-page header survives.
+            let redacto_sql = if profile.as_deref().is_some_and(blueprint::has_redacto_config) {
+                let source = agent.source_envelope();
+                let sql = crate::processing::redacto_sql_for(&source, profile.as_deref());
+                // An empty source is not necessarily an empty document: when the
+                // language variants are too dissimilar to merge, the engine
+                // yields nothing and every derived output would silently be empty.
+                if sql.is_none()
+                    && let Some(reason) = agent.source_merge_error()
+                {
+                    warnings.push(format!(
+                        "No Redacto dump: the source language variants could not be \
+                         merged ({reason}). Convert with the Redacto output target to \
+                         have the agent assemble the languages itself."
+                    ));
+                }
+                sql
+            } else {
+                None
+            };
+
+            Outputs {
+                envelope: DocumentEnvelope {
+                    context: agent.context().clone(),
+                    content,
+                    state_count: 1,
+                },
+                aem_translated,
+                redacto_sql,
+                warnings,
+            }
+        }
+    }
+}
+
 /// Build the final `ProcessingState` from the agent's working trees.
+#[allow(clippy::too_many_arguments)]
 fn finalize(
     agent: &mut ConversionAgent,
     profile: &Option<String>,
+    target: blueprint::OutputTarget,
     structured_session: String,
     start: std::time::Instant,
     processing_state: &mut Signal<ProcessingState>,
     current_session: &mut Signal<Option<String>>,
 ) {
-    // The agent authors the AEM tree directly and leaves its structured tree
-    // empty, so lift the authored tree back into structured content — otherwise
-    // both editors open on an empty document.
-    let aem_translated = agent.aem_translated().cloned();
-    let mut content = agent.structured().to_vec();
-    if content.is_empty()
-        && let Some(tree) = &aem_translated
-    {
-        content = crate::session::structured_from_aem_tree(tree, profile.as_deref());
-    }
-    let envelope = DocumentEnvelope {
-        context: agent.context().clone(),
-        content,
-        state_count: 1,
-    };
+    let Outputs {
+        envelope,
+        aem_translated,
+        redacto_sql,
+        warnings,
+    } = build_outputs(agent, target, profile);
+
     let merged_json = serde_json::to_string_pretty(&envelope).ok();
     let form_code = agent.form_code();
 
@@ -920,34 +1178,6 @@ fn finalize(
     if let Ok(json) = serde_json::to_string(&envelope) {
         crate::db::insert_edit(&structured_session, "Agent conversion", &json);
     }
-
-    // The agent authors an AEM adaptive form and never fills its structured
-    // tree, so the Redacto dump is built from the converted source document
-    // instead — the same content the CLI exports, and the right shape for a
-    // text-only Redacto document. Only pay for the extraction when the profile
-    // actually has a Redacto section.
-    //
-    // The envelope comes from `source_envelope()` rather than being assembled
-    // from `agent.context()`: only the extractor's context carries the recovered
-    // master-page header, which the Redacto profile reinstates as `page.header`.
-    let mut warnings: Vec<String> = Vec::new();
-    let redacto_sql = if profile.as_deref().is_some_and(blueprint::has_redacto_config) {
-        let source = agent.source_envelope();
-        let sql = crate::processing::redacto_sql_for(&source, profile.as_deref());
-        // An empty source is not necessarily an empty document: when the
-        // language variants are too dissimilar to merge, the engine yields
-        // nothing and every derived output would silently be empty.
-        if sql.is_none()
-            && let Some(reason) = agent.source_merge_error()
-        {
-            warnings.push(format!(
-                "No Redacto dump: the source language variants could not be merged ({reason})."
-            ));
-        }
-        sql
-    } else {
-        None
-    };
 
     let mut state = processing_state.write();
     state.warnings.extend(warnings);
@@ -1064,11 +1294,203 @@ mod tests {
         assert!(!ANALYST.allowed_tools.contains(&"submit_review"));
         // The Author must never call `finish` (the controller terminates the run).
         assert!(!AUTHOR.allowed_tools.contains(&"finish"));
+        // The stuck detector is keyed off the role, not a hard-coded name.
+        assert_eq!(AUTHOR.stuck_tool, Some("validate_aem_package"));
+        assert_eq!(ANALYST.stuck_tool, None);
+    }
+
+    #[test]
+    fn redacto_role_tool_sets_are_scoped() {
+        // The Redacto stages author the structured tree...
+        assert!(REDACTO_AUTHOR.allowed_tools.contains(&"seed_structured_from_state"));
+        assert!(REDACTO_AUTHOR.allowed_tools.contains(&"set_structured_field"));
+        assert!(REDACTO_AUTHOR.allowed_tools.contains(&"build_redacto_dump"));
+        // ...and must never reach for the AEM machinery.
+        for forbidden in [
+            "set_aem_translated",
+            "get_aem_translated",
+            "build_aem_package",
+            "validate_aem_package",
+            "upload_to_aem",
+            // Reports the AEM configuration, which would misinform this stage.
+            "get_profile_info",
+        ] {
+            for role in [&REDACTO_ANALYST, &REDACTO_AUTHOR, &REDACTO_REVIEWER] {
+                assert!(
+                    !role.allowed_tools.contains(&forbidden),
+                    "{} must not be offered {forbidden}",
+                    role.name
+                );
+            }
+        }
+        // The Analyst never mutates; only the Reviewer terminates.
+        assert!(!REDACTO_ANALYST.allowed_tools.contains(&"set_structured"));
+        assert!(REDACTO_REVIEWER.allowed_tools.contains(&"submit_review"));
+        assert!(!REDACTO_AUTHOR.allowed_tools.contains(&"submit_review"));
+        assert!(!REDACTO_AUTHOR.allowed_tools.contains(&"finish"));
+        assert_eq!(REDACTO_AUTHOR.stuck_tool, Some("build_redacto_dump"));
+    }
+
+    /// `role_tools` filters the catalog by name, so a typo silently removes a
+    /// capability with no error anywhere. Catch it here instead.
+    #[test]
+    fn every_allowed_tool_exists_in_the_catalog() {
+        for target in [blueprint::OutputTarget::Aem, blueprint::OutputTarget::Redacto] {
+            let agent = ConversionAgent::new(None, Vec::new(), None, String::new(), target);
+            let catalog: Vec<String> = agent
+                .tools()
+                .iter()
+                .filter_map(|t| t["name"].as_str().map(String::from))
+                .collect();
+
+            let roles = roles_for(target);
+            for role in [roles.analyst, roles.author, roles.reviewer] {
+                for tool in role.allowed_tools {
+                    assert!(
+                        catalog.iter().any(|c| c == tool),
+                        "{target:?} {} lists '{tool}', which is not in the tool catalog",
+                        role.name
+                    );
+                }
+                if let Some(stuck) = role.stuck_tool {
+                    assert!(
+                        role.allowed_tools.contains(&stuck),
+                        "{target:?} {} watches '{stuck}' but is never offered it",
+                        role.name
+                    );
+                }
+            }
+        }
+    }
+
+    fn fixture_agent(target: blueprint::OutputTarget) -> ConversionAgent {
+        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../core/input/AAEV_019_EN.pdf");
+        let bytes = std::fs::read(&pdf).expect("read AAEV_019_EN.pdf");
+        ConversionAgent::new(
+            Some("ubs".into()),
+            vec![("AAEV_019_EN.pdf".to_string(), bytes)],
+            None,
+            format!("test-outputs-{}", target.as_str()),
+            target,
+        )
+    }
+
+    /// The original defect: the Redacto dump was built from the engine's
+    /// conversion of the source while the agent had authored something else, so
+    /// what shipped was never what the run produced or the Reviewer approved.
+    /// Under the Redacto target the authored tree is the document, full stop.
+    #[test]
+    fn redacto_outputs_are_built_from_the_authored_tree() {
+        use blueprint::structured::{ParagraphNode, StructuredNode, TranslatedText};
+
+        let mut agent = fixture_agent(blueprint::OutputTarget::Redacto);
+        // A sentence that appears nowhere in the source PDF, so its presence in
+        // the SQL can only come from the authored tree.
+        agent.seed_structured(vec![StructuredNode::Paragraph(ParagraphNode {
+            content: TranslatedText::plain("AUTHORED-BY-THE-AGENT-MARKER"),
+            som_path: None,
+            source_name: None,
+        })]);
+
+        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, &Some("ubs".into()));
+
+        let sql = outputs.redacto_sql.expect("the authored document yields a dump");
+        assert!(
+            sql.contains("AUTHORED-BY-THE-AGENT-MARKER"),
+            "the dump must be generated from the authored tree"
+        );
+        assert_eq!(
+            outputs.envelope.content.len(),
+            1,
+            "the envelope is the authored tree, not the engine's parse of the source"
+        );
+        assert!(
+            outputs.aem_translated.is_none(),
+            "a Redacto run produces no AEM tree"
+        );
+        // The recovered master-page header must survive into the configuration.
+        assert!(
+            outputs.envelope.context.header.is_some(),
+            "the context must come from the merged source envelope"
+        );
+    }
+
+    /// An authored tree that produces no assets must yield no file and say why,
+    /// rather than a valid-looking dump describing an empty document.
+    #[test]
+    fn an_empty_redacto_document_produces_no_sql() {
+        let mut agent = fixture_agent(blueprint::OutputTarget::Redacto);
+
+        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, &Some("ubs".into()));
+
+        assert!(outputs.redacto_sql.is_none());
+        assert!(
+            outputs.warnings.iter().any(|w| w.contains("No Redacto dump")),
+            "the reason must be reported: {:?}",
+            outputs.warnings
+        );
+    }
+
+    /// The AEM target is unchanged: it still offers the dump as a byproduct
+    /// derived from the engine's conversion of the source.
+    #[test]
+    fn the_aem_target_still_derives_its_redacto_byproduct_from_the_source() {
+        let mut agent = fixture_agent(blueprint::OutputTarget::Aem);
+
+        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Aem, &Some("ubs".into()));
+
+        let sql = outputs
+            .redacto_sql
+            .expect("a single-PDF source converts, so the byproduct exists");
+        assert!(sql.contains("INSERT INTO app_redacto.documents "));
+        // The envelope, by contrast, is the authored AEM tree lifted back into
+        // structured content — empty here because this agent never authored one.
+        assert!(outputs.envelope.content.is_empty());
+        assert!(outputs.warnings.is_empty(), "{:?}", outputs.warnings);
+    }
+
+    /// The two prompt families are deliberate copies, so nothing stops a
+    /// copy-paste of the wrong constant. This is what catches it.
+    #[test]
+    fn redacto_prompts_do_not_leak_aem_vocabulary() {
+        let target = blueprint::OutputTarget::Redacto;
+        let prompts = [
+            sys_analyst(target, ""),
+            sys_author(target, "", "", "", &[]),
+            sys_reviewer(target, "", "", &[]),
+        ];
+
+        for prompt in &prompts {
+            for leaked in [
+                "AemNodeTranslated",
+                "build_aem_package",
+                "validate_aem_package",
+                "affrg_",
+                "fragRef",
+                "wizard page",
+            ] {
+                assert!(
+                    !prompt.contains(leaked),
+                    "the Redacto prompt must not mention '{leaked}'"
+                );
+            }
+            // …and must name its own vocabulary.
+            assert!(prompt.contains("Redacto"), "{prompt}");
+        }
+        assert!(prompts[1].contains("seed_structured_from_state"));
+        assert!(prompts[1].contains("build_redacto_dump"));
+
+        // The AEM prompts must be untouched by the split.
+        let aem = sys_author(blueprint::OutputTarget::Aem, "", "", "", &[]);
+        assert!(aem.contains("AemNodeTranslated"));
+        assert!(!aem.contains("build_redacto_dump"));
     }
 
     #[test]
     fn sys_author_pins_plan_and_reviews() {
         let s = sys_author(
+            blueprint::OutputTarget::Aem,
             "",
             "",
             "PLAN-BODY-MARKER",
@@ -1086,7 +1508,7 @@ mod tests {
 
     #[test]
     fn sys_analyst_has_no_plan_section_by_default() {
-        let s = sys_analyst("");
+        let s = sys_analyst(blueprint::OutputTarget::Aem, "");
         // No pinned plan section (the addendum mentions the phrase, but the
         // controller never appends a "## CONVERSION PLAN" block for the Analyst).
         assert!(!s.contains("## CONVERSION PLAN"));

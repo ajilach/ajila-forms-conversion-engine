@@ -59,6 +59,10 @@ fn App() -> Element {
     let mut is_processing = use_signal(|| false);
     let mut enlarged_image = use_signal(|| None::<(String, Vec<String>)>);
     let mut selected_profile = use_signal(|| None::<String>);
+    // What the next conversion run produces. Chosen before the run starts,
+    // because it decides what the agent authors, not just which file is offered
+    // at the end.
+    let selected_target = use_signal(blueprint::OutputTarget::default);
     let mut editor_envelope = use_signal(|| None::<DocumentEnvelope>);
     let mut settings_open = use_signal(|| false);
     // Whether the full-page reference-forms manager is open.
@@ -157,6 +161,7 @@ fn App() -> Element {
         source_pdfs.set(pdfs.clone());
 
         let profile = selected_profile.read().clone();
+        let target = *selected_target.read();
         let settings = app_settings.read().clone();
 
         processing_state.set(ProcessingState {
@@ -186,6 +191,7 @@ fn App() -> Element {
             crate::agent_runner::run_agent(
                 file_data,
                 profile,
+                target,
                 settings,
                 session_label,
                 processing_state,
@@ -210,6 +216,7 @@ fn App() -> Element {
         }
 
         let profile = selected_profile.read().clone();
+        let target = *selected_target.read();
         let settings = app_settings.read().clone();
 
         is_processing.set(true);
@@ -227,6 +234,7 @@ fn App() -> Element {
                 feedback,
                 pdfs,
                 profile,
+                target,
                 settings,
                 session,
                 processing_state,
@@ -533,6 +541,7 @@ fn App() -> Element {
                 is_processing,
                 profiles: profiles.clone(),
                 selected_profile,
+                selected_target,
                 ai_available: !app_settings.read().active_api_key().is_empty(),
                 aem_connection: app_settings.read().aem_connection(),
                 on_ai_process: move |files: Vec<(String, Vec<u8>)>| {
@@ -569,6 +578,7 @@ fn App() -> Element {
                         is_processing: *is_processing.read(),
                         profiles: profiles.clone(),
                         selected_profile,
+                selected_target,
                         on_process: move |files: Vec<(String, Vec<u8>)>| {
                             on_process(files);
                         },

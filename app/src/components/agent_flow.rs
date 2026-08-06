@@ -80,6 +80,7 @@ pub fn AgentFlow(
     is_processing: Signal<bool>,
     profiles: Vec<String>,
     mut selected_profile: Signal<Option<String>>,
+    selected_target: Signal<blueprint::OutputTarget>,
     /// Whether agent processing is available (an API key is configured).
     ai_available: bool,
     /// AEM upload connection from settings, or `None` if not configured.
@@ -140,6 +141,7 @@ pub fn AgentFlow(
                             UploadBox {
                                 profiles,
                                 selected_profile,
+            selected_target,
                                 ai_available,
                                 uploaded_files,
                                 is_dragging,
@@ -185,6 +187,7 @@ pub fn AgentFlow(
 fn UploadBox(
     profiles: Vec<String>,
     mut selected_profile: Signal<Option<String>>,
+    selected_target: Signal<blueprint::OutputTarget>,
     ai_available: bool,
     mut uploaded_files: Signal<Vec<(String, Vec<u8>)>>,
     mut is_dragging: Signal<bool>,
@@ -254,6 +257,12 @@ fn UploadBox(
                             }
                         }
                     }
+                }
+                crate::components::OutputTargetSelector {
+                    id: "agent-target-select".to_string(),
+                    profile: selected_profile.read().clone(),
+                    selected_target,
+                    disabled: false,
                 }
             }
 
