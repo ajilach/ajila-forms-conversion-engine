@@ -31,7 +31,6 @@ pub fn SettingsPage(
 
     // Per-field clones for the change handlers.
     let settings_for_aot = settings.clone();
-    let settings_for_port = settings.clone();
     let settings_for_apikey = settings.clone();
     let settings_for_model = settings.clone();
     let settings_for_review = settings.clone();
@@ -43,8 +42,6 @@ pub fn SettingsPage(
     let settings_for_etext = settings.clone();
     let settings_for_einput = settings.clone();
     let settings_for_agent_instr = settings.clone();
-    let settings_for_se_instr = settings.clone();
-    let settings_for_aem_instr = settings.clone();
 
     // Whether the Blueprint MCP server is registered in Claude Desktop, and the
     // last install error (shown below the row). Checked once on mount; flipped
@@ -77,7 +74,8 @@ pub fn SettingsPage(
 
     let api_key_desc =
         "Paste your Anthropic (Claude) API key here. Used for AI features. Stored locally on disk.";
-    let model_desc = "Claude model used for AI features (Smart Edit and AI processing).";
+    let model_desc =
+        "Claude model used for AI features (the conversion agent and reference descriptions).";
 
     rsx! {
         div { class: "settings-page",
@@ -139,36 +137,6 @@ pub fn SettingsPage(
                                     },
                                 }
                                 span { class: "toggle-slider" }
-                            }
-                        }
-                    }
-                    div { class: "settings-section",
-                        h3 { class: "settings-section-title", "Interface" }
-                        div { class: "settings-row",
-                            div { class: "settings-row-info",
-                                span { class: "settings-row-label", "Live Preview Port" }
-                                span { class: "settings-row-desc",
-                                    "Local port for the live HTML preview server. Requires restart."
-                                }
-                            }
-                            input {
-                                class: "settings-input-port",
-                                r#type: "number",
-                                min: "1024",
-                                max: "65535",
-                                value: "{settings_for_port.live_preview_port}",
-                                onchange: {
-                                    let on_changed = on_settings_changed;
-                                    let s = settings_for_port.clone();
-                                    move |e: Event<FormData>| {
-                                        if let Ok(port) = e.value().parse::<u16>()
-                                            && port >= 1024 {
-                                            let mut new_s = s.clone();
-                                            new_s.live_preview_port = port;
-                                            on_changed.call(new_s);
-                                        }
-                                    }
-                                },
                             }
                         }
                     }
@@ -410,52 +378,6 @@ pub fn SettingsPage(
                                     move |e: Event<FormData>| {
                                         let mut new_s = s.clone();
                                         new_s.agent_instructions = e.value();
-                                        on_changed.call(new_s);
-                                    }
-                                },
-                            }
-                        }
-                        div { class: "settings-row settings-row-stack",
-                            div { class: "settings-row-info",
-                                span { class: "settings-row-label", "Smart Edit (structure)" }
-                                span { class: "settings-row-desc",
-                                    "Extra instructions appended to the structured-tree Smart Edit prompt."
-                                }
-                            }
-                            textarea {
-                                class: "settings-textarea",
-                                rows: "4",
-                                placeholder: "e.g. Prefer Radio over Select for choices with up to 5 options.",
-                                value: "{settings_for_se_instr.smart_edit_instructions}",
-                                onchange: {
-                                    let on_changed = on_settings_changed;
-                                    let s = settings_for_se_instr.clone();
-                                    move |e: Event<FormData>| {
-                                        let mut new_s = s.clone();
-                                        new_s.smart_edit_instructions = e.value();
-                                        on_changed.call(new_s);
-                                    }
-                                },
-                            }
-                        }
-                        div { class: "settings-row settings-row-stack",
-                            div { class: "settings-row-info",
-                                span { class: "settings-row-label", "Smart Edit (AEM)" }
-                                span { class: "settings-row-desc",
-                                    "Extra instructions appended to the AEM-tree Smart Edit prompt."
-                                }
-                            }
-                            textarea {
-                                class: "settings-textarea",
-                                rows: "4",
-                                placeholder: "e.g. Keep page panels intact and never merge distinct signers.",
-                                value: "{settings_for_aem_instr.aem_smart_edit_instructions}",
-                                onchange: {
-                                    let on_changed = on_settings_changed;
-                                    let s = settings_for_aem_instr.clone();
-                                    move |e: Event<FormData>| {
-                                        let mut new_s = s.clone();
-                                        new_s.aem_smart_edit_instructions = e.value();
                                         on_changed.call(new_s);
                                     }
                                 },

@@ -1,11 +1,9 @@
 mod agent_runner;
 mod ai_tools;
 mod components;
-mod markdown;
 mod mcp_install;
 mod models;
 mod platform;
-mod preview_server;
 mod processing;
 mod settings;
 mod upload;

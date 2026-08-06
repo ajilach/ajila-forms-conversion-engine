@@ -1,9 +1,8 @@
-//! Single-page agent-mode UI: one status box that morphs through the whole
+//! The app's only conversion UI: one status box that morphs through the whole
 //! run — upload → live activity → done — without swapping screens. The activity
 //! timeline is collapsed to its latest step by default and expands in place to
-//! the full, scrollable history. Feedback lives inside the finished box. The
-//! legacy stacked layout remains available behind a settings toggle
-//! (`AppSettings::legacy_agent_ui`).
+//! the full, scrollable history. The finished box carries the run's outputs and
+//! the feedback field that re-runs the agent in the same session.
 
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;

@@ -34,7 +34,6 @@ pub fn extra_instructions_block(instructions: &str) -> String {
 #[serde(default)]
 pub struct AppSettings {
     pub always_on_top: bool,
-    pub live_preview_port: u16,
     /// Anthropic API key used for AI features. Stored in the settings file on disk.
     pub anthropic_api_key: String,
     /// Anthropic model used for AI features (e.g. "claude-opus-4-8").
@@ -66,21 +65,12 @@ pub struct AppSettings {
     /// system prompt. Empty = none.
     #[serde(default)]
     pub agent_instructions: String,
-    /// Extra operator instructions appended to the structured Smart Edit prompt.
-    /// Empty = none.
-    #[serde(default)]
-    pub smart_edit_instructions: String,
-    /// Extra operator instructions appended to the AEM Smart Edit prompt.
-    /// Empty = none.
-    #[serde(default)]
-    pub aem_smart_edit_instructions: String,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             always_on_top: false,
-            live_preview_port: 3718,
             anthropic_api_key: String::new(),
             anthropic_model: "claude-opus-4-8".to_string(),
             max_review_rounds: DEFAULT_MAX_REVIEW_ROUNDS,
@@ -92,8 +82,6 @@ impl Default for AppSettings {
             evict_input_over_chars: crate::platform::DEFAULT_ELIDE_INPUT_OVER_CHARS,
             evict_trigger_bytes: crate::platform::DEFAULT_EVICT_TRIGGER_BYTES,
             agent_instructions: String::new(),
-            smart_edit_instructions: String::new(),
-            aem_smart_edit_instructions: String::new(),
         }
     }
 }
