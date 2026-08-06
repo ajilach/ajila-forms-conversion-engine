@@ -95,8 +95,7 @@ fn App() -> Element {
         let settings = app_settings.read().clone();
 
         processing_state.set(ProcessingState {
-            step: ProcessingStep::Parsing,
-            ai_mode: true,
+            step: ProcessingStep::Running,
             ..ProcessingState::new()
         });
 
@@ -146,8 +145,7 @@ fn App() -> Element {
         is_processing.set(true);
         // Return to the running phase with a fresh activity log.
         processing_state.set(ProcessingState {
-            step: ProcessingStep::Parsing,
-            ai_mode: true,
+            step: ProcessingStep::Running,
             ..ProcessingState::new()
         });
 

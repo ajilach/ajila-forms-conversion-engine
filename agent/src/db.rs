@@ -279,21 +279,6 @@ mod imp {
         Some(seq)
     }
 
-    fn record_edit_conn(
-        conn: &Connection,
-        session_id: &str,
-        after_seq: usize,
-        action_label: &str,
-        structure_json: &str,
-    ) -> Option<usize> {
-        conn.execute(
-            "DELETE FROM edits WHERE session_id = ?1 AND seq > ?2",
-            rusqlite::params![session_id, after_seq as i64],
-        )
-        .ok()?;
-        insert_edit_conn(conn, session_id, action_label, structure_json)
-    }
-
     fn snapshot_at_conn(conn: &Connection, session_id: &str, seq: usize) -> Option<String> {
         conn.query_row(
             "SELECT structure_json FROM edits WHERE session_id = ?1 AND seq = ?2",
@@ -346,18 +331,6 @@ mod imp {
     ) -> Option<usize> {
         let conn = open().ok()?;
         insert_edit_conn(&conn, session_id, action_label, structure_json)
-    }
-
-    /// Record an edit after `after_seq`, discarding any redo tail (seq > after_seq).
-    /// Returns the new seq.
-    pub fn record_edit(
-        session_id: &str,
-        after_seq: usize,
-        action_label: &str,
-        structure_json: &str,
-    ) -> Option<usize> {
-        let conn = open().ok()?;
-        record_edit_conn(&conn, session_id, after_seq, action_label, structure_json)
     }
 
     pub fn snapshot_at(session_id: &str, seq: usize) -> Option<String> {
@@ -424,19 +397,6 @@ mod imp {
                 snapshot_at_conn(&conn, "s", 1).as_deref(),
                 Some("{\"v\":2}")
             );
-        }
-
-        #[test]
-        fn record_edit_truncates_redo_tail() {
-            let conn = mem();
-            insert_edit_conn(&conn, "s", "a", "0");
-            insert_edit_conn(&conn, "s", "b", "1");
-            insert_edit_conn(&conn, "s", "c", "2");
-            // User undid back to seq 0, then makes a new edit: seq 1 and 2 dropped.
-            assert_eq!(record_edit_conn(&conn, "s", 0, "d", "3"), Some(1));
-            assert_eq!(latest_seq_conn(&conn, "s"), Some(1));
-            assert_eq!(snapshot_at_conn(&conn, "s", 1).as_deref(), Some("3"));
-            assert_eq!(snapshot_at_conn(&conn, "s", 2), None);
         }
 
         #[test]

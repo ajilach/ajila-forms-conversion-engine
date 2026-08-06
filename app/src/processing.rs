@@ -2,7 +2,7 @@
 //! on its done screen, each generated only when the active profile configures
 //! it and the document actually has content to emit.
 
-use crate::models::DocumentEnvelope;
+use blueprint::DocumentEnvelope;
 
 /// Generate the standalone HTML preview for `envelope`, if the profile has an
 /// `html/` section and the document has content.

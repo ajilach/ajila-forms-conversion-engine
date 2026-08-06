@@ -67,41 +67,11 @@ pub fn show_html_preview(html: String, filename: &str) {
     }
 }
 
-// ── Smart edit (LLM chat) ─────────────────────────────────────────────
-
-/// Send one turn of a multi-turn chat to the Anthropic Messages API and return
-/// the assistant's reply.
-///
-/// A single smart-edit session continues `history` across repair and follow-up
-/// calls. `images` are `(label, base64_png)` pairs; `pdfs` are `(filename,
-/// raw_bytes)` pairs attached as document inputs. `max_tokens` bounds the reply
-/// length.
-pub async fn chat_turn(
-    history: &mut Vec<serde_json::Value>,
-    user_text: &str,
-    images: &[(String, String)],
-    pdfs: &[(String, Vec<u8>)],
-    api_key: &str,
-    model: &str,
-    max_tokens: u32,
-) -> Result<String, String> {
-    anthropic_chat_turn(history, user_text, images, pdfs, api_key, model, max_tokens).await
-}
-
 /// List the available Anthropic model identifiers.
 pub async fn list_models(api_key: &str) -> Result<Vec<String>, String> {
     anthropic_list_models(api_key).await
 }
 
-/// Detect the image media type from a base64 payload by its leading bytes.
-/// PNG base64 begins with `iVBOR` (`\x89PNG`); JPEG with `/9j/` (`\xff\xd8\xff`).
-fn image_media_type(b64: &str) -> &'static str {
-    if b64.starts_with("/9j/") {
-        "image/jpeg"
-    } else {
-        "image/png"
-    }
-}
 
 // ── Smart edit (Anthropic API) ───────────────────────────────────────
 
@@ -122,139 +92,6 @@ fn describe_error(e: &reqwest::Error) -> String {
     msg
 }
 
-/// Send one turn of a multi-turn chat to the Anthropic Messages API and return
-/// the assistant's reply.
-///
-/// Builds Anthropic-shaped content blocks and appends them to `history`, so the
-/// same conversation thread continues across repair and follow-up calls within
-/// a smart-edit session. Used for no-tool text turns; for tool-enabled turns see
-/// [`anthropic_agentic_turn`].
-pub async fn anthropic_chat_turn(
-    history: &mut Vec<serde_json::Value>,
-    user_text: &str,
-    images: &[(String, String)],
-    pdfs: &[(String, Vec<u8>)],
-    api_key: &str,
-    model: &str,
-    max_tokens: u32,
-) -> Result<String, String> {
-    use base64::Engine;
-    use futures_util::StreamExt;
-
-    if api_key.is_empty() {
-        return Err(
-            "Anthropic API key is not configured. Open Settings and paste your API key."
-                .to_string(),
-        );
-    }
-
-    let mut content: Vec<serde_json::Value> =
-        vec![serde_json::json!({"type": "text", "text": user_text})];
-
-    for (_label, b64) in images {
-        content.push(serde_json::json!({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": image_media_type(b64),
-                "data": b64
-            }
-        }));
-    }
-
-    for (_filename, bytes) in pdfs {
-        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        content.push(serde_json::json!({
-            "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": "application/pdf",
-                "data": b64
-            }
-        }));
-    }
-
-    history.push(serde_json::json!({"role": "user", "content": content}));
-
-    // Bound the prompt to the model's context window — a no-op while under budget
-    // (so short repair threads keep full context) and escalating only when over.
-    // No tools/system on this path. Histories here are small, so this stays on the
-    // caller's thread rather than off-loading like the agent's streaming turn.
-    evict_to_fit(history, &[], None, prompt_token_target(model, max_tokens));
-
-    // Streaming request — accumulate text deltas. Streaming avoids the
-    // server timeout on long generations (e.g. whole-document AI processing).
-    let request = serde_json::json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": history,
-        "stream": true,
-    });
-
-    let response = reqwest::Client::new()
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        let msg = serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|v| v["error"]["message"].as_str().map(String::from))
-            .unwrap_or(body);
-        return Err(format!("Anthropic API error ({status}): {msg}"));
-    }
-
-    // Parse the SSE stream. Each `data:` line carries one complete JSON event;
-    // accumulate `text_delta`s and surface any `error` event.
-    let mut stream = response.bytes_stream();
-    let mut buf: Vec<u8> = Vec::new();
-    let mut response_text = String::new();
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
-        buf.extend_from_slice(&chunk);
-
-        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
-            let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
-            let line = String::from_utf8_lossy(&line_bytes);
-            let Some(data) = line.trim().strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() {
-                continue;
-            }
-            let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
-                continue;
-            };
-            match event["type"].as_str() {
-                Some("content_block_delta") if event["delta"]["type"] == "text_delta" => {
-                    if let Some(t) = event["delta"]["text"].as_str() {
-                        response_text.push_str(t);
-                    }
-                }
-                Some("error") => {
-                    let msg = event["error"]["message"]
-                        .as_str()
-                        .unwrap_or("unknown error");
-                    return Err(format!("Anthropic API error: {msg}"));
-                }
-                _ => {}
-            }
-        }
-    }
-
-    history.push(serde_json::json!({"role": "assistant", "content": response_text}));
-
-    Ok(response_text)
-}
 
 // ── Agentic tool loop (Anthropic) ────────────────────────────────────
 

@@ -416,8 +416,7 @@ pub async fn run_agent(
         crate::db::create_session(&doc_hash, profile.as_deref(), &session_label)
     else {
         processing_state.set(ProcessingState {
-            step: ProcessingStep::AiGenerating,
-            ai_mode: true,
+            step: ProcessingStep::Running,
             error: Some("Could not create an edit-history session.".into()),
             ..ProcessingState::new()
         });
@@ -1049,7 +1048,6 @@ async fn ensure_built_and_uploaded(
 /// is exactly what needs a test, and a `Signal` write cannot be tested.
 struct Outputs {
     envelope: DocumentEnvelope,
-    aem_translated: Option<blueprint::AemNodeTranslated>,
     redacto_sql: Option<String>,
     warnings: Vec<String>,
 }
@@ -1103,7 +1101,6 @@ fn build_outputs(
                     content,
                     state_count: 1,
                 },
-                aem_translated: None,
                 redacto_sql,
                 warnings,
             }
@@ -1150,7 +1147,6 @@ fn build_outputs(
                     content,
                     state_count: 1,
                 },
-                aem_translated,
                 redacto_sql,
                 warnings,
             }
@@ -1171,7 +1167,6 @@ fn finalize(
 ) {
     let Outputs {
         envelope,
-        aem_translated,
         redacto_sql,
         warnings,
     } = build_outputs(agent, target, profile);
@@ -1195,16 +1190,12 @@ fn finalize(
     let mut state = processing_state.write();
     state.warnings.extend(warnings);
     state.step = ProcessingStep::Complete;
-    state.ai_mode = true;
-    state.envelope = Some(envelope);
-    state.aem_translated = aem_translated;
     state.merged_json = merged_json;
     state.html_preview = html_preview;
     state.xsd_schema = xsd_schema;
     state.aem_package = agent.package();
     state.redacto_sql = redacto_sql;
     state.form_code = form_code;
-    state.agent_aem_session = agent.aem_session();
     state.aem_uploaded = agent.aem_uploaded();
     state.aem_form_path = agent.aem_form_path();
     state.elapsed_secs = Some(start.elapsed().as_secs());
@@ -1421,7 +1412,7 @@ mod tests {
             "the envelope is the authored tree, not the engine's parse of the source"
         );
         assert!(
-            outputs.aem_translated.is_none(),
+            agent.aem_translated().is_none(),
             "a Redacto run produces no AEM tree"
         );
         // The recovered master-page header must survive into the configuration.

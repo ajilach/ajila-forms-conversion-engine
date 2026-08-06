@@ -1,16 +1,17 @@
-//! LLM tool definitions and executors for AI features.
+//! LLM tool definitions and executors for the describe-a-reference step.
 //!
 //! Instead of inlining every page image and the entire XFA XML into the prompt,
 //! the model pulls what it needs through tool calls (see
 //! [`crate::platform::anthropic_agentic_turn`]). Two executors are provided:
 //!
-//! * [`FormToolContext`] — for whole-document AI generation. Built from the
-//!   source PDFs, it can list the discovered form states, render any state on
-//!   demand, return the engine's structured layout for a state, and hand back
-//!   the authoritative XFA XML.
-//! * [`ImageToolContext`] — for Smart Edit, which only has the pre-rendered
-//!   plain page images (no PDFs/states/XFA at its call site). It backs the
-//!   `list_states` and `get_plain_state_image` tools from that image map.
+//! * [`FormToolContext`] — built from the source PDFs, it can list the
+//!   discovered form states, render any state on demand, return the engine's
+//!   structured layout for a state, and hand back the authoritative XFA XML.
+//! * [`PackageToolContext`] — read access to the resulting AEM package's text
+//!   files, so the model can inspect the `.content.xml` it produced.
+//!
+//! The conversion agent does not use these: it drives the far larger tool
+//! catalog in the headless `agent` crate.
 
 use std::collections::HashMap;
 
@@ -30,44 +31,6 @@ pub trait ToolExecutor {
     fn tools(&self) -> Vec<serde_json::Value>;
     /// Execute one tool call.
     fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply;
-}
-
-/// Build the tool executor for an editing session.
-///
-/// When the source PDFs are available, the base is the full [`FormToolContext`]
-/// — the exact same tools AI processing uses (states, on-demand renders,
-/// structured layout, XFA). Otherwise (JSON/AEM input, or a reopened session
-/// without the source PDFs) it falls back to the pre-rendered page images via
-/// [`ImageToolContext`].
-///
-/// If `profile` has stored reference forms, the base is combined with a
-/// [`ReferenceToolContext`] so the model can also search/read worked examples
-/// for that profile (see [`CompositeToolExecutor`]).
-pub async fn build_tools(
-    source_pdfs: &[(String, Vec<u8>)],
-    plain_images: &HashMap<String, Vec<String>>,
-    profile: Option<&str>,
-) -> Box<dyn ToolExecutor> {
-    let base: Box<dyn ToolExecutor> = if source_pdfs.is_empty() {
-        Box::new(ImageToolContext::new(plain_images.clone()))
-    } else {
-        // Register the profile's fonts in the global font manager so on-demand
-        // page renders (`get_plain_state_image`) resolve typefaces — otherwise
-        // the render hard-fails when no conversion has loaded fonts this session.
-        if let Some(p) = profile {
-            let _ = blueprint::load_profile_fonts(p);
-        }
-        Box::new(FormToolContext::build(source_pdfs).await)
-    };
-
-    if let Some(p) = profile
-        && crate::references::count(p) > 0
-        && let Some(refs) = ReferenceToolContext::new(p)
-    {
-        return Box::new(CompositeToolExecutor::new(vec![base, Box::new(refs)]));
-    }
-
-    base
 }
 
 /// Build the tool executor for the **describe-a-reference** step (adding a
@@ -121,16 +84,6 @@ impl ToolExecutor for CompositeToolExecutor {
             }
         }
         ToolReply::Error(format!("Unknown tool: {name}"))
-    }
-}
-
-/// Detect the image media type of a base64 payload by its leading bytes.
-/// PNG base64 begins with `iVBOR`; JPEG with `/9j/`.
-fn media_type_of(b64: &str) -> &'static str {
-    if b64.starts_with("/9j/") {
-        "image/jpeg"
-    } else {
-        "image/png"
     }
 }
 
@@ -321,52 +274,6 @@ impl ToolExecutor for FormToolContext {
     }
 }
 
-// ── Smart Edit tools (pre-rendered images only) ──────────────────────────────
-
-/// Tool executor backed only by the pre-rendered plain page images. Used by
-/// Smart Edit, which has no source PDFs / states / XFA at its call site.
-pub struct ImageToolContext {
-    /// label → per-page base64 images (JPEG/PNG), in page order.
-    images: HashMap<String, Vec<String>>,
-}
-
-impl ImageToolContext {
-    pub fn new(images: HashMap<String, Vec<String>>) -> Self {
-        Self { images }
-    }
-}
-
-impl ToolExecutor for ImageToolContext {
-    fn tools(&self) -> Vec<serde_json::Value> {
-        vec![tool_list_states(), tool_get_plain_state_image()]
-    }
-
-    fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply {
-        match name {
-            "list_states" => {
-                let mut labels: Vec<&String> = self.images.keys().collect();
-                labels.sort();
-                let list: Vec<serde_json::Value> = labels
-                    .iter()
-                    .map(|l| serde_json::json!({"label": l}))
-                    .collect();
-                ToolReply::Text(serde_json::to_string_pretty(&list).unwrap_or_default())
-            }
-            "get_plain_state_image" => {
-                let label = input["state_label"].as_str().unwrap_or_default();
-                match self.images.get(label) {
-                    Some(pages) => ToolReply::Image {
-                        media_type: pages.first().map(|b| media_type_of(b)).unwrap_or("image/jpeg"),
-                        images: pages.clone(),
-                    },
-                    None => ToolReply::Error(format!("Unknown state_label: {label:?}")),
-                }
-            }
-            other => ToolReply::Error(format!("Unknown tool: {other}")),
-        }
-    }
-}
-
 // ── Package-inspection tools (uploaded AEM package, not yet stored) ──────────
 
 /// Tool executor over an unzipped AEM package's text files. Used by the
@@ -466,207 +373,55 @@ fn tool_get_plain_state_image() -> serde_json::Value {
     })
 }
 
-// ── Reference-form tools (worked examples, per profile) ──────────────────────
-
-/// Tool executor backed by the per-profile reference-form store
-/// ([`crate::references`]). Lets the model search worked examples (original
-/// form + final AEM package + description), read their files, and view source
-/// pages. Needs the embedding model + SQLite.
-pub struct ReferenceToolContext {
-    profile: String,
-    matcher: blueprint::semantic::SemanticMatcher,
-}
-
-impl ReferenceToolContext {
-    /// Load the embedding model for this profile's reference searches. Returns
-    /// `None` if the model fails to load (the caller then omits reference tools).
-    pub fn new(profile: &str) -> Option<Self> {
-        let matcher = blueprint::semantic::SemanticMatcher::new().ok()?;
-        Some(Self {
-            profile: profile.to_string(),
-            matcher,
-        })
-    }
-}
-
-impl ToolExecutor for ReferenceToolContext {
-    fn tools(&self) -> Vec<serde_json::Value> {
-        vec![
-            serde_json::json!({
-                "name": "list_reference_forms",
-                "description": "List the reference forms available for this profile. Each is a \
-                    worked example: an original input form, its final AEM package, and a \
-                    description. Returns ref_id, label, description, pdf_count, and the package's \
-                    file paths. Consult these before converting an unfamiliar block.",
-                "input_schema": {"type": "object", "properties": {}}
-            }),
-            serde_json::json!({
-                "name": "search_references",
-                "description": "Search the profile's reference forms. Hybrid match: semantic \
-                    similarity over the descriptions, plus literal substring match in the \
-                    descriptions and in the AEM package XML. Returns hits with ref_id, where the \
-                    match was (a file path or 'description'), the matching signal, and a snippet.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "What to look for (a block type, field name, label, or AEM resource type)."},
-                        "top_k": {"type": "integer", "description": "Max hits per signal (default 3)."}
-                    },
-                    "required": ["query"]
-                }
-            }),
-            serde_json::json!({
-                "name": "read_reference_file",
-                "description": "Read a reference's description (path 'description') or one of its \
-                    AEM package files (a path from list_reference_forms / search_references). \
-                    Optional line offset/limit for large files.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "ref_id": {"type": "string"},
-                        "path": {"type": "string", "description": "'description' or a package file path."},
-                        "offset": {"type": "integer", "description": "First line (0-based, optional)."},
-                        "limit": {"type": "integer", "description": "Max lines (optional)."}
-                    },
-                    "required": ["ref_id", "path"]
-                }
-            }),
-            serde_json::json!({
-                "name": "view_reference_page",
-                "description": "Render and view a page of a reference's original input form, so you \
-                    can see the visual layout the AEM package was produced from.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "ref_id": {"type": "string"},
-                        "pdf_index": {"type": "integer", "description": "Which source PDF (default 0)."},
-                        "page": {"type": "integer", "description": "Page number (default 0)."}
-                    },
-                    "required": ["ref_id"]
-                }
-            }),
-        ]
-    }
-
-    fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply {
-        match name {
-            "list_reference_forms" => {
-                let list: Vec<serde_json::Value> = crate::references::list_references(&self.profile)
-                    .into_iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "ref_id": r.ref_id,
-                            "label": r.label,
-                            "description": r.description,
-                            "pdf_count": r.pdf_count,
-                            "files": r.files,
-                        })
-                    })
-                    .collect();
-                ToolReply::Text(serde_json::to_string_pretty(&list).unwrap_or_default())
-            }
-            "search_references" => {
-                let query = input["query"].as_str().unwrap_or_default();
-                if query.is_empty() {
-                    return ToolReply::Error("search_references requires a non-empty query".into());
-                }
-                let top_k = input["top_k"].as_u64().unwrap_or(3).max(1) as usize;
-                let hits = crate::references::search_references(
-                    &self.profile,
-                    query,
-                    &self.matcher,
-                    top_k,
-                );
-                let list: Vec<serde_json::Value> = hits
-                    .into_iter()
-                    .map(|h| {
-                        serde_json::json!({
-                            "ref_id": h.ref_id,
-                            "label": h.label,
-                            "where": h.location,
-                            "matched": h.matched,
-                            "score": h.score,
-                            "snippet": h.snippet,
-                        })
-                    })
-                    .collect();
-                if list.is_empty() {
-                    ToolReply::Text("No matching reference forms.".to_string())
-                } else {
-                    ToolReply::Text(serde_json::to_string_pretty(&list).unwrap_or_default())
-                }
-            }
-            "read_reference_file" => {
-                let ref_id = input["ref_id"].as_str().unwrap_or_default();
-                let path = input["path"].as_str().unwrap_or_default();
-                let offset = input["offset"].as_u64().unwrap_or(0) as usize;
-                let limit = input["limit"].as_u64().unwrap_or(0) as usize;
-                match crate::references::read_reference_file(ref_id, path, offset, limit) {
-                    Ok(text) => ToolReply::Text(text),
-                    Err(e) => ToolReply::Error(e),
-                }
-            }
-            "view_reference_page" => {
-                let ref_id = input["ref_id"].as_str().unwrap_or_default();
-                let pdf_index = input["pdf_index"].as_u64().unwrap_or(0) as usize;
-                let page = input["page"].as_u64().unwrap_or(0) as usize;
-                match crate::references::render_reference_page(ref_id, pdf_index, page) {
-                    Ok(pages) => ToolReply::Image {
-                        media_type: "image/jpeg",
-                        images: pages
-                            .iter()
-                            .map(|jpeg| base64::prelude::BASE64_STANDARD.encode(jpeg))
-                            .collect(),
-                    },
-                    Err(e) => ToolReply::Error(e),
-                }
-            }
-            other => ToolReply::Error(format!("Unknown reference tool: {other}")),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn ctx() -> ImageToolContext {
-        let mut images = HashMap::new();
-        // `/9j/` prefix marks a JPEG payload.
-        images.insert("default".to_string(), vec!["/9j/abc".to_string()]);
-        ImageToolContext::new(images)
+    fn ctx() -> PackageToolContext {
+        PackageToolContext::new(vec![(
+            "jcr_root/.content.xml".to_string(),
+            "one\ntwo\nthree\nfour".to_string(),
+        )])
     }
 
     #[test]
-    fn list_states_returns_labels() {
-        let reply = ctx().execute("list_states", &serde_json::json!({}));
+    fn list_package_files_returns_paths() {
+        let reply = ctx().execute("list_package_files", &serde_json::json!({}));
         match reply {
-            ToolReply::Text(t) => assert!(t.contains("default")),
+            ToolReply::Text(t) => assert!(t.contains("jcr_root/.content.xml"), "{t}"),
             _ => panic!("expected text"),
         }
     }
 
     #[test]
-    fn get_image_returns_image_for_known_label() {
+    fn read_package_file_returns_the_whole_file_by_default() {
         let reply = ctx().execute(
-            "get_plain_state_image",
-            &serde_json::json!({"state_label": "default"}),
+            "read_package_file",
+            &serde_json::json!({"path": "jcr_root/.content.xml"}),
         );
         match reply {
-            ToolReply::Image { media_type, images } => {
-                assert_eq!(media_type, "image/jpeg");
-                assert_eq!(images, vec!["/9j/abc".to_string()]);
-            }
-            _ => panic!("expected image"),
+            ToolReply::Text(t) => assert_eq!(t, "one\ntwo\nthree\nfour"),
+            _ => panic!("expected text"),
+        }
+    }
+
+    /// Large `.content.xml` files are read in windows, so the offset/limit pair
+    /// has to slice by line rather than return the whole file.
+    #[test]
+    fn read_package_file_honours_offset_and_limit() {
+        let reply = ctx().execute(
+            "read_package_file",
+            &serde_json::json!({"path": "jcr_root/.content.xml", "offset": 1, "limit": 2}),
+        );
+        match reply {
+            ToolReply::Text(t) => assert_eq!(t, "two\nthree"),
+            _ => panic!("expected text"),
         }
     }
 
     #[test]
-    fn get_image_errors_for_unknown_label() {
-        let reply = ctx().execute(
-            "get_plain_state_image",
-            &serde_json::json!({"state_label": "nope"}),
-        );
+    fn read_package_file_errors_for_an_unknown_path() {
+        let reply = ctx().execute("read_package_file", &serde_json::json!({"path": "nope"}));
         assert!(matches!(reply, ToolReply::Error(_)));
     }
 
