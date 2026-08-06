@@ -20,11 +20,13 @@ mod content;
 mod converter;
 mod profile;
 mod sql;
+mod validate;
 
 pub use content::render_block_html;
 pub use converter::{generate_redacto_dump, generate_redacto_sql};
 pub use profile::{RedactoConfig, RedactoProfile};
 pub use sql::sql_string;
+pub use validate::{RedactoCounts, RedactoValidation, validate_dump};
 
 use serde::{Deserialize, Serialize};
 

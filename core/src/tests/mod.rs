@@ -34109,3 +34109,215 @@ fn redacto_text_only_pdf_produces_assets() {
     let sql = dump.to_sql();
     assert_eq!(sql.matches("INSERT INTO ").count(), dump.row_count());
 }
+
+// ============================================================================
+// Redacto dump validation
+//
+// Regression cover for the AAAR_019 failure: a run whose cross-language merge
+// collapsed produced a dump with a `documents` row and nothing else. That dump
+// is valid SQL and imports cleanly, so nothing downstream recognised it as a
+// failure and it reached the download button looking like a result.
+// ============================================================================
+
+#[test]
+fn redacto_validate_rejects_a_dump_with_no_content() {
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[], &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(!report.is_ok(), "an empty dump must not validate");
+    assert!(
+        report.problems.iter().any(|p| p.contains("no text assets")),
+        "the problem must name the empty document: {:?}",
+        report.problems
+    );
+    assert_eq!(report.counts.assets, 0);
+}
+
+#[test]
+fn redacto_validate_rejects_field_only_content() {
+    use crate::structured::{FieldNode, FieldType, StructuredNode, TranslatedText};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: "first_name".into(),
+        som_path: None,
+        label: Some(TranslatedText::plain("First name")),
+        input_type: FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        value: None,
+        placeholder: None,
+        required: false,
+    })];
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(
+        !report.is_ok(),
+        "a document of nothing but input fields produces no assets and must not validate"
+    );
+    assert!(
+        report.warnings.iter().any(|w| w.contains("skipped")),
+        "the skipped field must be carried over as a warning: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn redacto_validate_accepts_a_document_with_content() {
+    use redacto_fixtures::{heading, paragraph};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[heading(2, "Title"), paragraph("Body")], &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(report.is_ok(), "unexpected problems: {:?}", report.problems);
+    assert_eq!(report.counts.assets, 2);
+    assert_eq!(report.counts.asset_versions, 2);
+    assert_eq!(report.counts.rows, dump.row_count());
+}
+
+/// A variant in a language the configuration does not list is unreachable in
+/// Redacto. This is the shape content takes when it lost its per-language
+/// keying upstream and collapsed onto the `default` pseudo-language while the
+/// document is genuinely multilingual.
+#[test]
+fn redacto_validate_rejects_a_variant_in_an_unconfigured_language() {
+    use redacto_fixtures::paragraph;
+
+    let config = helpers::test_redacto_config(&["de", "en"]);
+    let mut dump = crate::generate_redacto_dump(&[paragraph("Body")], &config);
+    dump.asset_versions[0].language = "default".into();
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("unconfigured language 'default'")),
+        "an unreachable variant must be reported: {:?}",
+        report.problems
+    );
+}
+
+/// The Redacto model is one `asset_version` per asset per language. A merge or
+/// conversion step that collapses the languages shows up here first.
+#[test]
+fn redacto_multilingual_content_emits_one_asset_version_per_language() {
+    use crate::structured::{ParagraphNode, StructuredNode, TranslatedText};
+
+    let content = TranslatedText::new(
+        [("de", "Hallo"), ("en", "Hello"), ("sp", "Hola")]
+            .into_iter()
+            .map(|(lang, text)| (lang.to_string(), crate::structured::InlineText::plain(text)))
+            .collect(),
+    );
+    let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+        content,
+        som_path: None,
+        source_name: None,
+    })];
+
+    let config = helpers::test_redacto_config(&["de", "en", "sp"]);
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+
+    assert_eq!(dump.assets.len(), 1);
+    assert_eq!(
+        dump.asset_versions.len(),
+        3,
+        "one variant per language, got {:?}",
+        dump.asset_versions
+            .iter()
+            .map(|v| &v.language)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(helpers::redacto_contents_for(&dump, "de")[0], "<p>Hallo</p>");
+    assert_eq!(helpers::redacto_contents_for(&dump, "en")[0], "<p>Hello</p>");
+    assert_eq!(helpers::redacto_contents_for(&dump, "sp")[0], "<p>Hola</p>");
+    assert!(crate::validate_dump(&dump, &config).is_ok());
+}
+
+// ============================================================================
+// Redacto fidelity review
+// ============================================================================
+
+#[test]
+fn review_redacto_reports_text_missing_from_the_dump() {
+    use redacto_fixtures::paragraph;
+
+    let input = vec![
+        paragraph("Kept in the document"),
+        paragraph("Dropped on the way out"),
+    ];
+    // The dump is built from only the first paragraph, so the second is missing
+    // from the artefact even though the input carries it.
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&input[..1], &config);
+
+    let report = crate::review_redacto(&input, &dump, "en");
+
+    assert!(report.coverage < 1.0, "coverage: {}", report.coverage);
+    assert_eq!(report.missing_text, vec!["Dropped on the way out"]);
+    assert!(report.naming_violations.is_empty());
+}
+
+#[test]
+fn review_redacto_reports_full_coverage_for_a_faithful_dump() {
+    use redacto_fixtures::{heading, list, paragraph};
+
+    let input = vec![
+        heading(2, "Section"),
+        paragraph("Body text"),
+        list(crate::document::ListStyleType::Disc, &["One", "Two"]),
+    ];
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&input, &config);
+
+    let report = crate::review_redacto(&input, &dump, "en");
+
+    assert_eq!(report.coverage, 1.0, "missing: {:?}", report.missing_text);
+    assert!(report.missing_text.is_empty());
+    assert_eq!(report.output_field_count, 0);
+}
+
+/// The review must describe the artefact that ships. An empty dump reviewed
+/// against a non-empty input is the AAAR shape, and it must not read as clean.
+#[test]
+fn review_redacto_does_not_pass_an_empty_dump() {
+    use redacto_fixtures::paragraph;
+
+    let input = vec![paragraph("Body text")];
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[], &config);
+
+    let report = crate::review_redacto(&input, &dump, "en");
+
+    assert_eq!(report.coverage, 0.0);
+    assert!(
+        report.notes.iter().any(|n| n.contains("no text assets")),
+        "notes must say the dump is empty: {:?}",
+        report.notes
+    );
+}
+
+// ============================================================================
+// Output targets
+// ============================================================================
+
+#[test]
+fn ubs_profile_supports_both_output_targets() {
+    use crate::OutputTarget;
+
+    assert_eq!(
+        crate::profiles::profile_targets("ubs"),
+        vec![OutputTarget::Aem, OutputTarget::Redacto],
+    );
+    assert!(crate::profiles::profile_targets("no-such-profile").is_empty());
+}

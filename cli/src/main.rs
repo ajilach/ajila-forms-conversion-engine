@@ -274,12 +274,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Redacto PostgreSQL dump
     if args.redacto {
         let profile_name = require_profile_name(args.profile.as_deref())?;
-        let redacto_config = blueprint::load_redacto_config(profile_name, &output.merged.context)
-            .map_err(|e| format!("Failed to load Redacto profile: {e}"))?;
-        let resolved = blueprint::resolve_redacto_languages(&output.merged.content, &redacto_config);
-        let dump = blueprint::generate_redacto_dump(&output.merged.content, &resolved);
+        let (dump, resolved) = blueprint::to_redacto_dump_for_profile(
+            profile_name,
+            &output.merged.context,
+            &output.merged.content,
+        )?;
         for warning in &dump.warnings {
             eprintln!("Warning: {}", warning);
+        }
+        // A contentless dump is still valid SQL, so say so rather than letting
+        // an empty document look like a successful conversion.
+        let validation = blueprint::validate_dump(&dump, &resolved);
+        for problem in &validation.problems {
+            eprintln!("Problem: {}", problem);
         }
         let sql_path = PathBuf::from(format!("{}_{}.sql", merged_name, suffix));
         std::fs::write(&sql_path, dump.to_sql())

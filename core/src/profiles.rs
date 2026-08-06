@@ -49,6 +49,19 @@ pub fn has_redacto_config(name: &str) -> bool {
     has_profile_config(name, "redacto")
 }
 
+/// The output targets `name` is configured for, in the order they should be
+/// offered.
+///
+/// A profile carries one section per output, so this is simply which of them
+/// exist. Empty when the profile has neither — such a profile can still produce
+/// the JSON/HTML previews, but nothing a conversion run aims at.
+pub fn profile_targets(name: &str) -> Vec<crate::OutputTarget> {
+    crate::OutputTarget::ALL
+        .into_iter()
+        .filter(|t| has_profile_config(name, t.profile_section()))
+        .collect()
+}
+
 /// Load and resolve `{profile}/redacto/config.toml` against a document context.
 pub fn load_redacto_config(name: &str, ctx: &Context) -> Result<RedactoConfig, String> {
     let profile: RedactoProfile = read_profile_config_toml(name, "redacto")?;

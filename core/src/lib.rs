@@ -82,6 +82,7 @@ pub mod review;
 #[cfg(feature = "semantic-matching")]
 pub mod semantic;
 pub mod structured;
+pub mod target;
 pub mod template;
 pub mod util;
 pub mod xfa;
@@ -198,7 +199,7 @@ pub use aem::{
 };
 
 // Post-conversion fidelity review
-pub use review::{NamingViolation, ReviewReport, review_output};
+pub use review::{NamingViolation, ReviewReport, review_output, review_redacto};
 
 // GraphViz decision-flow output
 pub use graphviz::{
@@ -227,9 +228,12 @@ pub use redacto::{
     AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, INITIAL_VERSION,
     ObjectType, OwnerType, OwnershipRow, OwnershipType, RedactoComponent, RedactoConfig,
     RedactoConfiguration, RedactoDocumentMeta, RedactoDump, RedactoProfile, RelationRow,
-    Status as RedactoStatus, asset_ref, generate_redacto_dump, generate_redacto_sql,
-    render_block_html, sql_string,
+    RedactoCounts, RedactoValidation, Status as RedactoStatus, asset_ref, generate_redacto_dump,
+    generate_redacto_sql, render_block_html, sql_string, validate_dump,
 };
+
+// The output target a run aims at
+pub use target::OutputTarget;
 
 // XFA layer
 pub use xfa::scripting::{SomPath, XfaForm};
@@ -1284,6 +1288,31 @@ pub fn to_xsd(content: &[StructuredNode], config: &XsdConfig) -> String {
 pub fn to_redacto_sql(content: &[StructuredNode], config: &RedactoConfig) -> String {
     let config = resolve_redacto_languages(content, config);
     generate_redacto_sql(content, &config)
+}
+
+/// Build the Redacto dump for `content` under `profile`, resolving the profile's
+/// configuration against `ctx` and the languages against the content.
+///
+/// The one place that performs the whole `load_redacto_config` ->
+/// `resolve_redacto_languages` -> generate sequence, so callers cannot get the
+/// order wrong or skip the language resolution. Returns the resolved config
+/// alongside the dump because validation and reporting need both.
+///
+/// Fails when the profile has no Redacto section, or when its identity
+/// templates cannot be rendered — typically a document lacking the XFA
+/// variables the profile derives `document_id` from.
+pub fn to_redacto_dump_for_profile(
+    profile: &str,
+    ctx: &Context,
+    content: &[StructuredNode],
+) -> Result<(RedactoDump, RedactoConfig), String> {
+    if !has_redacto_config(profile) {
+        return Err(format!("Profile '{profile}' has no redacto/config.toml."));
+    }
+    let config = load_redacto_config(profile, ctx)?;
+    let config = resolve_redacto_languages(content, &config);
+    let dump = generate_redacto_dump(content, &config);
+    Ok((dump, config))
 }
 
 /// Convert structured nodes to a complete AEM FileVault content package (ZIP).

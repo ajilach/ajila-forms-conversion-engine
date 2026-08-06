@@ -92,35 +92,7 @@ pub fn review_output(
     let aem_xml = generate_aem_xml(output, config);
     let (mut naming_violations, naming_counts) = check_naming_conventions(&aem_xml);
 
-    // Normalize both sides and build the output lookup set.
-    let output_set: BTreeSet<String> = output_texts
-        .iter()
-        .map(|t| normalize(t))
-        .filter(|t| !t.is_empty())
-        .collect();
-
-    // Distinct, normalized, non-empty input texts (preserving first-seen order).
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    let mut distinct_input: Vec<String> = Vec::new();
-    for t in &input_texts {
-        let n = normalize(t);
-        if !n.is_empty() && seen.insert(n.clone()) {
-            distinct_input.push(n);
-        }
-    }
-
-    let total = distinct_input.len();
-    let mut missing: Vec<String> = distinct_input
-        .into_iter()
-        .filter(|t| !output_set.contains(t))
-        .collect();
-
-    let matched = total - missing.len();
-    let coverage = if total == 0 {
-        1.0
-    } else {
-        matched as f32 / total as f32
-    };
+    let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
 
     let mut notes = Vec::new();
     if input.is_empty() {
@@ -158,6 +130,162 @@ pub fn review_output(
         naming_violations,
         notes,
     }
+}
+
+/// Review a generated [`RedactoDump`] against the engine's parse of the `input`,
+/// comparing text in `master_language`.
+///
+/// Reviews **the dump**, not the structured tree it was generated from: the
+/// tree is an intermediate, and text can still be dropped on the way into the
+/// dump (input fields, images, and the other node kinds the Redacto converter
+/// warns about and skips). Reviewing the artefact that actually ships is the
+/// point — deriving the review from a different source than the output is
+/// precisely how an empty Redacto dump once passed a clean fidelity check.
+///
+/// [`ReviewReport::naming_violations`] is always empty and
+/// [`ReviewReport::output_field_count`] always zero: Redacto documents carry no
+/// named components and no input fields.
+pub fn review_redacto(
+    input: &[StructuredNode],
+    dump: &crate::redacto::RedactoDump,
+    master_language: &str,
+) -> ReviewReport {
+    let mut input_texts: Vec<String> = Vec::new();
+    let mut input_fields = 0usize;
+    for node in input {
+        collect_input(node, master_language, &mut input_texts, &mut input_fields);
+    }
+
+    // Compare against the master-language asset bodies. Fall back to every
+    // language when the master has no variants, so a monolingual dump in another
+    // language still reviews.
+    let master_versions: Vec<&str> = dump
+        .asset_versions
+        .iter()
+        .filter(|v| v.language == master_language)
+        .map(|v| v.content.as_str())
+        .collect();
+    let bodies: Vec<&str> = if master_versions.is_empty() {
+        dump.asset_versions
+            .iter()
+            .map(|v| v.content.as_str())
+            .collect()
+    } else {
+        master_versions
+    };
+
+    // Each asset body is one HTML fragment that may hold several source texts —
+    // a list asset carries every `<li>` — so offer both the whole fragment and
+    // each tag-delimited run. Without the runs, list items and table cells look
+    // missing merely because stripping the tags concatenates them.
+    let mut output_texts: Vec<String> = Vec::new();
+    for body in bodies {
+        output_texts.push(body.to_string());
+        output_texts.extend(html_text_runs(body));
+    }
+
+    let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
+
+    let mut notes = Vec::new();
+    if input.is_empty() {
+        notes.push("input (structured tree) is empty — nothing to compare".into());
+    }
+    if dump.assets.is_empty() {
+        notes.push("the dump contains no text assets — it describes an empty document".into());
+    }
+    if input_fields > 0 {
+        notes.push(format!(
+            "{input_fields} input field(s) were skipped: the Redacto target supports \
+             text-only documents"
+        ));
+    }
+    for warning in &dump.warnings {
+        notes.push(warning.clone());
+    }
+    if missing.len() > MAX_MISSING {
+        notes.push(format!(
+            "missing_text truncated to {MAX_MISSING} of {} entries",
+            missing.len()
+        ));
+        missing.truncate(MAX_MISSING);
+    }
+
+    ReviewReport {
+        coverage,
+        input_field_count: input_fields,
+        output_field_count: 0,
+        missing_text: missing,
+        naming_violations: Vec::new(),
+        notes,
+    }
+}
+
+/// The text runs of an HTML fragment: the character data between tags, one
+/// entry per run, empty runs dropped.
+///
+/// Deliberately not a parser — the fragments here are the ones the Redacto
+/// content renderer emits, and all this needs to do is keep separate source
+/// texts separate.
+fn html_text_runs(html: &str) -> Vec<String> {
+    let mut runs = Vec::new();
+    let mut current = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                if !current.trim().is_empty() {
+                    runs.push(std::mem::take(&mut current));
+                } else {
+                    current.clear();
+                }
+            }
+            '>' => in_tag = false,
+            _ if !in_tag => current.push(c),
+            _ => {}
+        }
+    }
+    if !current.trim().is_empty() {
+        runs.push(current);
+    }
+    runs
+}
+
+/// Fraction of distinct input texts that appear verbatim in the output, plus the
+/// ones that do not (both sides normalized, first-seen order preserved).
+///
+/// Shared by [`review_output`] and [`review_redacto`]: both answer the same
+/// question — which input text did not survive into the shipped artefact — and
+/// differ only in how they harvest the output side.
+fn coverage_against(input_texts: &[String], output_texts: &[String]) -> (f32, Vec<String>) {
+    let output_set: BTreeSet<String> = output_texts
+        .iter()
+        .map(|t| normalize(t))
+        .filter(|t| !t.is_empty())
+        .collect();
+
+    // Distinct, normalized, non-empty input texts (preserving first-seen order).
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut distinct_input: Vec<String> = Vec::new();
+    for t in input_texts {
+        let n = normalize(t);
+        if !n.is_empty() && seen.insert(n.clone()) {
+            distinct_input.push(n);
+        }
+    }
+
+    let total = distinct_input.len();
+    let missing: Vec<String> = distinct_input
+        .into_iter()
+        .filter(|t| !output_set.contains(t))
+        .collect();
+
+    let coverage = if total == 0 {
+        1.0
+    } else {
+        (total - missing.len()) as f32 / total as f32
+    };
+    (coverage, missing)
 }
 
 /// Normalize text for verbatim matching: strip simple `<...>` markup (AEM option
