@@ -1043,33 +1043,36 @@ body > div, #main {
    upload → live activity → done, with a collapsible timeline.
    ============================================================ */
 
-/* Scroll container: the box scrolls inside the view, never the window. */
+/* Scroll container: the box scrolls inside the view, never the window. The box
+   fills it edge to edge — the surface is the window, so there is no backdrop
+   gutter to size the window around. */
 .agent-single {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
 }
 .agent-page {
+    /* `1 0 auto`, not `1`: inside a scroll container a 0 flex-basis can shrink
+       the page to the viewport and clip instead of scrolling. */
+    flex: 1 0 auto;
     width: 100%;
-    max-width: 720px;
-    margin: 0 auto;
-    padding: var(--space-7) var(--space-5) var(--space-9);
+    display: flex;
+    flex-direction: column;
 }
 
 /* ---- The box ---- */
 .ag-box {
+    flex: 1 0 auto;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-soft);
     padding: var(--space-5);
 }
 .ag-box.done {
-    border-color: color-mix(in srgb, var(--success) 30%, transparent);
     background: linear-gradient(120deg, var(--success-soft), transparent 55%), var(--surface);
 }
 .ag-box.failed {
-    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
     background: linear-gradient(120deg, var(--danger-soft), transparent 55%), var(--surface);
 }
 

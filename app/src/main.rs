@@ -25,7 +25,9 @@ fn main() {
     let mut config = dioxus::desktop::Config::new().with_window(
         dioxus::desktop::WindowBuilder::new()
             .with_always_on_top(saved.always_on_top)
-            .with_inner_size(dioxus::desktop::LogicalSize::new(1400.0, 960.0))
+            // The agent box fills the window, so the size only has to fit the
+            // content itself — not a centred column plus a backdrop.
+            .with_inner_size(dioxus::desktop::LogicalSize::new(880.0, 720.0))
             .with_title("Ajila Forms Conversion Engine"),
     );
 
