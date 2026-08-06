@@ -7037,7 +7037,7 @@ fn test_aaei_repeatable_buttons_have_scripts() {
         Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = load_ubs_profile();
     let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -14998,7 +14998,7 @@ fn test_ubs_profile_aem_output_matches_legacy() {
         Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = load_ubs_profile();
     let profile_config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -16886,7 +16886,7 @@ fn test_aaki_fragment_count() {
         Blueprint::from_pdf(input_path("AAKI_019_SP.pdf")).expect("Failed to load AAKI_019_SP.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -16965,7 +16965,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -19646,7 +19646,7 @@ fn test_aaai_has_address_and_individual_fragments() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -19723,7 +19723,7 @@ fn test_fragments_work_without_bind_to_xsd() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -19947,7 +19947,7 @@ fn test_aagx_en_repeatable_not_replaced_by_fragment() {
         Blueprint::from_pdf(input_path("AAGX_019_EN.pdf")).expect("Failed to load AAGX_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -20027,7 +20027,7 @@ fn test_aaed_de_has_two_repeatables_not_replaced_by_fragments_in_aem() {
         Blueprint::from_pdf(input_path("AAED_019_DE.pdf")).expect("Failed to load AAED_019_DE.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -23994,7 +23994,7 @@ fn test_aem_form_xml_has_utf8_declaration() {
         Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).expect("Failed to load AAIS PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = load_ubs_profile();
     let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -26874,7 +26874,7 @@ fn test_fragment_bind_refs_use_configured_prefix() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -26945,7 +26945,7 @@ fn test_repeatable_panels_have_bind_ref() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -27002,7 +27002,7 @@ fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -34022,6 +34022,60 @@ fn redacto_ubs_profile_footer_is_resilient_to_missing_variables() {
 
     // Only the always-present form code survives; the rest collapse to blanks.
     assert!(config.footer.contains("AAEV"), "footer: {:?}", config.footer);
+}
+
+#[test]
+fn redacto_ubs_profile_reads_header_from_recovered_page_header() {
+    // The master-page header text is not an XFA variable; the analysis recovers
+    // it onto the context, and the profile surfaces it via `page.header`.
+    let mut ctx = crate::Context::new(
+        "en".into(),
+        std::collections::HashMap::from([
+            ("formrange_code".to_string(), "AAEV".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]),
+    );
+    ctx.header = Some("UBS Europe SE".into());
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.header, "UBS Europe SE");
+}
+
+#[test]
+fn redacto_header_recovered_from_master_page_is_empty_when_absent() {
+    // No recovered header (a plain text PDF) leaves the header blank rather
+    // than failing to resolve the profile.
+    let ctx = crate::Context::new(
+        "en".into(),
+        std::collections::HashMap::from([
+            ("formrange_code".to_string(), "AAEV".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]),
+    );
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.header, "");
+}
+
+#[test]
+fn header_text_is_recovered_from_the_master_page() {
+    // The top-of-page legal-entity draw is dropped from the structured content
+    // (it is a Header group) but must survive on the context so the Redacto
+    // header box can reinstate it.
+    let envelope = crate::run_exhaustive_to_envelope(
+        helpers::input_path("AAEV_019_EN.pdf"),
+        "en",
+    )
+    .expect("convert AAEV_019_EN.pdf");
+
+    // Both header lines are recovered, de-duplicated (the entity is drawn once
+    // per page master) and stacked in reading order.
+    assert_eq!(
+        envelope.context.header.as_deref(),
+        Some("Gültig ab 02.01.2018\nUBS Europe SE")
+    );
 }
 
 #[test]

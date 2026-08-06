@@ -148,7 +148,13 @@ impl RedactoConfig {
     ) -> Result<Self, crate::Error> {
         let xfa_vars = ctx.variables.clone();
         let user_vars = template::resolve_variables(&profile.variables, &xfa_vars)?;
-        let tera_ctx = template::build_context(&xfa_vars, &user_vars);
+        let mut tera_ctx = template::build_context(&xfa_vars, &user_vars);
+        // Expose document furniture recovered by the analysis under `page.*`,
+        // so a profile template can reinstate it, e.g. `{{ page.header }}`.
+        tera_ctx.insert(
+            "page",
+            &serde_json::json!({ "header": ctx.header.clone().unwrap_or_default() }),
+        );
 
         // Name the failing field: a Redacto profile is usually driven by XFA
         // variables, and the bare Tera error does not say which one is missing.

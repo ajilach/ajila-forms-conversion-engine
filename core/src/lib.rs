@@ -826,8 +826,9 @@ impl Blueprint {
 
         let form_states = self.states()?;
         let state_count = form_states.len();
-        let context = self.context();
-        let merged = merge_form_states(&form_states, context.clone());
+        let mut context = self.context();
+        let (merged, header) = merge_form_states(&form_states, context.clone());
+        context.header = header;
 
         Ok(DocumentEnvelope {
             context,
@@ -1001,9 +1002,16 @@ impl<'a> ExactSizeIterator for FormStatesIter<'a> {
 ///
 /// This is the shared implementation behind [`Blueprint::merged_structured()`]
 /// and [`run_exhaustive_to_merged()`].
-fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<StructuredNode> {
+/// Merge the per-state structured outputs into one tree, and surface the
+/// master-page header text recovered during conversion (document furniture that
+/// is dropped from the content itself; the same across states, so the first
+/// non-empty value is used).
+fn merge_form_states(
+    form_states: &FormStates,
+    context: Context,
+) -> (Vec<StructuredNode>, Option<String>) {
     #[cfg(not(target_arch = "wasm32"))]
-    let structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = {
+    let per_state: Vec<(Vec<Selection>, Vec<StructuredNode>, Option<String>)> = {
         use rayon::prelude::*;
         form_states
             .collected
@@ -1016,21 +1024,26 @@ fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<Structur
                     global_ctx: Arc::clone(&form_states.global_ctx),
                 };
                 let envelope = state.structured(context.clone());
-                (state.selections, envelope.content)
+                (state.selections, envelope.content, envelope.context.header)
             })
             .collect()
     };
 
     #[cfg(target_arch = "wasm32")]
-    let structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = form_states
+    let per_state: Vec<(Vec<Selection>, Vec<StructuredNode>, Option<String>)> = form_states
         .iter()
         .map(|state| {
             let envelope = state.structured(context.clone());
-            (state.selections, envelope.content)
+            (state.selections, envelope.content, envelope.context.header)
         })
         .collect();
 
-    merge_structured_outputs(structured_outputs)
+    let header = per_state.iter().find_map(|(_, _, h)| h.clone());
+    let structured_outputs = per_state
+        .into_iter()
+        .map(|(selections, content, _)| (selections, content))
+        .collect();
+    (merge_structured_outputs(structured_outputs), header)
 }
 
 /// Merge per-state structured outputs into a single tree.
@@ -1391,7 +1404,7 @@ fn run_exhaustive_to_merged_inner(pdf_path: &Path) -> Result<Vec<StructuredNode>
         let mut bp = Blueprint::from_pdf(pdf_path)?;
         let form_states = bp.states()?;
         let context = bp.context();
-        Ok(merge_form_states(&form_states, context))
+        Ok(merge_form_states(&form_states, context).0)
     }
 }
 
@@ -1425,7 +1438,8 @@ fn run_exhaustive_to_envelope_inner(
         let state_count = form_states.len();
         let mut context = bp.context();
         context.set_language(language.to_string());
-        let content = merge_form_states(&form_states, context.clone());
+        let (content, header) = merge_form_states(&form_states, context.clone());
+        context.header = header;
         Ok(DocumentEnvelope {
             context,
             content,
@@ -1555,7 +1569,8 @@ mod test_cache {
             let state_count = form_data.states.len();
             let mut context = form_data.context.clone();
             context.set_language(lang.clone());
-            let content = merge_form_states(&form_data.states, context.clone());
+            let (content, header) = merge_form_states(&form_data.states, context.clone());
+            context.header = header;
             DocumentEnvelope {
                 context,
                 content,

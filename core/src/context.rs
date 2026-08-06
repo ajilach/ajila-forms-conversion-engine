@@ -24,6 +24,14 @@ pub struct Context {
     /// All `<variables><text>` values from the XFA template, keyed by name.
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub variables: HashMap<String, String>,
+
+    /// Plain text of the document's master-page header region, if the analysis
+    /// recovered one (e.g. a legal-entity name drawn top-of-page). This is
+    /// document furniture that is otherwise dropped from the structured
+    /// content; output targets with a page-header slot (e.g. the Redacto
+    /// `${meta:header}` box) can reinstate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
 }
 
 impl Context {
@@ -32,6 +40,7 @@ impl Context {
         Self {
             language,
             variables,
+            header: None,
         }
     }
 
@@ -43,6 +52,7 @@ impl Context {
         Self {
             language: language.into(),
             variables: HashMap::new(),
+            header: None,
         }
     }
 

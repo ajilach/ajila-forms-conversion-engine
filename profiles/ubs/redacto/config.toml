@@ -23,11 +23,16 @@ style = "ubs-default.css"
 # Page header and footer, exposed to the stylesheet as ${meta:header} /
 # ${meta:footer}. Both keep their literal spacing (white-space: pre-wrap).
 #
+# The header is the text drawn top-of-page on the master page — the validity
+# line and legal entity, stacked (e.g. "Gültig ab 02.01.2018\nUBS Europe SE").
+# It is not an XFA variable, so the analysis recovers it from the document's
+# header region and exposes it as `page.header`.
+#
 # The footer line is composed from the XFA `Footer_Line_*` variables the UBS
 # master page uses, in source order:
 #   <form id> <language> <version> <MAN code> <form code> <release date> <j-version>
 #   e.g. "66300 EN V0 019 AAEV 31.10.2019 N1"
-header = "{% if variables.edition %}Edition {{ variables.edition }}{% endif %}"
+header = "{{ page.header | default(value='') }}"
 footer = "{{ variables.footer_code }}"
 
 # Authoring user recorded as the document owner. Redacto rejects authoring
@@ -48,10 +53,6 @@ footnote_panel_style = "footnote"
 column_panel_style = "layout-split"
 
 [variables]
-# Edition label shown in the page header. XFA forms do not carry one, so this
-# is a profile-level default that can be overridden per conversion run.
-edition = "{{ xfa.edition | default(value='') }}"
-
 # Left-hand footer code, assembled from the master-page footer fields. Each
 # lookup defaults to empty so the template still resolves on documents that
 # lack the footer variables (e.g. a plain, non-UBS text PDF). Fields are

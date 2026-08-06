@@ -225,10 +225,54 @@ pub fn convert_with_context(
 ) -> crate::structured::DocumentEnvelope {
     let language = context.language().to_string();
     let content = convert_with_language(doc, &language);
+    let mut context = context;
+    if context.header.is_none()
+        && let Some(header) = extract_header_text(doc)
+    {
+        context.header = Some(header);
+    }
     crate::structured::DocumentEnvelope {
         context,
         content,
         state_count: 1,
+    }
+}
+
+/// Extract the document's master-page header text as stacked lines.
+///
+/// `GroupKind::Header` groups are otherwise dropped from the structured
+/// content (they are page furniture), but their text — a legal-entity name or
+/// validity/edition label drawn top-of-page — is document metadata that output
+/// targets with a page-header slot can reinstate. Each header draw/field is one
+/// line; lines are de-duplicated (the same draw is repeated per page master)
+/// and joined with newlines in reading order, matching how they stack on the
+/// page. Returns `None` when there is no header region.
+fn extract_header_text(doc: &Document) -> Option<String> {
+    use crate::flattened::FlattenedNodeKind;
+
+    let mut seen = std::collections::BTreeSet::new();
+    let mut lines = Vec::new();
+    for idx in doc.roots() {
+        let Some(group) = doc.get_group(idx) else {
+            continue;
+        };
+        if !matches!(group.kind, GroupKind::Header) {
+            continue;
+        }
+        for node in doc.collect_nodes(idx) {
+            let text = match &node.kind {
+                FlattenedNodeKind::Text { content, .. } => content.trim(),
+                FlattenedNodeKind::Field { value, .. } => value.trim(),
+            };
+            if !text.is_empty() && seen.insert(text.to_string()) {
+                lines.push(text.to_string());
+            }
+        }
+    }
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
     }
 }
 
