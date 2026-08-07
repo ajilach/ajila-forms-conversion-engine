@@ -753,21 +753,19 @@ fn ResultActions(
 ) -> Element {
     let mut upload_state = use_signal(|| UploadState::Idle);
     let mut save_error = use_signal(|| None::<String>);
-    let state = state.read();
-    let form_code = state.form_code.as_deref();
+    let run = state.read();
+    let form_code = run.form_code.as_deref();
 
     rsx! {
         div { class: "ag-result-actions",
-            if let Some(package) = state.aem_package.as_ref() {
+            if Artifact::Package.is_present(&run) {
                 DownloadButton {
                     class: "btn btn-secondary",
-                    label: "⬇ Download CRX package",
-                    title: "Download the AEM content package (CRX) as a ZIP",
-                    filename: filename("forms-package", form_code, "zip"),
-                    bytes: package.clone(),
+                    artifact: Artifact::Package,
+                    state,
                 }
             }
-            if let Some(html) = state.html_preview.as_ref() {
+            if let Some(html) = run.html_preview.as_ref() {
                 button {
                     class: "btn btn-secondary",
                     title: "Render the converted document as a standalone HTML page and open it in the browser",
@@ -779,7 +777,7 @@ fn ResultActions(
                     "◹ HTML preview"
                 }
             }
-            if let Some(package) = state.aem_package.as_ref() {
+            if let Some(package) = run.aem_package.as_ref() {
                 {
                     let st = upload_state.read().clone();
                     let uploading = st == UploadState::Uploading;
@@ -800,7 +798,7 @@ fn ResultActions(
                             onclick: {
                                 let package = package.clone();
                                 let connection = aem_connection;
-                                let package_name = state
+                                let package_name = run
                                     .form_code
                                     .clone()
                                     .unwrap_or_else(|| "forms-package".to_string());
@@ -845,75 +843,116 @@ fn ResultActions(
     }
 }
 
+/// One artefact a finished run offers for download.
+///
+/// A variant, not the payload: `ProcessingState` holds the multi-MB AEM package,
+/// so a component that took the bytes as a prop would deep-copy them on every
+/// render and then byte-compare them again for prop memoisation. The bytes are
+/// materialised only when the button is actually pressed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Artifact {
+    Package,
+    RedactoSql,
+    StructureJson,
+    Xsd,
+    AgentLog,
+}
+
+impl Artifact {
+    /// The by-products offered next to the primary result, in display order.
+    const BYPRODUCTS: &'static [Self] = &[
+        Self::RedactoSql,
+        Self::StructureJson,
+        Self::Xsd,
+        Self::AgentLog,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Package => "⬇ Download CRX package",
+            Self::RedactoSql => "Redacto SQL",
+            Self::StructureJson => "Structure JSON",
+            Self::Xsd => "XSD schema",
+            Self::AgentLog => "Agent log",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Package => "Download the AEM content package (CRX) as a ZIP",
+            Self::RedactoSql => {
+                "The Redacto PostgreSQL dump (document, components and text assets)"
+            }
+            Self::StructureJson => "The structured document the outputs were generated from",
+            Self::Xsd => "The XML Schema Definition for the converted form",
+            Self::AgentLog => "The agent's full activity timeline as a Markdown transcript",
+        }
+    }
+
+    /// `(filename prefix, extension)`, paired here so a payload cannot end up
+    /// under another artefact's name.
+    fn naming(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Package => ("forms-package", "zip"),
+            Self::RedactoSql => ("redacto", "sql"),
+            Self::StructureJson => ("structure", "json"),
+            Self::Xsd => ("schema", "xsd"),
+            Self::AgentLog => ("agent-log", "md"),
+        }
+    }
+
+    /// This artefact's bytes, or `None` if the run did not produce it.
+    fn bytes(self, state: &ProcessingState) -> Option<Vec<u8>> {
+        match self {
+            Self::Package => state.aem_package.clone(),
+            Self::RedactoSql => state.redacto_sql.as_ref().map(|s| s.clone().into_bytes()),
+            Self::StructureJson => state.merged_json.as_ref().map(|s| s.clone().into_bytes()),
+            Self::Xsd => state.xsd_schema.as_ref().map(|s| s.clone().into_bytes()),
+            Self::AgentLog => (!state.agent_steps.is_empty())
+                .then(|| agent_log_markdown(&state.agent_steps).into_bytes()),
+        }
+    }
+
+    /// Whether the run produced it, without building the payload.
+    fn is_present(self, state: &ProcessingState) -> bool {
+        match self {
+            Self::Package => state.aem_package.is_some(),
+            Self::RedactoSql => state.redacto_sql.is_some(),
+            Self::StructureJson => state.merged_json.is_some(),
+            Self::Xsd => state.xsd_schema.is_some(),
+            Self::AgentLog => !state.agent_steps.is_empty(),
+        }
+    }
+}
+
 /// Take a copy of the by-products. Outside the AEM-package guard, since a
 /// Redacto run produces no package but still yields a dump, the structure and
 /// the log.
 #[component]
 fn DownloadRow(state: ReadSignal<ProcessingState>) -> Element {
-    let state = state.read();
-    let code = state.form_code.as_deref();
-
-    // (label, title, filename, bytes) — one place where a payload is paired with
-    // the name it is saved under.
-    let mut artifacts: Vec<(&str, &str, String, Vec<u8>)> = Vec::new();
-    if let Some(sql) = state.redacto_sql.as_ref() {
-        artifacts.push((
-            "Redacto SQL",
-            "The Redacto PostgreSQL dump (document, components and text assets)",
-            filename("redacto", code, "sql"),
-            sql.clone().into_bytes(),
-        ));
-    }
-    if let Some(json) = state.merged_json.as_ref() {
-        artifacts.push((
-            "Structure JSON",
-            "The structured document the outputs were generated from",
-            filename("structure", code, "json"),
-            json.clone().into_bytes(),
-        ));
-    }
-    if let Some(xsd) = state.xsd_schema.as_ref() {
-        artifacts.push((
-            "XSD schema",
-            "The XML Schema Definition for the converted form",
-            filename("schema", code, "xsd"),
-            xsd.clone().into_bytes(),
-        ));
-    }
-    if !state.agent_steps.is_empty() {
-        artifacts.push((
-            "Agent log",
-            "The agent's full activity timeline as a Markdown transcript",
-            filename("agent-log", code, "md"),
-            agent_log_markdown(&state.agent_steps).into_bytes(),
-        ));
-    }
-
     rsx! {
         div { class: "ag-downloads",
             span { class: "ag-downloads-label", "Also download" }
-            for (label , title , name , bytes) in artifacts {
-                DownloadButton {
-                    key: "{name}",
-                    class: "btn btn-secondary btn-sm",
-                    label,
-                    title,
-                    filename: name,
-                    bytes,
+            for artifact in Artifact::BYPRODUCTS.iter().copied() {
+                if artifact.is_present(&state.read()) {
+                    DownloadButton {
+                        key: "{artifact:?}",
+                        class: "btn btn-secondary btn-sm",
+                        artifact,
+                        state,
+                    }
                 }
             }
         }
     }
 }
 
-/// A button that writes `bytes` to the user's Downloads folder as `filename`.
+/// A button that saves one artefact to the user's Downloads folder.
 #[component]
 fn DownloadButton(
     class: &'static str,
-    label: &'static str,
-    title: &'static str,
-    filename: String,
-    bytes: Vec<u8>,
+    artifact: Artifact,
+    state: ReadSignal<ProcessingState>,
 ) -> Element {
     // A failed save has to be visible: the user pressed a button and would
     // otherwise be left looking for a file that was never written.
@@ -922,9 +961,20 @@ fn DownloadButton(
     rsx! {
         button {
             class,
-            title,
-            onclick: move |_| error.set(download_file(&bytes, &filename).err()),
-            "{label}"
+            title: artifact.title(),
+            onclick: move |_| {
+                let state = state.read();
+                let (prefix, ext) = artifact.naming();
+                let name = filename(prefix, state.form_code.as_deref(), ext);
+                error
+                    .set(
+                        match artifact.bytes(&state) {
+                            Some(bytes) => download_file(&bytes, &name).err(),
+                            None => Some("That output is no longer available.".to_string()),
+                        },
+                    );
+            },
+            "{artifact.label()}"
         }
         if let Some(error) = error.read().as_ref() {
             span { class: "ag-save-error", "{error}" }

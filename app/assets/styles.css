@@ -472,34 +472,6 @@ body > div, #main {
     color: var(--muted);
 }
 
-.references-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-md);
-    padding: var(--space-sm) 0;
-}
-
-.references-row-actions {
-    justify-content: flex-end;
-}
-
-.references-row-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.references-row-label {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-}
-
-.references-row-desc {
-    font-size: var(--font-size-sm);
-    color: var(--muted);
-}
-
 .references-empty {
     font-size: var(--font-size-sm);
     color: var(--muted);
@@ -585,6 +557,44 @@ body > div, #main {
 }
 
 /* ── Settings (full-page view) ── */
+/* ── Label/control rows, shared by the settings and references pages ── */
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) 0;
+}
+
+/* Push a row's control to the right when it has no label column. */
+.row-actions {
+    justify-content: flex-end;
+}
+
+/* Stacked variant: label/description on top, full-width control below. */
+.row-stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+}
+
+.row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.row-label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.row-desc {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+
 /* ── Settings sections, rows and controls ── */
 .settings-section {
     display: flex;
@@ -598,20 +608,7 @@ body > div, #main {
     opacity: 0.5;
     margin: 1.25rem 0 0.75rem;
 }
-.settings-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: var(--space-sm) 0;
-}
-.settings-row-info { display: flex; flex-direction: column; gap: 0.2rem; }
-.settings-row-label { font-weight: 500; font-size: 0.9rem; }
-.settings-row-desc  { font-size: 0.75rem; opacity: 0.6; }
-
 /* Stacked variant: label/description on top, full-width control below. */
-.settings-row-stack { flex-direction: column; align-items: stretch; gap: 0.5rem; }
-
 /* The three settings controls share one base; only their width and the
    select's caret differ. */
 .settings-input-text,

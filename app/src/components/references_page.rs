@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use dioxus::prelude::*;
 
-use super::page::FullPage;
+use super::page::{FullPage, RowInfo};
 use crate::references::{ReferenceDocInfo, ReferenceInfo};
 use crate::settings::AppSettings;
 use crate::upload::read_files;
@@ -179,7 +179,7 @@ pub fn ReferencesPage(
 
                 // ── Profile scope (shared across both tabs) ─────────────────────
                 section { class: "references-card",
-                    div { class: "references-row",
+                    div { class: "row",
                         RowInfo {
                             label: "Profile",
                             desc: "References and documentation are added to (and imported/exported for) this profile.",
@@ -213,17 +213,6 @@ pub fn ReferencesPage(
                     },
                 }
             }
-        }
-    }
-}
-
-/// Label + description column, shared by every row on this page.
-#[component]
-fn RowInfo(label: &'static str, desc: String) -> Element {
-    rsx! {
-        div { class: "references-row-info",
-            span { class: "references-row-label", "{label}" }
-            span { class: "references-row-desc", "{desc}" }
         }
     }
 }
@@ -287,7 +276,7 @@ fn AddReferenceForm(
             p { class: "references-card-desc",
                 "Pick the original input form and the resulting AEM package. The form is analysed and described automatically, then stored for matching."
             }
-            div { class: "references-row",
+            div { class: "row",
                 RowInfo { label: "Original PDF(s)", desc: pdf_desc }
                 input {
                     r#type: "file",
@@ -301,7 +290,7 @@ fn AddReferenceForm(
                     },
                 }
             }
-            div { class: "references-row",
+            div { class: "row",
                 RowInfo { label: "Final AEM package", desc: pkg_desc }
                 input {
                     r#type: "file",
@@ -313,7 +302,7 @@ fn AddReferenceForm(
                     },
                 }
             }
-            div { class: "references-row references-row-actions",
+            div { class: "row row-actions",
                 button {
                     class: "btn btn-primary",
                     disabled: busy(),
@@ -523,7 +512,7 @@ fn AddDocumentation(
             p { class: "references-card-desc",
                 "Upload a plain text or Markdown file to keep alongside this profile's references."
             }
-            div { class: "references-row",
+            div { class: "row",
                 RowInfo { label: "Documentation file (.txt / .md)", desc: doc_desc }
                 input {
                     r#type: "file",
@@ -536,7 +525,7 @@ fn AddDocumentation(
                     },
                 }
             }
-            div { class: "references-row references-row-actions",
+            div { class: "row row-actions",
                 button {
                     class: "btn btn-primary",
                     disabled: doc_file.read().is_none(),
@@ -658,7 +647,7 @@ fn ImportExport(
     rsx! {
         section { class: "references-card",
             h3 { "Import / Export" }
-            div { class: "references-row",
+            div { class: "row",
                 RowInfo { label: "Import dataset", desc: import_desc }
                 input {
                     r#type: "file",
@@ -670,7 +659,7 @@ fn ImportExport(
                     },
                 }
             }
-            div { class: "references-row references-row-actions",
+            div { class: "row row-actions",
                 button {
                     class: "btn btn-primary",
                     disabled: busy() || import_file.read().is_none(),
@@ -725,7 +714,7 @@ fn ImportExport(
                     if busy() { "Working…" } else { "Import dataset" }
                 }
             }
-            div { class: "references-row",
+            div { class: "row",
                 RowInfo {
                     label: "Export references",
                     desc: "Save the selected profile's references and documentation to a dataset in your Downloads folder.",
@@ -739,14 +728,15 @@ fn ImportExport(
                             let Some(profile) = require_profile(profile, status) else {
                                 return;
                             };
-                            let Some(home) = dirs::home_dir() else {
-                                status
-                                    .set(Some(Status::Err("Could not find home directory.".into())));
-                                return;
+                            let out = match crate::files::downloads_path(
+                                &format!("references-{profile}.db"),
+                            ) {
+                                Ok(path) => path,
+                                Err(e) => {
+                                    status.set(Some(Status::Err(e)));
+                                    return;
+                                }
                             };
-                            let out = home
-                                .join("Downloads")
-                                .join(format!("references-{profile}.db"));
                             let out_str = out.to_string_lossy().to_string();
                             let res = tokio::task::spawn_blocking(move || {
                                     crate::references::export_references(&out_str, Some(&profile))

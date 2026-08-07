@@ -1,7 +1,19 @@
 //! Shared chrome for the full-page views (settings, reference forms): the page
-//! shell, its header with a Close button, and the scrolling content area.
+//! shell, its header with a Close button, the scrolling content area, and the
+//! label/description column every settings-style row starts with.
 
 use dioxus::prelude::*;
+
+/// The label + description column of a `.row`, on either full-page view.
+#[component]
+pub fn RowInfo(label: &'static str, desc: String) -> Element {
+    rsx! {
+        div { class: "row-info",
+            span { class: "row-label", "{label}" }
+            span { class: "row-desc", "{desc}" }
+        }
+    }
+}
 
 /// A full-page view under the persistent app header.
 #[component]

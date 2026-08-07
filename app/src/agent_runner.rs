@@ -14,7 +14,7 @@
 //! whole run without being evicted.
 //!
 //! `run_role` runs one such stage; the per-stage sequencing lives in
-//! `run_conversion`.
+//! [`Run::execute`].
 
 use dioxus::prelude::*;
 
@@ -83,8 +83,8 @@ Keep every individual call small. Proceed now.";
 
 /// A pipeline stage: a name, the subset of the agent's tools it may call, and a
 /// per-stage turn budget. The system prompt and seed message are supplied per
-/// invocation by `run_conversion` (so the Analyst's plan / Reviewer reports can be
-/// pinned into `system`).
+/// invocation by [`Run::execute`] (so the Analyst's plan / Reviewer reports can
+/// be pinned into `system`).
 struct Role {
     name: &'static str,
     allowed_tools: &'static [&'static str],
@@ -1023,8 +1023,8 @@ async fn run_role(
                 push_step(
                     processing_state,
                     thought(
-                        "Turn hit the output-token limit — asking the agent to author the tree \
-                         incrementally instead of in one call.",
+                        "Turn hit the output-token limit — asking the agent to build the \
+                         result incrementally instead of in one call.",
                     ),
                 );
                 continue;
@@ -1643,6 +1643,8 @@ mod tests {
             roles.analyst.max_tokens_nudge,
             roles.reviewer.max_tokens_nudge,
             roles.author.stuck_activity,
+            roles.analyst.stuck_activity,
+            roles.reviewer.stuck_activity,
         ];
 
         for text in prose {

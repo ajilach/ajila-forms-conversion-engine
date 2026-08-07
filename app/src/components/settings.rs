@@ -7,7 +7,7 @@
 
 use dioxus::prelude::*;
 
-use super::page::FullPage;
+use super::page::{FullPage, RowInfo};
 use crate::settings::AppSettings;
 
 /// Hardcoded fallback Anthropic model list, used when models cannot be fetched from the API.
@@ -115,7 +115,7 @@ pub fn SettingsPage(
                         }
                         div { class: "settings-section",
                             h3 { class: "settings-section-title", "Claude Desktop" }
-                            div { class: "settings-row",
+                            div { class: "row",
                                 RowInfo {
                                     label: "Blueprint MCP server",
                                     desc: "Register Blueprint's conversion tools with Claude Desktop so you can drive conversions from Claude. Restart Claude Desktop after installing.",
@@ -220,7 +220,7 @@ pub fn SettingsPage(
                         }
                         div { class: "settings-section",
                             h3 { class: "settings-section-title", "Custom instructions" }
-                            div { class: "settings-row settings-row-stack",
+                            div { class: "row row-stack",
                                 RowInfo {
                                     label: "Agent (AI processing)",
                                     desc: "Extra instructions appended to the autonomous conversion agent's system prompt. Applied to AI processing and feedback re-runs.",
@@ -276,7 +276,7 @@ pub fn SettingsPage(
                     SettingsTab::References => rsx! {
                         div { class: "settings-section",
                             h3 { class: "settings-section-title", "Reference forms" }
-                            div { class: "settings-row",
+                            div { class: "row",
                                 RowInfo {
                                     label: "Manage reference forms",
                                     desc: "Add, import, export, and delete the reference forms used for matching.",
@@ -298,17 +298,6 @@ pub fn SettingsPage(
     }
 }
 
-/// The label + description column every settings row starts with.
-#[component]
-fn RowInfo(label: &'static str, desc: &'static str) -> Element {
-    rsx! {
-        div { class: "settings-row-info",
-            span { class: "settings-row-label", "{label}" }
-            span { class: "settings-row-desc", "{desc}" }
-        }
-    }
-}
-
 /// A settings row carrying an on/off switch.
 #[component]
 fn ToggleRow(
@@ -318,7 +307,7 @@ fn ToggleRow(
     on_toggle: EventHandler<bool>,
 ) -> Element {
     rsx! {
-        div { class: "settings-row",
+        div { class: "row",
             RowInfo { label, desc }
             label { class: "toggle-switch",
                 input {
@@ -343,7 +332,7 @@ fn TextRow(
     on_change: EventHandler<String>,
 ) -> Element {
     rsx! {
-        div { class: "settings-row",
+        div { class: "row",
             RowInfo { label, desc }
             input {
                 class: "settings-input-text",
@@ -368,7 +357,7 @@ fn NumberRow(
     on_change: EventHandler<usize>,
 ) -> Element {
     rsx! {
-        div { class: "settings-row",
+        div { class: "row",
             RowInfo { label, desc }
             input {
                 class: "settings-input-number",
@@ -396,7 +385,7 @@ fn SelectRow(
     on_change: EventHandler<String>,
 ) -> Element {
     rsx! {
-        div { class: "settings-row",
+        div { class: "row",
             RowInfo { label, desc }
             select {
                 class: "settings-select",

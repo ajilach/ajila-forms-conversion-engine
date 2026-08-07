@@ -84,7 +84,7 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    /// Push runtime tuning (currently history eviction) into the platform layer.
+    /// Push runtime tuning (currently history eviction) into [`crate::llm`].
     /// Call at startup and whenever settings change.
     pub fn apply_runtime_config(&self) {
         crate::llm::configure_eviction(

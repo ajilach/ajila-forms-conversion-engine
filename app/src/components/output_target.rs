@@ -9,13 +9,13 @@ use dioxus::prelude::*;
 
 use blueprint::OutputTarget;
 
+/// DOM id of the `<select>`, so the label can point at it.
+const SELECT_ID: &str = "agent-target-select";
+
 /// A `<select>` over the output targets the chosen profile supports.
 ///
 /// Renders nothing when the profile supports fewer than two — there is no
 /// choice to make, and an empty picker is just noise.
-/// DOM id of the `<select>`, so the label can point at it.
-const SELECT_ID: &str = "agent-target-select";
-
 #[component]
 pub fn OutputTargetSelector(
     /// The currently selected profile; its sections decide the options.

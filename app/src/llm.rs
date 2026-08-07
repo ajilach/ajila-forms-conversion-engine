@@ -637,7 +637,6 @@ pub async fn anthropic_agentic_turn(
 /// The output of [`prepare_request_body`]: the (possibly evicted) history, the
 /// serialized request bytes, and the raw token estimate of what was assembled.
 struct PreparedRequest {
-    history: Vec<serde_json::Value>,
     body: Vec<u8>,
     sent_estimate: usize,
 }
@@ -651,15 +650,20 @@ struct PreparedRequest {
 /// all happens inside [`tokio::task::spawn_blocking`] instead. Ownership of
 /// `history` is moved in and returned so the caller can restore it.
 async fn prepare_request_body(
-    history: Vec<serde_json::Value>,
+    history: &mut Vec<serde_json::Value>,
     tools: Vec<serde_json::Value>,
     system: Option<String>,
     model: String,
     max_tokens: u32,
     target: usize,
-) -> Result<PreparedRequest, (Vec<serde_json::Value>, String)> {
+) -> Result<PreparedRequest, String> {
+    // The transcript is moved into the blocking task and written back on every
+    // path out of it. Borrowing rather than taking the `Vec` is the point: the
+    // caller retries this turn after a failure, and a caller that forgot to put
+    // the history back would silently resume the stage having forgotten its work.
+    let taken = std::mem::take(history);
     let prepared = tokio::task::spawn_blocking(move || {
-        let mut history = history;
+        let mut history = taken;
         evict_to_fit(&mut history, &tools, system.as_deref(), target);
         let sent_estimate = assembled_prompt_estimate(&history, &tools, system.as_deref());
 
@@ -679,23 +683,32 @@ async fn prepare_request_body(
         if let Some(s) = system.as_deref().filter(|s| !s.is_empty()) {
             request["system"] = cache_marked_system(s);
         }
-        // Both outcomes carry the history back out, so the caller can restore it.
+        // Both outcomes carry the (possibly evicted) history back out.
         match serde_json::to_vec(&request) {
-            Ok(body) => Ok(PreparedRequest {
+            Ok(body) => Ok((
                 history,
-                body,
-                sent_estimate,
-            }),
+                PreparedRequest {
+                    body,
+                    sent_estimate,
+                },
+            )),
             Err(e) => Err((history, format!("Failed to serialize request: {e}"))),
         }
     })
     .await;
 
     match prepared {
-        Ok(result) => result,
-        // The task panicked, taking the moved history with it; there is nothing
-        // left to restore, so hand back an empty one with the error.
-        Err(e) => Err((Vec::new(), format!("Request preparation task failed: {e}"))),
+        Ok(Ok((returned, prepared))) => {
+            *history = returned;
+            Ok(prepared)
+        }
+        Ok(Err((returned, e))) => {
+            *history = returned;
+            Err(e)
+        }
+        // Only a panic inside the blocking task reaches here, and it took the
+        // moved transcript with it — there is nothing left to restore.
+        Err(e) => Err(format!("Request preparation task failed: {e}")),
     }
 }
 
@@ -757,26 +770,15 @@ pub async fn anthropic_stream_turn(
     let client = streaming_client();
 
     let (response, sent_estimate) = loop {
-        // `history` is moved into the blocking task and handed back, so a failure
-        // has to put it back before propagating: the caller's Retry re-sends this
-        // turn, and an emptied transcript would silently restart the stage.
-        let prepared = match prepare_request_body(
-            std::mem::take(history),
+        let prepared = prepare_request_body(
+            history,
             tools.to_vec(),
             system.map(str::to_string),
             model.to_string(),
             max_tokens,
             target,
         )
-        .await
-        {
-            Ok(prepared) => prepared,
-            Err((restored, e)) => {
-                *history = restored;
-                return Err(e);
-            }
-        };
-        *history = prepared.history;
+        .await?;
 
         let response = client
             .post("https://api.anthropic.com/v1/messages")
@@ -1009,12 +1011,16 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// Preparation moves the transcript into a blocking task and hands it back.
-    /// Losing it would be silent and fatal: the caller re-sends this turn on
-    /// Retry, and an emptied history restarts the stage with no memory of the
-    /// work it had already done.
+    /// Preparation moves the transcript into a blocking task. Whatever happens
+    /// in there, the caller's `history` must come back populated: the caller
+    /// retries this very turn on failure, and an emptied transcript would
+    /// silently resume the stage having forgotten everything it had done.
+    ///
+    /// The borrow in the signature is what actually guarantees this — there is
+    /// no path on which a caller holds a moved-out `Vec`. This pins the
+    /// observable half: the history is restored, and eviction is applied to it.
     #[tokio::test]
-    async fn request_preparation_returns_the_history_it_was_given() {
+    async fn request_preparation_leaves_the_history_populated() {
         let history = vec![
             user_text("kickoff"),
             assistant_tool_use("tu1", "get_source_info", &json!({})),
@@ -1022,21 +1028,38 @@ mod tests {
         ];
         let tools = vec![json!({"name": "t", "description": "d", "input_schema": {}})];
 
+        // Under budget: eviction is a no-op, so it must come back untouched.
+        let mut untouched = history.clone();
         let prepared = prepare_request_body(
-            history.clone(),
-            tools,
+            &mut untouched,
+            tools.clone(),
             Some("system".to_string()),
             "claude-opus-4-8".to_string(),
             1000,
-            // Far above the assembled size, so eviction is a no-op and the
-            // history must come back byte-identical.
             1_000_000,
         )
         .await
         .expect("a serializable request prepares");
-
-        assert_eq!(prepared.history, history);
+        assert_eq!(untouched, history);
         assert!(!prepared.body.is_empty());
+
+        // Over budget: eviction rewrites it, but it is still handed back — the
+        // caller must never be left holding an empty transcript.
+        let mut evicted = history.clone();
+        prepare_request_body(
+            &mut evicted,
+            tools,
+            Some("system".to_string()),
+            "claude-opus-4-8".to_string(),
+            1000,
+            1,
+        )
+        .await
+        .expect("a serializable request prepares");
+        assert!(
+            !evicted.is_empty(),
+            "eviction must shrink the history, never hand back nothing"
+        );
     }
 
     /// The two model tables live together; keep their groupings pinned so a new
