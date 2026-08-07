@@ -17,22 +17,6 @@ use crate::upload::read_files;
 /// Prompt sent to the LLM to describe an input form when adding a reference.
 /// The model is given tools to analyse the inputs first (see
 /// [`crate::ai_tools::build_describe_tools`]).
-const DESCRIBE_PROMPT: &str = "\
-You are cataloguing a reference form so it can later be matched against similar forms. \
-First ANALYSE THE INPUTS using the tools: inspect the source form via `list_states`, \
-`get_plain_state_image`, `get_flattened_structure_for_state`, and `get_xfa` (the XFA is the \
-authoritative field/label/option source), and inspect the resulting AEM package via \
-`list_package_files` and `read_package_file`. Call as many as you need before answering.\n\n\
-Then write a detailed description covering: the overall purpose; each section and its heading; \
-the fields in order with their literal labels and types (text, date, number, select, radio, \
-checkbox); logical groupings (address blocks, signature blocks, account-holder / client-details \
-sections, type selectors like 'Tipo'/'Type'); and any dynamic behaviour (repeatable sections, \
-conditional show/hide). Use precise, literal labels.\n\n\
-Output ONLY the description text itself, as prose with no markdown. Do NOT include any preamble, \
-sign-off, or meta-commentary about your analysis, the tools, or the sources. Never write sentences \
-like \"I now have a complete picture...\", \"Based on the XFA and AEM package...\", or \"Here is the \
-catalogue description.\". Begin immediately with the form's purpose (e.g. \"This form ...\").";
-
 /// The manager's tabs, in the order they are shown.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum RefTab {
@@ -328,41 +312,14 @@ fn AddReferenceForm(
                                 return;
                             }
                             busy.set(true);
-                            status.set(Some(Status::Ok("Unpacking the AEM package…".into())));
+                            status.set(Some(Status::Ok("Analysing the inputs…".into())));
 
-                            // Unzip the package so the model can read it via tools.
-                            let files = match tokio::task::spawn_blocking(move || {
-                                    crate::references::unzip_package(&pkg_bytes)
-                                })
-                                .await
-                                .unwrap_or_else(|e| Err(e.to_string()))
-                            {
-                                Ok(f) => f,
-                                Err(e) => {
-                                    busy.set(false);
-                                    status.set(Some(Status::Err(format!("Unzip failed: {e}"))));
-                                    return;
-                                }
-                            };
-
-                            // Build the analysis tools (form states/XFA + package files).
-                            status.set(Some(Status::Ok("Analyzing the inputs…".into())));
-                            let tools = crate::ai_tools::build_describe_tools(
+                            let description = match crate::agent_runner::describe_reference(
+                                    &profile,
                                     pdf_data.clone(),
-                                    files.clone(),
-                                    Some(profile.as_str()),
-                                )
-                                .await;
-
-                            let mut history: Vec<serde_json::Value> = Vec::new();
-                            let description = match crate::llm::anthropic_agentic_turn(
-                                    &mut history,
-                                    DESCRIBE_PROMPT,
-                                    &api_key,
-                                    &model,
-                                    4000,
-                                    &tools.tools(),
-                                    |name, input| tools.execute(name, input),
+                                    pkg_bytes.clone(),
+                                    api_key,
+                                    model,
                                 )
                                 .await
                             {
@@ -375,29 +332,12 @@ fn AddReferenceForm(
                             };
 
                             status.set(Some(Status::Ok("Saving the reference…".into())));
-                            // Label from the first PDF; note how many more were bundled.
-                            let first = pdf_data[0].0.trim_end_matches(".pdf").to_string();
-                            let label = if pdf_data.len() > 1 {
-                                format!("{first} (+{} more)", pdf_data.len() - 1)
-                            } else {
-                                first
-                            };
                             let result = tokio::task::spawn_blocking(move || {
-                                    let emb = crate::references::embed_description(&description)?;
-                                    // Order-independent content hash over all PDFs (as sessions hash).
-                                    let ref_id = crate::references::compute_ref_id(&pdf_data);
-                                    let rows: Vec<(u32, Vec<u8>)> = pdf_data
-                                        .into_iter()
-                                        .map(|(_, b)| (crate::references::pdf_state_count(&b), b))
-                                        .collect();
-                                    crate::references::add_reference(
+                                    crate::references::ingest_reference(
                                         &profile,
-                                        &ref_id,
-                                        &label,
+                                        pdf_data,
+                                        &pkg_bytes,
                                         &description,
-                                        &emb,
-                                        &rows,
-                                        &files,
                                     )
                                 })
                                 .await

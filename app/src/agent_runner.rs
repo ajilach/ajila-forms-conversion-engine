@@ -330,3 +330,32 @@ async fn drive(
 
     current_session.set(Some(structured_session));
 }
+
+/// Describe a reference form so the reference store can match against it.
+///
+/// The same stage machinery as a conversion, over the same tool catalog — this
+/// wrapper only supplies the transport and swallows progress, since the
+/// references page reports status itself.
+pub async fn describe_reference(
+    profile: &str,
+    pdfs: Vec<(String, Vec<u8>)>,
+    package_zip: Vec<u8>,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
+    let max_tokens = crate::llm::max_output_tokens_for(&model);
+    let turns = AnthropicTurns {
+        api_key,
+        model,
+        max_tokens,
+    };
+    pipeline::describe::describe_reference(
+        profile,
+        pdfs,
+        package_zip,
+        &AbortFlag::default(),
+        &turns,
+        &mut pipeline::NullObserver,
+    )
+    .await
+}

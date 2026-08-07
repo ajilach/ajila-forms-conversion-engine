@@ -25,19 +25,9 @@ fn describe_error(e: &reqwest::Error) -> String {
     msg
 }
 
-// ── Agentic tool loop (Anthropic) ────────────────────────────────────
-
-// `ToolReply` is the engine executor's return type; it lives in the headless
-// `agent` crate. Re-export so `crate::llm::ToolReply` keeps resolving.
-pub use agent::ToolReply;
-
 // A turn's shape is the controller's vocabulary, so it lives in `pipeline`;
 // this module is one implementation of `pipeline::TurnProvider`.
 pub use pipeline::{ToolCall, TurnOutput};
-
-/// Maximum number of tool round-trips before the loop bails out. Guards against
-/// a model that keeps calling tools without ever producing a final answer.
-const MAX_TOOL_ITERATIONS: usize = 16;
 
 // ── Prompt caching + history eviction (shared by every Messages-API path) ────
 
@@ -613,70 +603,6 @@ fn cache_marked_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
     tools_cached
 }
 
-/// Run an agentic (tool-enabled) conversation turn against the Anthropic
-/// Messages API and return the model's final text once it stops requesting
-/// tools.
-///
-/// `tools` is the list of Anthropic tool definitions (`{name, description,
-/// input_schema}`). On each round the model may emit `tool_use` blocks; for
-/// each one `execute(name, &input)` is invoked and its [`ToolReply`] is fed back
-/// as a `tool_result`. The loop continues until the model returns without a
-/// `tool_use` stop reason (or [`MAX_TOOL_ITERATIONS`] is hit).
-///
-/// The assistant `tool_use` messages and the user `tool_result` messages are
-/// appended to `history`, so a subsequent turn continues the same thread.
-pub async fn anthropic_agentic_turn(
-    history: &mut Vec<serde_json::Value>,
-    user_text: &str,
-    api_key: &str,
-    model: &str,
-    max_tokens: u32,
-    tools: &[serde_json::Value],
-    mut execute: impl FnMut(&str, &serde_json::Value) -> ToolReply,
-) -> Result<String, String> {
-    // Seed the conversation with the user's prompt.
-    history.push(serde_json::json!({
-        "role": "user",
-        "content": [{"type": "text", "text": user_text}],
-    }));
-
-    // The reference-describe loop is not an abortable run, so it holds a flag
-    // that is never set.
-    let never_aborted = crate::models::AbortFlag::default();
-
-    // Thin loop over the shared turn primitive: [`anthropic_stream_turn`] owns
-    // request building, SSE parsing, prompt caching and history eviction. Here
-    // we only drive the tool round-trips with the synchronous `execute` closure,
-    // reusing [`tool_result_message`] for the result blocks.
-    for _ in 0..MAX_TOOL_ITERATIONS {
-        let turn = anthropic_stream_turn(
-            history,
-            tools,
-            api_key,
-            model,
-            max_tokens,
-            None,
-            &never_aborted,
-        )
-        .await?;
-
-        // Done unless the model asked for tools.
-        if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
-            return Ok(turn.text);
-        }
-
-        let results: Vec<(String, ToolReply)> = turn
-            .tool_calls
-            .iter()
-            .map(|tc| (tc.id.clone(), execute(&tc.name, &tc.input)))
-            .collect();
-        history.push(tool_result_message(results));
-    }
-
-    Err(format!(
-        "Anthropic tool loop did not converge after {MAX_TOOL_ITERATIONS} iterations."
-    ))
-}
 
 /// The output of [`prepare_request_body`]: the (possibly evicted) history, the
 /// serialized request bytes, and the raw token estimate of what was assembled.
@@ -982,40 +908,6 @@ pub async fn anthropic_stream_turn(
         stop_reason,
         prompt_tokens,
     })
-}
-
-/// Build the user `tool_result` message for a batch of executed tool calls.
-/// Each entry is `(tool_use_id, ToolReply)`. Append the result to `history`
-/// before the next [`anthropic_stream_turn`].
-pub fn tool_result_message(results: Vec<(String, ToolReply)>) -> serde_json::Value {
-    let content: Vec<serde_json::Value> = results
-        .into_iter()
-        .map(|(id, reply)| match reply {
-            ToolReply::Text(text) => serde_json::json!({
-                "type": "tool_result",
-                "tool_use_id": id,
-                "content": [{"type": "text", "text": text}],
-            }),
-            ToolReply::Image { media_type, images } => serde_json::json!({
-                "type": "tool_result",
-                "tool_use_id": id,
-                "content": images
-                    .into_iter()
-                    .map(|b64| serde_json::json!({
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": media_type, "data": b64},
-                    }))
-                    .collect::<Vec<_>>(),
-            }),
-            ToolReply::Error(msg) => serde_json::json!({
-                "type": "tool_result",
-                "tool_use_id": id,
-                "is_error": true,
-                "content": [{"type": "text", "text": msg}],
-            }),
-        })
-        .collect();
-    serde_json::json!({ "role": "user", "content": content })
 }
 
 /// Fetch the list of available model IDs from the Anthropic API, sorted

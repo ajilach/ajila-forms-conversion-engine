@@ -636,6 +636,51 @@ mod imp {
         crate::db::document_hash(pdfs)
     }
 
+    /// Store a described reference form: unzip the package, embed the
+    /// description, hash the PDFs into a stable id, and write the row.
+    ///
+    /// Everything a caller does between "the model wrote a description" and "the
+    /// reference exists" — previously eighty lines inlined in a button's
+    /// `onclick`, where none of it could be tested.
+    pub fn ingest_reference(
+        profile: &str,
+        pdfs: Vec<(String, Vec<u8>)>,
+        package_zip: &[u8],
+        description: &str,
+    ) -> Result<(), String> {
+        if pdfs.is_empty() {
+            return Err("A reference form needs at least one source PDF.".into());
+        }
+        let files = unzip_package(package_zip)?;
+        let embedding = embed_description(description)?;
+        let ref_id = compute_ref_id(&pdfs);
+        let label = reference_label(&pdfs);
+        let rows: Vec<(u32, Vec<u8>)> = pdfs
+            .into_iter()
+            .map(|(_, bytes)| (pdf_state_count(&bytes), bytes))
+            .collect();
+        add_reference(
+            profile,
+            &ref_id,
+            &label,
+            description,
+            &embedding,
+            &rows,
+            &files,
+        )
+    }
+
+    /// Display label for a reference: the first PDF's stem, noting how many more
+    /// were bundled with it.
+    fn reference_label(pdfs: &[(String, Vec<u8>)]) -> String {
+        let first = pdfs[0].0.trim_end_matches(".pdf").to_string();
+        if pdfs.len() > 1 {
+            format!("{first} (+{} more)", pdfs.len() - 1)
+        } else {
+            first
+        }
+    }
+
     /// Unzip an AEM package (FileVault ZIP) into `(path, content)` text rows.
     /// Binary / non-UTF-8 entries and directories are skipped.
     pub fn unzip_package(zip_bytes: &[u8]) -> Result<Vec<(String, String)>, String> {

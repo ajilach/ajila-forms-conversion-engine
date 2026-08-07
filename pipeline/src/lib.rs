@@ -14,6 +14,7 @@
 //! by a scripted provider and a recording observer, with no network and no
 //! desktop runtime.
 
+pub mod describe;
 pub mod observer;
 pub mod roles;
 pub mod run;

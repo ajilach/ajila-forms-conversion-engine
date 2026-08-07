@@ -87,7 +87,7 @@ pub async fn run(
                 role: "Analyst",
                 doing: "analysing the source and researching precedents".into(),
             });
-            plan = run_role(
+            plan = run_stage(
                 &mut agent,
                 stages.analyst,
                 &roles::sys_analyst(target, extra),
@@ -111,7 +111,7 @@ pub async fn run(
     } else {
         stages.author_fix_seed
     };
-    run_role(
+    run_stage(
         &mut agent,
         stages.author,
         &roles::sys_author(target, extra, config.template_note, &plan, &reviews),
@@ -130,7 +130,7 @@ pub async fn run(
             role: "Reviewer",
             doing: format!("reviewing (round {})", round + 1),
         });
-        run_role(
+        run_stage(
             &mut agent,
             stages.reviewer,
             &roles::sys_reviewer(target, extra, &plan, &reviews),
@@ -158,7 +158,7 @@ pub async fn run(
                     role: "Author",
                     doing: format!("applying review feedback (round {})", round + 1),
                 });
-                run_role(
+                run_stage(
                     &mut agent,
                     stages.author,
                     &roles::sys_author(target, extra, config.template_note, &plan, &reviews),
@@ -450,11 +450,11 @@ fn max_tokens_nudge(role: &Role, tool_calls: &[ToolCall]) -> serde_json::Value {
     serde_json::json!({"role": "user", "content": content})
 }
 
-/// Drive one role stage to completion: fresh bounded history seeded with
+/// Drive one stage to completion: fresh bounded history seeded with
 /// `seed_user_msg`, the stage's scoped tool subset, and its `system` prompt, over
 /// the same [`TurnProvider`] as every other stage. Returns the last non-tool
 /// assistant message; `None` if the run should stop.
-async fn run_role(
+pub(crate) async fn run_stage(
     agent: &mut ConversionAgent,
     role: &Role,
     system: &str,

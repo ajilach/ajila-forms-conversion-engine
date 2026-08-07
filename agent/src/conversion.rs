@@ -865,6 +865,9 @@ pub struct ConversionAgent {
     /// The Reviewer role's latest `submit_review` outcome, drained by the
     /// controller via [`take_review`](Self::take_review).
     review: Option<ReviewResult>,
+
+    /// Scale for on-demand page renders; see [`ConversionAgent::with_render_scale`].
+    render_scale: f32,
 }
 
 impl ConversionAgent {
@@ -921,6 +924,7 @@ impl ConversionAgent {
             target: target_state,
             structured_session,
             matcher: None,
+            render_scale: RENDER_SCALE,
             review: None,
         };
         // Record the pre-loaded template as the initial AEM edit so it shows in
@@ -975,6 +979,26 @@ impl ConversionAgent {
             aem.tree = Some(tree);
             aem.package = None;
         }
+    }
+
+    /// Point the package tools at an existing FileVault ZIP instead of one this
+    /// agent built. Lets a read-only caller — the describe-a-reference step —
+    /// inspect an uploaded package with `get_package_info` / `read_package_file`.
+    pub fn seed_package(&mut self, zip: Vec<u8>) {
+        if let Some(aem) = self.target.aem_mut() {
+            aem.package = Some(zip);
+        }
+    }
+
+    /// Override the scale on-demand page images are rendered at.
+    ///
+    /// Vision tokens scale with pixel area, so a read-only pass that only has to
+    /// *read* a form can halve its image cost. Set at construction rather than
+    /// exposed as a tool argument: the model should not be able to spend more by
+    /// choosing.
+    pub fn with_render_scale(mut self, scale: f32) -> Self {
+        self.render_scale = scale;
+        self
     }
 
     // ── Public accessors (for the driving loop's result finalization) ─────────
@@ -1399,11 +1423,15 @@ pub mod scope {
     pub const REDACTO_REVIEWER: Mask = 1 << 5;
     /// An external MCP client, which drives the tools itself.
     pub const MCP: Mask = 1 << 6;
+    /// The read-only pass that writes a reference form's description. Sees the
+    /// source and the package; edits nothing.
+    pub const DESCRIBE: Mask = 1 << 7;
 
     pub const AEM_STAGES: Mask = AEM_ANALYST | AEM_AUTHOR | AEM_REVIEWER;
     pub const REDACTO_STAGES: Mask = REDACTO_ANALYST | REDACTO_AUTHOR | REDACTO_REVIEWER;
     pub const ALL_STAGES: Mask = AEM_STAGES | REDACTO_STAGES;
-    pub const EVERYWHERE: Mask = ALL_STAGES | MCP;
+    /// Every caller, the read-only describe pass included.
+    pub const EVERYWHERE: Mask = ALL_STAGES | MCP | DESCRIBE;
 }
 
 /// One entry in the tool catalog: the Anthropic-style JSON spec plus the scopes
@@ -1486,13 +1514,13 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
         // get_source_info: it reviews the built package against the tree, and
         // the Redacto Reviewer needs it only because languages are the thing it
         // checks. Preserved as-is rather than quietly widened.
-        ("get_source_info",                   target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_STAGES | MCP),
-        ("list_states",                       target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
-        ("get_xfa",                           target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+        ("get_source_info",                   target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_STAGES | MCP | DESCRIBE),
+        ("list_states",                       target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP | DESCRIBE),
+        ("get_xfa",                           target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP | DESCRIBE),
         ("search_xfa",                        target::BOTH,    EVERYWHERE),
         ("get_plain_state_image",             target::BOTH,    EVERYWHERE),
         ("get_annotated_state_image",         target::BOTH,    EVERYWHERE),
-        ("get_flattened_structure_for_state", target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+        ("get_flattened_structure_for_state", target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP | DESCRIBE),
 
         // §2a structured tree — executable under both targets (a resumed AEM
         // session seeds it), but only ever offered to the Redacto stages.
@@ -1522,8 +1550,8 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
 
         // §4 AEM package.
         ("build_aem_package",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
-        ("get_package_info",                  target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
-        ("read_package_file",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("get_package_info",                  target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP | DESCRIBE),
+        ("read_package_file",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP | DESCRIBE),
         ("validate_aem_package",              target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
         ("review_output",                     target::AEM,     AEM_REVIEWER | MCP),
 
@@ -1974,15 +2002,16 @@ impl ConversionAgent {
                     .unwrap_or_default()
                     .to_string();
                 let annotated = name == "get_annotated_state_image";
+                let scale = self.render_scale;
                 match self.extractor(input) {
                     Ok(ex) => match ex.find(&label) {
                         Some(rec) => {
                             // Render one image per page so no single image exceeds
                             // the vision API's size limit on tall multi-page forms.
                             let pages = if annotated {
-                                rec.state.render_annotated_pages(RENDER_SCALE)
+                                rec.state.render_annotated_pages(scale)
                             } else {
-                                rec.state.render_plain_pages(RENDER_SCALE)
+                                rec.state.render_plain_pages(scale)
                             };
                             match pages.map_err(|e| e.to_string()).and_then(|imgs| {
                                 imgs.iter()
