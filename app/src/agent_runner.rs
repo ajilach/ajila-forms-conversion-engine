@@ -1164,7 +1164,6 @@ fn build_outputs(
             // language variant carries its own — so ask for the master
             // language's rather than taking whichever was uploaded first.
             let master = profile
-                .as_deref()
                 .and_then(blueprint::redacto_master_language)
                 .unwrap_or_else(|| agent.context().language().to_string());
             let context = agent.source_context(&master);
