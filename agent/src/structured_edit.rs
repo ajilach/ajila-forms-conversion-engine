@@ -221,6 +221,32 @@ pub fn set_field(
     Ok(format!("OK — set `{field}` on {path} ({ty})."))
 }
 
+/// Apply many [`set_field`] edits in one go, all-or-nothing.
+///
+/// Exists so that adding a language to a document is one call rather than one
+/// per text node. Without it the cheapest way to translate a seeded tree is to
+/// re-emit the whole thing, which throws away the structure the seed carried —
+/// the grouping, the multi-column sections and the heading levels the engine
+/// already got right.
+///
+/// Edits are applied to a copy and swapped in only if every one succeeds, so a
+/// single bad value leaves the tree exactly as it was.
+pub fn set_fields(
+    roots: &mut Vec<StructuredNode>,
+    edits: &[(String, String, serde_json::Value)],
+) -> Result<String, String> {
+    if edits.is_empty() {
+        return Err("no edits given".into());
+    }
+    let mut draft = roots.clone();
+    for (index, (path, field, value)) in edits.iter().enumerate() {
+        set_field(&mut draft, path, field, value.clone())
+            .map_err(|e| format!("edit {index} ({path}, `{field}`) failed: {e}; nothing applied"))?;
+    }
+    *roots = draft;
+    Ok(format!("OK — applied {} edit(s).", edits.len()))
+}
+
 /// Replace the whole node at `path` with `node_json`.
 pub fn replace_node(
     roots: &mut [StructuredNode],
@@ -526,6 +552,51 @@ mod tests {
 
         assert!(!plain.contains("column flow"), "{plain}");
         assert!(columns.contains("column flow"), "{columns}");
+    }
+
+    /// Adding a language must not cost one call per node — that price is what
+    /// drove the whole-tree rewrite that flattened the document's structure.
+    #[test]
+    fn set_fields_applies_every_edit_in_one_call() {
+        let mut tree = sample();
+
+        set_fields(
+            &mut tree,
+            &[
+                ("0/children/0".into(), "required".into(), json!(true)),
+                ("0".into(), "columnFlow".into(), json!(true)),
+            ],
+        )
+        .unwrap();
+
+        let out = outline(&tree);
+        assert!(out.contains("column flow"), "{out}");
+        let node = resolve_mut(&mut tree, "0/children/0").unwrap();
+        assert!(serde_json::to_value(&*node).unwrap()["required"].as_bool() == Some(true));
+    }
+
+    /// All-or-nothing, so one bad value cannot leave a half-translated tree.
+    #[test]
+    fn set_fields_applies_nothing_when_one_edit_is_invalid() {
+        let mut tree = sample();
+        let before = serde_json::to_value(&tree).unwrap();
+
+        let err = set_fields(
+            &mut tree,
+            &[
+                ("0".into(), "columnFlow".into(), json!(true)),
+                ("0".into(), "columnFlow".into(), json!("not a bool")),
+            ],
+        )
+        .unwrap_err();
+
+        assert!(err.contains("edit 1"), "the failing edit must be named: {err}");
+        assert!(err.contains("nothing applied"), "{err}");
+        assert_eq!(
+            serde_json::to_value(&tree).unwrap(),
+            before,
+            "a rejected batch must leave the tree untouched"
+        );
     }
 
     #[test]

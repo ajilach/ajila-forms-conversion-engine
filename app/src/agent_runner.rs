@@ -241,10 +241,14 @@ const REDACTO_AUTHOR: Role = Role {
         "get_plain_state_image",
         "get_annotated_state_image",
         "seed_structured_from_state",
-        "set_structured",
+        // Deliberately NOT `set_structured`: a whole-tree write is the cheapest
+        // way to add languages and it silently discards the grouping and
+        // multi-column sections the seed carried. `set_structured_fields` does
+        // the same job in one call without touching the structure.
         "get_structured_outline",
         "get_structured_node",
         "set_structured_field",
+        "set_structured_fields",
         "replace_structured_node",
         "insert_structured_node",
         "remove_structured_node",
@@ -1155,9 +1159,15 @@ fn build_outputs(
             // the inline markup, which would turn a loud failure into a dump
             // that imports a multilingual document as one fake locale.
             let content = agent.structured().to_vec();
-            // Only the extractor's context carries the master-page header the
-            // analysis recovered; `agent.context()` never has it.
-            let context = agent.source_envelope().context;
+            // Only the extractor's contexts carry the master-page header the
+            // analysis recovered (`agent.context()` never has it), and each
+            // language variant carries its own — so ask for the master
+            // language's rather than taking whichever was uploaded first.
+            let master = profile
+                .as_deref()
+                .and_then(blueprint::redacto_master_language)
+                .unwrap_or_else(|| agent.context().language().to_string());
+            let context = agent.source_context(&master);
 
             let envelope = DocumentEnvelope {
                 context,
@@ -1437,7 +1447,20 @@ mod tests {
                 .allowed_tools
                 .contains(&"set_structured_field")
         );
+        assert!(
+            REDACTO_AUTHOR
+                .allowed_tools
+                .contains(&"set_structured_fields")
+        );
         assert!(REDACTO_AUTHOR.allowed_tools.contains(&"build_redacto_dump"));
+        // Regression: a whole-tree write is the cheapest way to add languages,
+        // and the agent duly took it — flattening the seeded multi-column groups
+        // into 92 flat nodes and losing every styled panel.
+        // `set_structured_fields` does the same job without touching structure.
+        assert!(
+            !REDACTO_AUTHOR.allowed_tools.contains(&"set_structured"),
+            "a whole-tree write discards the structure the seed carried"
+        );
         // ...and must never reach for the AEM machinery.
         for forbidden in [
             "set_aem_translated",
@@ -1621,6 +1644,13 @@ mod tests {
         }
         assert!(prompts[1].contains("seed_structured_from_state"));
         assert!(prompts[1].contains("build_redacto_dump"));
+        // The Author must be pointed at the batch editor and told the seeded
+        // structure is not to be re-created — without both, translating the
+        // document by rebuilding it is the cheaper path and the layout is lost.
+        assert!(prompts[1].contains("set_structured_fields"));
+        assert!(prompts[1].contains("columnFlow"));
+        // …and told where a flattened layout would show up.
+        assert!(prompts[1].contains("styled_panels"));
 
         // The AEM prompts must be untouched by the split.
         let aem = sys_author(blueprint::OutputTarget::Aem, "", "", "", &[]);

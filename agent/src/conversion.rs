@@ -394,24 +394,34 @@ final document; don't invent translations, and never drop a language the source 
 engine has already parsed that variant correctly — block structure, heading levels, list nesting, \
 inline markup, footnote markers and multi-column sections all intact. Re-emitting that yourself \
 with set_structured would lose exactly those details. Seed first, always.\n\
-3. Layer in the other languages. There is no automated merge — YOU pair the languages, because you \
-can read every one of them and see the rendered pages. For each state in another language, read it \
-with get_flattened_structure_for_state and add its text to the corresponding node: \
-get_structured_outline maps every node by path, get_structured_node shows a node's exact shape, and \
-set_structured_field writes one field back. Every text is a per-language map like \
-{\"de\":[…],\"en\":[…]} — call get_schema('structured') for the exact shape. Pair by meaning and \
-layout position (use the page images), never by guesswork. Never leave a language blank, and never \
-collapse a multilingual text onto a single entry.\n\
+3. Layer in the other languages WITHOUT rebuilding the tree. There is no automated merge — YOU pair \
+the languages, because you can read every one of them and see the rendered pages. For each state in \
+another language, read it with get_flattened_structure_for_state, then map its text onto the seeded \
+nodes: get_structured_outline lists every node by path, get_structured_node shows a node's exact \
+shape, and set_structured_fields writes MANY nodes back in ONE call (an array of \
+{path, field, value}). Every text is a per-language map like {\"de\":[…],\"en\":[…]} — call \
+get_schema('structured') for the exact shape, and always write the map with EVERY language at once, \
+including the one already there. Pair by meaning and layout position (use the page images), never by \
+guesswork. Never leave a language blank, and never collapse a multilingual text onto a single \
+entry.\n\
+   The seeded structure is not yours to re-create: the groups, their `columnFlow` flag, the heading \
+levels and the list nesting came from the engine's reading of the rendered page and are almost \
+certainly right. Adding a translation NEVER requires changing them. If you find yourself about to \
+emit a large number of nodes, you are rebuilding rather than translating — go back to \
+set_structured_fields.\n\
 4. Fix what the outline flags. `⚠ text?` / `⚠ label?` mark missing or placeholder text; \
 `⚠ unsupported` marks a node the Redacto output cannot represent (a field, image, conditional or \
 repeatable) — those are dropped from the dump, so remove them deliberately or restructure them into \
 text. Use replace_structured_node to change a node's type or level, insert_structured_node / \
 remove_structured_node to add or drop nodes.\n\
 5. Build & validate: build_redacto_dump generates the PostgreSQL dump and reports the languages, \
-the per-table row counts, `problems` and `warnings`. Run it after every substantive change. A \
-`problem` means the dump is not shippable — no text assets at all, or a language missing its \
-variants — and MUST be resolved. A `warning` means content was dropped on the way into the dump; \
-investigate every one.\n\
+the per-table row counts, the component shape (`asset_containers` and `styled_panels` per style), \
+`problems` and `warnings`. Run it after every substantive change. A `problem` means the dump is not \
+shippable — no text assets at all, or a language missing its variants — and MUST be resolved. A \
+`warning` means content was dropped on the way into the dump; investigate every one. Check \
+`styled_panels` too: a document whose source has multi-column sections must show `layout-split` \
+panels, and one with footnotes a `footnote` panel. Zero panels where the source has columns means \
+the layout was flattened — the row counts look identical, so this is the only place it shows.\n\
 6. Review end to end: review_redacto_output compares the source against the text that actually \
 reaches the generated dump and lists anything missing, with a coverage score. For EVERY miss, fix \
 it and rebuild, or satisfy yourself it was an intentional drop; it compares the master language \
@@ -650,6 +660,14 @@ struct Extractor {
     /// dumps: a document whose language variants are too dissimilar to merge
     /// looked exactly like a document with no content.
     merge_error: Option<String>,
+    /// One context per source PDF, in upload order.
+    ///
+    /// The language variants do not share a context: each carries its own
+    /// master-page header and its own `Footer_Line_*` XFA variables. An output
+    /// whose configuration is single-valued (as Redacto's header and footer are)
+    /// must therefore pick one deliberately — by master language, not by upload
+    /// order. See [`ConversionAgent::source_context`].
+    contexts: Vec<Context>,
 }
 
 impl Extractor {
@@ -714,6 +732,8 @@ impl Extractor {
             state_count: 1,
         };
 
+        let contexts: Vec<Context> = envelopes.iter().map(|e| e.context.clone()).collect();
+
         let (merged, merge_error) = match envelopes.len() {
             0 => (empty(base_context), None),
             1 => (envelopes.into_iter().next().unwrap(), None),
@@ -728,6 +748,7 @@ impl Extractor {
             xfa,
             merged,
             merge_error,
+            contexts,
         }
     }
 
@@ -1026,6 +1047,27 @@ impl ConversionAgent {
         }
     }
 
+    /// The source context to resolve an output configuration against, preferring
+    /// the variant written in `master_language`.
+    ///
+    /// Each language variant of a document carries its own master-page header
+    /// and its own `Footer_Line_*` XFA variables, so a single-valued
+    /// configuration (Redacto's `header`/`footer`) takes whichever variant it is
+    /// pointed at. Defaulting to upload order made that arbitrary — a document
+    /// uploaded SP-first got a Spanish header on an English-master document.
+    pub fn source_context(&mut self, master_language: &str) -> Context {
+        match self.extractor(&serde_json::json!({})) {
+            Ok(ex) => ex
+                .contexts
+                .iter()
+                .find(|c| c.language() == master_language)
+                .or_else(|| ex.contexts.first())
+                .cloned()
+                .unwrap_or_else(|| ex.merged.context.clone()),
+            Err(_) => self.context.clone(),
+        }
+    }
+
     /// Why the source's cross-language merge failed, if it did.
     ///
     /// A `Some` here means [`source_structured`](Self::source_structured) is
@@ -1205,7 +1247,12 @@ impl ConversionAgent {
             .profile
             .clone()
             .ok_or("No profile selected — the Redacto dump needs a profile.")?;
-        let ctx = self.source_envelope().context;
+        // Resolve the configuration against the master-language variant, so the
+        // header and footer come from the language the document is written in
+        // rather than from whichever PDF happened to be uploaded first.
+        let master = blueprint::redacto_master_language(&profile)
+            .unwrap_or_else(|| self.context.language().to_string());
+        let ctx = self.source_context(&master);
         let (dump, config) =
             blueprint::to_redacto_dump_for_profile(&profile, &ctx, &self.structured)?;
         if let Some(redacto) = self.target.redacto_mut() {
@@ -1343,6 +1390,12 @@ impl ConversionAgent {
                 "Set one field of the node at `path`. `field` is a node key such as `content`, `level`, `label`, `items`, `columnFlow`; `value` is the raw JSON for it (match the shape from get_structured_node). This is how you add a language: read the node, then write back its `content` map with every language present. Validated by round-trip; a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_structured_node).",
                 serde_json::json!({"path": {"type":"string"}, "field": {"type":"string"}, "value": {}}),
                 serde_json::json!(["path", "field", "value"]),
+            ),
+            t(
+                "set_structured_fields",
+                "Apply MANY set_structured_field edits in ONE call: `edits` is an array of {path, field, value}. This is how you add a language — read the outline, then write every node's `content` map back in a single call. All-or-nothing: if any edit is invalid none are applied, and the error names the offending one. Use this instead of re-emitting the whole tree, which would discard the grouping, multi-column sections and heading levels the seed carried.",
+                serde_json::json!({"edits": {"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"field":{"type":"string"},"value":{}},"required":["path","field","value"]}}}),
+                serde_json::json!(["edits"]),
             ),
             t(
                 "replace_structured_node",
@@ -1796,6 +1849,32 @@ impl ConversionAgent {
                     Err(e) => ToolReply::Error(e),
                 }
             }
+            "set_structured_fields" => {
+                let edits: Vec<(String, String, serde_json::Value)> = input["edits"]
+                    .as_array()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|e| {
+                                (
+                                    e["path"].as_str().unwrap_or_default().to_string(),
+                                    e["field"].as_str().unwrap_or_default().to_string(),
+                                    e.get("value").cloned().unwrap_or(serde_json::Value::Null),
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let count = edits.len();
+                let result = crate::structured_edit::set_fields(&mut self.structured, &edits);
+                match result {
+                    Ok(msg) => {
+                        self.structured_edited(&format!("AI: set {count} field(s)"));
+                        ToolReply::Text(msg)
+                    }
+                    Err(e) => ToolReply::Error(e),
+                }
+            }
             "replace_structured_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
@@ -1855,6 +1934,8 @@ impl ConversionAgent {
                                 "asset_versions": validation.counts.asset_versions,
                                 "document_versions": validation.counts.document_versions,
                                 "rows": validation.counts.rows,
+                                "asset_containers": validation.counts.asset_containers,
+                                "styled_panels": validation.counts.styled_panels,
                                 "problems": validation.problems,
                                 "warnings": validation.warnings,
                             }))
@@ -2403,6 +2484,28 @@ mod tests {
             "the merged envelope must carry the header the analysis recovered"
         );
         assert!(agent.source_merge_error().is_none(), "one PDF needs no merge");
+    }
+
+    /// Each language variant carries its own master-page header and its own
+    /// `Footer_Line_*` variables, and the Redacto configuration holds one of
+    /// each. Regression: it took whichever PDF was uploaded first, so a
+    /// SP-first upload gave an English-master document a Spanish header.
+    #[test]
+    fn source_context_prefers_the_master_language_variant() {
+        // Deliberately upload the non-master language first.
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            vec![fixture("AAAL_019_SP.pdf"), fixture("AAAL_019_EN.pdf")],
+            None,
+            "test-master-context".into(),
+            OutputTarget::Redacto,
+        );
+
+        assert_eq!(agent.source_context("en").language(), "en");
+        assert_eq!(agent.source_context("es").language(), "es");
+        // An unknown language falls back to the first variant rather than
+        // failing — better an arbitrary header than none.
+        assert_eq!(agent.source_context("fr").language(), "es");
     }
 
     /// Regression: `Extractor::build` used to swallow a cross-language merge

@@ -9,7 +9,9 @@
 //! inserts a `documents` row with an empty component list and imports cleanly,
 //! which is exactly why an empty one once shipped unnoticed.
 
-use super::{RedactoConfig, RedactoDump};
+use std::collections::BTreeMap;
+
+use super::{RedactoComponent, RedactoConfig, RedactoDump};
 
 /// The outcome of validating a dump.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -23,8 +25,14 @@ pub struct RedactoValidation {
     pub counts: RedactoCounts,
 }
 
-/// Per-table row counts of a dump.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// What a dump contains: row counts per table, and the shape of the component
+/// tree in its configuration.
+///
+/// The component counts are here because row counts alone cannot show a lost
+/// layout. A document whose multi-column sections were flattened has exactly
+/// the same assets and variants as one that kept them — only its panels
+/// disappear, so those have to be reported to be noticed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RedactoCounts {
     /// `assets` rows (one per text block).
     pub assets: usize,
@@ -34,6 +42,30 @@ pub struct RedactoCounts {
     pub document_versions: usize,
     /// Total `INSERT` statements the dump will emit.
     pub rows: usize,
+    /// `assetContainer` components in the configuration.
+    pub asset_containers: usize,
+    /// `styledPanel` components, counted per style (e.g. `layout-split`,
+    /// `footnote`).
+    pub styled_panels: BTreeMap<String, usize>,
+}
+
+/// Count the components of a configuration tree, recursing into panels.
+fn count_components(
+    components: &[RedactoComponent],
+    containers: &mut usize,
+    panels: &mut BTreeMap<String, usize>,
+) {
+    for component in components {
+        match component {
+            RedactoComponent::AssetContainer { .. } => *containers += 1,
+            RedactoComponent::StyledPanel {
+                style, components, ..
+            } => {
+                *panels.entry(style.clone()).or_default() += 1;
+                count_components(components, containers, panels);
+            }
+        }
+    }
 }
 
 impl RedactoValidation {
@@ -102,6 +134,16 @@ pub fn validate_dump(dump: &RedactoDump, config: &RedactoConfig) -> RedactoValid
         problems.push("no ownership rows: Redacto would reject authoring writes".to_string());
     }
 
+    let mut asset_containers = 0;
+    let mut styled_panels = BTreeMap::new();
+    for document in &dump.documents {
+        count_components(
+            &document.configuration.components,
+            &mut asset_containers,
+            &mut styled_panels,
+        );
+    }
+
     RedactoValidation {
         problems,
         warnings: dump.warnings.clone(),
@@ -110,6 +152,8 @@ pub fn validate_dump(dump: &RedactoDump, config: &RedactoConfig) -> RedactoValid
             asset_versions: dump.asset_versions.len(),
             document_versions: dump.document_versions.len(),
             rows: dump.row_count(),
+            asset_containers,
+            styled_panels,
         },
     }
 }

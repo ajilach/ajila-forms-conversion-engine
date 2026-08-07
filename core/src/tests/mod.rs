@@ -34321,3 +34321,52 @@ fn ubs_profile_supports_both_output_targets() {
     );
     assert!(crate::profiles::profile_targets("no-such-profile").is_empty());
 }
+
+/// Row counts cannot show a lost layout: a document whose multi-column sections
+/// were flattened has exactly the same assets and variants as one that kept
+/// them. Only the component counts differ, which is why they are reported.
+#[test]
+fn redacto_validation_counts_expose_a_flattened_layout() {
+    use redacto_fixtures::{column_section, paragraph};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let with_columns = crate::generate_redacto_dump(
+        &[column_section(vec![paragraph("Left"), paragraph("Right")])],
+        &config,
+    );
+    let flattened =
+        crate::generate_redacto_dump(&[paragraph("Left"), paragraph("Right")], &config);
+
+    let kept = crate::validate_dump(&with_columns, &config).counts;
+    let lost = crate::validate_dump(&flattened, &config).counts;
+
+    assert_eq!(
+        kept.assets, lost.assets,
+        "the flattening is invisible in the row counts — that is the point"
+    );
+    assert_eq!(kept.asset_versions, lost.asset_versions);
+
+    assert_eq!(kept.styled_panels.get("layout-split"), Some(&1));
+    assert!(
+        lost.styled_panels.is_empty(),
+        "a flattened document has no panels: {:?}",
+        lost.styled_panels
+    );
+}
+
+/// The footnote panel is the other structure worth watching for.
+#[test]
+fn redacto_validation_counts_report_the_footnote_panel() {
+    use redacto_fixtures::{footnote, paragraph};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(
+        &[paragraph("Body<sup>1</sup>"), footnote("1", "A note")],
+        &config,
+    );
+
+    let counts = crate::validate_dump(&dump, &config).counts;
+
+    assert_eq!(counts.styled_panels.get("footnote"), Some(&1));
+    assert!(counts.asset_containers >= 1);
+}

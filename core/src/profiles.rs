@@ -62,6 +62,18 @@ pub fn profile_targets(name: &str) -> Vec<crate::OutputTarget> {
         .collect()
 }
 
+/// The Redacto profile's master language, without resolving the rest of the
+/// configuration.
+///
+/// [`load_redacto_config`] needs a document context, but choosing *which*
+/// document context to resolve against needs the master language first — a
+/// multilingual source offers one context per language variant, each with its
+/// own master-page header and footer variables. This breaks that cycle.
+pub fn redacto_master_language(name: &str) -> Option<String> {
+    let profile: RedactoProfile = read_profile_config_toml(name, "redacto").ok()?;
+    Some(profile.master_language.unwrap_or_else(|| "en".to_string()))
+}
+
 /// Load and resolve `{profile}/redacto/config.toml` against a document context.
 pub fn load_redacto_config(name: &str, ctx: &Context) -> Result<RedactoConfig, String> {
     let profile: RedactoProfile = read_profile_config_toml(name, "redacto")?;
