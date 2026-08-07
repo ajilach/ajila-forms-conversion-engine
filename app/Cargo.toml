@@ -23,6 +23,7 @@ base64 = { workspace = true }
 image = { workspace = true }
 blueprint = { path = "../core" }
 agent = { path = "../agent" }
+pipeline = { path = "../pipeline" }
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 dirs = { workspace = true }
 reqwest = { workspace = true }

@@ -31,6 +31,10 @@ fn describe_error(e: &reqwest::Error) -> String {
 // `agent` crate. Re-export so `crate::llm::ToolReply` keeps resolving.
 pub use agent::ToolReply;
 
+// A turn's shape is the controller's vocabulary, so it lives in `pipeline`;
+// this module is one implementation of `pipeline::TurnProvider`.
+pub use pipeline::{ToolCall, TurnOutput};
+
 /// Maximum number of tool round-trips before the loop bails out. Guards against
 /// a model that keeps calling tools without ever producing a final answer.
 const MAX_TOOL_ITERATIONS: usize = 16;
@@ -607,27 +611,6 @@ fn cache_marked_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
         );
     }
     tools_cached
-}
-
-/// A tool call requested by the model in one streamed turn.
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub input: serde_json::Value,
-}
-
-/// The result of one streamed assistant turn ([`anthropic_stream_turn`]).
-pub struct TurnOutput {
-    /// The model's visible text for the turn.
-    pub text: String,
-    /// Tool calls the model requested (empty if it produced a final answer).
-    pub tool_calls: Vec<ToolCall>,
-    /// The turn's `stop_reason` (`"tool_use"` when tools were requested).
-    pub stop_reason: Option<String>,
-    /// Real prompt-token count the API billed for this turn's request (uncached
-    /// input + both cache buckets) — i.e. how full the context window was. 0 if
-    /// the API didn't report usage.
-    pub prompt_tokens: usize,
 }
 
 /// Run an agentic (tool-enabled) conversation turn against the Anthropic

@@ -1,40 +1,9 @@
 //! The state the agent run publishes to the UI.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Cooperative cancellation for a run, shared between the Abort button and the
-/// run itself.
-///
-/// An atomic rather than a field on [`ProcessingState`]: the network layer polls
-/// it from inside a streamed response, where the UI's signals are out of reach,
-/// and a long turn has to stop there rather than at the next turn boundary.
-#[derive(Clone, Debug, Default)]
-pub struct AbortFlag(Arc<AtomicBool>);
-
-impl AbortFlag {
-    /// Ask the run to stop at its next checkpoint.
-    pub fn abort(&self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-
-    pub fn is_aborted(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-
-    /// Clear the flag so the next run starts un-aborted.
-    pub fn reset(&self) {
-        self.0.store(false, Ordering::Relaxed);
-    }
-}
-
-/// Two handles are the same flag when they share one cell — what a component
-/// prop needs to know, and what comparing the booleans would get wrong.
-impl PartialEq for AbortFlag {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
+// The run's cancellation flag and retry verdict are the controller's vocabulary,
+// not the UI's — they live in `pipeline` and are re-exported here so components
+// keep one import path for everything they render.
+pub use pipeline::{AbortFlag, RetryAction};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ProcessingStep {
@@ -90,15 +59,6 @@ impl From<bool> for AgentStepStatus {
     fn from(ok: bool) -> Self {
         if ok { Self::Done } else { Self::Error }
     }
-}
-
-/// What the user chose when an agent run paused on a failed API turn.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RetryAction {
-    /// Re-send the failed turn and carry on.
-    Retry,
-    /// Give up on the run (the agent keeps whatever it had built).
-    Cancel,
 }
 
 /// One entry in the Agent Processing activity panel.

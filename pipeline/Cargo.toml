@@ -1,0 +1,15 @@
+[package]
+name = "pipeline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+agent = { path = "../agent" }
+blueprint = { path = "../core" }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["rt", "time"] }
+
+[dev-dependencies]
+# The controller is async; the tests drive it directly.
+tokio = { version = "1", features = ["macros", "rt"] }
