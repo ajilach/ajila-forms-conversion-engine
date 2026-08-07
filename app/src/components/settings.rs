@@ -76,7 +76,7 @@ pub fn SettingsPage(
     let api_key = use_memo(move || settings.read().anthropic_api_key.clone());
     let models = use_resource(move || {
         let key = api_key();
-        async move { crate::platform::anthropic_list_models(&key).await }
+        async move { crate::llm::anthropic_list_models(&key).await }
     });
     let model_list = use_memo(move || match &*models.read() {
         Some(Ok(list)) if !list.is_empty() => list.clone(),

@@ -11,10 +11,10 @@ use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 
 use super::spinner::{Spinner, SpinnerSize};
+use crate::files::{download_file, show_html_preview};
 use crate::models::{
     AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
 };
-use crate::platform::{download_file, show_html_preview};
 use crate::upload::read_upload_files;
 
 /// What the box shows: either the upload form, or a run in one of its states.
@@ -755,6 +755,7 @@ fn ResultActions(
     aem_connection: Option<blueprint::AemConnection>,
 ) -> Element {
     let mut upload_state = use_signal(|| UploadState::Idle);
+    let mut save_error = use_signal(|| None::<String>);
     let state = state.read();
     let form_code = state.form_code.as_deref();
 
@@ -776,7 +777,7 @@ fn ResultActions(
                     onclick: {
                         let html = html.clone();
                         let preview_filename = filename("preview", form_code, "html");
-                        move |_| show_html_preview(&html, &preview_filename)
+                        move |_| save_error.set(show_html_preview(&html, &preview_filename).err())
                     },
                     "◹ HTML preview"
                 }
@@ -839,6 +840,9 @@ fn ResultActions(
                         }
                     }
                 }
+            }
+            if let Some(error) = save_error.read().as_ref() {
+                span { class: "ag-save-error", "{error}" }
             }
         }
     }
@@ -914,12 +918,19 @@ fn DownloadButton(
     filename: String,
     bytes: Vec<u8>,
 ) -> Element {
+    // A failed save has to be visible: the user pressed a button and would
+    // otherwise be left looking for a file that was never written.
+    let mut error = use_signal(|| None::<String>);
+
     rsx! {
         button {
             class,
             title,
-            onclick: move |_| download_file(&bytes, &filename),
+            onclick: move |_| error.set(download_file(&bytes, &filename).err()),
             "{label}"
+        }
+        if let Some(error) = error.read().as_ref() {
+            span { class: "ag-save-error", "{error}" }
         }
     }
 }

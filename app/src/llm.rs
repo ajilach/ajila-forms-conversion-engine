@@ -1,72 +1,7 @@
-//! Desktop integration (file download, HTML preview, file explorer) and the
-//! Anthropic Messages-API client that drives every agent turn.
-
-// ── File download / preview helpers ──────────────────────────────────
-
-pub fn download_file(data: &[u8], filename: &str) {
-    match dirs::home_dir() {
-        Some(home) => {
-            let download_path = home.join("Downloads").join(filename);
-            match std::fs::write(&download_path, data) {
-                Ok(_) => {
-                    println!("✓ File saved to: {}", download_path.display());
-                    reveal_in_file_explorer(&download_path);
-                }
-                Err(e) => {
-                    eprintln!(
-                        "✗ Failed to save file to {}: {}",
-                        download_path.display(),
-                        e
-                    );
-                }
-            }
-        }
-        None => {
-            eprintln!("✗ Failed to determine home directory for saving file");
-        }
-    }
-}
-
-// ── HTML preview ─────────────────────────────────────────────────────
-
-pub fn show_html_preview(html: &str, filename: &str) {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            eprintln!("✗ Failed to determine home directory for saving preview");
-            return;
-        }
-    };
-
-    let preview_path = home.join("Downloads").join(filename);
-    if let Err(e) = std::fs::write(&preview_path, html) {
-        eprintln!(
-            "✗ Failed to save preview to {}: {}",
-            preview_path.display(),
-            e
-        );
-        return;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open")
-            .arg(&preview_path)
-            .spawn();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("xdg-open")
-            .arg(&preview_path)
-            .spawn();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &preview_path.to_string_lossy()])
-            .spawn();
-    }
-}
+//! The Anthropic Messages-API client that drives every agent turn: one streamed
+//! turn primitive, the prompt-cache breakpoints, the token accounting that keeps
+//! a request inside the model's context window, and the eviction passes that
+//! shrink stale history when it does not fit.
 
 /// Format a `reqwest` error together with its underlying source chain.
 ///
@@ -88,7 +23,7 @@ fn describe_error(e: &reqwest::Error) -> String {
 // ── Agentic tool loop (Anthropic) ────────────────────────────────────
 
 // `ToolReply` is the engine executor's return type; it lives in the headless
-// `agent` crate. Re-export so `crate::platform::ToolReply` keeps resolving.
+// `agent` crate. Re-export so `crate::llm::ToolReply` keeps resolving.
 pub use agent::ToolReply;
 
 /// Maximum number of tool round-trips before the loop bails out. Guards against
@@ -206,11 +141,13 @@ fn evict_stale_history_with(
     input_over: usize,
     trigger_bytes: usize,
 ) {
-    let total = serde_json::to_string(&history)
-        .map(|s| s.len())
-        .unwrap_or(0);
-    if total < trigger_bytes {
-        return;
+    if trigger_bytes > 0 {
+        let total = serde_json::to_string(&history)
+            .map(|s| s.len())
+            .unwrap_or(0);
+        if total < trigger_bytes {
+            return;
+        }
     }
     let len = history.len();
     if len <= 1 + keep_recent {
@@ -263,11 +200,48 @@ pub fn context_window_for(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
     let large = m.contains("[1m]")
         || m.contains("-1m")
-        || m.contains("opus-4")
-        || m.contains("sonnet-4")
-        || m.contains("sonnet-5")
-        || m.contains("fable-5");
+        || LARGE_CONTEXT_FAMILIES.iter().any(|f| m.contains(f));
     if large { 1_000_000 } else { 200_000 }
+}
+
+/// Families whose current models carry a 1M-token context window.
+const LARGE_CONTEXT_FAMILIES: &[&str] = &["opus-4", "sonnet-4", "sonnet-5", "fable-5"];
+
+/// Families that can emit 128K output tokens in one turn.
+const LARGE_OUTPUT_FAMILIES: &[&str] = &[
+    "opus-4-8",
+    "opus-4-7",
+    "opus-4-6",
+    "sonnet-5",
+    "sonnet-4-6",
+    "fable-5",
+];
+
+/// Output-token cap for models we don't recognize.
+const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 16_000;
+
+/// The output-token ceiling to request for a given model.
+///
+/// The agent loop streams every turn (see [`anthropic_stream_turn`]), so we can
+/// request up to the model's true max output without risking the HTTP timeouts
+/// that cap non-streaming requests near 16k. `max_tokens` is a ceiling, not a
+/// target — we're billed only for tokens actually generated — so requesting the
+/// full max costs nothing extra and just lets a large authoring turn complete in
+/// one call.
+///
+/// Matches on family substrings so date/suffix variants (e.g. `-20251001`,
+/// `[1m]`) still resolve; unrecognized models fall back to
+/// [`DEFAULT_MAX_OUTPUT_TOKENS`]. Lives here next to [`context_window_for`] so
+/// the two model tables stay in one place.
+pub fn max_output_tokens_for(model: &str) -> u32 {
+    let m = model.to_ascii_lowercase();
+    if m.contains("haiku") {
+        64_000
+    } else if LARGE_OUTPUT_FAMILIES.iter().any(|f| m.contains(f)) {
+        128_000
+    } else {
+        DEFAULT_MAX_OUTPUT_TOKENS
+    }
 }
 
 /// Learn the real context window from a `prompt is too long: X tokens > N maximum`
@@ -389,7 +363,7 @@ fn assembled_prompt_estimate(
     tools: &[serde_json::Value],
     system: Option<&str>,
 ) -> usize {
-    estimate_tokens(&serde_json::Value::Array(tools.to_vec()))
+    tools.iter().map(estimate_tokens).sum::<usize>()
         + system.map_or(0, |s| s.len() / 4)
         + history.iter().map(estimate_tokens).sum::<usize>()
 }
@@ -683,8 +657,8 @@ async fn prepare_request_body(
     model: String,
     max_tokens: u32,
     target: usize,
-) -> Result<PreparedRequest, String> {
-    tokio::task::spawn_blocking(move || {
+) -> Result<PreparedRequest, (Vec<serde_json::Value>, String)> {
+    let prepared = tokio::task::spawn_blocking(move || {
         let mut history = history;
         evict_to_fit(&mut history, &tools, system.as_deref(), target);
         let sent_estimate = assembled_prompt_estimate(&history, &tools, system.as_deref());
@@ -705,16 +679,24 @@ async fn prepare_request_body(
         if let Some(s) = system.as_deref().filter(|s| !s.is_empty()) {
             request["system"] = cache_marked_system(s);
         }
-        let body = serde_json::to_vec(&request)
-            .map_err(|e| format!("Failed to serialize request: {e}"))?;
-        Ok(PreparedRequest {
-            history,
-            body,
-            sent_estimate,
-        })
+        // Both outcomes carry the history back out, so the caller can restore it.
+        match serde_json::to_vec(&request) {
+            Ok(body) => Ok(PreparedRequest {
+                history,
+                body,
+                sent_estimate,
+            }),
+            Err(e) => Err((history, format!("Failed to serialize request: {e}"))),
+        }
     })
-    .await
-    .map_err(|e| format!("Request preparation task failed: {e}"))?
+    .await;
+
+    match prepared {
+        Ok(result) => result,
+        // The task panicked, taking the moved history with it; there is nothing
+        // left to restore, so hand back an empty one with the error.
+        Err(e) => Err((Vec::new(), format!("Request preparation task failed: {e}"))),
+    }
 }
 
 /// How long a streamed turn may go without receiving any bytes before the
@@ -775,7 +757,10 @@ pub async fn anthropic_stream_turn(
     let client = streaming_client();
 
     let (response, sent_estimate) = loop {
-        let prepared = prepare_request_body(
+        // `history` is moved into the blocking task and handed back, so a failure
+        // has to put it back before propagating: the caller's Retry re-sends this
+        // turn, and an emptied transcript would silently restart the stage.
+        let prepared = match prepare_request_body(
             std::mem::take(history),
             tools.to_vec(),
             system.map(str::to_string),
@@ -783,7 +768,14 @@ pub async fn anthropic_stream_turn(
             max_tokens,
             target,
         )
-        .await?;
+        .await
+        {
+            Ok(prepared) => prepared,
+            Err((restored, e)) => {
+                *history = restored;
+                return Err(e);
+            }
+        };
         *history = prepared.history;
 
         let response = client
@@ -1012,34 +1004,56 @@ pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String>
     Ok(ids)
 }
 
-// ── File explorer reveal ─────────────────────────────────────────────
-
-pub fn reveal_in_file_explorer(path: &std::path::Path) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open")
-            .arg("-R")
-            .arg(path)
-            .spawn();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(parent) = path.parent() {
-            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("explorer")
-            .args(&["/select,", &path.to_string_lossy()])
-            .spawn();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Preparation moves the transcript into a blocking task and hands it back.
+    /// Losing it would be silent and fatal: the caller re-sends this turn on
+    /// Retry, and an emptied history restarts the stage with no memory of the
+    /// work it had already done.
+    #[tokio::test]
+    async fn request_preparation_returns_the_history_it_was_given() {
+        let history = vec![
+            user_text("kickoff"),
+            assistant_tool_use("tu1", "get_source_info", json!({})),
+            result_text("tu1", "3 states"),
+        ];
+        let tools = vec![json!({"name": "t", "description": "d", "input_schema": {}})];
+
+        let prepared = prepare_request_body(
+            history.clone(),
+            tools,
+            Some("system".to_string()),
+            "claude-opus-4-8".to_string(),
+            1000,
+            // Far above the assembled size, so eviction is a no-op and the
+            // history must come back byte-identical.
+            1_000_000,
+        )
+        .await
+        .expect("a serializable request prepares");
+
+        assert_eq!(prepared.history, history);
+        assert!(!prepared.body.is_empty());
+    }
+
+    /// The two model tables live together; keep their groupings pinned so a new
+    /// model id cannot silently fall into the wrong bucket.
+    #[test]
+    fn model_limits_resolve_by_family() {
+        // Suffix variants must still resolve.
+        assert_eq!(max_output_tokens_for("claude-opus-4-8-20260101"), 128_000);
+        assert_eq!(max_output_tokens_for("claude-haiku-4-5"), 64_000);
+        // Unknown ids fall back rather than over-promising.
+        assert_eq!(
+            max_output_tokens_for("claude-something-new"),
+            DEFAULT_MAX_OUTPUT_TOKENS
+        );
+        // Matching is case-insensitive.
+        assert_eq!(max_output_tokens_for("Claude-Opus-4-8"), 128_000);
+    }
 
     fn user_text(text: &str) -> serde_json::Value {
         json!({"role": "user", "content": [{"type": "text", "text": text}]})

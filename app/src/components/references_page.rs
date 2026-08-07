@@ -366,7 +366,7 @@ fn AddReferenceForm(
                                 .await;
 
                             let mut history: Vec<serde_json::Value> = Vec::new();
-                            let description = match crate::platform::anthropic_agentic_turn(
+                            let description = match crate::llm::anthropic_agentic_turn(
                                     &mut history,
                                     DESCRIBE_PROMPT,
                                     &api_key,
@@ -766,7 +766,7 @@ fn ImportExport(
                                                 ),
                                             ),
                                         );
-                                    crate::platform::reveal_in_file_explorer(&out);
+                                    crate::files::reveal_in_file_explorer(&out);
                                 }
                                 Err(e) => status.set(Some(Status::Err(format!("Export failed: {e}")))),
                             }

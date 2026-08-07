@@ -48,7 +48,7 @@ pub struct AppSettings {
     /// Password for AEM HTTP basic auth. Stored locally on disk.
     pub aem_password: String,
     /// History-eviction tuning for the agent's token usage. See
-    /// [`crate::platform::configure_eviction`]. Trailing messages kept verbatim
+    /// [`crate::llm::configure_eviction`]. Trailing messages kept verbatim
     /// (even → whole turn-pairs). Missing/0 is normalized to the default in
     /// [`AppSettings::load`].
     pub evict_keep_recent_messages: usize,
@@ -74,10 +74,10 @@ impl Default for AppSettings {
             aem_host: "http://localhost:4502".to_string(),
             aem_username: "admin".to_string(),
             aem_password: "admin".to_string(),
-            evict_keep_recent_messages: crate::platform::DEFAULT_KEEP_RECENT_MESSAGES,
-            evict_text_over_chars: crate::platform::DEFAULT_ELIDE_TEXT_OVER_CHARS,
-            evict_input_over_chars: crate::platform::DEFAULT_ELIDE_INPUT_OVER_CHARS,
-            evict_trigger_bytes: crate::platform::DEFAULT_EVICT_TRIGGER_BYTES,
+            evict_keep_recent_messages: crate::llm::DEFAULT_KEEP_RECENT_MESSAGES,
+            evict_text_over_chars: crate::llm::DEFAULT_ELIDE_TEXT_OVER_CHARS,
+            evict_input_over_chars: crate::llm::DEFAULT_ELIDE_INPUT_OVER_CHARS,
+            evict_trigger_bytes: crate::llm::DEFAULT_EVICT_TRIGGER_BYTES,
             agent_instructions: String::new(),
         }
     }
@@ -87,7 +87,7 @@ impl AppSettings {
     /// Push runtime tuning (currently history eviction) into the platform layer.
     /// Call at startup and whenever settings change.
     pub fn apply_runtime_config(&self) {
-        crate::platform::configure_eviction(
+        crate::llm::configure_eviction(
             self.evict_keep_recent_messages,
             self.evict_text_over_chars,
             self.evict_input_over_chars,

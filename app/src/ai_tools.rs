@@ -2,7 +2,7 @@
 //!
 //! Instead of inlining every page image and the entire XFA XML into the prompt,
 //! the model pulls what it needs through tool calls (see
-//! [`crate::platform::anthropic_agentic_turn`]). Two executors are provided:
+//! [`crate::llm::anthropic_agentic_turn`]). Two executors are provided:
 //!
 //! * [`FormToolContext`] — built from the source PDFs, it can list the
 //!   discovered form states, render any state on demand, return the engine's
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use base64::Engine;
 
-use crate::platform::ToolReply;
+use crate::llm::ToolReply;
 
 /// Render scale for on-demand state images. Kept at 1.0 (below the core
 /// pipeline default of 1.5) to cut vision-token cost: at this resolution form

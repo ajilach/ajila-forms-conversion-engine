@@ -6,7 +6,7 @@
 //! and an independent **Reviewer** (approves, or returns a report that drives a
 //! bounded fix loop). All three share one [`ConversionAgent`] (the working
 //! `AemNodeTranslated` tree + edit-history session) and reuse the SAME turn
-//! machinery ([`crate::platform::anthropic_stream_turn`]): eviction, prompt
+//! machinery ([`crate::llm::anthropic_stream_turn`]): eviction, prompt
 //! caching, the context-window budget + 400-retry, off-thread request prep and
 //! the context-window indicator. Each stage runs with its own system prompt and a
 //! scoped subset of the tools, on a fresh bounded history — the Analyst's plan and
@@ -25,39 +25,10 @@ use agent::{
 };
 use blueprint::DocumentEnvelope;
 
+use crate::llm::tool_result_message;
 use crate::models::{
     AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
 };
-use crate::platform::tool_result_message;
-
-/// Fallback output-token cap per agent turn, used for models we don't recognize
-/// in [`max_output_tokens_for`].
-const AGENT_MAX_TOKENS: u32 = 16000;
-
-/// The output-token ceiling to request for a given model. The agent loop streams
-/// every turn (see `anthropic_stream_turn`), so we can request up to the model's
-/// true max output without risking the HTTP timeouts that cap non-streaming
-/// requests near 16k. `max_tokens` is a ceiling, not a target — we're billed only
-/// for tokens actually generated — so requesting the full max costs nothing extra
-/// and just lets a large authoring turn complete in one call.
-///
-/// Matches on family substrings so date/suffix variants (e.g. `-20251001`,
-/// `[1m]`) still resolve; unrecognized models fall back to [`AGENT_MAX_TOKENS`].
-fn max_output_tokens_for(model: &str) -> u32 {
-    if model.contains("haiku") {
-        64_000
-    } else if model.contains("opus-4-8")
-        || model.contains("opus-4-7")
-        || model.contains("opus-4-6")
-        || model.contains("sonnet-5")
-        || model.contains("sonnet-4-6")
-        || model.contains("fable-5")
-    {
-        128_000
-    } else {
-        AGENT_MAX_TOKENS
-    }
-}
 
 /// How many times a *transient* API failure (timeout, dropped connection,
 /// overload, rate limit, 5xx) is retried automatically before the run pauses and
@@ -583,12 +554,12 @@ impl Run {
         }
 
         let model = &self.settings.anthropic_model;
-        let agent_max_tokens = max_output_tokens_for(model);
+        let agent_max_tokens = crate::llm::max_output_tokens_for(model);
         let extra = crate::settings::extra_instructions_block(&self.settings.agent_instructions);
 
         // Surface the context budget once so a mis-detected window is visible.
-        let ctx_window = crate::platform::context_window_for(model);
-        let ctx_target = crate::platform::prompt_token_target(model, agent_max_tokens);
+        let ctx_window = crate::llm::context_window_for(model);
+        let ctx_target = crate::llm::prompt_token_target(model, agent_max_tokens);
         processing_state.write().context_window = ctx_window;
         push_step(
             &mut processing_state,
@@ -750,7 +721,7 @@ impl Run {
 
 // ── Turn-level failure recovery ────────────────────────────────────────────────
 
-/// Whether an [`crate::platform::anthropic_stream_turn`] error looks transient —
+/// Whether an [`crate::llm::anthropic_stream_turn`] error looks transient —
 /// i.e. worth re-sending the same turn unchanged. Covers the failure mode you get
 /// when the machine is left alone during a long run (the connection is dropped
 /// while the response streams, surfacing as `error decoding response body … timed
@@ -844,10 +815,10 @@ async fn turn_with_retry(
     agent_max_tokens: u32,
     settings: &crate::settings::AppSettings,
     processing_state: &mut Signal<ProcessingState>,
-) -> Option<crate::platform::TurnOutput> {
+) -> Option<crate::llm::TurnOutput> {
     let mut auto_retries = 0usize;
     loop {
-        match crate::platform::anthropic_stream_turn(
+        match crate::llm::anthropic_stream_turn(
             history,
             tools,
             &settings.anthropic_api_key,
@@ -943,7 +914,7 @@ impl StuckWatch {
 
 /// The message injected when a turn is cut off at the output-token cap: mark
 /// every unexecuted call as failed, then steer toward incremental authoring.
-fn max_tokens_nudge(tool_calls: &[crate::platform::ToolCall]) -> serde_json::Value {
+fn max_tokens_nudge(tool_calls: &[crate::llm::ToolCall]) -> serde_json::Value {
     let mut content: Vec<serde_json::Value> = tool_calls
         .iter()
         .map(|tc| {
@@ -964,7 +935,7 @@ fn max_tokens_nudge(tool_calls: &[crate::platform::ToolCall]) -> serde_json::Val
 
 /// Drive one role stage to completion: fresh bounded history seeded with
 /// `seed_user_msg`, the role's filtered tool subset, and its `system` prompt, over
-/// the SAME [`crate::platform::anthropic_stream_turn`] path as every other stage
+/// the SAME [`crate::llm::anthropic_stream_turn`] path as every other stage
 /// (so eviction / caching / budget / retry / off-thread prep / the context-window
 /// indicator are all inherited unchanged). Returns the last non-tool assistant
 /// message; `None` if a request failed and the user gave up instead of retrying

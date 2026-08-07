@@ -1181,5 +1181,7 @@ body > div, #main {
 }
 
 /* Status indicators (MCP install state) */
+.ag-save-error { color: var(--danger); font-size: 12px; }
+
 .mcp-installed { color: var(--success); font-size: 12px; }
 .mcp-error { color: var(--danger); font-size: 12px; margin-top: var(--space-2); }
