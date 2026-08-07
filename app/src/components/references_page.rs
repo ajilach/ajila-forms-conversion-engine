@@ -63,8 +63,8 @@ pub fn ReferencesPage(
     // No profiles configured → nothing to scope references to.
     if profiles.is_empty() {
         return rsx! {
-            div { class: "references-page",
-                div { class: "references-header",
+            div { class: "page",
+                div { class: "page-header",
                     div { h2 { "Reference Forms" } }
                     button {
                         class: "btn btn-secondary",
@@ -72,7 +72,7 @@ pub fn ReferencesPage(
                         "✕ Close"
                     }
                 }
-                div { class: "references-content",
+                div { class: "page-content page-content-stack",
                     p { class: "references-empty", "No profiles are configured." }
                 }
             }
@@ -125,8 +125,8 @@ pub fn ReferencesPage(
         || all_docs.iter().any(|d| d.profile == current_profile);
 
     rsx! {
-        div { class: "references-page",
-            div { class: "references-header",
+        div { class: "page",
+            div { class: "page-header",
                 div {
                     h2 { "References" }
                     span { class: "references-subtitle",
@@ -140,25 +140,25 @@ pub fn ReferencesPage(
                 }
             }
 
-            div { class: "references-tabs",
+            div { class: "tabs",
                 button {
-                    class: if *tab.read() == 0 { "references-tab active" } else { "references-tab" },
+                    class: if *tab.read() == 0 { "tab active" } else { "tab" },
                     onclick: move |_| tab.set(0),
                     "Reference forms ({total_refs})"
                 }
                 button {
-                    class: if *tab.read() == 1 { "references-tab active" } else { "references-tab" },
+                    class: if *tab.read() == 1 { "tab active" } else { "tab" },
                     onclick: move |_| tab.set(1),
                     "Reference documentation ({total_docs})"
                 }
                 button {
-                    class: if *tab.read() == 2 { "references-tab active" } else { "references-tab" },
+                    class: if *tab.read() == 2 { "tab active" } else { "tab" },
                     onclick: move |_| tab.set(2),
                     "Import / Export"
                 }
             }
 
-            div { class: "references-content",
+            div { class: "page-content page-content-stack",
 
                 if let Some((ok, msg)) = status.read().clone() {
                     div {

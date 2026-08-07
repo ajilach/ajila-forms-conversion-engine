@@ -1,8 +1,9 @@
 mod agent_flow;
 mod output_target;
+mod page;
 mod references_page;
 mod settings;
-pub(crate) mod spinner;
+mod spinner;
 
 pub use agent_flow::AgentFlow;
 pub use output_target::OutputTargetSelector;

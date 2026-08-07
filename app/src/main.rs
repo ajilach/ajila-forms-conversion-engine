@@ -69,6 +69,9 @@ fn App() -> Element {
     // Source PDF bytes of the currently loaded document, retained so a feedback
     // re-run can resume the conversion from the same sources.
     let mut source_pdfs = use_signal(Vec::<(String, Vec<u8>)>::new);
+    // A hook, so it has to be called here rather than inside the settings
+    // handler that uses it.
+    let window = dioxus::desktop::use_window();
 
     // ── AI processing ───────────────────────────────────────────────────────
     // Hand the uploaded PDFs to the configured LLM and parse the structured
@@ -196,11 +199,11 @@ fn App() -> Element {
         if *settings_open.read() {
             SettingsPage {
                 on_close: move |_| settings_open.set(false),
-                settings: app_settings.read().clone(),
+                settings: app_settings,
                 on_settings_changed: move |new_settings: AppSettings| {
                     new_settings.save();
                     new_settings.apply_runtime_config();
-                    dioxus::desktop::use_window().set_always_on_top(new_settings.always_on_top);
+                    window.set_always_on_top(new_settings.always_on_top);
                     app_settings.set(new_settings);
                 },
                 on_open_references: move |_| {

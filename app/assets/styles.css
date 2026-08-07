@@ -377,7 +377,7 @@ body > div, #main {
 
 /* ── Reference-forms manager (full page) ─────────────────────────────── */
 
-.references-page {
+.page {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -386,7 +386,7 @@ body > div, #main {
     background: var(--surface);
 }
 
-.references-header {
+.page-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -395,7 +395,7 @@ body > div, #main {
     background: var(--surface-2);
 }
 
-.references-header h2 {
+.page-header h2 {
     margin: 0;
     font-size: var(--font-size-lg);
 }
@@ -405,7 +405,7 @@ body > div, #main {
     color: var(--muted);
 }
 
-.references-tabs {
+.tabs {
     display: flex;
     gap: var(--space-xs);
     padding: var(--space-sm) var(--space-md) 0;
@@ -413,7 +413,7 @@ body > div, #main {
     background: var(--surface-2);
 }
 
-.references-tab {
+.tab {
     padding: var(--space-sm) var(--space-md);
     border: 1px solid transparent;
     border-bottom: none;
@@ -426,28 +426,32 @@ body > div, #main {
     margin-bottom: -1px;
 }
 
-.references-tab:hover {
+.tab:hover {
     color: var(--text);
 }
 
-.references-tab.active {
+.tab.active {
     background: var(--surface);
     color: var(--accent);
     border-color: var(--border);
     border-bottom-color: var(--surface);
 }
 
-.references-content {
+.page-content {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
     padding: var(--space-lg);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
     width: 100%;
     max-width: 880px;
     margin: 0 auto;
+}
+
+/* Opt-in for pages whose content is a stack of cards rather than sections. */
+.page-content-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
 }
 
 .references-card {
@@ -513,7 +517,7 @@ body > div, #main {
 }
 
 /* Let the meta column take the row width so the description can clamp. */
-.references-page .session-meta {
+.page .session-meta {
     flex: 1;
     min-width: 0;
 }
@@ -581,39 +585,6 @@ body > div, #main {
 }
 
 /* ── Settings (full-page view) ── */
-.settings-page {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-height: 0;
-    background: var(--surface);
-}
-
-.settings-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-2);
-}
-
-.settings-header h2 {
-    margin: 0;
-    font-size: var(--font-size-lg);
-}
-
-.settings-content {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-    padding: var(--space-lg);
-    width: 100%;
-    max-width: 880px;
-    margin: 0 auto;
-}
-
 /* ── Settings sections, rows and controls ── */
 .settings-section {
     display: flex;
