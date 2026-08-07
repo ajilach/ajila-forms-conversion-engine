@@ -25,18 +25,17 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 | `agent` | Headless conversion-agent engine — the tool catalog/executor, edit-history store, and AEM client. No UI or LLM dependency, shared by the app and the MCP server. |
 | `mcp` | Model Context Protocol (stdio) server that exposes the conversion tools so an external LLM client (Claude Desktop, Claude Code, Cursor) can drive a conversion. |
 | `judge` | Evaluates translation quality of multi-language PDF forms and writes scores to CSV. |
-| `teacher` | Runs the pipeline and an LLM smart-edit pass, then prints suggested changes. |
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
-- [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) — only needed for the desktop app
+- [Dioxus CLI](https://dioxuslabs.com/learn/0.7/getting_started) — only needed for the desktop app
 
 Dioxus can easily be installed using cargo-binstall:
 
 ```sh
 cargo install cargo-binstall
-cargo binstall dioxus-cli@0.7.3
+cargo binstall dioxus-cli@0.7.9
 ```
 
 In order to version large files we need the git lfs extension
@@ -143,7 +142,7 @@ cargo doc -p blueprint --open
 
 ## Judge
 
-The judge evaluates translation quality of multi-language PDF forms in `core/input/`. It processes all form codes in parallel using all available CPU cores and writes scores to `judge/results.csv`.
+The judge evaluates translation quality of multi-language PDF forms in `core/input/`. It processes all form codes in parallel using all available CPU cores and writes scores to `judge/results.csv` (override with `--input-dir`, `--profile` and `--output`).
 
 ```sh
 # Run the judge on all form codes (parallel)
@@ -160,15 +159,17 @@ cargo run --release -p judge
 python3 compare.py
 ```
 
-## Teacher
+## Regenerating build assets
 
-The teacher runs the pipeline on a PDF and then performs an LLM smart-edit pass, printing the suggested changes. It requires an OpenAI API key.
+Two scripts regenerate checked-in assets. Neither runs as part of the build; run
+them by hand when the asset needs to change.
 
 ```sh
-# Run the teacher on a PDF (uses the OPENAI_API_KEY environment variable)
-export OPENAI_API_KEY=sk-...
-cargo run --release -p teacher -- path/to/form.pdf
+# The quantized sentence-embedding model in core/models/ (semantic matching).
+pip install torch transformers safetensors
+python3 scripts/download_model.py
 
-# Use a specific model and profile
-cargo run --release -p teacher -- path/to/form.pdf --model gpt-4o --profile ubs
+# The desktop app icons in app/icons/, from app/assets/app-icon.svg.
+pip install cairosvg pillow
+python3 scripts/generate_icon.py
 ```
