@@ -208,15 +208,8 @@ pub fn set_field(
         );
     }
     let node = resolve_mut(roots, path)?;
-    let mut obj = serde_json::to_value(&*node).map_err(|e| e.to_string())?;
-    let map = obj
-        .as_object_mut()
-        .ok_or_else(|| "node does not serialize to an object".to_string())?;
-    map.insert(field.to_string(), value);
-    let new_node: StructuredNode = serde_json::from_value(obj)
-        .map_err(|e| format!("setting `{field}` would make the node invalid: {e}"))?;
-    let ty = node_type(&new_node);
-    *node = new_node;
+    crate::tree_edit::set_field_by_roundtrip(node, field, value)?;
+    let ty = node_type(node);
     Ok(format!("OK — set `{field}` on {path} ({ty})."))
 }
 
@@ -281,12 +274,7 @@ pub fn insert_node(
         serde_json::from_value(node_json).map_err(|e| format!("invalid StructuredNode: {e}"))?;
     let ty = node_type(&new_node);
     let list = container_list_mut(roots, parent_path)?;
-    let at = match pos {
-        InsertPos::First => 0,
-        InsertPos::Last => list.len(),
-        InsertPos::Before(i) => i.min(list.len()),
-        InsertPos::After(i) => (i + 1).min(list.len()),
-    };
+    let at = crate::tree_edit::insert_index(&pos, list.len());
     list.insert(at, new_node);
     Ok(format!(
         "OK — inserted a {ty} node into '{}' at index {at}.",
@@ -655,14 +643,5 @@ mod tests {
         let mut tree = sample();
         replace_node(&mut tree, "0/children/0", json!({"type": "empty"})).unwrap();
         assert_eq!(node_type(resolve_mut(&mut tree, "0/children/0").unwrap()), "empty");
-    }
-
-    #[test]
-    fn insert_pos_parses() {
-        assert!(matches!(parse_insert_pos(&json!("first")), Ok(InsertPos::First)));
-        assert!(matches!(parse_insert_pos(&json!("last")), Ok(InsertPos::Last)));
-        assert!(matches!(parse_insert_pos(&json!({"before": 2})), Ok(InsertPos::Before(2))));
-        assert!(matches!(parse_insert_pos(&json!({"after": 0})), Ok(InsertPos::After(0))));
-        assert!(parse_insert_pos(&json!("middle")).is_err());
     }
 }

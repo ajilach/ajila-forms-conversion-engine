@@ -121,15 +121,8 @@ pub fn set_field(
         );
     }
     let node = resolve_mut(root, path)?;
-    let mut obj = serde_json::to_value(&*node).map_err(|e| e.to_string())?;
-    let map = obj
-        .as_object_mut()
-        .ok_or_else(|| "node does not serialize to an object".to_string())?;
-    map.insert(field.to_string(), value);
-    let new_node: AemNodeTranslated = serde_json::from_value(obj)
-        .map_err(|e| format!("setting `{field}` would make the node invalid: {e}"))?;
-    let ty = node_type(&new_node);
-    *node = new_node;
+    crate::tree_edit::set_field_by_roundtrip(node, field, value)?;
+    let ty = node_type(node);
     Ok(format!("OK — set `{field}` on {} ({ty}).", show(path)))
 }
 
@@ -182,12 +175,7 @@ pub fn insert_node(
     let pty = node_type(parent);
     let kids = children_mut(parent)
         .ok_or_else(|| format!("a {pty} node cannot hold children; insert into a Panel/Repeatable/Root"))?;
-    let at = match pos {
-        InsertPos::First => 0,
-        InsertPos::Last => kids.len(),
-        InsertPos::Before(i) => i.min(kids.len()),
-        InsertPos::After(i) => (i + 1).min(kids.len()),
-    };
+    let at = crate::tree_edit::insert_index(&pos, kids.len());
     kids.insert(at, new_node);
     Ok(format!("OK — inserted a {ty} node into '{}' at index {at}.", show(parent_path)))
 }
@@ -332,12 +320,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node_type(resolve_mut(&mut tree, "0/0").unwrap()), "Preface");
-    }
-
-    #[test]
-    fn insert_pos_parses() {
-        assert!(matches!(parse_insert_pos(&json!("first")), Ok(InsertPos::First)));
-        assert!(matches!(parse_insert_pos(&json!({"after": 1})), Ok(InsertPos::After(1))));
-        assert!(parse_insert_pos(&json!("nope")).is_err());
     }
 }

@@ -49,6 +49,31 @@ pub fn insert_index(pos: &InsertPos, len: usize) -> usize {
     }
 }
 
+/// Set one field of a node by round-tripping it through its own type:
+/// serialise, insert the field, deserialise back. A value that would make the
+/// node invalid is rejected and `node` left untouched.
+///
+/// Shared by both editors because the algorithm is the same for either tree —
+/// only the node type and the wording of the caller's `Ok`/`type` messages
+/// differ, and those stay with the caller.
+pub fn set_field_by_roundtrip<T>(
+    node: &mut T,
+    field: &str,
+    value: serde_json::Value,
+) -> Result<(), String>
+where
+    T: serde::Serialize + serde::de::DeserializeOwned,
+{
+    let mut obj = serde_json::to_value(&*node).map_err(|e| e.to_string())?;
+    let map = obj
+        .as_object_mut()
+        .ok_or_else(|| "node does not serialize to an object".to_string())?;
+    map.insert(field.to_string(), value);
+    *node = serde_json::from_value(obj)
+        .map_err(|e| format!("setting `{field}` would make the node invalid: {e}"))?;
+    Ok(())
+}
+
 /// Longest excerpt of `s` shown in an outline line, in characters.
 const EXCERPT_LEN: usize = 60;
 
