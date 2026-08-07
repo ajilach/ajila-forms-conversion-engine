@@ -11,7 +11,7 @@ use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 
 use super::spinner::{Spinner, SpinnerSize};
-use crate::files::{download_file, show_html_preview};
+use crate::files::download_file;
 use crate::models::{
     AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
 };
@@ -745,37 +745,28 @@ fn RetryPrompt(
     }
 }
 
-/// Act on the finished result: the package, the preview, the AEM upload.
+/// Act on the finished result: download the package, install it on AEM.
+///
+/// Both actions are the AEM target's, so a Redacto run renders nothing here
+/// rather than an empty row taking up the space above the downloads.
 #[component]
 fn ResultActions(
     state: ReadSignal<ProcessingState>,
     aem_connection: Option<blueprint::AemConnection>,
 ) -> Element {
     let mut upload_state = use_signal(|| UploadState::Idle);
-    let mut save_error = use_signal(|| None::<String>);
     let run = state.read();
-    let form_code = run.form_code.as_deref();
+
+    if !Artifact::Package.is_offered(&run) {
+        return rsx! {};
+    }
 
     rsx! {
         div { class: "ag-result-actions",
-            if Artifact::Package.is_present(&run) {
-                DownloadButton {
-                    class: "btn btn-secondary",
-                    artifact: Artifact::Package,
-                    state,
-                }
-            }
-            if let Some(html) = run.html_preview.as_ref() {
-                button {
-                    class: "btn btn-secondary",
-                    title: "Render the converted document as a standalone HTML page and open it in the browser",
-                    onclick: {
-                        let html = html.clone();
-                        let preview_filename = filename("preview", form_code, "html");
-                        move |_| save_error.set(show_html_preview(&html, &preview_filename).err())
-                    },
-                    "◹ HTML preview"
-                }
+            DownloadButton {
+                class: "btn btn-secondary",
+                artifact: Artifact::Package,
+                state,
             }
             if let Some(package) = run.aem_package.as_ref() {
                 {
@@ -836,9 +827,6 @@ fn ResultActions(
                     }
                 }
             }
-            if let Some(error) = save_error.read().as_ref() {
-                span { class: "ag-save-error", "{error}" }
-            }
         }
     }
 }
@@ -853,25 +841,18 @@ fn ResultActions(
 enum Artifact {
     Package,
     RedactoSql,
-    StructureJson,
     Xsd,
     AgentLog,
 }
 
 impl Artifact {
     /// The by-products offered next to the primary result, in display order.
-    const BYPRODUCTS: &'static [Self] = &[
-        Self::RedactoSql,
-        Self::StructureJson,
-        Self::Xsd,
-        Self::AgentLog,
-    ];
+    const BYPRODUCTS: &'static [Self] = &[Self::RedactoSql, Self::Xsd, Self::AgentLog];
 
     fn label(self) -> &'static str {
         match self {
             Self::Package => "⬇ Download CRX package",
             Self::RedactoSql => "Redacto SQL",
-            Self::StructureJson => "Structure JSON",
             Self::Xsd => "XSD schema",
             Self::AgentLog => "Agent log",
         }
@@ -883,7 +864,6 @@ impl Artifact {
             Self::RedactoSql => {
                 "The Redacto PostgreSQL dump (document, components and text assets)"
             }
-            Self::StructureJson => "The structured document the outputs were generated from",
             Self::Xsd => "The XML Schema Definition for the converted form",
             Self::AgentLog => "The agent's full activity timeline as a Markdown transcript",
         }
@@ -895,9 +875,21 @@ impl Artifact {
         match self {
             Self::Package => ("forms-package", "zip"),
             Self::RedactoSql => ("redacto", "sql"),
-            Self::StructureJson => ("structure", "json"),
             Self::Xsd => ("schema", "xsd"),
             Self::AgentLog => ("agent-log", "md"),
+        }
+    }
+
+    /// Whether this artefact belongs to `target`'s result panel.
+    ///
+    /// Presence alone is not the rule: an artefact that only makes sense for the
+    /// other target must stay hidden even if the run happens to have produced it.
+    /// The log belongs to every run.
+    fn belongs_to(self, target: blueprint::OutputTarget) -> bool {
+        match self {
+            Self::Package | Self::Xsd => target == blueprint::OutputTarget::Aem,
+            Self::RedactoSql => target == blueprint::OutputTarget::Redacto,
+            Self::AgentLog => true,
         }
     }
 
@@ -906,35 +898,36 @@ impl Artifact {
         match self {
             Self::Package => state.aem_package.clone(),
             Self::RedactoSql => state.redacto_sql.as_ref().map(|s| s.clone().into_bytes()),
-            Self::StructureJson => state.merged_json.as_ref().map(|s| s.clone().into_bytes()),
             Self::Xsd => state.xsd_schema.as_ref().map(|s| s.clone().into_bytes()),
             Self::AgentLog => (!state.agent_steps.is_empty())
                 .then(|| agent_log_markdown(&state.agent_steps).into_bytes()),
         }
     }
 
-    /// Whether the run produced it, without building the payload.
-    fn is_present(self, state: &ProcessingState) -> bool {
+    /// Whether the run produced it *and* it belongs to that run's target.
+    fn is_offered(self, state: &ProcessingState) -> bool {
+        if !self.belongs_to(state.target) {
+            return false;
+        }
         match self {
             Self::Package => state.aem_package.is_some(),
             Self::RedactoSql => state.redacto_sql.is_some(),
-            Self::StructureJson => state.merged_json.is_some(),
             Self::Xsd => state.xsd_schema.is_some(),
             Self::AgentLog => !state.agent_steps.is_empty(),
         }
     }
 }
 
-/// Take a copy of the by-products. Outside the AEM-package guard, since a
-/// Redacto run produces no package but still yields a dump, the structure and
-/// the log.
+/// Take a copy of the by-products the run's target offers. Outside the
+/// AEM-package guard, since a Redacto run produces no package but still yields a
+/// dump and the log.
 #[component]
 fn DownloadRow(state: ReadSignal<ProcessingState>) -> Element {
     rsx! {
         div { class: "ag-downloads",
             span { class: "ag-downloads-label", "Also download" }
             for artifact in Artifact::BYPRODUCTS.iter().copied() {
-                if artifact.is_present(&state.read()) {
+                if artifact.is_offered(&state.read()) {
                     DownloadButton {
                         key: "{artifact:?}",
                         class: "btn btn-secondary btn-sm",
@@ -1121,5 +1114,66 @@ mod tests {
         )]);
 
         assert!(md.contains("> First line\n> Second line\n"), "{md}");
+    }
+
+    /// A state holding every artefact, so the target rule is what decides which
+    /// ones the panel offers.
+    fn state_with_everything(target: blueprint::OutputTarget) -> ProcessingState {
+        ProcessingState {
+            step: ProcessingStep::Complete,
+            target,
+            aem_package: Some(vec![1, 2, 3]),
+            xsd_schema: Some("<xsd/>".into()),
+            redacto_sql: Some("INSERT ...".into()),
+            agent_steps: vec![step(
+                AgentStepKind::Tool,
+                "build_aem_package",
+                "",
+                AgentStepStatus::Done,
+            )],
+            ..Default::default()
+        }
+    }
+
+    /// Presence is not the rule. An AEM run must not offer the Redacto dump even
+    /// when one exists, and vice versa — otherwise the panel advertises an
+    /// artefact from the target the user did not pick.
+    #[test]
+    fn each_target_offers_only_its_own_artifacts() {
+        let aem = state_with_everything(blueprint::OutputTarget::Aem);
+        assert!(Artifact::Package.is_offered(&aem));
+        assert!(Artifact::Xsd.is_offered(&aem));
+        assert!(!Artifact::RedactoSql.is_offered(&aem));
+
+        let redacto = state_with_everything(blueprint::OutputTarget::Redacto);
+        assert!(Artifact::RedactoSql.is_offered(&redacto));
+        assert!(!Artifact::Package.is_offered(&redacto));
+        assert!(!Artifact::Xsd.is_offered(&redacto));
+    }
+
+    /// The log is the record of the run itself, so it survives either target.
+    #[test]
+    fn the_agent_log_is_offered_for_every_target() {
+        for target in blueprint::OutputTarget::ALL {
+            assert!(
+                Artifact::AgentLog.is_offered(&state_with_everything(target)),
+                "{target:?}"
+            );
+        }
+    }
+
+    /// A target that produced nothing offers nothing: the rule gates on top of
+    /// presence, it does not replace it.
+    #[test]
+    fn an_artifact_the_run_never_produced_is_not_offered() {
+        let empty = ProcessingState {
+            step: ProcessingStep::Complete,
+            target: blueprint::OutputTarget::Aem,
+            ..Default::default()
+        };
+
+        assert!(!Artifact::Package.is_offered(&empty));
+        assert!(!Artifact::Xsd.is_offered(&empty));
+        assert!(!Artifact::AgentLog.is_offered(&empty));
     }
 }

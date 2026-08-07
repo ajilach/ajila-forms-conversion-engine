@@ -4,25 +4,6 @@
 
 use blueprint::DocumentEnvelope;
 
-/// Generate the standalone HTML preview for `envelope`, if the profile has an
-/// `html/` section and the document has content.
-///
-/// The profile's typefaces travel inside the document: `load_html_custom_styles`
-/// embeds them as base64 `@font-face` data-URIs, so the preview needs no font
-/// manager.
-pub fn html_preview_for(envelope: &DocumentEnvelope, profile: Option<&str>) -> Option<String> {
-    let profile_name = profile?;
-    if envelope.content.is_empty() || !blueprint::has_html_config(profile_name) {
-        return None;
-    }
-    let styles = blueprint::load_html_custom_styles(profile_name).ok()?;
-    let config = blueprint::HtmlConfig {
-        custom_styles: Some(styles),
-        ..blueprint::HtmlConfig::default()
-    };
-    Some(blueprint::to_html(&envelope.content, &config))
-}
-
 /// Generate the XSD schema for `envelope`, if the profile has an `xsd/` section
 /// and the document has content.
 ///
@@ -132,37 +113,6 @@ mod tests {
         );
     }
 
-    /// The agent done screen offers the preview straight from
-    /// `ProcessingState::html_preview`, so this is the whole data path.
-    #[test]
-    fn html_preview_is_generated_for_the_ubs_profile() {
-        let envelope = envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);
-
-        let html = html_preview_for(&envelope, Some("ubs")).expect("ubs profile yields HTML");
-
-        assert!(html.contains("Ein Textabschnitt."), "{html}");
-        // The profile's typefaces travel inside the document rather than via the
-        // font manager, which is why the agent path needs no font loading.
-        assert!(html.contains("@font-face"), "custom styles must be inlined");
-    }
-
-    #[test]
-    fn html_preview_is_absent_without_a_profile_or_content() {
-        let mut envelope =
-            envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);
-
-        assert!(html_preview_for(&envelope, None).is_none());
-        assert!(html_preview_for(&envelope, Some("missing-profile")).is_none());
-
-        envelope.content = Vec::new();
-        assert!(
-            html_preview_for(&envelope, Some("ubs")).is_none(),
-            "an empty document must not be offered as a preview"
-        );
-    }
-
-    /// The form code comes from the AEM package the agent built, so the schema
-    /// names the same form.
     #[test]
     fn xsd_schema_uses_the_supplied_form_code() {
         let envelope = envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);

@@ -1208,37 +1208,17 @@ fn build_outputs(
                 content = crate::session::structured_from_aem_tree(tree, profile);
             }
 
-            // A Redacto dump is still offered as a byproduct when the profile has
-            // a Redacto section, built from the converted source document — the
-            // same content the CLI exports. `source_envelope()` rather than
-            // `agent.context()` so the recovered master-page header survives.
-            let redacto_sql = if profile.is_some_and(blueprint::has_redacto_config) {
-                let source = agent.source_envelope();
-                let sql = crate::processing::redacto_sql_for(&source, profile);
-                // An empty source is not necessarily an empty document: when the
-                // language variants are too dissimilar to merge, the engine
-                // yields nothing and every derived output would silently be empty.
-                if sql.is_none()
-                    && let Some(reason) = agent.source_merge_error()
-                {
-                    warnings.push(format!(
-                        "No Redacto dump: the source language variants could not be \
-                         merged ({reason}). Convert with the Redacto output target to \
-                         have the agent assemble the languages itself."
-                    ));
-                }
-                sql
-            } else {
-                None
-            };
-
+            // No Redacto dump here. An AEM run's result panel does not offer one,
+            // and deriving it from the source ran a full extraction and dump
+            // generation for a file nobody could reach. Convert with the Redacto
+            // target to get one.
             Outputs {
                 envelope: DocumentEnvelope {
                     context: agent.context().clone(),
                     content,
                     state_count: 1,
                 },
-                redacto_sql,
+                redacto_sql: None,
                 warnings,
             }
         }
@@ -1259,14 +1239,15 @@ impl Run {
             warnings,
         } = build_outputs(&mut self.agent, self.target, profile.as_deref());
 
-        let merged_json = serde_json::to_string_pretty(&envelope).ok();
         let form_code = self.agent.form_code();
 
-        // Derived exports for the done screen. The form code has to be resolved
-        // first: it names the form the schema describes.
-        let html_preview = crate::processing::html_preview_for(&envelope, profile.as_deref());
-        let xsd_schema =
-            crate::processing::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref());
+        // The schema describes an AEM form, so only that target offers it. The
+        // form code has to be resolved first: it names the form.
+        let xsd_schema = (self.target == blueprint::OutputTarget::Aem)
+            .then(|| {
+                crate::processing::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref())
+            })
+            .flatten();
 
         // Record the result in the structured history, so the run can be reopened
         // from the session browser. Without this the session holds nothing but the
@@ -1279,8 +1260,7 @@ impl Run {
             let mut state = processing_state.write();
             state.warnings.extend(warnings);
             state.step = ProcessingStep::Complete;
-            state.merged_json = merged_json;
-            state.html_preview = html_preview;
+            state.target = self.target;
             state.xsd_schema = xsd_schema;
             state.aem_package = self.agent.package();
             state.redacto_sql = redacto_sql;
@@ -1595,20 +1575,21 @@ mod tests {
         );
     }
 
-    /// The AEM target is unchanged: it still offers the dump as a byproduct
-    /// derived from the engine's conversion of the source.
+    /// An AEM run produces no Redacto dump, even on a profile that configures
+    /// one. The result panel does not offer it, so deriving it from the source
+    /// was a full extraction and dump generation for a file nobody could reach.
     #[test]
-    fn the_aem_target_still_derives_its_redacto_byproduct_from_the_source() {
+    fn the_aem_target_derives_no_redacto_dump() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Aem);
 
         let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Aem, Some("ubs"));
 
-        let sql = outputs
-            .redacto_sql
-            .expect("a single-PDF source converts, so the byproduct exists");
-        assert!(sql.contains("INSERT INTO app_redacto.documents "));
-        // The envelope, by contrast, is the authored AEM tree lifted back into
-        // structured content — empty here because this agent never authored one.
+        assert!(
+            outputs.redacto_sql.is_none(),
+            "the dump belongs to the Redacto target"
+        );
+        // The envelope is the authored AEM tree lifted back into structured
+        // content — empty here because this agent never authored one.
         assert!(outputs.envelope.content.is_empty());
         assert!(outputs.warnings.is_empty(), "{:?}", outputs.warnings);
     }

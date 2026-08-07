@@ -81,9 +81,11 @@ pub struct AgentStep {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProcessingState {
     pub step: ProcessingStep,
+    /// What the finished run produced. Recorded here rather than read from the
+    /// upload selector so the result panel always describes the run that
+    /// actually happened.
+    pub target: blueprint::OutputTarget,
     pub form_code: Option<String>,
-    pub merged_json: Option<String>,
-    pub html_preview: Option<String>,
     pub aem_package: Option<Vec<u8>>,
     pub xsd_schema: Option<String>,
     /// PostgreSQL dump for the Redacto platform (text-only documents).
