@@ -55,7 +55,8 @@ fn start_conversion_spec() -> serde_json::Value {
                 "pdf_paths": {"type": "array", "items": {"type": "string"}, "description": "Absolute paths to the source PDFs (use instead of pdf_path for a multi-PDF form)."},
                 "pdf_base64": {"type": "string", "description": "Base64-encoded PDF bytes. Fallback for when the file is not on the server's filesystem; large, so prefer a path when possible."},
                 "pdf_name": {"type": "string", "description": "Display name for a pdf_base64 source (e.g. \"form.pdf\")."},
-                "profile": {"type": "string", "description": "Conversion profile name (for AEM config + references)."}
+                "profile": {"type": "string", "description": "Conversion profile name (for AEM config + references)."},
+                "output_target": {"type": "string", "enum": ["aem", "redacto"], "description": "What to produce: \"aem\" (an Adaptive Form package, the default) or \"redacto\" (a text document). Determines which tools are available for the rest of the session."}
             },
             "required": []
         }
@@ -116,19 +117,18 @@ fn upload_from_file_spec() -> serde_json::Value {
 }
 
 /// The full advertised catalog: the MCP-only bootstrap/export tools plus the
-/// engine tools.
+/// engine tools scoped to an MCP client.
 ///
-/// The engine tools are static (independent of conversion state), so they are
-/// read from a throwaway agent.
-fn tool_catalog() -> Vec<serde_json::Value> {
+/// Scoped by `target` so a session never sees a tool the engine would then
+/// refuse — an AEM conversion is not offered `build_redacto_dump`.
+fn tool_catalog_for(target: blueprint::OutputTarget) -> Vec<serde_json::Value> {
     let mut specs = vec![
         start_conversion_spec(),
         write_package_spec(),
         validate_from_file_spec(),
         upload_from_file_spec(),
     ];
-    let probe = ConversionAgent::new(None, Vec::new(), None, String::new(), blueprint::OutputTarget::Aem);
-    specs.extend(probe.tools());
+    specs.extend(agent::tools_for(target, agent::scope::MCP));
     specs
 }
 
@@ -242,6 +242,18 @@ impl Blueprint {
             Err(e) => return CallToolResult::error(vec![Content::text(e)]),
         };
 
+        let target = match args.get("output_target").and_then(|v| v.as_str()) {
+            None => blueprint::OutputTarget::Aem,
+            Some(raw) => match blueprint::OutputTarget::parse(raw) {
+                Some(t) => t,
+                None => {
+                    return CallToolResult::error(vec![Content::text(format!(
+                        "Unknown output_target {raw:?}; expected \"aem\" or \"redacto\"."
+                    ))]);
+                }
+            },
+        };
+
         let profile = args
             .get("profile")
             .and_then(|v| v.as_str())
@@ -288,29 +300,40 @@ impl Blueprint {
         // count distinguishes "no references exist" from a profile mismatch
         // returning an empty list.
         let ref_count = agent::references::count(profile.as_deref().unwrap_or_default());
-        let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone(), blueprint::OutputTarget::Aem);
+        let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone(), target);
         *self.agent.lock().await = Some(new_agent);
 
-        let ref_note = if ref_count > 0 {
-            format!(
-                "{ref_count} reference form(s) are available for this profile — BEFORE building, \
-                 consult them (search_references, then get_reference_package / read_reference_file) \
-                 and match their structure rather than inventing your own."
-            )
-        } else {
-            "No reference forms are available for this profile.".to_string()
+        // The reference forms are AEM packages and the AEM connection only
+        // matters for an AEM run, so a Redacto session is told neither.
+        let target_notes = match target {
+            blueprint::OutputTarget::Redacto => String::new(),
+            blueprint::OutputTarget::Aem => {
+                let ref_note = if ref_count > 0 {
+                    format!(
+                        "{ref_count} reference form(s) are available for this profile — BEFORE \
+                         building, consult them (search_references, then get_reference_package / \
+                         read_reference_file) and match their structure rather than inventing \
+                         your own."
+                    )
+                } else {
+                    "No reference forms are available for this profile.".to_string()
+                };
+                format!("{ref_note}\n\n{aem_note}\n\n")
+            }
         };
 
         // The workflow guidance is repeated here, not just in the server
         // `instructions`, because many MCP clients drop `instructions` and the
         // tool result is the one surface every client delivers to the model.
+        let workflow = match target {
+            blueprint::OutputTarget::Aem => agent::SYSTEM_PROMPT,
+            blueprint::OutputTarget::Redacto => agent::REDACTO_SYSTEM_PROMPT,
+        };
         CallToolResult::success(vec![Content::text(format!(
-            "Loaded {count} PDF(s) [{label}] (session {session}).\n\n\
-             {SYSTEM_PROMPT}\n\n\
-             {ref_note}\n\n\
-             {MCP_ADDENDUM}\n\n\
-             {aem_note}",
-            SYSTEM_PROMPT = agent::SYSTEM_PROMPT,
+            "Loaded {count} PDF(s) [{label}] as a {kind} conversion (session {session}).\n\n\
+             {workflow}\n\n\
+             {target_notes}{MCP_ADDENDUM}",
+            kind = target.label(),
             MCP_ADDENDUM = agent::MCP_ADDENDUM,
         ))])
     }
@@ -427,7 +450,19 @@ impl ServerHandler for Blueprint {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        let tools = tool_catalog().iter().filter_map(to_mcp_tool).collect();
+        // Scope to the loaded conversion's target, so the client is never shown
+        // a tool this session would refuse. Before `start_conversion`, advertise
+        // the default target's catalog.
+        let target = self
+            .agent
+            .lock()
+            .await
+            .as_ref()
+            .map_or(blueprint::OutputTarget::Aem, |conv| conv.target());
+        let tools = tool_catalog_for(target)
+            .iter()
+            .filter_map(to_mcp_tool)
+            .collect();
         Ok(ListToolsResult::with_all_items(tools))
     }
 
@@ -574,6 +609,18 @@ mod tests {
         let sources = collect_sources(&sample).unwrap();
 
         assert!(props.contains_key("profile"), "profile is read at load time");
+        assert_eq!(
+            props["output_target"]["enum"],
+            json!(["aem", "redacto"]),
+            "the advertised targets must be the ones OutputTarget::parse accepts"
+        );
+        for advertised in props["output_target"]["enum"].as_array().unwrap() {
+            let raw = advertised.as_str().unwrap();
+            assert!(
+                blueprint::OutputTarget::parse(raw).is_some(),
+                "start_conversion advertises output_target {raw:?}, which it cannot parse"
+            );
+        }
         assert!(
             sources.contains(&path("/tmp/a.pdf")) && sources.contains(&path("/tmp/b.pdf")),
             "pdf_path and pdf_paths must both be honoured: {sources:?}"
@@ -600,19 +647,51 @@ mod tests {
         assert!(err.contains("nope.pdf"), "{err}");
     }
 
+    fn catalog_names(target: blueprint::OutputTarget) -> Vec<String> {
+        tool_catalog_for(target)
+            .iter()
+            .filter_map(|s| s["name"].as_str().map(String::from))
+            .collect()
+    }
+
     #[test]
     fn the_catalog_exposes_the_mcp_only_tools_alongside_the_engine_tools() {
-        let catalog = tool_catalog();
-        let names: Vec<&str> = catalog.iter().filter_map(|s| s["name"].as_str()).collect();
+        let names = catalog_names(blueprint::OutputTarget::Aem);
         for mcp_only in [
             "start_conversion",
             "write_package",
             "validate_aem_package_from_file",
             "upload_aem_package_from_file",
         ] {
-            assert!(names.contains(&mcp_only), "{mcp_only} missing from catalog");
+            assert!(
+                names.iter().any(|n| n == mcp_only),
+                "{mcp_only} missing from catalog"
+            );
         }
-        assert!(names.contains(&"build_aem_package"), "engine tools missing");
+        assert!(
+            names.iter().any(|n| n == "build_aem_package"),
+            "engine tools missing"
+        );
+    }
+
+    /// Regression: the catalog used to be target-blind while every MCP session
+    /// was hardcoded to AEM, so `build_redacto_dump` was advertised on every
+    /// session and then refused on every call.
+    #[test]
+    fn the_catalog_never_advertises_a_tool_this_target_would_refuse() {
+        let aem = catalog_names(blueprint::OutputTarget::Aem);
+        assert!(!aem.iter().any(|n| n == "build_redacto_dump"), "{aem:?}");
+        assert!(!aem.iter().any(|n| n == "review_redacto_output"), "{aem:?}");
+
+        let redacto = catalog_names(blueprint::OutputTarget::Redacto);
+        assert!(redacto.iter().any(|n| n == "build_redacto_dump"));
+        assert!(!redacto.iter().any(|n| n == "set_aem_translated"), "{redacto:?}");
+        assert!(!redacto.iter().any(|n| n == "build_aem_package"), "{redacto:?}");
+
+        // The MCP-only bootstrap tools are offered whatever the target.
+        for names in [&aem, &redacto] {
+            assert!(names.iter().any(|n| n == "start_conversion"));
+        }
     }
 
     #[test]

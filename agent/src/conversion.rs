@@ -38,38 +38,6 @@ const NO_STRUCTURED_TREE: &str =
 /// tools) but not through MCP, which serves the flat catalog.
 const AEM_ONLY_STATE: &str = "This run targets Redacto; no AEM state exists.";
 
-/// The tools that only mean anything for [`OutputTarget::Redacto`].
-///
-/// The structured-tree editors are deliberately *not* here: they operate on
-/// [`ConversionAgent::structured`], which both targets have (an AEM run seeds it
-/// when resuming a session). Only building and reviewing the dump needs the
-/// Redacto state.
-const REDACTO_ONLY_TOOLS: &[&str] = &["build_redacto_dump", "review_redacto_output"];
-
-/// The tools that only mean anything for [`OutputTarget::Aem`].
-///
-/// Checked once at the top of [`ConversionAgent::execute`] so a Redacto run
-/// rejects them with a clear reason rather than failing deeper down with
-/// something misleading like "No AEM tree yet".
-const AEM_ONLY_TOOLS: &[&str] = &[
-    "set_aem_translated",
-    "get_aem_translated",
-    "get_aem_translated_outline",
-    "get_aem_translated_node",
-    "set_aem_translated_field",
-    "replace_aem_translated_node",
-    "insert_aem_translated_node",
-    "remove_aem_translated_node",
-    "build_aem_package",
-    "get_package_info",
-    "read_package_file",
-    "validate_aem_package",
-    "review_output",
-    "upload_to_aem",
-    "fetch_aem_form_html",
-    "fetch_aem_dor_pdf",
-];
-
 /// All language codes appearing in any text field of a working tree (used to
 /// keep a pre-loaded template's languages alive through lowering, and to pick
 /// the languages a restored tree is lowered with — see [`crate::session`]).
@@ -1364,9 +1332,218 @@ impl ConversionAgent {
         Ok(tree.lower(&cfg.master_language, &cfg.languages))
     }
 
-    // ── Tool definitions ───────────────────────────────────────────────────────
+    // ── Tool execution (async: some tools hit the network) ──────────────────────
 
-    pub fn tools(&self) -> Vec<serde_json::Value> {
+    /// Why `name` cannot run under this run's output target, if it cannot.
+    ///
+    /// One guard for the whole AEM family, so a mis-targeted call says what is
+    /// actually wrong instead of failing deeper down with something misleading
+    /// like "No AEM tree yet". Derived from the catalog, so a tool is scoped in
+    /// exactly one place.
+    fn target_refusal(&self, name: &str) -> Option<String> {
+        let target = self.target.target();
+        let scoped_out = catalog()
+            .iter()
+            .find(|t| t.name() == name)
+            .is_some_and(|t| t.targets & target_mask(target) == 0);
+        scoped_out.then(|| {
+            format!(
+                "{name} is not available for the {} output target.",
+                target.label()
+            )
+        })
+    }
+}
+
+// ── Tool catalog ─────────────────────────────────────────────────────────────
+
+/// Which output targets a tool may run under.
+pub mod target {
+    /// A set of [`blueprint::OutputTarget`]s, as a bitmask.
+    pub type Mask = u8;
+    pub const AEM: Mask = 1 << 0;
+    pub const REDACTO: Mask = 1 << 1;
+    pub const BOTH: Mask = AEM | REDACTO;
+}
+
+/// Which callers a tool is *offered* to.
+///
+/// Distinct from [`target`]: a tool can be executable under both targets while
+/// only ever being offered to one target's stages. The structured-tree editors
+/// are the case in point — an AEM run can execute them (a resumed session seeds
+/// the structured tree), but no AEM stage is given them.
+pub mod scope {
+    /// A set of pipeline stages, as a bitmask.
+    pub type Mask = u8;
+    pub const AEM_ANALYST: Mask = 1 << 0;
+    pub const AEM_AUTHOR: Mask = 1 << 1;
+    pub const AEM_REVIEWER: Mask = 1 << 2;
+    pub const REDACTO_ANALYST: Mask = 1 << 3;
+    pub const REDACTO_AUTHOR: Mask = 1 << 4;
+    pub const REDACTO_REVIEWER: Mask = 1 << 5;
+    /// An external MCP client, which drives the tools itself.
+    pub const MCP: Mask = 1 << 6;
+
+    pub const AEM_STAGES: Mask = AEM_ANALYST | AEM_AUTHOR | AEM_REVIEWER;
+    pub const REDACTO_STAGES: Mask = REDACTO_ANALYST | REDACTO_AUTHOR | REDACTO_REVIEWER;
+    pub const ALL_STAGES: Mask = AEM_STAGES | REDACTO_STAGES;
+    pub const EVERYWHERE: Mask = ALL_STAGES | MCP;
+}
+
+/// One entry in the tool catalog: the Anthropic-style JSON spec plus the scopes
+/// it belongs to.
+pub struct ToolSpec {
+    /// `{name, description, input_schema}`, passed to the model verbatim.
+    pub spec: serde_json::Value,
+    /// Output targets whose runs may *execute* this tool.
+    pub targets: target::Mask,
+    /// Stages this tool is *offered* to.
+    pub scopes: scope::Mask,
+}
+
+impl ToolSpec {
+    pub fn name(&self) -> &str {
+        self.spec["name"].as_str().unwrap_or_default()
+    }
+}
+
+fn target_mask(target: OutputTarget) -> target::Mask {
+    match target {
+        OutputTarget::Aem => target::AEM,
+        OutputTarget::Redacto => target::REDACTO,
+    }
+}
+
+/// The whole tool catalog. Built once — nothing in it depends on run state.
+pub fn catalog() -> &'static [ToolSpec] {
+    static CATALOG: std::sync::OnceLock<Vec<ToolSpec>> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(build_catalog)
+}
+
+/// Every tool spec, unfiltered. For consumers that present the flat catalog.
+pub fn all_tools() -> Vec<serde_json::Value> {
+    catalog().iter().map(|t| t.spec.clone()).collect()
+}
+
+/// The tool specs offered to `scopes` in a run targeting `target`.
+///
+/// This is the single place a caller's tool set is decided: the app's pipeline
+/// stages and the MCP server both go through it, so a tool is scoped once, in
+/// [`SCOPING`], rather than in a list per consumer.
+pub fn tools_for(target: OutputTarget, scopes: scope::Mask) -> Vec<serde_json::Value> {
+    let target = target_mask(target);
+    catalog()
+        .iter()
+        .filter(|t| t.targets & target != 0 && t.scopes & scopes != 0)
+        .map(|t| t.spec.clone())
+        .collect()
+}
+
+fn build_catalog() -> Vec<ToolSpec> {
+    tool_specs()
+        .into_iter()
+        .map(|spec| {
+            let name = spec["name"].as_str().unwrap_or_default();
+            let (_, targets, scopes) = SCOPING
+                .iter()
+                .find(|(n, _, _)| *n == name)
+                .unwrap_or_else(|| panic!("tool {name:?} has no row in SCOPING"));
+            ToolSpec {
+                targets: *targets,
+                scopes: *scopes,
+                spec,
+            }
+        })
+        .collect()
+}
+
+/// Which target and which stages each tool belongs to.
+///
+/// One row per catalog entry — `scoping_covers_exactly_the_catalog` proves the
+/// two stay in step, and [`build_catalog`] panics on a missing row, so a new
+/// tool cannot be added without deciding who gets it.
+#[rustfmt::skip]
+const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
+    use scope::*;
+    &[
+        // §1 extraction. The AEM Reviewer is the one stage without
+        // get_source_info: it reviews the built package against the tree, and
+        // the Redacto Reviewer needs it only because languages are the thing it
+        // checks. Preserved as-is rather than quietly widened.
+        ("get_source_info",                   target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_STAGES | MCP),
+        ("explore_states",                    target::BOTH,    AEM_ANALYST | REDACTO_ANALYST | MCP),
+        ("list_states",                       target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+        ("get_xfa",                           target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+        ("search_xfa",                        target::BOTH,    EVERYWHERE),
+        ("get_plain_state_image",             target::BOTH,    EVERYWHERE),
+        ("get_annotated_state_image",         target::BOTH,    EVERYWHERE),
+        ("get_flattened_structure_for_state", target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+
+        // §2a structured tree — executable under both targets (a resumed AEM
+        // session seeds it), but only ever offered to the Redacto stages.
+        ("seed_structured_from_state",        target::BOTH,    REDACTO_AUTHOR | MCP),
+        ("set_structured",                    target::BOTH,    MCP),
+        ("get_structured_outline",            target::BOTH,    REDACTO_AUTHOR | REDACTO_REVIEWER | MCP),
+        ("get_structured_node",               target::BOTH,    REDACTO_AUTHOR | REDACTO_REVIEWER | MCP),
+        ("set_structured_field",              target::BOTH,    REDACTO_AUTHOR | MCP),
+        ("set_structured_fields",             target::BOTH,    REDACTO_AUTHOR | MCP),
+        ("replace_structured_node",           target::BOTH,    REDACTO_AUTHOR | MCP),
+        ("insert_structured_node",            target::BOTH,    REDACTO_AUTHOR | MCP),
+        ("remove_structured_node",            target::BOTH,    REDACTO_AUTHOR | MCP),
+
+        // §2b Redacto output.
+        ("build_redacto_dump",                target::REDACTO, REDACTO_AUTHOR | REDACTO_REVIEWER | MCP),
+        ("review_redacto_output",             target::REDACTO, REDACTO_AUTHOR | REDACTO_REVIEWER | MCP),
+
+        // §3 AEM tree.
+        ("set_aem_translated",                target::AEM,     AEM_AUTHOR | MCP),
+        ("get_aem_translated",                target::AEM,     AEM_AUTHOR | MCP),
+        ("get_aem_translated_outline",        target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("get_aem_translated_node",           target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("set_aem_translated_field",          target::AEM,     AEM_AUTHOR | MCP),
+        ("replace_aem_translated_node",       target::AEM,     AEM_AUTHOR | MCP),
+        ("insert_aem_translated_node",        target::AEM,     AEM_AUTHOR | MCP),
+        ("remove_aem_translated_node",        target::AEM,     AEM_AUTHOR | MCP),
+
+        // §4 AEM package.
+        ("build_aem_package",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("get_package_info",                  target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("read_package_file",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("validate_aem_package",              target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("review_output",                     target::AEM,     AEM_REVIEWER | MCP),
+
+        // §5 derived output.
+        ("generate_xsd",                      target::BOTH,    AEM_AUTHOR | MCP),
+        ("generate_html",                     target::BOTH,    AEM_AUTHOR | AEM_REVIEWER | MCP),
+
+        // §6 live AEM.
+        ("upload_to_aem",                     target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("fetch_aem_form_html",               target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("fetch_aem_dor_pdf",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+
+        // §7 references. The reference *forms* are AEM packages, so they are
+        // pure token cost for a text-only Redacto document; only the reference
+        // documentation is offered there.
+        ("list_reference_forms",              target::BOTH,    AEM_ANALYST | MCP),
+        ("search_references",                 target::BOTH,    AEM_ANALYST | AEM_AUTHOR | MCP),
+        ("grep_references",                   target::BOTH,    AEM_ANALYST | AEM_AUTHOR | MCP),
+        ("read_reference_file",               target::BOTH,    AEM_ANALYST | AEM_AUTHOR | MCP),
+        ("get_reference_package",             target::BOTH,    AEM_ANALYST | AEM_AUTHOR | MCP),
+        ("list_reference_docs",               target::BOTH,    AEM_ANALYST | REDACTO_ANALYST | MCP),
+        ("read_reference_doc",                target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+        ("grep_reference_docs",               target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
+
+        // §8 meta. get_profile_info reports the AEM configuration, which would
+        // mislead a Redacto stage; get_source_info is the authority on languages.
+        ("get_schema",                        target::BOTH,    AEM_AUTHOR | REDACTO_AUTHOR | MCP),
+        ("get_profile_info",                  target::AEM,     AEM_ANALYST | AEM_AUTHOR | MCP),
+        ("finish",                            target::BOTH,    MCP),
+        ("submit_review",                     target::BOTH,    AEM_REVIEWER | REDACTO_REVIEWER | MCP),
+    ]
+};
+
+fn tool_specs() -> Vec<serde_json::Value> {
+    {
         let source = serde_json::json!({
             "source": {
                 "type": "object",
@@ -1713,27 +1890,9 @@ impl ConversionAgent {
             ),
         ]
     }
+}
 
-    // ── Tool execution (async: some tools hit the network) ──────────────────────
-
-    /// Why `name` cannot run under this run's output target, if it cannot.
-    ///
-    /// One guard for the whole AEM family, so a mis-targeted call says what is
-    /// actually wrong instead of failing deeper down with something misleading
-    /// like "No AEM tree yet".
-    fn target_refusal(&self, name: &str) -> Option<String> {
-        let wrong_target = (AEM_ONLY_TOOLS.contains(&name)
-            && self.target.target() != OutputTarget::Aem)
-            || (REDACTO_ONLY_TOOLS.contains(&name)
-                && self.target.target() != OutputTarget::Redacto);
-        wrong_target.then(|| {
-            format!(
-                "{name} is not available for the {} output target.",
-                self.target.target().label()
-            )
-        })
-    }
-
+impl ConversionAgent {
     pub async fn execute(&mut self, name: &str, input: &serde_json::Value) -> ToolReply {
         if let Some(refusal) = self.target_refusal(name) {
             return ToolReply::Error(refusal);
@@ -2485,8 +2644,8 @@ mod catalog_guards {
         "upload_aem_package_from_file",
     ];
 
-    fn catalog() -> Vec<serde_json::Value> {
-        ConversionAgent::new(None, Vec::new(), None, String::new(), OutputTarget::Aem).tools()
+    fn specs() -> Vec<serde_json::Value> {
+        all_tools()
     }
 
     /// Every `snake_case` word in `text`, which is close enough to "looks like a
@@ -2526,7 +2685,7 @@ mod catalog_guards {
     /// existed in this catalog.
     #[test]
     fn prose_only_names_tools_that_exist() {
-        let catalog = catalog();
+        let catalog = specs();
         let names: BTreeSet<&str> = catalog.iter().filter_map(|t| t["name"].as_str()).collect();
 
         let mut prose = String::new();
@@ -2564,9 +2723,92 @@ mod catalog_guards {
         );
     }
 
+    /// [`SCOPING`] is the one place a tool's target and stages are decided, so
+    /// it has to describe the catalog exactly — no orphan rows, no tool without
+    /// a row. (`build_catalog` panics on the second case; this catches the
+    /// first, and reports both at once.)
+    #[test]
+    fn scoping_covers_exactly_the_catalog() {
+        let in_catalog: BTreeSet<&str> = catalog().iter().map(|t| t.name()).collect();
+        let in_scoping: BTreeSet<&str> = SCOPING.iter().map(|(n, _, _)| *n).collect();
+
+        let orphan_rows: Vec<_> = in_scoping.difference(&in_catalog).collect();
+        let unscoped: Vec<_> = in_catalog.difference(&in_scoping).collect();
+        assert!(
+            orphan_rows.is_empty() && unscoped.is_empty(),
+            "SCOPING rows with no tool: {orphan_rows:?}; tools with no SCOPING row: {unscoped:?}"
+        );
+        assert_eq!(SCOPING.len(), catalog().len(), "duplicate SCOPING rows");
+    }
+
+    /// A tool nobody is offered is dead weight; a tool offered to a stage whose
+    /// target cannot execute it is a guaranteed refusal wasting a turn.
+    #[test]
+    fn every_tool_is_offered_somewhere_consistent_with_its_target() {
+        for tool in catalog() {
+            let name = tool.name();
+            assert!(tool.scopes != 0, "{name} is offered to nobody");
+            assert!(tool.targets != 0, "{name} can run under no target");
+            if tool.targets == target::AEM {
+                assert!(
+                    tool.scopes & scope::REDACTO_STAGES == 0,
+                    "{name} is AEM-only but offered to a Redacto stage, which would always refuse it"
+                );
+            }
+            if tool.targets == target::REDACTO {
+                assert!(
+                    tool.scopes & scope::AEM_STAGES == 0,
+                    "{name} is Redacto-only but offered to an AEM stage, which would always refuse it"
+                );
+            }
+        }
+    }
+
+    /// The stage tool sets are what each role actually sees. Spot-check the
+    /// invariants that used to live in the app's cross-crate list test.
+    #[test]
+    fn stage_tool_sets_keep_their_invariants() {
+        let has = |target, scope, name: &str| {
+            tools_for(target, scope)
+                .iter()
+                .any(|t| t["name"].as_str() == Some(name))
+        };
+
+        // Only the Author writes; only the Reviewer terminates.
+        assert!(has(OutputTarget::Aem, scope::AEM_AUTHOR, "set_aem_translated"));
+        assert!(!has(OutputTarget::Aem, scope::AEM_ANALYST, "set_aem_translated"));
+        assert!(!has(OutputTarget::Aem, scope::AEM_REVIEWER, "set_aem_translated"));
+        assert!(has(OutputTarget::Aem, scope::AEM_REVIEWER, "submit_review"));
+        assert!(!has(OutputTarget::Aem, scope::AEM_AUTHOR, "submit_review"));
+        assert!(!has(OutputTarget::Aem, scope::AEM_ANALYST, "submit_review"));
+
+        // No stage may end the run itself.
+        for stage in [scope::AEM_ANALYST, scope::AEM_AUTHOR, scope::AEM_REVIEWER] {
+            assert!(!has(OutputTarget::Aem, stage, "finish"));
+        }
+
+        // The Redacto Author edits the structured tree but never re-emits it
+        // wholesale: set_structured discards the grouping the seed carried.
+        assert!(has(OutputTarget::Redacto, scope::REDACTO_AUTHOR, "seed_structured_from_state"));
+        assert!(has(OutputTarget::Redacto, scope::REDACTO_AUTHOR, "build_redacto_dump"));
+        assert!(!has(OutputTarget::Redacto, scope::REDACTO_AUTHOR, "set_structured"));
+
+        // The Analyst reads and never edits.
+        for stage in [scope::AEM_ANALYST, scope::REDACTO_ANALYST] {
+            let target = if stage == scope::AEM_ANALYST {
+                OutputTarget::Aem
+            } else {
+                OutputTarget::Redacto
+            };
+            for writer in ["set_structured_field", "set_aem_translated_field", "build_aem_package"] {
+                assert!(!has(target, stage, writer), "the Analyst must not have {writer}");
+            }
+        }
+    }
+
     #[test]
     fn the_catalog_has_no_duplicate_tool_names() {
-        let catalog = catalog();
+        let catalog = specs();
         let names: Vec<&str> = catalog.iter().filter_map(|t| t["name"].as_str()).collect();
         let unique: BTreeSet<&&str> = names.iter().collect();
         assert_eq!(
@@ -2579,7 +2821,7 @@ mod catalog_guards {
 
     #[test]
     fn every_tool_declares_an_object_input_schema() {
-        for tool in catalog() {
+        for tool in specs() {
             let name = tool["name"].as_str().unwrap_or("<unnamed>");
             assert_eq!(
                 tool["input_schema"]["type"].as_str(),
@@ -2599,7 +2841,7 @@ mod catalog_guards {
     fn the_catalog_matches_its_checked_in_snapshot() {
         let actual = format!(
             "{}\n",
-            serde_json::to_string_pretty(&catalog()).expect("catalog serialises")
+            serde_json::to_string_pretty(&specs()).expect("catalog serialises")
         );
 
         if std::env::var_os("UPDATE_SNAPSHOTS").is_some() {
@@ -2621,6 +2863,15 @@ mod catalog_guards {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tools the catalog scopes to exactly one output target.
+    fn tools_only_for(mask: target::Mask) -> Vec<&'static str> {
+        catalog()
+            .iter()
+            .filter(|t| t.targets == mask)
+            .map(|t| t.name())
+            .collect()
+    }
 
     /// A fresh agent authors the AEM tree directly and never fills
     /// `structured`, so anything deriving output from the source document must
@@ -2753,7 +3004,7 @@ mod tests {
         assert!(agent.aem_session().is_none());
         assert!(agent.form_code().is_none());
 
-        for tool in AEM_ONLY_TOOLS {
+        for tool in tools_only_for(target::AEM) {
             let refusal = agent
                 .target_refusal(tool)
                 .unwrap_or_else(|| panic!("{tool} must be refused under the Redacto target"));
@@ -2776,7 +3027,7 @@ mod tests {
             OutputTarget::Aem,
         );
 
-        for tool in REDACTO_ONLY_TOOLS {
+        for tool in tools_only_for(target::REDACTO) {
             let refusal = agent
                 .target_refusal(tool)
                 .unwrap_or_else(|| panic!("{tool} must be refused under the AEM target"));
@@ -2914,7 +3165,7 @@ mod tests {
         );
 
         assert_eq!(agent.target(), OutputTarget::Aem);
-        for tool in AEM_ONLY_TOOLS {
+        for tool in tools_only_for(target::AEM) {
             assert!(
                 agent.target_refusal(tool).is_none(),
                 "{tool} must be available under the AEM target"
@@ -3000,3 +3251,4 @@ mod tests {
         );
     }
 }
+

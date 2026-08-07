@@ -23,8 +23,8 @@ pub mod tree_edit;
 
 pub use conversion::{
     ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, MCP_ADDENDUM, NO_PACKAGE,
-    REDACTO_ANALYST_ADDENDUM,
-    REDACTO_AUTHOR_ADDENDUM, REDACTO_REVIEWER_ADDENDUM, REDACTO_SHARED_PREAMBLE,
-    REDACTO_SYSTEM_PROMPT, REVIEWER_ADDENDUM, ReviewResult, SHARED_PREAMBLE, SYSTEM_PROMPT,
-    ToolReply, aem_connection_from_settings, validate_package_bytes,
+    REDACTO_ANALYST_ADDENDUM, REDACTO_AUTHOR_ADDENDUM, REDACTO_REVIEWER_ADDENDUM,
+    REDACTO_SHARED_PREAMBLE, REDACTO_SYSTEM_PROMPT, REVIEWER_ADDENDUM, ReviewResult,
+    SHARED_PREAMBLE, SYSTEM_PROMPT, ToolReply, ToolSpec, aem_connection_from_settings, all_tools,
+    catalog, scope, target, tools_for, validate_package_bytes,
 };

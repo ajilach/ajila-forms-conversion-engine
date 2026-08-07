@@ -87,7 +87,10 @@ Keep every individual call small. Proceed now.";
 /// be pinned into `system`).
 struct Role {
     name: &'static str,
-    allowed_tools: &'static [&'static str],
+    /// Which catalog scope this stage is. The tools themselves are scoped in
+    /// `agent`'s catalog, so a stage names a scope rather than carrying a list
+    /// that has to be kept in step with the engine by hand.
+    scope: agent::scope::Mask,
     max_iterations: usize,
     /// The tool whose repeated identical output means the stage is going in
     /// circles. `None` for stages that have no such tool.
@@ -101,181 +104,60 @@ struct Role {
 
 const ANALYST: Role = Role {
     name: "Analyst",
+    scope: agent::scope::AEM_ANALYST,
     max_iterations: 25,
     stuck_tool: None,
     stuck_activity: "analysis",
     max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
-    allowed_tools: &[
-        "get_source_info",
-        "get_profile_info",
-        "list_states",
-        "explore_states",
-        "get_xfa",
-        "search_xfa",
-        "get_plain_state_image",
-        "get_annotated_state_image",
-        "get_flattened_structure_for_state",
-        "list_reference_docs",
-        "read_reference_doc",
-        "grep_reference_docs",
-        "list_reference_forms",
-        "search_references",
-        "grep_references",
-        "get_reference_package",
-        "read_reference_file",
-    ],
 };
 
 const AUTHOR: Role = Role {
     name: "Author",
+    scope: agent::scope::AEM_AUTHOR,
     max_iterations: 110,
     stuck_tool: Some("validate_aem_package"),
     stuck_activity: "validation",
     max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
-    // No `finish` — the Author never terminates the run; a stage ends on the
-    // natural no-tool-use turn. The Reviewer owns termination via `submit_review`.
-    allowed_tools: &[
-        "get_source_info",
-        "list_states",
-        "get_schema",
-        "get_profile_info",
-        "set_aem_translated",
-        "get_aem_translated",
-        "get_aem_translated_outline",
-        "get_aem_translated_node",
-        "set_aem_translated_field",
-        "insert_aem_translated_node",
-        "replace_aem_translated_node",
-        "remove_aem_translated_node",
-        "search_xfa",
-        "get_xfa",
-        "get_flattened_structure_for_state",
-        "get_plain_state_image",
-        "get_annotated_state_image",
-        "search_references",
-        "grep_references",
-        "get_reference_package",
-        "read_reference_file",
-        "read_reference_doc",
-        "grep_reference_docs",
-        "build_aem_package",
-        "get_package_info",
-        "read_package_file",
-        "validate_aem_package",
-        "generate_xsd",
-        "generate_html",
-        "upload_to_aem",
-        "fetch_aem_form_html",
-        "fetch_aem_dor_pdf",
-    ],
 };
 
 const REVIEWER: Role = Role {
     name: "Reviewer",
+    scope: agent::scope::AEM_REVIEWER,
     max_iterations: 30,
     stuck_tool: Some("validate_aem_package"),
     stuck_activity: "validation",
     max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
-    allowed_tools: &[
-        "build_aem_package",
-        "get_package_info",
-        "read_package_file",
-        "validate_aem_package",
-        "review_output",
-        "generate_html",
-        "get_aem_translated_outline",
-        "get_aem_translated_node",
-        "get_plain_state_image",
-        "get_annotated_state_image",
-        "search_xfa",
-        "upload_to_aem",
-        "fetch_aem_form_html",
-        "fetch_aem_dor_pdf",
-        "submit_review",
-    ],
 };
 
 // ── Redacto roles ────────────────────────────────────────────────────────────
 //
 // A Redacto document is text only, so these stages never touch the AEM tree.
-// They also drop `get_profile_info`, which reports the AEM configuration and
-// would be misleading here; `get_source_info` is the authority on languages.
-// The reference *packages* are AEM content and are pure token cost for a text
-// document, so only the reference documentation is offered.
 
 const REDACTO_ANALYST: Role = Role {
     name: "Analyst",
+    scope: agent::scope::REDACTO_ANALYST,
     max_iterations: 25,
     stuck_tool: None,
     stuck_activity: "analysis",
     max_tokens_nudge: REDACTO_MAX_TOKENS_NUDGE,
-    allowed_tools: &[
-        "get_source_info",
-        "list_states",
-        "explore_states",
-        "get_xfa",
-        "search_xfa",
-        "get_plain_state_image",
-        "get_annotated_state_image",
-        "get_flattened_structure_for_state",
-        "list_reference_docs",
-        "read_reference_doc",
-        "grep_reference_docs",
-    ],
 };
 
 const REDACTO_AUTHOR: Role = Role {
     name: "Author",
+    scope: agent::scope::REDACTO_AUTHOR,
     max_iterations: 110,
     stuck_tool: Some("build_redacto_dump"),
     stuck_activity: "the dump build",
     max_tokens_nudge: REDACTO_MAX_TOKENS_NUDGE,
-    // No `finish` — as with the AEM Author, the Reviewer owns termination.
-    allowed_tools: &[
-        "get_source_info",
-        "list_states",
-        "get_schema",
-        "get_xfa",
-        "search_xfa",
-        "get_flattened_structure_for_state",
-        "get_plain_state_image",
-        "get_annotated_state_image",
-        "seed_structured_from_state",
-        // Deliberately NOT `set_structured`: a whole-tree write is the cheapest
-        // way to add languages and it silently discards the grouping and
-        // multi-column sections the seed carried. `set_structured_fields` does
-        // the same job in one call without touching the structure.
-        "get_structured_outline",
-        "get_structured_node",
-        "set_structured_field",
-        "set_structured_fields",
-        "replace_structured_node",
-        "insert_structured_node",
-        "remove_structured_node",
-        "build_redacto_dump",
-        "review_redacto_output",
-        "read_reference_doc",
-        "grep_reference_docs",
-    ],
 };
 
 const REDACTO_REVIEWER: Role = Role {
     name: "Reviewer",
+    scope: agent::scope::REDACTO_REVIEWER,
     max_iterations: 30,
     stuck_tool: Some("build_redacto_dump"),
     stuck_activity: "the dump build",
     max_tokens_nudge: REDACTO_MAX_TOKENS_NUDGE,
-    allowed_tools: &[
-        "get_structured_outline",
-        "get_structured_node",
-        "build_redacto_dump",
-        "review_redacto_output",
-        "get_plain_state_image",
-        "get_annotated_state_image",
-        "search_xfa",
-        "get_source_info",
-        "submit_review",
-    ],
 };
 
 /// The three stages for one output target.
@@ -314,17 +196,6 @@ fn roles_for(target: blueprint::OutputTarget) -> TargetRoles {
                               content, then build_redacto_dump and review_redacto_output.",
         },
     }
-}
-
-/// The agent's full tool catalog filtered to the names a role may call. Leaves
-/// [`ConversionAgent::tools`]/`execute` untouched (so MCP keeps the flat catalog);
-/// a role is simply never *offered* out-of-scope tools.
-fn role_tools(agent: &ConversionAgent, allowed: &[&str]) -> Vec<serde_json::Value> {
-    agent
-        .tools()
-        .into_iter()
-        .filter(|t| t["name"].as_str().is_some_and(|n| allowed.contains(&n)))
-        .collect()
 }
 
 // ── Per-role system-prompt composition (plan + reviews pinned in `system`) ─────
@@ -1057,7 +928,7 @@ async fn run_role(
     processing_state: &mut Signal<ProcessingState>,
 ) -> Option<String> {
     let abort = ctx.abort;
-    let tools = role_tools(agent, role.allowed_tools);
+    let tools = agent::tools_for(agent.target(), role.scope);
     let mut history: Vec<serde_json::Value> = vec![serde_json::json!({
         "role": "user",
         "content": [{"type": "text", "text": seed_user_msg}],
@@ -1471,107 +1342,70 @@ mod tests {
         ));
     }
 
+    /// Which tools a stage may call is decided once, in the engine's catalog;
+    /// `agent`'s own tests own those invariants. What this crate still has to
+    /// guarantee is that each stage names a scope that resolves to a usable tool
+    /// set under its target — an empty set would leave the stage unable to act.
     #[test]
-    fn role_tool_sets_are_scoped() {
-        // Author may write the tree; Analyst and Reviewer may not.
-        assert!(AUTHOR.allowed_tools.contains(&"set_aem_translated"));
-        assert!(!ANALYST.allowed_tools.contains(&"set_aem_translated"));
-        assert!(!REVIEWER.allowed_tools.contains(&"set_aem_translated"));
-        // Only the Reviewer can submit a review; nobody but the Reviewer.
-        assert!(REVIEWER.allowed_tools.contains(&"submit_review"));
-        assert!(!AUTHOR.allowed_tools.contains(&"submit_review"));
-        assert!(!ANALYST.allowed_tools.contains(&"submit_review"));
-        // The Author must never call `finish` (the controller terminates the run).
-        assert!(!AUTHOR.allowed_tools.contains(&"finish"));
-        // The stuck detector is keyed off the role, not a hard-coded name.
-        assert_eq!(AUTHOR.stuck_tool, Some("validate_aem_package"));
-        assert_eq!(ANALYST.stuck_tool, None);
-    }
-
-    #[test]
-    fn redacto_role_tool_sets_are_scoped() {
-        // The Redacto stages author the structured tree...
-        assert!(
-            REDACTO_AUTHOR
-                .allowed_tools
-                .contains(&"seed_structured_from_state")
-        );
-        assert!(
-            REDACTO_AUTHOR
-                .allowed_tools
-                .contains(&"set_structured_field")
-        );
-        assert!(
-            REDACTO_AUTHOR
-                .allowed_tools
-                .contains(&"set_structured_fields")
-        );
-        assert!(REDACTO_AUTHOR.allowed_tools.contains(&"build_redacto_dump"));
-        // Regression: a whole-tree write is the cheapest way to add languages,
-        // and the agent duly took it — flattening the seeded multi-column groups
-        // into 92 flat nodes and losing every styled panel.
-        // `set_structured_fields` does the same job without touching structure.
-        assert!(
-            !REDACTO_AUTHOR.allowed_tools.contains(&"set_structured"),
-            "a whole-tree write discards the structure the seed carried"
-        );
-        // ...and must never reach for the AEM machinery.
-        for forbidden in [
-            "set_aem_translated",
-            "get_aem_translated",
-            "build_aem_package",
-            "validate_aem_package",
-            "upload_to_aem",
-            // Reports the AEM configuration, which would misinform this stage.
-            "get_profile_info",
-        ] {
-            for role in [&REDACTO_ANALYST, &REDACTO_AUTHOR, &REDACTO_REVIEWER] {
-                assert!(
-                    !role.allowed_tools.contains(&forbidden),
-                    "{} must not be offered {forbidden}",
-                    role.name
-                );
-            }
-        }
-        // The Analyst never mutates; only the Reviewer terminates.
-        assert!(!REDACTO_ANALYST.allowed_tools.contains(&"set_structured"));
-        assert!(REDACTO_REVIEWER.allowed_tools.contains(&"submit_review"));
-        assert!(!REDACTO_AUTHOR.allowed_tools.contains(&"submit_review"));
-        assert!(!REDACTO_AUTHOR.allowed_tools.contains(&"finish"));
-        assert_eq!(REDACTO_AUTHOR.stuck_tool, Some("build_redacto_dump"));
-    }
-
-    /// `role_tools` filters the catalog by name, so a typo silently removes a
-    /// capability with no error anywhere. Catch it here instead.
-    #[test]
-    fn every_allowed_tool_exists_in_the_catalog() {
+    fn every_stage_resolves_to_a_non_empty_tool_set() {
         for target in [
             blueprint::OutputTarget::Aem,
             blueprint::OutputTarget::Redacto,
         ] {
-            let agent = ConversionAgent::new(None, Vec::new(), None, String::new(), target);
-            let catalog: Vec<String> = agent
-                .tools()
-                .iter()
-                .filter_map(|t| t["name"].as_str().map(String::from))
-                .collect();
-
             let roles = roles_for(target);
             for role in [roles.analyst, roles.author, roles.reviewer] {
-                for tool in role.allowed_tools {
-                    assert!(
-                        catalog.iter().any(|c| c == tool),
-                        "{target:?} {} lists '{tool}', which is not in the tool catalog",
-                        role.name
-                    );
-                }
-                if let Some(stuck) = role.stuck_tool {
-                    assert!(
-                        role.allowed_tools.contains(&stuck),
-                        "{target:?} {} watches '{stuck}' but is never offered it",
-                        role.name
-                    );
-                }
+                let tools = agent::tools_for(target, role.scope);
+                assert!(
+                    !tools.is_empty(),
+                    "{target:?} {} is offered no tools at all",
+                    role.name
+                );
+            }
+        }
+    }
+
+    /// The stuck detector watches one tool per stage. Watching a tool the stage
+    /// is never offered would silently disable the detector.
+    #[test]
+    fn every_stuck_tool_is_one_its_stage_is_offered() {
+        for target in [
+            blueprint::OutputTarget::Aem,
+            blueprint::OutputTarget::Redacto,
+        ] {
+            let roles = roles_for(target);
+            for role in [roles.analyst, roles.author, roles.reviewer] {
+                let Some(stuck) = role.stuck_tool else {
+                    continue;
+                };
+                let offered = agent::tools_for(target, role.scope);
+                assert!(
+                    offered.iter().any(|t| t["name"].as_str() == Some(stuck)),
+                    "{target:?} {} watches '{stuck}' but is never offered it",
+                    role.name
+                );
+            }
+        }
+        // Keyed off the role, not a hard-coded name.
+        assert_eq!(AUTHOR.stuck_tool, Some("validate_aem_package"));
+        assert_eq!(ANALYST.stuck_tool, None);
+        assert_eq!(REDACTO_AUTHOR.stuck_tool, Some("build_redacto_dump"));
+    }
+
+    /// The six stages must be six distinct scopes — pointing two stages at the
+    /// same scope would silently give one of them the other's tools.
+    #[test]
+    fn the_six_stages_have_distinct_scopes() {
+        let scopes = [
+            ANALYST.scope,
+            AUTHOR.scope,
+            REVIEWER.scope,
+            REDACTO_ANALYST.scope,
+            REDACTO_AUTHOR.scope,
+            REDACTO_REVIEWER.scope,
+        ];
+        for (i, a) in scopes.iter().enumerate() {
+            for b in &scopes[i + 1..] {
+                assert_ne!(a, b, "two stages share a scope: {scopes:?}");
             }
         }
     }
@@ -1749,9 +1583,11 @@ mod tests {
         }
 
         // Every tool the seeds name must be one the Redacto Author may call.
+        let offered =
+            agent::tools_for(blueprint::OutputTarget::Redacto, REDACTO_AUTHOR.scope);
         for tool in ["build_redacto_dump", "review_redacto_output"] {
             assert!(
-                REDACTO_AUTHOR.allowed_tools.contains(&tool),
+                offered.iter().any(|t| t["name"].as_str() == Some(tool)),
                 "the Redacto Author seed names '{tool}', which it cannot call"
             );
         }
