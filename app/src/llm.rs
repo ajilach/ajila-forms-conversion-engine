@@ -202,6 +202,9 @@ pub fn context_window_for(model: &str) -> usize {
     if learned > 0 {
         return learned;
     }
+    if let Some(known) = KNOWN_MODELS.iter().find(|m| m.id == model) {
+        return known.context_window;
+    }
     let m = model.to_ascii_lowercase();
     let large = m.contains("[1m]")
         || m.contains("-1m")
@@ -209,16 +212,53 @@ pub fn context_window_for(model: &str) -> usize {
     if large { 1_000_000 } else { 200_000 }
 }
 
-/// Families whose current models carry a 1M-token context window.
-const LARGE_CONTEXT_FAMILIES: &[&str] = &["opus-4", "sonnet-4", "sonnet-5", "fable-5"];
+/// A model this app knows the limits of.
+pub struct ModelInfo {
+    /// The exact API model id.
+    pub id: &'static str,
+    /// Maximum context window, in tokens.
+    pub context_window: usize,
+    /// Maximum tokens the model can emit in one turn.
+    pub max_output_tokens: u32,
+}
 
-/// Families that can emit 128K output tokens in one turn.
+/// The models the settings picker offers, most capable first.
+///
+/// One table, because these facts used to live in four places that could — and
+/// did — disagree: the default model, the picker's offline fallback list, and
+/// two family tables that described the same families at different
+/// granularities. `KNOWN_MODELS[0]` is the default model.
+///
+/// The picker normally lists what the API reports; this is the fallback when
+/// that call fails, and the authority on limits either way. Models newer than
+/// this table still resolve through the family heuristics below.
+pub const KNOWN_MODELS: &[ModelInfo] = &[
+    ModelInfo { id: "claude-opus-5", context_window: 1_000_000, max_output_tokens: 128_000 },
+    ModelInfo { id: "claude-sonnet-5", context_window: 1_000_000, max_output_tokens: 128_000 },
+    ModelInfo { id: "claude-opus-4-8", context_window: 1_000_000, max_output_tokens: 128_000 },
+    ModelInfo { id: "claude-sonnet-4-6", context_window: 1_000_000, max_output_tokens: 128_000 },
+    ModelInfo { id: "claude-haiku-4-5", context_window: 200_000, max_output_tokens: 64_000 },
+];
+
+/// The model used when none has been chosen.
+pub const DEFAULT_MODEL: &str = KNOWN_MODELS[0].id;
+
+/// Families whose models carry a 1M-token context window. Only consulted for ids
+/// absent from [`KNOWN_MODELS`] — the API serves models newer than any table we
+/// ship, so these are deliberately generation-agnostic: a not-yet-released Opus
+/// should inherit the optimistic guess rather than silently fall to 200K.
+/// Haiku matches none of them and so keeps the small default.
+const LARGE_CONTEXT_FAMILIES: &[&str] = &["opus", "sonnet", "fable"];
+
+/// Families that can emit 128K output tokens in one turn. Same fallback role as
+/// [`LARGE_CONTEXT_FAMILIES`].
 const LARGE_OUTPUT_FAMILIES: &[&str] = &[
-    "opus-4-8",
-    "opus-4-7",
     "opus-4-6",
-    "sonnet-5",
+    "opus-4-7",
+    "opus-4-8",
+    "opus-5",
     "sonnet-4-6",
+    "sonnet-5",
     "fable-5",
 ];
 
@@ -239,6 +279,9 @@ const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 16_000;
 /// [`DEFAULT_MAX_OUTPUT_TOKENS`]. Lives here next to [`context_window_for`] so
 /// the two model tables stay in one place.
 pub fn max_output_tokens_for(model: &str) -> u32 {
+    if let Some(known) = KNOWN_MODELS.iter().find(|m| m.id == model) {
+        return known.max_output_tokens;
+    }
     let m = model.to_ascii_lowercase();
     if m.contains("haiku") {
         64_000
@@ -1030,6 +1073,92 @@ pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String>
 
     ids.sort();
     Ok(ids)
+}
+
+#[cfg(test)]
+mod known_models {
+    use super::*;
+
+    /// Every model the picker offers must resolve to its table limits, not to a
+    /// heuristic guess.
+    #[test]
+    fn every_known_model_resolves_to_its_own_limits() {
+        for model in KNOWN_MODELS {
+            assert_eq!(
+                context_window_for(model.id),
+                model.context_window,
+                "{} resolved to the wrong context window",
+                model.id
+            );
+            assert_eq!(
+                max_output_tokens_for(model.id),
+                model.max_output_tokens,
+                "{} resolved to the wrong output cap",
+                model.id
+            );
+        }
+    }
+
+    /// Regression: the family tables listed the same families at different
+    /// granularities and neither knew about `opus-5`, so the model the app was
+    /// about to default to would have resolved to a 200K window — a fifth of its
+    /// real one — and quietly evicted its own context every turn.
+    #[test]
+    fn the_family_heuristics_agree_with_the_table() {
+        for model in KNOWN_MODELS {
+            let lower = model.id.to_ascii_lowercase();
+            let by_family = LARGE_CONTEXT_FAMILIES.iter().any(|f| lower.contains(f));
+            assert_eq!(
+                by_family,
+                model.context_window > 200_000,
+                "{} disagrees between LARGE_CONTEXT_FAMILIES and the table",
+                model.id
+            );
+
+            let large_output = LARGE_OUTPUT_FAMILIES.iter().any(|f| lower.contains(f));
+            assert_eq!(
+                large_output,
+                model.max_output_tokens >= 128_000,
+                "{} disagrees between LARGE_OUTPUT_FAMILIES and the table",
+                model.id
+            );
+        }
+    }
+
+    /// A model newer than the table still has to get a usable budget — guessing
+    /// high costs one recoverable 400, guessing low starts an amnesia loop. That
+    /// covers both a dated or suffixed variant of a known family and a
+    /// generation this table has never heard of.
+    #[test]
+    fn an_unknown_model_falls_back_to_the_heuristics() {
+        for unknown in [
+            "claude-opus-5-20260101",
+            "claude-sonnet-5[1m]",
+            "claude-opus-6-future",
+        ] {
+            assert_eq!(
+                context_window_for(unknown),
+                1_000_000,
+                "{unknown} must inherit the optimistic guess"
+            );
+        }
+        // Haiku is the one family that is genuinely small.
+        assert_eq!(context_window_for("claude-haiku-9-future"), 200_000);
+        assert_eq!(max_output_tokens_for("claude-haiku-9-future"), 64_000);
+        assert_eq!(
+            max_output_tokens_for("some-other-vendor-model"),
+            DEFAULT_MAX_OUTPUT_TOKENS
+        );
+    }
+
+    #[test]
+    fn the_default_model_is_one_the_picker_offers() {
+        assert!(KNOWN_MODELS.iter().any(|m| m.id == DEFAULT_MODEL));
+        assert_eq!(
+            crate::settings::AppSettings::default().anthropic_model,
+            DEFAULT_MODEL
+        );
+    }
 }
 
 #[cfg(test)]

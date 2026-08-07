@@ -10,13 +10,14 @@ use dioxus::prelude::*;
 use super::page::{FullPage, RowInfo};
 use crate::settings::AppSettings;
 
-/// Hardcoded fallback Anthropic model list, used when models cannot be fetched from the API.
-const ANTHROPIC_FALLBACK_MODELS: &[&str] = &[
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-];
+/// Offered when the model list cannot be fetched from the API. Derived from
+/// `llm::KNOWN_MODELS` so the picker cannot drift from the limits table.
+fn anthropic_fallback_models() -> Vec<String> {
+    crate::llm::KNOWN_MODELS
+        .iter()
+        .map(|m| m.id.to_string())
+        .collect()
+}
 
 /// The settings tabs, in the order they are shown.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -80,10 +81,7 @@ pub fn SettingsPage(
     });
     let model_list = use_memo(move || match &*models.read() {
         Some(Ok(list)) if !list.is_empty() => list.clone(),
-        _ => ANTHROPIC_FALLBACK_MODELS
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect(),
+        _ => anthropic_fallback_models(),
     });
 
     let s = settings.read();

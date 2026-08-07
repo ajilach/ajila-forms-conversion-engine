@@ -69,7 +69,7 @@ impl Default for AppSettings {
         Self {
             always_on_top: false,
             anthropic_api_key: String::new(),
-            anthropic_model: "claude-opus-4-8".to_string(),
+            anthropic_model: crate::llm::DEFAULT_MODEL.to_string(),
             max_review_rounds: DEFAULT_MAX_REVIEW_ROUNDS,
             aem_host: "http://localhost:4502".to_string(),
             aem_username: "admin".to_string(),
