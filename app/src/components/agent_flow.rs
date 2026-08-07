@@ -456,7 +456,6 @@ fn RunBox(
                     }
                 }
                 ResultActions { state, aem_connection }
-                DownloadRow { state }
                 FeedbackBox { feedback, on_feedback }
             }
         }
@@ -791,10 +790,8 @@ fn AbortButton(abort: AbortFlag) -> Element {
     }
 }
 
-/// Act on the finished result: download the package, install it on AEM.
-///
-/// Both actions are the AEM target's, so a Redacto run renders nothing here
-/// rather than an empty row taking up the space above the downloads.
+/// Everything the finished run offers: one button per artefact it produced,
+/// then the AEM install as the row's single emphasised action.
 #[component]
 fn ResultActions(
     state: ReadSignal<ProcessingState>,
@@ -803,18 +800,19 @@ fn ResultActions(
     let mut upload_state = use_signal(|| UploadState::Idle);
     let run = state.read();
 
-    if !Artifact::Package.is_offered(&run) {
-        return rsx! {};
-    }
-
     rsx! {
         div { class: "ag-result-actions",
-            DownloadButton {
-                class: "btn btn-secondary",
-                artifact: Artifact::Package,
-                state,
+            for artifact in Artifact::ALL.iter().copied() {
+                if artifact.is_offered(&run) {
+                    DownloadButton {
+                        key: "{artifact:?}",
+                        class: "btn btn-secondary",
+                        artifact,
+                        state,
+                    }
+                }
             }
-            if let Some(package) = run.aem_package.as_ref() {
+            if let Some(package) = run.aem_package.as_ref().filter(|_| Artifact::Package.is_offered(&run)) {
                 {
                     let st = upload_state.read().clone();
                     let uploading = st == UploadState::Uploading;
@@ -892,8 +890,9 @@ enum Artifact {
 }
 
 impl Artifact {
-    /// The by-products offered next to the primary result, in display order.
-    const BYPRODUCTS: &'static [Self] = &[Self::RedactoSql, Self::Xsd, Self::AgentLog];
+    /// Every artefact, in the order the result row offers them. Which of these
+    /// actually appear is [`Artifact::is_offered`]'s call.
+    const ALL: &'static [Self] = &[Self::Package, Self::RedactoSql, Self::Xsd, Self::AgentLog];
 
     fn label(self) -> &'static str {
         match self {
@@ -960,28 +959,6 @@ impl Artifact {
             Self::RedactoSql => state.redacto_sql.is_some(),
             Self::Xsd => state.xsd_schema.is_some(),
             Self::AgentLog => !state.agent_steps.is_empty(),
-        }
-    }
-}
-
-/// Take a copy of the by-products the run's target offers. Outside the
-/// AEM-package guard, since a Redacto run produces no package but still yields a
-/// dump and the log.
-#[component]
-fn DownloadRow(state: ReadSignal<ProcessingState>) -> Element {
-    rsx! {
-        div { class: "ag-downloads",
-            span { class: "ag-downloads-label", "Also download" }
-            for artifact in Artifact::BYPRODUCTS.iter().copied() {
-                if artifact.is_offered(&state.read()) {
-                    DownloadButton {
-                        key: "{artifact:?}",
-                        class: "btn btn-secondary btn-sm",
-                        artifact,
-                        state,
-                    }
-                }
-            }
         }
     }
 }
