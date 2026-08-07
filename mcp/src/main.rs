@@ -17,9 +17,11 @@
 //! tree change is versioned into the same edit-history SQLite the desktop app
 //! uses, so a conversion driven here can later be reviewed in the app.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use agent::{ConversionAgent, ToolReply};
+use base64::Engine;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::*;
 use rmcp::service::{RequestContext, RoleServer};
@@ -163,48 +165,82 @@ fn reply_to_result(reply: ToolReply) -> CallToolResult {
     }
 }
 
-impl Blueprint {
-    /// Handle the `start_conversion` bootstrap tool: read the PDF(s) from disk,
-    /// create an edit-history session, and install a fresh [`ConversionAgent`].
-    async fn start_conversion(&self, args: &serde_json::Value) -> CallToolResult {
-        // Collect the requested source paths (single `pdf_path` and/or the
-        // `pdf_paths` array), preserving order and de-duplicating.
-        let mut paths: Vec<String> = Vec::new();
-        if let Some(p) = args.get("pdf_path").and_then(|v| v.as_str()) {
-            paths.push(p.to_string());
-        }
-        if let Some(arr) = args.get("pdf_paths").and_then(|v| v.as_array()) {
-            for v in arr {
-                if let Some(p) = v.as_str() {
-                    paths.push(p.to_string());
-                }
-            }
-        }
-        paths.dedup();
-        if paths.is_empty() {
-            return CallToolResult::error(vec![Content::text(
-                "start_conversion requires `pdf_path` or `pdf_paths`.",
-            )]);
-        }
+/// One source `start_conversion` was asked to load.
+#[derive(Debug, PartialEq, Eq)]
+enum Source {
+    /// A path on the server's filesystem, read when the conversion starts.
+    Path(String),
+    /// Inline bytes, for a client that cannot reach the server's filesystem.
+    Inline { name: String, bytes: Vec<u8> },
+}
 
-        // Read each path; bail with a clear error on the first failure.
-        let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
-        for path in &paths {
-            match std::fs::read(path) {
-                Ok(bytes) => {
-                    let name = std::path::Path::new(path)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "source.pdf".to_string());
-                    pdfs.push((name, bytes));
-                }
-                Err(e) => {
-                    return CallToolResult::error(vec![Content::text(format!(
-                        "Could not read {path:?}: {e}"
-                    ))]);
-                }
-            }
+/// Parse `start_conversion`'s source arguments: `pdf_path`, then `pdf_paths`,
+/// then the `pdf_base64` fallback.
+///
+/// Paths are de-duplicated while keeping the order the client gave them — a
+/// plain [`Vec::dedup`] would only collapse *adjacent* duplicates and silently
+/// convert `["a.pdf", "b.pdf", "a.pdf"]` with `a.pdf` loaded twice.
+fn collect_sources(args: &serde_json::Value) -> Result<Vec<Source>, String> {
+    let mut sources = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::new();
+
+    let path_args = args
+        .get("pdf_path")
+        .into_iter()
+        .chain(args.get("pdf_paths").and_then(|v| v.as_array()).into_iter().flatten());
+    for path in path_args.filter_map(|v| v.as_str()) {
+        if seen.insert(path) {
+            sources.push(Source::Path(path.to_string()));
         }
+    }
+
+    if let Some(b64) = args.get("pdf_base64").and_then(|v| v.as_str()) {
+        let bytes = base64::prelude::BASE64_STANDARD
+            .decode(b64)
+            .map_err(|e| format!("`pdf_base64` is not valid base64: {e}"))?;
+        let name = args
+            .get("pdf_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("source.pdf")
+            .to_string();
+        sources.push(Source::Inline { name, bytes });
+    }
+
+    if sources.is_empty() {
+        return Err(
+            "start_conversion requires `pdf_path`, `pdf_paths` or `pdf_base64`.".to_string(),
+        );
+    }
+    Ok(sources)
+}
+
+/// Resolve parsed [`Source`]s to named byte buffers, reading paths from disk.
+fn load_sources(sources: Vec<Source>) -> Result<Vec<(String, Vec<u8>)>, String> {
+    sources
+        .into_iter()
+        .map(|source| match source {
+            Source::Inline { name, bytes } => Ok((name, bytes)),
+            Source::Path(path) => {
+                let bytes =
+                    std::fs::read(&path).map_err(|e| format!("Could not read {path:?}: {e}"))?;
+                let name = std::path::Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "source.pdf".to_string());
+                Ok((name, bytes))
+            }
+        })
+        .collect()
+}
+
+impl Blueprint {
+    /// Handle the `start_conversion` bootstrap tool: load the PDF(s), create an
+    /// edit-history session, and install a fresh [`ConversionAgent`].
+    async fn start_conversion(&self, args: &serde_json::Value) -> CallToolResult {
+        let pdfs = match collect_sources(args).and_then(load_sources) {
+            Ok(pdfs) => pdfs,
+            Err(e) => return CallToolResult::error(vec![Content::text(e)]),
+        };
 
         let profile = args
             .get("profile")
@@ -217,12 +253,20 @@ impl Blueprint {
             .join(", ");
 
         // Version the conversion into the shared edit-history DB so the desktop
-        // app can later review it. Falls back to a derived id if the DB is
-        // unavailable.
+        // app can later review it. Fail loudly when the session cannot be
+        // created: a derived id would have no row in `sessions`, so every
+        // subsequent edit would be written somewhere the app's session browser
+        // cannot find — an unreviewable run, which defeats the point of
+        // recording one at all.
         let doc_hash = agent::db::document_hash(&pdfs);
         agent::db::upsert_document(&doc_hash, &label);
-        let session = agent::db::create_session(&doc_hash, profile.as_deref(), &label)
-            .unwrap_or_else(|| format!("mcp-{doc_hash}"));
+        let Some(session) = agent::db::create_session(&doc_hash, profile.as_deref(), &label) else {
+            return CallToolResult::error(vec![Content::text(
+                "Could not create an edit-history session (the shared history.db is unavailable). \
+                 A conversion started now would not be reviewable in the desktop app, so it was \
+                 not started.",
+            )]);
+        };
         agent::db::insert_edit(&session, "Initial (empty)", "[]");
 
         // Reuse the AEM connection the desktop app is configured with (read from
@@ -240,12 +284,9 @@ impl Blueprint {
                 .to_string(),
         };
         let count = pdfs.len();
-        // How many reference forms / docs are available for this profile. Many
-        // MCP clients drop the server `instructions`, so the workflow (and the
-        // "consult references before building" step in particular) is repeated
-        // here, in the one surface the client always delivers to the model: the
-        // tool result. The count also distinguishes "no references exist" from a
-        // profile mismatch returning an empty list.
+        // How many reference forms / docs are available for this profile. The
+        // count distinguishes "no references exist" from a profile mismatch
+        // returning an empty list.
         let ref_count = agent::references::count(profile.as_deref().unwrap_or_default());
         let new_agent = ConversionAgent::new(profile, pdfs, connection, session.clone(), blueprint::OutputTarget::Aem);
         *self.agent.lock().await = Some(new_agent);
@@ -260,13 +301,17 @@ impl Blueprint {
             "No reference forms are available for this profile.".to_string()
         };
 
+        // The workflow guidance is repeated here, not just in the server
+        // `instructions`, because many MCP clients drop `instructions` and the
+        // tool result is the one surface every client delivers to the model.
         CallToolResult::success(vec![Content::text(format!(
             "Loaded {count} PDF(s) [{label}] (session {session}).\n\n\
              {SYSTEM_PROMPT}\n\n\
              {ref_note}\n\n\
-             MCP: export the finished package with write_package (after build_aem_package), not \
-             finish. Note: {aem_note}",
+             {MCP_ADDENDUM}\n\n\
+             {aem_note}",
             SYSTEM_PROMPT = agent::SYSTEM_PROMPT,
+            MCP_ADDENDUM = agent::MCP_ADDENDUM,
         ))])
     }
 
@@ -364,23 +409,17 @@ impl ServerHandler for Blueprint {
         info.server_info = Implementation::new("blueprint", env!("CARGO_PKG_VERSION"));
         // Advertise the shared workflow guidance (the same text the desktop app
         // injects as the agent's opening message), wrapped in the MCP-specific
-        // bootstrap/teardown the engine tools don't cover: `start_conversion`
-        // must run first, the finished ZIP leaves by path via `write_package`,
-        // and there is no live AEM connection over MCP.
+        // bootstrap/teardown the engine tools don't cover. `start_conversion`
+        // repeats both, for the clients that drop `instructions`.
         info.instructions = Some(format!(
             "Blueprint form-conversion tools (MCP).\n\n\
              FIRST: call `start_conversion` with a `pdf_path` (or `pdf_paths`) and optional \
              `profile`. It must precede every other tool; every tool then operates on that \
              loaded conversion.\n\n\
              {SYSTEM_PROMPT}\n\n\
-             MCP specifics: all file inputs/outputs are local file paths, never inlined bytes. \
-             Instead of `finish`, export the finished package with `write_package` (writes the \
-             built ZIP to a path) after build_aem_package. `upload_to_aem` and the fetch/verify \
-             tools work only when AEM host/credentials are configured in the desktop app \
-             settings (shared history.db); otherwise they report no connection while \
-             profile-derived config and packaging still work. `start_conversion` reports which \
-             applies for the loaded session.",
+             {MCP_ADDENDUM}",
             SYSTEM_PROMPT = agent::SYSTEM_PROMPT,
+            MCP_ADDENDUM = agent::MCP_ADDENDUM,
         ));
         info
     }
@@ -402,17 +441,18 @@ impl ServerHandler for Blueprint {
         let name = request.name.as_ref();
         let input = serde_json::Value::Object(request.arguments.unwrap_or_default());
 
-        if name == "start_conversion" {
-            return Ok(self.start_conversion(&input).await);
-        }
-        if name == "write_package" {
-            return Ok(self.write_package(&input).await);
-        }
-        if name == "validate_aem_package_from_file" {
-            return Ok(self.validate_aem_package_from_file(&input).await);
-        }
-        if name == "upload_aem_package_from_file" {
-            return Ok(self.upload_aem_package_from_file(&input).await);
+        // The MCP-only tools are handled here; everything else is an engine tool
+        // and needs a loaded conversion.
+        match name {
+            "start_conversion" => return Ok(self.start_conversion(&input).await),
+            "write_package" => return Ok(self.write_package(&input).await),
+            "validate_aem_package_from_file" => {
+                return Ok(self.validate_aem_package_from_file(&input).await);
+            }
+            "upload_aem_package_from_file" => {
+                return Ok(self.upload_aem_package_from_file(&input).await);
+            }
+            _ => {}
         }
 
         let mut guard = self.agent.lock().await;
@@ -432,4 +472,168 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = Blueprint::new().serve(transport).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn path(p: &str) -> Source {
+        Source::Path(p.to_string())
+    }
+
+    #[test]
+    fn a_single_pdf_path_is_collected() {
+        assert_eq!(
+            collect_sources(&json!({"pdf_path": "/tmp/a.pdf"})).unwrap(),
+            vec![path("/tmp/a.pdf")]
+        );
+    }
+
+    #[test]
+    fn pdf_path_and_pdf_paths_are_concatenated_in_order() {
+        let args = json!({"pdf_path": "/tmp/a.pdf", "pdf_paths": ["/tmp/b.pdf", "/tmp/c.pdf"]});
+        assert_eq!(
+            collect_sources(&args).unwrap(),
+            vec![path("/tmp/a.pdf"), path("/tmp/b.pdf"), path("/tmp/c.pdf")]
+        );
+    }
+
+    /// Regression: `Vec::dedup` only collapses *adjacent* duplicates, so a form
+    /// passed as a.pdf, b.pdf, a.pdf used to be converted with a.pdf loaded
+    /// twice — doubling its states and its cost.
+    #[test]
+    fn duplicate_paths_are_removed_even_when_not_adjacent() {
+        let args = json!({"pdf_paths": ["/tmp/a.pdf", "/tmp/b.pdf", "/tmp/a.pdf"]});
+        assert_eq!(
+            collect_sources(&args).unwrap(),
+            vec![path("/tmp/a.pdf"), path("/tmp/b.pdf")]
+        );
+    }
+
+    #[test]
+    fn pdf_path_repeated_in_pdf_paths_is_collected_once() {
+        let args = json!({"pdf_path": "/tmp/a.pdf", "pdf_paths": ["/tmp/a.pdf"]});
+        assert_eq!(collect_sources(&args).unwrap(), vec![path("/tmp/a.pdf")]);
+    }
+
+    /// Regression: the schema advertised `pdf_base64` and the description told
+    /// the model to fall back to it, but the handler only ever read the path
+    /// arguments and then errored.
+    #[test]
+    fn pdf_base64_is_decoded_with_its_name() {
+        let args = json!({
+            "pdf_base64": base64::prelude::BASE64_STANDARD.encode(b"%PDF-1.7"),
+            "pdf_name": "form.pdf",
+        });
+        assert_eq!(
+            collect_sources(&args).unwrap(),
+            vec![Source::Inline {
+                name: "form.pdf".to_string(),
+                bytes: b"%PDF-1.7".to_vec(),
+            }]
+        );
+    }
+
+    #[test]
+    fn pdf_base64_without_a_name_falls_back_to_a_default() {
+        let args = json!({"pdf_base64": base64::prelude::BASE64_STANDARD.encode(b"x")});
+        assert!(matches!(
+            collect_sources(&args).unwrap().as_slice(),
+            [Source::Inline { name, .. }] if name == "source.pdf"
+        ));
+    }
+
+    #[test]
+    fn malformed_pdf_base64_is_reported_rather_than_silently_skipped() {
+        let err = collect_sources(&json!({"pdf_base64": "not base64!"})).unwrap_err();
+        assert!(err.contains("pdf_base64"), "{err}");
+    }
+
+    #[test]
+    fn no_source_at_all_is_an_error_naming_every_accepted_argument() {
+        let err = collect_sources(&json!({"profile": "ubs"})).unwrap_err();
+        for arg in ["pdf_path", "pdf_paths", "pdf_base64"] {
+            assert!(err.contains(arg), "{err} should mention {arg}");
+        }
+    }
+
+    /// Every property `start_conversion` advertises must be one the handler
+    /// actually reads — the `pdf_base64` divergence above went unnoticed
+    /// because nothing checked the schema against the code.
+    #[test]
+    fn every_advertised_start_conversion_property_is_honoured() {
+        let spec = start_conversion_spec();
+        let props = spec["input_schema"]["properties"].as_object().unwrap();
+
+        let sample = json!({
+            "pdf_path": "/tmp/a.pdf",
+            "pdf_paths": ["/tmp/b.pdf"],
+            "pdf_base64": base64::prelude::BASE64_STANDARD.encode(b"x"),
+            "pdf_name": "named.pdf",
+        });
+        let sources = collect_sources(&sample).unwrap();
+
+        assert!(props.contains_key("profile"), "profile is read at load time");
+        assert!(
+            sources.contains(&path("/tmp/a.pdf")) && sources.contains(&path("/tmp/b.pdf")),
+            "pdf_path and pdf_paths must both be honoured: {sources:?}"
+        );
+        assert!(
+            sources.iter().any(|s| matches!(s, Source::Inline { name, .. } if name == "named.pdf")),
+            "pdf_base64 and pdf_name must both be honoured: {sources:?}"
+        );
+    }
+
+    #[test]
+    fn load_sources_passes_inline_bytes_through_untouched() {
+        let loaded = load_sources(vec![Source::Inline {
+            name: "a.pdf".to_string(),
+            bytes: vec![1, 2, 3],
+        }])
+        .unwrap();
+        assert_eq!(loaded, vec![("a.pdf".to_string(), vec![1, 2, 3])]);
+    }
+
+    #[test]
+    fn load_sources_reports_the_path_it_could_not_read() {
+        let err = load_sources(vec![path("/nonexistent/nope.pdf")]).unwrap_err();
+        assert!(err.contains("nope.pdf"), "{err}");
+    }
+
+    #[test]
+    fn the_catalog_exposes_the_mcp_only_tools_alongside_the_engine_tools() {
+        let catalog = tool_catalog();
+        let names: Vec<&str> = catalog.iter().filter_map(|s| s["name"].as_str()).collect();
+        for mcp_only in [
+            "start_conversion",
+            "write_package",
+            "validate_aem_package_from_file",
+            "upload_aem_package_from_file",
+        ] {
+            assert!(names.contains(&mcp_only), "{mcp_only} missing from catalog");
+        }
+        assert!(names.contains(&"build_aem_package"), "engine tools missing");
+    }
+
+    #[test]
+    fn to_mcp_tool_passes_the_raw_input_schema_through() {
+        let spec = write_package_spec();
+        let tool = to_mcp_tool(&spec).expect("spec converts");
+        assert_eq!(tool.name, "write_package");
+        assert_eq!(
+            serde_json::Value::Object((*tool.input_schema).clone()),
+            spec["input_schema"]
+        );
+    }
+
+    /// The MCP addendum is deliberately emitted twice (many clients drop the
+    /// server `instructions`), so it has to come from one constant.
+    #[test]
+    fn the_mcp_addendum_is_shared_not_restated() {
+        let instructions = Blueprint::new().get_info().instructions.unwrap();
+        assert!(instructions.contains(agent::MCP_ADDENDUM));
+        assert!(instructions.contains(agent::SYSTEM_PROMPT));
+    }
 }

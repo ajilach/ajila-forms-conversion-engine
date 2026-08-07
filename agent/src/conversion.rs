@@ -273,6 +273,24 @@ master-language text is an untranslated stub, not a translation — supply the g
 wording (AEM otherwise silently falls back to the master language). When done, call finish. Keep tool inputs minimal \
 and valid JSON.";
 
+/// The MCP-specific bootstrap/teardown guidance that [`SYSTEM_PROMPT`] does not
+/// cover, kept next to it so the two cannot drift.
+///
+/// The MCP server emits this **twice** per session — once as the server
+/// `instructions` and once in the `start_conversion` result — because many MCP
+/// clients drop `instructions` entirely, and the tool result is the one surface
+/// every client delivers to the model. That duplication is deliberate; sharing
+/// one constant is what stops the two copies saying different things.
+pub const MCP_ADDENDUM: &str = "\
+MCP specifics: prefer local file paths for inputs and outputs. `start_conversion` takes \
+`pdf_path` / `pdf_paths` (with `pdf_base64` only as a fallback when the file is not reachable on \
+the server's filesystem), and the finished ZIP leaves via `write_package` after \
+build_aem_package rather than being inlined into the transcript — use that instead of `finish`. \
+`upload_to_aem` and the fetch/verify tools work only when AEM host/credentials are configured in \
+the desktop app settings (shared history.db); otherwise they report no connection while \
+profile-derived config and packaging still work. `start_conversion` reports which applies for the \
+loaded session.";
+
 // ── Multi-agent role prompts ─────────────────────────────────────────────────
 //
 // The desktop pipeline (see `app`'s `run_conversion`) splits the run into an

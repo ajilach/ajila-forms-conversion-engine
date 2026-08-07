@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 agent = { path = "../agent" }
+base64 = "0.22"
 blueprint = { path = "../core" }
 rmcp = { version = "1.7.0", features = ["server", "transport-io"] }
 serde = { version = "1.0", features = ["derive"] }
