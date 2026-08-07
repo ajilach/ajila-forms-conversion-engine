@@ -302,6 +302,17 @@ body > div, #main {
     color: var(--danger);
 }
 
+/* A run the user stopped on purpose — terminal, but nothing went wrong, so it
+   is stated plainly rather than dressed as an error. */
+.progress-note {
+    margin-top: var(--space-lg);
+    padding: var(--space-md);
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+}
+
 .progress-warnings {
     margin-top: var(--space-lg);
     padding: var(--space-md);

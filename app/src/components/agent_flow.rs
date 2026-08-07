@@ -13,7 +13,8 @@ use dioxus::prelude::*;
 use super::spinner::{Spinner, SpinnerSize};
 use crate::files::download_file;
 use crate::models::{
-    AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
+    AbortFlag, AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep,
+    RetryAction,
 };
 use crate::upload::read_upload_files;
 
@@ -65,12 +66,12 @@ impl RunStatus {
 }
 
 /// Derive what to show from the run state. The `Complete` step wins over
-/// everything; a stopped run that recorded an error has failed; anything else
-/// with work in flight is a run in progress.
+/// everything; a stopped run that recorded an error, or that the user aborted,
+/// has ended; anything else with work in flight is a run in progress.
 fn screen_for(state: &ProcessingState, processing: bool) -> Screen {
     if state.step == ProcessingStep::Complete {
         Screen::Run(RunStatus::Done)
-    } else if !processing && state.error.is_some() {
+    } else if !processing && (state.error.is_some() || state.aborted) {
         Screen::Run(RunStatus::Failed)
     } else if processing || state.step != ProcessingStep::Idle {
         Screen::Run(if state.retry_pending {
@@ -150,6 +151,8 @@ pub fn AgentFlow(
     profiles: Vec<String>,
     selected_profile: Signal<Option<String>>,
     selected_target: Signal<blueprint::OutputTarget>,
+    /// Stops the running conversion when the Abort button is pressed.
+    abort: AbortFlag,
     /// Whether agent processing is available (an API key is configured).
     ai_available: bool,
     /// AEM upload connection from settings, or `None` if not configured.
@@ -190,6 +193,7 @@ pub fn AgentFlow(
                                 files: uploaded_files,
                                 profile: selected_profile.read().clone(),
                                 aem_connection,
+                                abort,
                                 timeline_open,
                                 feedback,
                                 on_feedback: move |text: String| on_feedback.call(text),
@@ -387,6 +391,7 @@ fn RunBox(
     files: ReadSignal<Vec<(String, Vec<u8>)>>,
     profile: Option<String>,
     aem_connection: Option<blueprint::AemConnection>,
+    abort: AbortFlag,
     timeline_open: Signal<bool>,
     feedback: Signal<String>,
     on_feedback: EventHandler<String>,
@@ -405,7 +410,13 @@ fn RunBox(
 
     rsx! {
         section { class: box_class,
-            RunHeader { status, profile, elapsed_secs: state.read().elapsed_secs, on_new }
+            RunHeader {
+                status,
+                profile,
+                elapsed_secs: state.read().elapsed_secs,
+                abort,
+                on_new,
+            }
             PhaseRail { status }
             SourceFiles { files }
             ActivityTimeline { state, timeline_open }
@@ -418,6 +429,8 @@ fn RunBox(
                     strong { "Error: " }
                     "{error}"
                 }
+            } else if state.read().aborted {
+                div { class: "progress-note", "Stopped at your request." }
             }
 
             // Non-fatal problems the run reported — a Redacto dump that could not
@@ -456,6 +469,7 @@ fn RunHeader(
     status: RunStatus,
     profile: Option<String>,
     elapsed_secs: Option<u64>,
+    abort: AbortFlag,
     on_new: EventHandler<()>,
 ) -> Element {
     let (badge_class, glyph) = status.badge();
@@ -487,13 +501,21 @@ fn RunHeader(
                     }
                 }
             }
-            if matches!(status, RunStatus::Done | RunStatus::Failed) {
-                div { class: "ag-actions",
-                    button {
-                        class: "btn btn-secondary btn-sm",
-                        onclick: move |_| on_new.call(()),
-                        "↻ New form"
-                    }
+            div { class: "ag-actions",
+                match status {
+                    // A live run can be stopped. The flag is polled at the run's
+                    // next checkpoint — including mid-response — so the button
+                    // reports that it asked rather than that it finished.
+                    RunStatus::Running | RunStatus::Paused => rsx! {
+                        AbortButton { abort }
+                    },
+                    RunStatus::Done | RunStatus::Failed => rsx! {
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            onclick: move |_| on_new.call(()),
+                            "↻ New form"
+                        }
+                    },
                 }
             }
         }
@@ -741,6 +763,30 @@ fn RetryPrompt(
                     "Give up"
                 }
             }
+        }
+    }
+}
+
+/// Stop a live run.
+///
+/// Its own component so the "asked already" state lives exactly as long as the
+/// run does: the button is mounted only while the run is live, so a finished run
+/// drops it and the next run starts with a fresh button. Keeping the state in
+/// the header instead would carry a stale "Stopping…" into a feedback re-run.
+#[component]
+fn AbortButton(abort: AbortFlag) -> Element {
+    let mut asked = use_signal(|| false);
+
+    rsx! {
+        button {
+            class: "btn btn-secondary btn-sm",
+            disabled: asked(),
+            title: "Stop this conversion. Whatever the agent has built so far is kept.",
+            onclick: move |_| {
+                abort.abort();
+                asked.set(true);
+            },
+            if asked() { "Stopping…" } else { "✕ Abort" }
         }
     }
 }
@@ -1065,6 +1111,31 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(screen_for(&complete, false), Screen::Run(RunStatus::Done));
+    }
+
+    /// An aborted run records no error, so without its own arm the box would sit
+    /// on "Agent is working" forever after the run had already stopped.
+    #[test]
+    fn an_aborted_run_reaches_a_terminal_screen() {
+        let aborting = ProcessingState {
+            step: ProcessingStep::Running,
+            aborted: true,
+            ..Default::default()
+        };
+
+        // The flag is set the moment the button is pressed, but the run is still
+        // unwinding — it must keep reporting as running until it has stopped.
+        assert_eq!(
+            screen_for(&aborting, true),
+            Screen::Run(RunStatus::Running),
+            "the box must not claim the run ended while it is still unwinding"
+        );
+
+        assert_eq!(
+            screen_for(&aborting, false),
+            Screen::Run(RunStatus::Failed),
+            "once the run has stopped the box has to leave the running state"
+        );
     }
 
     /// The log is the only durable record of a run once the window is closed, so

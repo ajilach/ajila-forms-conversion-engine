@@ -73,6 +73,12 @@ fn App() -> Element {
     // A hook, so it has to be called here rather than inside the settings
     // handler that uses it.
     let window = dioxus::desktop::use_window();
+    // Shared with the running conversion so the Abort button can stop it. One
+    // per app rather than per run: the button and the run must hold the same
+    // cell, and a run clears it before it starts.
+    // Held in a signal so the run-starting closures stay `Copy`; the flag itself
+    // never changes identity, so nothing subscribes to it.
+    let abort = use_signal(models::AbortFlag::default);
 
     // Both entry points below start a run the same way: capture the user's
     // choices, flip the flow into its running phase, and let the agent drive.
@@ -80,8 +86,11 @@ fn App() -> Element {
         profile: selected_profile.read().clone(),
         target: *selected_target.read(),
         settings: app_settings.read().clone(),
+        abort: abort.peek().clone(),
     };
     let mut begin_run = move || {
+        // A previous run may have left it set.
+        abort.peek().reset();
         is_processing.set(true);
         processing_state.set(ProcessingState {
             step: ProcessingStep::Running,
@@ -221,6 +230,7 @@ fn App() -> Element {
                 profiles,
                 selected_profile,
                 selected_target,
+                abort: abort.peek().clone(),
                 ai_available: !app_settings.read().active_api_key().is_empty(),
                 aem_connection: app_settings.read().aem_connection(),
                 on_ai_process: move |files: Vec<(String, Vec<u8>)>| {

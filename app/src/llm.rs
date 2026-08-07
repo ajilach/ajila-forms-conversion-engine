@@ -3,6 +3,11 @@
 //! a request inside the model's context window, and the eviction passes that
 //! shrink stale history when it does not fit.
 
+/// The error a turn returns when the run was aborted mid-stream. Callers check
+/// the abort flag rather than this string; it exists so the failure has a
+/// readable cause if one ever escapes.
+pub const ABORTED: &str = "Run aborted.";
+
 /// Format a `reqwest` error together with its underlying source chain.
 ///
 /// `reqwest`'s top-level message is often opaque (e.g. "error decoding response
@@ -609,12 +614,25 @@ pub async fn anthropic_agentic_turn(
         "content": [{"type": "text", "text": user_text}],
     }));
 
+    // The reference-describe loop is not an abortable run, so it holds a flag
+    // that is never set.
+    let never_aborted = crate::models::AbortFlag::default();
+
     // Thin loop over the shared turn primitive: [`anthropic_stream_turn`] owns
     // request building, SSE parsing, prompt caching and history eviction. Here
     // we only drive the tool round-trips with the synchronous `execute` closure,
     // reusing [`tool_result_message`] for the result blocks.
     for _ in 0..MAX_TOOL_ITERATIONS {
-        let turn = anthropic_stream_turn(history, tools, api_key, model, max_tokens, None).await?;
+        let turn = anthropic_stream_turn(
+            history,
+            tools,
+            api_key,
+            model,
+            max_tokens,
+            None,
+            &never_aborted,
+        )
+        .await?;
 
         // Done unless the model asked for tools.
         if turn.stop_reason.as_deref() != Some("tool_use") || turn.tool_calls.is_empty() {
@@ -746,6 +764,9 @@ pub async fn anthropic_stream_turn(
     model: &str,
     max_tokens: u32,
     system: Option<&str>,
+    // Polled while the response streams, so an aborted run stops within a chunk
+    // rather than at the end of a turn that may run for minutes.
+    abort: &crate::models::AbortFlag,
 ) -> Result<TurnOutput, String> {
     use futures_util::StreamExt;
 
@@ -823,6 +844,11 @@ pub async fn anthropic_stream_turn(
     let mut prompt_tokens: usize = 0;
 
     while let Some(chunk) = stream.next().await {
+        if abort.is_aborted() {
+            // The caller checks the flag before reading this, so the message is
+            // never surfaced — dropping the stream here is the point.
+            return Err(ABORTED.to_string());
+        }
         let chunk = chunk.map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
         buf.extend_from_slice(&chunk);
 

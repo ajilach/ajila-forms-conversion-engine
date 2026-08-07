@@ -417,6 +417,8 @@ pub struct RunConfig {
     pub profile: Option<String>,
     pub target: blueprint::OutputTarget,
     pub settings: crate::settings::AppSettings,
+    /// Set by the Abort button to stop this run at its next checkpoint.
+    pub abort: crate::models::AbortFlag,
 }
 
 /// What starts a run: a fresh analysis, or the user's feedback on the previous
@@ -431,6 +433,7 @@ enum RunSeed {
 struct Run {
     agent: ConversionAgent,
     settings: crate::settings::AppSettings,
+    abort: crate::models::AbortFlag,
     profile: Option<String>,
     target: blueprint::OutputTarget,
     structured_session: String,
@@ -452,6 +455,7 @@ pub async fn run_agent(
         profile,
         target,
         settings,
+        abort,
     } = config;
     let started_at = std::time::Instant::now();
 
@@ -504,6 +508,7 @@ instead of authoring from scratch."
     Run {
         agent,
         settings,
+        abort,
         profile,
         target,
         structured_session,
@@ -530,6 +535,7 @@ pub async fn run_agent_feedback(
         profile,
         target,
         settings,
+        abort,
     } = config;
     let started_at = std::time::Instant::now();
 
@@ -556,6 +562,7 @@ pub async fn run_agent_feedback(
     Run {
         agent,
         settings,
+        abort,
         profile,
         target,
         structured_session,
@@ -602,6 +609,12 @@ impl Run {
             )),
         );
 
+        let ctx = TurnCtx {
+            settings: &self.settings,
+            max_tokens: agent_max_tokens,
+            abort: &self.abort,
+        };
+
         let target = self.target;
         let roles = roles_for(target);
         let mut plan = String::new();
@@ -624,8 +637,7 @@ impl Run {
                     &sys_analyst(target, &extra),
                     "Analyse the source form and produce the detailed CONVERSION PLAN. \
                      Your final message is the plan.",
-                    agent_max_tokens,
-                    &self.settings,
+                    ctx,
                     &mut processing_state,
                 )
                 .await
@@ -651,8 +663,7 @@ impl Run {
             roles.author,
             &sys_author(target, &extra, self.template_note, &plan, &reviews),
             author_seed,
-            agent_max_tokens,
-            &self.settings,
+            ctx,
             &mut processing_state,
         )
         .await
@@ -674,8 +685,7 @@ impl Run {
                 &sys_reviewer(target, &extra, &plan, &reviews),
                 "Review the built form end to end against the source and the CONVERSION PLAN, \
                  then finish by calling submit_review.",
-                agent_max_tokens,
-                &self.settings,
+                ctx,
                 &mut processing_state,
             )
             .await
@@ -714,8 +724,7 @@ impl Run {
                         roles.author,
                         &sys_author(target, &extra, self.template_note, &plan, &reviews),
                         roles.author_fix_seed,
-                        agent_max_tokens,
-                        &self.settings,
+                        ctx,
                         &mut processing_state,
                     )
                     .await
@@ -793,12 +802,57 @@ fn is_transient_error(err: &str) -> bool {
         .any(|needle| e.contains(needle))
 }
 
+/// What every stage needs from the run itself: the model settings, the per-turn
+/// output cap they imply, and the flag that stops the run.
+///
+/// One value rather than three parallel parameters threaded through
+/// [`run_role`] and [`turn_with_retry`] — they are always passed together and
+/// always come from the same `Run`.
+#[derive(Clone, Copy)]
+struct TurnCtx<'a> {
+    settings: &'a crate::settings::AppSettings,
+    max_tokens: u32,
+    abort: &'a crate::models::AbortFlag,
+}
+
+/// Sleep for `total`, waking early if the run is aborted. Returns whether it
+/// was aborted.
+///
+/// A plain sleep would hold an aborted run open for the whole retry backoff.
+async fn sleep_unless_aborted(
+    total: std::time::Duration,
+    abort: &crate::models::AbortFlag,
+) -> bool {
+    let tick = std::time::Duration::from_millis(RETRY_POLL_MS);
+    let mut slept = std::time::Duration::ZERO;
+    while slept < total {
+        if abort.is_aborted() {
+            return true;
+        }
+        let step = tick.min(total - slept);
+        tokio::time::sleep(step).await;
+        slept += step;
+    }
+    abort.is_aborted()
+}
+
+/// Record that the user stopped the run, once. Every abort checkpoint funnels
+/// through here, so the box has one place to learn the run ended.
+fn note_aborted(processing_state: &mut Signal<ProcessingState>) {
+    if processing_state.read().aborted {
+        return;
+    }
+    processing_state.write().aborted = true;
+    push_step(processing_state, thought("Run aborted by the user."));
+}
+
 /// Pause a stage on a failed turn and wait for the user to press Retry or give
 /// up. Keeping the run's future alive is the whole point: the agent, its working
 /// tree and this stage's history stay in memory, so Retry re-sends exactly the
 /// turn that failed rather than restarting the conversion from scratch.
 async fn await_user_retry(
     processing_state: &mut Signal<ProcessingState>,
+    abort: &crate::models::AbortFlag,
     role: &str,
     err: &str,
 ) -> RetryAction {
@@ -819,6 +873,11 @@ async fn await_user_retry(
         let pending = processing_state.read().retry_action;
         if let Some(action) = pending {
             break action;
+        }
+        // Abort ends a paused run too, so the button works in every state the
+        // box can be in.
+        if abort.is_aborted() {
+            break RetryAction::Cancel;
         }
         tokio::time::sleep(std::time::Duration::from_millis(RETRY_POLL_MS)).await;
     };
@@ -845,10 +904,14 @@ async fn turn_with_retry(
     tools: &[serde_json::Value],
     role: &Role,
     system: &str,
-    agent_max_tokens: u32,
-    settings: &crate::settings::AppSettings,
+    ctx: TurnCtx<'_>,
     processing_state: &mut Signal<ProcessingState>,
 ) -> Option<crate::llm::TurnOutput> {
+    let TurnCtx {
+        settings,
+        max_tokens,
+        abort,
+    } = ctx;
     let mut auto_retries = 0usize;
     loop {
         match crate::llm::anthropic_stream_turn(
@@ -856,13 +919,22 @@ async fn turn_with_retry(
             tools,
             &settings.anthropic_api_key,
             &settings.anthropic_model,
-            agent_max_tokens,
+            max_tokens,
             Some(system),
+            abort,
         )
         .await
         {
             Ok(turn) => return Some(turn),
             Err(e) => {
+                // An aborted turn is a stop, not a failure: it must not be
+                // retried, nor hand the user a Retry button for a run they
+                // just asked to end. `run_role` propagates this `None` straight
+                // out, so the stop has to be recorded here.
+                if abort.is_aborted() {
+                    note_aborted(processing_state);
+                    return None;
+                }
                 if is_transient_error(&e) && auto_retries < MAX_AUTO_RETRIES {
                     let wait =
                         (RETRY_BACKOFF_SECS << auto_retries.min(4)).min(MAX_RETRY_BACKOFF_SECS);
@@ -874,10 +946,13 @@ async fn turn_with_retry(
                              (attempt {auto_retries} of {MAX_AUTO_RETRIES})."
                         )),
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                    if sleep_unless_aborted(std::time::Duration::from_secs(wait), abort).await {
+                        note_aborted(processing_state);
+                        return None;
+                    }
                     continue;
                 }
-                match await_user_retry(processing_state, role.name, &e).await {
+                match await_user_retry(processing_state, abort, role.name, &e).await {
                     RetryAction::Retry => {
                         // A user-driven retry resets the automatic budget, so a
                         // long unattended stall can be resumed repeatedly.
@@ -978,10 +1053,10 @@ async fn run_role(
     role: &Role,
     system: &str,
     seed_user_msg: &str,
-    agent_max_tokens: u32,
-    settings: &crate::settings::AppSettings,
+    ctx: TurnCtx<'_>,
     processing_state: &mut Signal<ProcessingState>,
 ) -> Option<String> {
+    let abort = ctx.abort;
     let tools = role_tools(agent, role.allowed_tools);
     let mut history: Vec<serde_json::Value> = vec![serde_json::json!({
         "role": "user",
@@ -993,18 +1068,14 @@ async fn run_role(
     let mut consecutive_max_tokens: usize = 0;
 
     for _ in 0..role.max_iterations {
+        if abort.is_aborted() {
+            note_aborted(processing_state);
+            return None;
+        }
+
         // Transient failures are retried automatically, then handed to the user's
         // Retry button — a dropped connection must not throw away a long run.
-        let turn = turn_with_retry(
-            &mut history,
-            &tools,
-            role,
-            system,
-            agent_max_tokens,
-            settings,
-            processing_state,
-        )
-        .await?;
+        let turn = turn_with_retry(&mut history, &tools, role, system, ctx, processing_state).await?;
 
         // Per-stage context-window fill indicator.
         if turn.prompt_tokens > 0 {
@@ -1041,6 +1112,10 @@ async fn run_role(
         let mut stuck = false;
         let mut terminal = false;
         for tc in &turn.tool_calls {
+            if abort.is_aborted() {
+                note_aborted(processing_state);
+                return None;
+            }
             push_step(
                 processing_state,
                 AgentStep {
@@ -1713,5 +1788,64 @@ mod tests {
         // controller never appends a "## CONVERSION PLAN" block for the Analyst).
         assert!(!s.contains("## CONVERSION PLAN"));
         assert!(s.contains("Analyst"));
+    }
+
+    /// The backoff between automatic retries can be a minute long, so an abort
+    /// during it has to wake the run instead of holding it open.
+    #[tokio::test]
+    async fn the_retry_backoff_wakes_early_when_the_run_is_aborted() {
+        let abort = crate::models::AbortFlag::default();
+        abort.abort();
+
+        let started = std::time::Instant::now();
+        let aborted = sleep_unless_aborted(std::time::Duration::from_secs(60), &abort).await;
+
+        assert!(aborted, "an aborted wait must report it");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "took {:?}, so it slept through the backoff",
+            started.elapsed()
+        );
+    }
+
+    /// An un-aborted wait still waits, otherwise the retry backoff would be gone.
+    #[tokio::test]
+    async fn an_untouched_wait_sleeps_for_its_full_duration() {
+        let abort = crate::models::AbortFlag::default();
+
+        let started = std::time::Instant::now();
+        let aborted = sleep_unless_aborted(std::time::Duration::from_millis(500), &abort).await;
+
+        assert!(!aborted);
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(450),
+            "returned after {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// The flag is shared by handle, so the button and the run see one cell —
+    /// a clone that aborted independently would leave the run going.
+    #[test]
+    fn every_handle_to_a_flag_observes_the_abort() {
+        let button = crate::models::AbortFlag::default();
+        let run = button.clone();
+
+        assert!(!run.is_aborted());
+        button.abort();
+        assert!(run.is_aborted(), "the run must see the button's abort");
+
+        // Starting the next run clears it for every handle.
+        run.reset();
+        assert!(!button.is_aborted());
+    }
+
+    /// Two separate flags are not the same run, which is what the prop
+    /// comparison has to get right.
+    #[test]
+    fn separate_flags_are_not_equal() {
+        let a = crate::models::AbortFlag::default();
+        assert_eq!(a, a.clone());
+        assert_ne!(a, crate::models::AbortFlag::default());
     }
 }

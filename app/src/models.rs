@@ -1,5 +1,41 @@
 //! The state the agent run publishes to the UI.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Cooperative cancellation for a run, shared between the Abort button and the
+/// run itself.
+///
+/// An atomic rather than a field on [`ProcessingState`]: the network layer polls
+/// it from inside a streamed response, where the UI's signals are out of reach,
+/// and a long turn has to stop there rather than at the next turn boundary.
+#[derive(Clone, Debug, Default)]
+pub struct AbortFlag(Arc<AtomicBool>);
+
+impl AbortFlag {
+    /// Ask the run to stop at its next checkpoint.
+    pub fn abort(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_aborted(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    /// Clear the flag so the next run starts un-aborted.
+    pub fn reset(&self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Two handles are the same flag when they share one cell — what a component
+/// prop needs to know, and what comparing the booleans would get wrong.
+impl PartialEq for AbortFlag {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ProcessingStep {
     #[default]
@@ -91,6 +127,9 @@ pub struct ProcessingState {
     /// PostgreSQL dump for the Redacto platform (text-only documents).
     pub redacto_sql: Option<String>,
     pub error: Option<String>,
+    /// The user stopped the run. Terminal like [`Self::error`], but not a
+    /// failure — the box says so rather than reporting an error nobody hit.
+    pub aborted: bool,
     /// `true` while an agent run is paused on a failed API turn, waiting for the
     /// user to press Retry (or give up). The run's future is still alive — the
     /// agent, its working tree and the stage history are all held in memory — so
