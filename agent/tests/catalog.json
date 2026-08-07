@@ -19,25 +19,6 @@
     "name": "get_source_info"
   },
   {
-    "description": "Run exhaustive state discovery on the source; returns a count summary.",
-    "input_schema": {
-      "properties": {
-        "source": {
-          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
-          "properties": {
-            "reference": {
-              "type": "string"
-            }
-          },
-          "type": "object"
-        }
-      },
-      "required": [],
-      "type": "object"
-    },
-    "name": "explore_states"
-  },
-  {
     "description": "List discovered form states (label, pdf, selection count).",
     "input_schema": {
       "properties": {
@@ -379,7 +360,7 @@
     "name": "set_aem_translated"
   },
   {
-    "description": "Return the current working AemNodeTranslated tree (JSON).",
+    "description": "Dump the WHOLE working AemNodeTranslated tree as JSON. Expensive on a real form — prefer get_aem_translated_outline to find the path, then get_aem_translated_node to read just that subtree.",
     "input_schema": {
       "properties": {},
       "required": [],
@@ -544,7 +525,7 @@
     "name": "review_output"
   },
   {
-    "description": "Generate the XSD schema for the current structured tree.",
+    "description": "Generate the XSD schema for the form. Renders the working structured tree, or — on an AEM run, which has none — the working AEM tree lifted back to structured content.",
     "input_schema": {
       "properties": {},
       "required": [],
@@ -553,7 +534,7 @@
     "name": "generate_xsd"
   },
   {
-    "description": "Generate an HTML preview of the current structured tree.",
+    "description": "Generate an HTML preview of the form. Renders the working structured tree, or — on an AEM run, which has none — the working AEM tree lifted back to structured content.",
     "input_schema": {
       "properties": {},
       "required": [],
@@ -748,19 +729,6 @@
       "type": "object"
     },
     "name": "get_profile_info"
-  },
-  {
-    "description": "Terminal step — call this once, last, after the package is built, validated and reviewed (review_output) — and uploaded if an AEM connection is configured — to persist the structured + AEM trees + package as the result and end the run.",
-    "input_schema": {
-      "properties": {
-        "summary": {
-          "type": "string"
-        }
-      },
-      "required": [],
-      "type": "object"
-    },
-    "name": "finish"
   },
   {
     "description": "Terminal REVIEW step (Reviewer role) — call once, last, after building/validating/reviewing. approved=true means the form is fully correct and ends the run; approved=false returns your detailed issue list to the author for a fix round.",

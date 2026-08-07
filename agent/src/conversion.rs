@@ -119,7 +119,7 @@ authoring a new tree from scratch; only call set_aem_translated to overwrite it 
 unusable.\n\n\
 Typical workflow (call tools as needed; each step is a separate call):\n\
 1. Inspect the input: get_source_info, get_profile_info (form_code, languages, JCR paths, \
-binding flags), list_states, explore_states, get_xfa (the authoritative text/fields, in every \
+binding flags), list_states, get_xfa (the authoritative text/fields, in every \
 language), search_xfa (find specific fields/labels), get_plain_state_image / \
 get_annotated_state_image, and get_flattened_structure_for_state (the engine's CLEAN, \
 single-language, single-variant tree for ONE state — your structural reference for fields and \
@@ -242,7 +242,8 @@ write copy of your own. The final form must contain EVERY language present in th
 (get_source_info lists them) and ONLY those: never drop a language the source contains, and never \
 invent a translation for a language it does not. A non-master language whose text merely repeats the \
 master-language text is an untranslated stub, not a translation — supply the genuine per-language \
-wording (AEM otherwise silently falls back to the master language). When done, call finish. Keep tool inputs minimal \
+wording (AEM otherwise silently falls back to the master language). When the form is complete, \
+stop and summarise what you built. Keep tool inputs minimal \
 and valid JSON.";
 
 /// The MCP-specific bootstrap/teardown guidance that [`SYSTEM_PROMPT`] does not
@@ -256,8 +257,8 @@ and valid JSON.";
 pub const MCP_ADDENDUM: &str = "\
 MCP specifics: prefer local file paths for inputs and outputs. `start_conversion` takes \
 `pdf_path` / `pdf_paths` (with `pdf_base64` only as a fallback when the file is not reachable on \
-the server's filesystem), and the finished ZIP leaves via `write_package` after \
-build_aem_package rather than being inlined into the transcript — use that instead of `finish`. \
+the server's filesystem), and the built ZIP leaves via `write_package` after \
+build_aem_package rather than being inlined into the transcript. \
 `upload_to_aem` and the fetch/verify tools work only when AEM host/credentials are configured in \
 the desktop app settings (shared history.db); otherwise they report no connection while \
 profile-derived config and packaging still work. `start_conversion` reports which applies for the \
@@ -288,7 +289,7 @@ you found or changed.";
 pub const ANALYST_ADDENDUM: &str = "\
 ROLE: Analyst. You do NOT edit the tree. Produce ONE detailed CONVERSION PLAN that lets the Author \
 build the form without re-reading the bulky source. Inspect exhaustively (get_source_info + \
-get_profile_info — form codes ending 019 = Germany, 033 = Italy; list_states + explore_states; \
+get_profile_info — form codes ending 019 = Germany, 033 = Italy; list_states; \
 get_plain_state_image / get_annotated_state_image; get_xfa / search_xfa; \
 get_flattened_structure_for_state per state) AND research precedents FIRST via the reference \
 documentation (list_reference_docs, read_reference_doc, grep_reference_docs — the \"AF Fragments and \
@@ -310,8 +311,8 @@ Author works from it, not by re-reading the source.";
 pub const AUTHOR_ADDENDUM: &str = "\
 STAGE NOTE: A CONVERSION PLAN produced by an Analyst is appended below as your section / field / \
 precedent map — trust it and use search_xfa only to fill specific gaps rather than re-dumping the \
-whole XFA. A separate Reviewer judges fidelity after you, so do NOT call finish; once you have \
-authored a complete tree and run build_aem_package + validate_aem_package, stop with a short summary. \
+whole XFA. A separate Reviewer judges fidelity after you, so do not try to end the run; once you \
+have authored a complete tree and run build_aem_package + validate_aem_package, stop with a short summary. \
 If REVIEW FEEDBACK appears below, address EVERY point from every round, then rebuild and re-validate.";
 
 /// Reviewer role: read-only quality gate that ends by calling `submit_review`.
@@ -374,7 +375,7 @@ sections. A Redacto document is TEXT ONLY: it has no fillable fields. If the sou
 carry input fields, say so plainly in your summary rather than inventing a representation for \
 them.\n\n\
 Typical workflow (call tools as needed; each step is a separate call):\n\
-1. Inspect the input: get_source_info, list_states, explore_states, get_xfa (the authoritative \
+1. Inspect the input: get_source_info, list_states, get_xfa (the authoritative \
 text, in every language), search_xfa (find specific passages), get_plain_state_image / \
 get_annotated_state_image, and get_flattened_structure_for_state (the engine's CLEAN, \
 single-language, single-variant tree for ONE state). A document is multilingual whenever \
@@ -429,7 +430,7 @@ valid JSON.";
 pub const REDACTO_ANALYST_ADDENDUM: &str = "\
 ROLE: Analyst. You do NOT edit the document. Produce ONE detailed CONVERSION PLAN that lets the \
 Author build the Redacto document without re-reading the bulky source. Inspect exhaustively: \
-get_source_info (the authority on which languages the source has), list_states + explore_states, \
+get_source_info (the authority on which languages the source has), list_states, \
 get_plain_state_image / get_annotated_state_image, get_xfa / search_xfa, and \
 get_flattened_structure_for_state for EVERY state. The plan must give, per top-level SECTION in \
 source order: its role (heading / body text / list / table / footnote block / multi-column region); \
@@ -443,12 +444,13 @@ message IS the plan — make it complete and self-contained; the Author works fr
 re-reading the source.";
 
 /// Redacto Author role: appended AFTER [`REDACTO_SYSTEM_PROMPT`].
-/// Mirrors [`AUTHOR_ADDENDUM`]; the "do NOT call finish" contract is what the
-/// controller's review loop depends on and is copied verbatim in substance.
+/// Mirrors [`AUTHOR_ADDENDUM`]; the "do not end the run yourself" contract is
+/// what the controller's review loop depends on, and is copied in substance.
 pub const REDACTO_AUTHOR_ADDENDUM: &str = "\
 STAGE NOTE: A CONVERSION PLAN produced by an Analyst is appended below as your section / language \
 map — trust it and use search_xfa only to fill specific gaps rather than re-dumping the whole \
-source. A separate Reviewer judges fidelity after you, so do NOT call finish; once you have seeded \
+source. A separate Reviewer judges fidelity after you, so do not try to end the run; once you \
+have seeded \
 the tree, layered in every language and run build_redacto_dump with no problems reported, stop with \
 a short summary. If REVIEW FEEDBACK appears below, address EVERY point from every round, then \
 rebuild and re-validate.";
@@ -470,6 +472,7 @@ with node paths where possible. Do not fix anything yourself.";
 
 /// The result of executing one tool call, to be returned to the model as a
 /// `tool_result` content block.
+#[derive(Debug)]
 pub enum ToolReply {
     /// A textual result (JSON, plain text, …).
     Text(String),
@@ -859,8 +862,6 @@ pub struct ConversionAgent {
     /// lazily on first use (~200ms) and reused for the rest of the run.
     matcher: Option<blueprint::semantic::SemanticMatcher>,
 
-    finished: bool,
-
     /// The Reviewer role's latest `submit_review` outcome, drained by the
     /// controller via [`take_review`](Self::take_review).
     review: Option<ReviewResult>,
@@ -920,7 +921,6 @@ impl ConversionAgent {
             target: target_state,
             structured_session,
             matcher: None,
-            finished: false,
             review: None,
         };
         // Record the pre-loaded template as the initial AEM edit so it shows in
@@ -978,11 +978,6 @@ impl ConversionAgent {
     }
 
     // ── Public accessors (for the driving loop's result finalization) ─────────
-
-    /// `true` once the agent has called the `finish` tool.
-    pub fn is_finished(&self) -> bool {
-        self.finished
-    }
 
     /// Drain the Reviewer role's latest `submit_review` outcome (the controller
     /// reads this after running the Reviewer stage).
@@ -1315,6 +1310,28 @@ impl ConversionAgent {
         }
     }
 
+    /// The structured content the derived outputs (XSD, HTML) render from.
+    ///
+    /// A Redacto run authors [`structured`](Self::structured) directly. An AEM
+    /// run leaves it empty and authors the AEM tree instead, so the tree is
+    /// lifted back to structured content — the same conversion the app's
+    /// finalization does. Without this, both tools silently rendered an empty
+    /// document on every AEM run.
+    fn derived_output_content(&mut self) -> Result<Vec<StructuredNode>, String> {
+        if !self.structured.is_empty() {
+            return Ok(self.structured.clone());
+        }
+        let profile = self.profile.clone();
+        let tree = self.aem_tree().ok_or(
+            "Nothing to render yet: no structured content, and no AEM tree to derive it from.",
+        )?;
+        let content = crate::session::structured_from_aem_tree(tree, profile.as_deref());
+        if content.is_empty() {
+            return Err("The AEM tree produced no structured content to render.".into());
+        }
+        Ok(content)
+    }
+
     /// Read from the working AEM tree, with the same "no tree yet" guard the
     /// editing tools use.
     fn read_aem(&mut self, read: impl FnOnce(&mut AemNodeTranslated) -> ToolReply) -> ToolReply {
@@ -1471,7 +1488,6 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
         // the Redacto Reviewer needs it only because languages are the thing it
         // checks. Preserved as-is rather than quietly widened.
         ("get_source_info",                   target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_STAGES | MCP),
-        ("explore_states",                    target::BOTH,    AEM_ANALYST | REDACTO_ANALYST | MCP),
         ("list_states",                       target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
         ("get_xfa",                           target::BOTH,    AEM_ANALYST | AEM_AUTHOR | REDACTO_ANALYST | REDACTO_AUTHOR | MCP),
         ("search_xfa",                        target::BOTH,    EVERYWHERE),
@@ -1497,7 +1513,7 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
 
         // §3 AEM tree.
         ("set_aem_translated",                target::AEM,     AEM_AUTHOR | MCP),
-        ("get_aem_translated",                target::AEM,     AEM_AUTHOR | MCP),
+        ("get_aem_translated",                target::AEM,     MCP),
         ("get_aem_translated_outline",        target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
         ("get_aem_translated_node",           target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
         ("set_aem_translated_field",          target::AEM,     AEM_AUTHOR | MCP),
@@ -1537,7 +1553,6 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
         // mislead a Redacto stage; get_source_info is the authority on languages.
         ("get_schema",                        target::BOTH,    AEM_AUTHOR | REDACTO_AUTHOR | MCP),
         ("get_profile_info",                  target::AEM,     AEM_ANALYST | AEM_AUTHOR | MCP),
-        ("finish",                            target::BOTH,    MCP),
         ("submit_review",                     target::BOTH,    AEM_REVIEWER | REDACTO_REVIEWER | MCP),
     ]
 };
@@ -1569,12 +1584,6 @@ fn tool_specs() -> Vec<serde_json::Value> {
             t(
                 "get_source_info",
                 "Info about the source PDFs (name, language, state count).",
-                with_source(serde_json::json!({})),
-                serde_json::json!([]),
-            ),
-            t(
-                "explore_states",
-                "Run exhaustive state discovery on the source; returns a count summary.",
                 with_source(serde_json::json!({})),
                 serde_json::json!([]),
             ),
@@ -1692,7 +1701,7 @@ fn tool_specs() -> Vec<serde_json::Value> {
             ),
             t(
                 "get_aem_translated",
-                "Return the current working AemNodeTranslated tree (JSON).",
+                "Dump the WHOLE working AemNodeTranslated tree as JSON. Expensive on a real form — prefer get_aem_translated_outline to find the path, then get_aem_translated_node to read just that subtree.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -1765,13 +1774,13 @@ fn tool_specs() -> Vec<serde_json::Value> {
             ),
             t(
                 "generate_xsd",
-                "Generate the XSD schema for the current structured tree.",
+                "Generate the XSD schema for the form. Renders the working structured tree, or — on an AEM run, which has none — the working AEM tree lifted back to structured content.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
             t(
                 "generate_html",
-                "Generate an HTML preview of the current structured tree.",
+                "Generate an HTML preview of the form. Renders the working structured tree, or — on an AEM run, which has none — the working AEM tree lifted back to structured content.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -1874,12 +1883,6 @@ fn tool_specs() -> Vec<serde_json::Value> {
                 serde_json::json!([]),
             ),
             t(
-                "finish",
-                "Terminal step — call this once, last, after the package is built, validated and reviewed (review_output) — and uploaded if an AEM connection is configured — to persist the structured + AEM trees + package as the result and end the run.",
-                serde_json::json!({"summary": {"type":"string"}}),
-                serde_json::json!([]),
-            ),
-            t(
                 "submit_review",
                 "Terminal REVIEW step (Reviewer role) — call once, last, after building/validating/reviewing. approved=true means the form is fully correct and ends the run; approved=false returns your detailed issue list to the author for a fix round.",
                 serde_json::json!({
@@ -1917,10 +1920,6 @@ impl ConversionAgent {
                         ex.xfa.len()
                     ))
                 }
-                Err(e) => ToolReply::Error(e),
-            },
-            "explore_states" => match self.extractor(input) {
-                Ok(ex) => ToolReply::Text(format!("Discovered {} state(s).", ex.states.len())),
                 Err(e) => ToolReply::Error(e),
             },
             "list_states" => match self.extractor(input) {
@@ -2324,12 +2323,16 @@ impl ConversionAgent {
                     Some(p) if blueprint::has_xsd_config(&p) => p,
                     _ => return ToolReply::Error("This profile has no XSD config.".into()),
                 };
+                let content = match self.derived_output_content() {
+                    Ok(c) => c,
+                    Err(e) => return ToolReply::Error(e),
+                };
                 match blueprint::load_xsd_config(&p) {
                     Ok(mut cfg) => {
                         if let Ok(c) = self.config() {
                             cfg.form_code = Some(c.form_code.clone());
                         }
-                        ToolReply::Text(blueprint::to_xsd(&self.structured, &cfg))
+                        ToolReply::Text(blueprint::to_xsd(&content, &cfg))
                     }
                     Err(e) => ToolReply::Error(e),
                 }
@@ -2339,13 +2342,17 @@ impl ConversionAgent {
                     Some(p) if blueprint::has_html_config(&p) => p,
                     _ => return ToolReply::Error("This profile has no HTML config.".into()),
                 };
+                let content = match self.derived_output_content() {
+                    Ok(c) => c,
+                    Err(e) => return ToolReply::Error(e),
+                };
                 match blueprint::load_html_custom_styles(&p) {
                     Ok(styles) => {
                         let cfg = blueprint::HtmlConfig {
                             custom_styles: Some(styles),
                             ..blueprint::HtmlConfig::default()
                         };
-                        ToolReply::Text(blueprint::to_html(&self.structured, &cfg))
+                        ToolReply::Text(blueprint::to_html(&content, &cfg))
                     }
                     Err(e) => ToolReply::Error(e),
                 }
@@ -2513,10 +2520,6 @@ impl ConversionAgent {
                 )),
                 Err(e) => ToolReply::Error(e),
             },
-            "finish" => {
-                self.finished = true;
-                ToolReply::Text("Finalized.".into())
-            }
             "submit_review" => {
                 let approved = input["approved"].as_bool().unwrap_or(false);
                 let report = input["report"].as_str().unwrap_or_default().to_string();
@@ -2782,10 +2785,13 @@ mod catalog_guards {
         assert!(!has(OutputTarget::Aem, scope::AEM_AUTHOR, "submit_review"));
         assert!(!has(OutputTarget::Aem, scope::AEM_ANALYST, "submit_review"));
 
-        // No stage may end the run itself.
-        for stage in [scope::AEM_ANALYST, scope::AEM_AUTHOR, scope::AEM_REVIEWER] {
-            assert!(!has(OutputTarget::Aem, stage, "finish"));
-        }
+        // Termination belongs to the controller. There is deliberately no
+        // terminal tool at all: `finish` existed, was offered to nobody, and
+        // spent five prompt sites telling the model not to call it.
+        assert!(
+            !catalog().iter().any(|t| t.name() == "finish"),
+            "the run is ended by the controller, not by a tool"
+        );
 
         // The Redacto Author edits the structured tree but never re-emits it
         // wholesale: set_structured discards the grouping the seed carried.
@@ -2899,6 +2905,87 @@ mod tests {
             !agent.source_structured().is_empty(),
             "the converted source document must be reachable for non-AEM exports"
         );
+    }
+
+    /// A minimal bilingual AEM tree: one panel holding one labelled text field.
+    fn small_aem_tree() -> serde_json::Value {
+        serde_json::json!({
+            "type": "Root",
+            "title": {"de": "Formular", "en": "Form"},
+            "children": [{
+                "type": "Panel",
+                "uuid": "00000000-0000-0000-0000-000000000001",
+                "name": "p1",
+                "title": {"de": "Angaben", "en": "Details"},
+                "children": [{
+                    "type": "TextField",
+                    "uuid": "00000000-0000-0000-0000-000000000002",
+                    "name": "lastName",
+                    "label": {"de": "Nachname", "en": "Last name"},
+                    "mandatory": false,
+                    "visible": true,
+                    "max_chars": null,
+                    "colspan": 12,
+                    "dor_colspan": null,
+                    "bind_ref": null
+                }],
+                "is_page": false,
+                "dor_exclude": false,
+                "visible": true,
+                "is_conditional": false,
+                "dor_num_cols": null,
+                "colspan": 12,
+                "dor_colspan": null
+            }]
+        })
+    }
+
+    /// Regression: `generate_xsd` and `generate_html` render
+    /// [`ConversionAgent::structured`], which an AEM run never fills — yet both
+    /// were offered to the AEM Author. They silently emitted an empty document
+    /// instead of the form the agent had just authored.
+    #[tokio::test]
+    async fn derived_outputs_render_the_aem_tree_on_an_aem_run() {
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            Vec::new(),
+            None,
+            "test-derived-outputs".into(),
+            OutputTarget::Aem,
+        );
+        assert!(
+            agent.structured().is_empty(),
+            "an AEM run authors the AEM tree, not the structured one"
+        );
+
+        // With no tree at all, say so rather than rendering nothing.
+        for tool in ["generate_xsd", "generate_html"] {
+            let reply = agent.execute(tool, &serde_json::json!({})).await;
+            assert!(
+                matches!(reply, ToolReply::Error(_)),
+                "{tool} must report that there is nothing to render"
+            );
+        }
+
+        let set = agent
+            .execute(
+                "set_aem_translated",
+                &serde_json::json!({"root": small_aem_tree()}),
+            )
+            .await;
+        assert!(matches!(set, ToolReply::Text(_)), "{set:?}");
+
+        // The field the tree carries has to reach both outputs. The XSD names
+        // elements after the label, the HTML renders the label itself.
+        for (tool, expected) in [("generate_xsd", "LastName"), ("generate_html", "Last name")] {
+            match agent.execute(tool, &serde_json::json!({})).await {
+                ToolReply::Text(out) => assert!(
+                    out.contains(expected),
+                    "{tool} rendered nothing from the authored tree (no {expected:?}): {out}"
+                ),
+                other => panic!("{tool} failed: {other:?}"),
+            }
+        }
     }
 
     fn fixture(name: &str) -> (String, Vec<u8>) {
