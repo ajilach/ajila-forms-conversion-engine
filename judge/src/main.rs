@@ -17,6 +17,18 @@ struct Args {
     /// Only process a specific form code (e.g. ABCD_019). If omitted, all forms are processed.
     #[arg(long)]
     form_code: Option<String>,
+
+    /// Directory to discover source PDFs in.
+    #[arg(long, default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/../core/input"))]
+    input_dir: PathBuf,
+
+    /// Conversion profile whose fonts and configuration to load.
+    #[arg(long, default_value = "ubs")]
+    profile: String,
+
+    /// Where to write the scores CSV.
+    #[arg(long, default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/results.csv"))]
+    output: PathBuf,
 }
 
 struct FormResult {
@@ -33,17 +45,15 @@ fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
-    // Load UBS profile fonts before processing any forms
-    blueprint::load_profile_fonts("ubs").map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Fonts must be registered before any form is rendered or measured.
+    blueprint::load_profile_fonts(&args.profile).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Load semantic matcher once for merge + scoring
     eprintln!("Loading semantic matcher...");
     let matcher = SemanticMatcher::new().map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("Semantic matcher loaded.");
 
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
-    let input_dir = Path::new(&manifest_dir).join("../core/input");
-    let mut forms = discover_forms(&input_dir)?;
+    let mut forms = discover_forms(&args.input_dir)?;
 
     // Filter to a single form code if requested
     if let Some(ref filter) = args.form_code {
@@ -71,8 +81,7 @@ fn main() -> Result<()> {
 
     results.sort_by(|a, b| b.total_score.partial_cmp(&a.total_score).unwrap());
 
-    let output_path = Path::new(&manifest_dir).join("results.csv");
-    let mut wtr = csv::Writer::from_path(&output_path)?;
+    let mut wtr = csv::Writer::from_path(&args.output)?;
     wtr.write_record([
         "form_code",
         "status",
@@ -119,7 +128,7 @@ fn main() -> Result<()> {
 
     wtr.flush()?;
 
-    eprintln!("Results written to {}", output_path.display());
+    eprintln!("Results written to {}", args.output.display());
 
     Ok(())
 }
@@ -226,11 +235,7 @@ fn process_form(
             similarities.iter().sum::<f64>() / similarities.len() as f64
         };
 
-        // Perform translation merge (use semantic matching only when feature is enabled)
-        #[cfg(feature = "semantic-matching")]
         let semantic_ref = Some(matcher as &blueprint::structured::SemanticCtx);
-        #[cfg(not(feature = "semantic-matching"))]
-        let semantic_ref: Option<&blueprint::structured::SemanticCtx> = None;
 
         let merged = match merge_translations(envelopes, semantic_ref) {
             Ok(m) => m,

@@ -6,6 +6,5 @@ members = [
     "agent",
     "mcp",
     "judge",
-    "teacher",
 ]
 resolver = "3"
