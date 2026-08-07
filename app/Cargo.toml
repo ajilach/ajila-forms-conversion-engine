@@ -3,6 +3,16 @@ name = "blueprint-app"
 version = "0.2.8"
 edition = "2024"
 
+# `unused_qualifications` is deliberately absent: every one of its hits in this
+# crate comes from `rsx!` expansion, not from the source.
+[lints.clippy]
+# All four `#[allow]`s are gone; keep them from creeping back.
+too_many_arguments = "deny"
+ref_option = "warn"
+needless_pass_by_value = "warn"
+# Nursery lint, so warn rather than deny — it can false-positive.
+redundant_clone = "warn"
+
 [dependencies]
 dioxus = { version = "0.7.9", features = ["desktop"] }
 serde = { version = "1.0", features = ["derive"] }

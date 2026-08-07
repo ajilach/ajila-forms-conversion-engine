@@ -29,6 +29,7 @@ pub fn show_html_preview(html: &str, filename: &str) -> Result<PathBuf, String> 
 
 /// Whether to hand the path itself to the desktop, or point the file manager at
 /// it inside its folder.
+#[derive(Clone, Copy)]
 enum Reveal {
     Open,
     InFolder,

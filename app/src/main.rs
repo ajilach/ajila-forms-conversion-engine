@@ -218,7 +218,7 @@ fn App() -> Element {
             AgentFlow {
                 processing_state,
                 is_processing,
-                profiles: profiles.clone(),
+                profiles,
                 selected_profile,
                 selected_target,
                 ai_available: !app_settings.read().active_api_key().is_empty(),

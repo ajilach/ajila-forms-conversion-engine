@@ -11,7 +11,9 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 **Output:**
 - Structured JSON representation
 - Standalone HTML
+- XSD (XML Schema Definition)
 - AEM Adaptive Forms package
+- Redacto PostgreSQL dump
 
 ## Project Structure
 
@@ -19,7 +21,7 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 |---|---|
 | `core` | Core library — PDF parsing, XFA processing, analysis pipeline, and all output renderers. |
 | `cli` | Command-line interface for processing PDFs. |
-| `app` | Dioxus desktop application with drag-and-drop upload, live preview, and an AI conversion agent. |
+| `app` | Dioxus desktop application: drag-and-drop upload driving the autonomous conversion agent. |
 | `agent` | Headless conversion-agent engine — the tool catalog/executor, edit-history store, and AEM client. No UI or LLM dependency, shared by the app and the MCP server. |
 | `mcp` | Model Context Protocol (stdio) server that exposes the conversion tools so an external LLM client (Claude Desktop, Claude Code, Cursor) can drive a conversion. |
 | `judge` | Evaluates translation quality of multi-language PDF forms and writes scores to CSV. |

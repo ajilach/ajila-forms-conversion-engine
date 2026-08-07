@@ -400,7 +400,7 @@ fn SelectRow(
             RowInfo { label, desc }
             select {
                 class: "settings-select",
-                value: value.clone(),
+                value: "{value}",
                 onchange: move |e: Event<FormData>| on_change.call(e.value()),
                 for option_value in options.iter() {
                     option {

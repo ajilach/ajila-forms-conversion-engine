@@ -189,7 +189,7 @@ pub fn AgentFlow(
                                 state: processing_state,
                                 files: uploaded_files,
                                 profile: selected_profile.read().clone(),
-                                aem_connection: aem_connection.clone(),
+                                aem_connection,
                                 timeline_open,
                                 feedback,
                                 on_feedback: move |text: String| on_feedback.call(text),
@@ -367,10 +367,7 @@ fn UploadBox(
                         class: "btn btn-primary",
                         disabled: start_disabled,
                         title: start_title,
-                        onclick: {
-                            let files = files.clone();
-                            move |_| on_start.call(files.clone())
-                        },
+                        onclick: move |_| on_start.call(files.clone()),
                         "Start"
                     }
                 }
@@ -802,7 +799,7 @@ fn ResultActions(
                             title: upload_title,
                             onclick: {
                                 let package = package.clone();
-                                let connection = aem_connection.clone();
+                                let connection = aem_connection;
                                 let package_name = state
                                     .form_code
                                     .clone()
@@ -1014,7 +1011,7 @@ mod tests {
         // The run stopped and recorded an error: failed, not still running.
         let failed = ProcessingState {
             error: Some("boom".into()),
-            ..running.clone()
+            ..running
         };
         assert_eq!(screen_for(&failed, false), Screen::Run(RunStatus::Failed));
 

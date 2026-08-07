@@ -1017,7 +1017,7 @@ mod tests {
     async fn request_preparation_returns_the_history_it_was_given() {
         let history = vec![
             user_text("kickoff"),
-            assistant_tool_use("tu1", "get_source_info", json!({})),
+            assistant_tool_use("tu1", "get_source_info", &json!({})),
             result_text("tu1", "3 states"),
         ];
         let tools = vec![json!({"name": "t", "description": "d", "input_schema": {}})];
@@ -1058,7 +1058,7 @@ mod tests {
     fn user_text(text: &str) -> serde_json::Value {
         json!({"role": "user", "content": [{"type": "text", "text": text}]})
     }
-    fn assistant_tool_use(id: &str, name: &str, input: serde_json::Value) -> serde_json::Value {
+    fn assistant_tool_use(id: &str, name: &str, input: &serde_json::Value) -> serde_json::Value {
         json!({"role": "assistant", "content": [
             {"type": "tool_use", "id": id, "name": name, "input": input},
         ]})
@@ -1081,15 +1081,15 @@ mod tests {
     fn big_history() -> Vec<serde_json::Value> {
         let big_input = json!({"tree": "X".repeat(3000)});
         vec![
-            user_text("SYSTEM PROMPT"),                             // 0 protected
-            assistant_tool_use("tu1", "set_structured", big_input), // 1 evict
-            result_image("tu1", &"A".repeat(250_000)),              // 2 evict (drives size)
-            assistant_tool_use("tu2", "get_xfa", json!({})),        // 3 evict
-            result_text("tu2", &"x".repeat(5000)),                  // 4 evict
-            assistant_tool_use("tu3", "get_structured", json!({})), // 5 recent
-            result_text("tu3", "small recent result"),              // 6 recent
-            assistant_tool_use("tu4", "finish", json!({})),         // 7 recent
-            result_text("tu4", "done"),                             // 8 recent
+            user_text("SYSTEM PROMPT"),                              // 0 protected
+            assistant_tool_use("tu1", "set_structured", &big_input), // 1 evict
+            result_image("tu1", &"A".repeat(250_000)),               // 2 evict (drives size)
+            assistant_tool_use("tu2", "get_xfa", &json!({})),        // 3 evict
+            result_text("tu2", &"x".repeat(5000)),                   // 4 evict
+            assistant_tool_use("tu3", "get_structured", &json!({})), // 5 recent
+            result_text("tu3", "small recent result"),               // 6 recent
+            assistant_tool_use("tu4", "finish", &json!({})),         // 7 recent
+            result_text("tu4", "done"),                              // 8 recent
         ]
     }
 
@@ -1170,11 +1170,11 @@ mod tests {
         // image pass that stubbed the just-fetched render mid-comparison).
         let original = vec![
             user_text("SYSTEM"),
-            assistant_tool_use("tu1", "get_plain_state_image", json!({})),
+            assistant_tool_use("tu1", "get_plain_state_image", &json!({})),
             result_image("tu1", "AAAA"),
-            assistant_tool_use("tu2", "get_plain_state_image", json!({})),
+            assistant_tool_use("tu2", "get_plain_state_image", &json!({})),
             result_image("tu2", "BBBB"),
-            assistant_tool_use("tu3", "get_plain_state_image", json!({})),
+            assistant_tool_use("tu3", "get_plain_state_image", &json!({})),
             result_image("tu3", "CCCC"),
         ];
         let mut h = original.clone();
@@ -1190,9 +1190,9 @@ mod tests {
         // forcing an endless re-fetch loop when comparing languages).
         let original = vec![
             user_text("SYSTEM"),
-            assistant_tool_use("tu1", "get_xfa", json!({})),
+            assistant_tool_use("tu1", "get_xfa", &json!({})),
             result_text("tu1", &"x".repeat(400)),
-            assistant_tool_use("tu2", "get_xfa", json!({})),
+            assistant_tool_use("tu2", "get_xfa", &json!({})),
             result_text("tu2", &"y".repeat(400)),
         ];
         let mut h = original.clone();
@@ -1260,7 +1260,7 @@ mod tests {
         let big = "x".repeat(400_000);
         let mut h = vec![
             user_text("KICK"),
-            assistant_tool_use("t1", "get_xfa", json!({})),
+            assistant_tool_use("t1", "get_xfa", &json!({})),
             result_text("t1", &big),
         ];
         evict_to_fit(&mut h, &[], None, 5_000);
@@ -1304,9 +1304,9 @@ mod tests {
         let big = "x".repeat(250_000); // ~62K estimated tokens
         let original = vec![
             user_text("KICK"),
-            assistant_tool_use("t1", "get_xfa", json!({})),
+            assistant_tool_use("t1", "get_xfa", &json!({})),
             result_text("t1", &big),
-            assistant_tool_use("t2", "list_states", json!({})),
+            assistant_tool_use("t2", "list_states", &json!({})),
             result_text("t2", "small recent result"),
         ];
         let mut h = original.clone();
@@ -1323,13 +1323,13 @@ mod tests {
         let kick = user_text("KICK");
         let mut h = vec![
             kick.clone(),
-            assistant_tool_use("t1", "get_xfa", json!({})),
+            assistant_tool_use("t1", "get_xfa", &json!({})),
             result_text("t1", &big),
-            assistant_tool_use("t2", "get_xfa", json!({})),
+            assistant_tool_use("t2", "get_xfa", &json!({})),
             result_text("t2", &big),
-            assistant_tool_use("t3", "get_xfa", json!({})),
+            assistant_tool_use("t3", "get_xfa", &json!({})),
             result_text("t3", &big),
-            assistant_tool_use("t4", "get_xfa", json!({})),
+            assistant_tool_use("t4", "get_xfa", &json!({})),
             result_text("t4", &big),
         ];
         evict_to_fit(&mut h, &[], None, 5_000);
@@ -1347,11 +1347,11 @@ mod tests {
         // though it contains an over-threshold text block.
         let original = vec![
             user_text("SYSTEM"),
-            assistant_tool_use("tu1", "get_xfa", json!({})),
+            assistant_tool_use("tu1", "get_xfa", &json!({})),
             result_text("tu1", &"x".repeat(DEFAULT_ELIDE_TEXT_OVER_CHARS + 100)),
-            assistant_tool_use("tu2", "get_structured", json!({})),
+            assistant_tool_use("tu2", "get_structured", &json!({})),
             result_text("tu2", "recent"),
-            assistant_tool_use("tu3", "finish", json!({})),
+            assistant_tool_use("tu3", "finish", &json!({})),
             result_text("tu3", "done"),
         ];
         let mut h = original.clone();
