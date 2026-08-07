@@ -1,22 +1,23 @@
 [package]
 name = "agent"
-version = "0.1.37"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 blueprint = { path = "../core" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-base64 = "0.22"
-image = { version = "0.25", features = ["png", "jpeg"] }
-uuid = { version = "1", features = ["v4"] }
-dirs = "5.0"
-reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+image = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+reqwest = { workspace = true, features = ["multipart"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
-chrono = { version = "0.4", features = ["clock"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
-regex-lite = "0.1"
+chrono = { workspace = true }
+zip = { workspace = true }
+regex-lite = { workspace = true }
 
 [dev-dependencies]
 # The tool executor is async; the tests drive it directly.
