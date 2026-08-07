@@ -80,6 +80,15 @@
 
 /* ---- Global Reset ---- */
 
+/* Padding and borders count inside a declared width. Without this, any
+   `width: 100%` element that also has padding overflows its parent — which is
+   what pushed the settings rows off the right edge of the window. */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
 html, body {
     margin: 0;
     padding: 0;
@@ -480,7 +489,6 @@ body > div, #main {
 
 .references-search {
     width: 100%;
-    box-sizing: border-box;
     padding: var(--space-sm) var(--space-md);
     margin-bottom: var(--space-md);
     border: 1px solid var(--border);
@@ -614,7 +622,6 @@ body > div, #main {
 .settings-input-text,
 .settings-input-number,
 .settings-select {
-    box-sizing: border-box;
     padding: 8px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -657,7 +664,6 @@ body > div, #main {
 
 .settings-textarea {
     width: 100%;
-    box-sizing: border-box;
     resize: vertical;
     font: inherit;
     padding: var(--space-sm);
@@ -787,7 +793,6 @@ body > div, #main {
 }
 .af-feedback-input {
     width: 100%;
-    box-sizing: border-box;
     resize: vertical;
     font-family: var(--font);
     font-size: 14px;
