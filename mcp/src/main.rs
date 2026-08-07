@@ -328,9 +328,7 @@ impl Blueprint {
             )]);
         };
         let Some(pkg) = conv.package() else {
-            return CallToolResult::error(vec![Content::text(
-                "No package built yet. Call build_aem_package first.",
-            )]);
+            return CallToolResult::error(vec![Content::text(agent::NO_PACKAGE)]);
         };
         let size = pkg.len();
         match std::fs::write(path, &pkg) {

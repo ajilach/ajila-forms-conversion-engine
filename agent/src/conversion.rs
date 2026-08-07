@@ -24,6 +24,10 @@ use blueprint::{
 /// Error returned by the AEM-tree tools when nothing has been authored yet.
 const NO_AEM_TREE: &str = "No AEM tree yet; author it with set_aem_translated.";
 
+/// Error returned by the package tools before [`ConversionAgent::package`] is
+/// populated. Public so the MCP server's `write_package` reports the same thing.
+pub const NO_PACKAGE: &str = "No package built yet; call build_aem_package.";
+
 /// Error returned by the structured-tree tools when nothing has been authored
 /// yet.
 const NO_STRUCTURED_TREE: &str =
@@ -1295,6 +1299,63 @@ impl ConversionAgent {
         self.snapshot_aem_translated(label);
     }
 
+    // ── Edit-arm plumbing ──────────────────────────────────────────────────────
+    //
+    // The nine structured/AEM editing tools differ only in which editor function
+    // they call and how they label the snapshot. These three helpers own
+    // everything else: the `AI:` label prefix, the "no tree yet" guard, and the
+    // Ok/Err → ToolReply mapping.
+
+    /// Run a structured-tree edit and record it: on success snapshot the tree
+    /// under `AI: <label>` and report the editor's message, on failure surface
+    /// the error unchanged.
+    fn edit_structured(
+        &mut self,
+        label: std::fmt::Arguments<'_>,
+        result: Result<String, String>,
+    ) -> ToolReply {
+        match result {
+            Ok(msg) => {
+                self.structured_edited(&format!("AI: {label}"));
+                ToolReply::Text(msg)
+            }
+            Err(e) => ToolReply::Error(e),
+        }
+    }
+
+    /// Run an AEM-tree edit against the working tree and record it.
+    ///
+    /// Takes a closure rather than a `&mut AemNodeTranslated` because
+    /// [`aem_tree_mut`](Self::aem_tree_mut) and
+    /// [`aem_translated_edited`](Self::aem_translated_edited) both borrow `self`
+    /// mutably: the tree borrow has to end before the snapshot is taken.
+    fn edit_aem(
+        &mut self,
+        label: std::fmt::Arguments<'_>,
+        edit: impl FnOnce(&mut AemNodeTranslated) -> Result<String, String>,
+    ) -> ToolReply {
+        let result = match self.aem_tree_mut() {
+            Some(root) => edit(root),
+            None => return ToolReply::Error(NO_AEM_TREE.into()),
+        };
+        match result {
+            Ok(msg) => {
+                self.aem_translated_edited(&format!("AI: {label}"));
+                ToolReply::Text(msg)
+            }
+            Err(e) => ToolReply::Error(e),
+        }
+    }
+
+    /// Read from the working AEM tree, with the same "no tree yet" guard the
+    /// editing tools use.
+    fn read_aem(&mut self, read: impl FnOnce(&mut AemNodeTranslated) -> ToolReply) -> ToolReply {
+        match self.aem_tree_mut() {
+            Some(root) => read(root),
+            None => ToolReply::Error(NO_AEM_TREE.into()),
+        }
+    }
+
     /// Lower the working multilingual tree to the single-language `AemNode` plus
     /// the master-text-keyed translation dictionary the package writer consumes.
     fn lower_aem_translated(&mut self) -> Result<(AemNode, I18nDict), String> {
@@ -1859,13 +1920,7 @@ impl ConversionAgent {
                 let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
                 let result =
                     crate::structured_edit::set_field(&mut self.structured, &path, &field, value);
-                match result {
-                    Ok(msg) => {
-                        self.structured_edited(&format!("AI: set {field} on {path}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_structured(format_args!("set {field} on {path}"), result)
             }
             "set_structured_fields" => {
                 let edits: Vec<(String, String, serde_json::Value)> = input["edits"]
@@ -1885,25 +1940,14 @@ impl ConversionAgent {
                     .unwrap_or_default();
                 let count = edits.len();
                 let result = crate::structured_edit::set_fields(&mut self.structured, &edits);
-                match result {
-                    Ok(msg) => {
-                        self.structured_edited(&format!("AI: set {count} field(s)"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_structured(format_args!("set {count} field(s)"), result)
             }
             "replace_structured_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
-                let result = crate::structured_edit::replace_node(&mut self.structured, &path, node);
-                match result {
-                    Ok(msg) => {
-                        self.structured_edited(&format!("AI: replace {path}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                let result =
+                    crate::structured_edit::replace_node(&mut self.structured, &path, node);
+                self.edit_structured(format_args!("replace {path}"), result)
             }
             "insert_structured_node" => {
                 let parent = input["parent_path"].as_str().unwrap_or_default().to_string();
@@ -1916,24 +1960,12 @@ impl ConversionAgent {
                 };
                 let result =
                     crate::structured_edit::insert_node(&mut self.structured, &parent, node, pos);
-                match result {
-                    Ok(msg) => {
-                        self.structured_edited(&format!("AI: insert into {parent}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_structured(format_args!("insert into {parent}"), result)
             }
             "remove_structured_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let result = crate::structured_edit::remove_node(&mut self.structured, &path);
-                match result {
-                    Ok(msg) => {
-                        self.structured_edited(&format!("AI: remove {path}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_structured(format_args!("remove {path}"), result)
             }
             "build_redacto_dump" => {
                 if self.structured.is_empty() {
@@ -1989,25 +2021,22 @@ impl ConversionAgent {
                     Err(e) => ToolReply::Error(format!("Invalid AemNodeTranslated JSON: {e}")),
                 }
             }
-            "get_aem_translated" => match self.aem_tree() {
-                Some(n) => ToolReply::Text(serde_json::to_string_pretty(n).unwrap_or_default()),
-                None => ToolReply::Error(NO_AEM_TREE.into()),
-            },
-            "get_aem_translated_outline" => match self.aem_tree() {
-                Some(n) => ToolReply::Text(crate::aem_translated_edit::outline(n)),
-                None => ToolReply::Error(NO_AEM_TREE.into()),
-            },
+            "get_aem_translated" => self.read_aem(|root| {
+                ToolReply::Text(serde_json::to_string_pretty(root).unwrap_or_default())
+            }),
+            "get_aem_translated_outline" => {
+                self.read_aem(|root| ToolReply::Text(crate::aem_translated_edit::outline(root)))
+            }
             "get_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                match self.aem_tree_mut() {
-                    Some(root) => match crate::aem_translated_edit::resolve_mut(root, &path) {
+                self.read_aem(|root| {
+                    match crate::aem_translated_edit::resolve_mut(root, &path) {
                         Ok(node) => {
                             ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
                         }
                         Err(e) => ToolReply::Error(e),
-                    },
-                    None => ToolReply::Error(NO_AEM_TREE.into()),
-                }
+                    }
+                })
             }
             "set_aem_translated_field" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
@@ -2016,32 +2045,16 @@ impl ConversionAgent {
                     return ToolReply::Error("`field` must not be empty.".into());
                 }
                 let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
-                let result = match self.aem_tree_mut() {
-                    Some(root) => crate::aem_translated_edit::set_field(root, &path, &field, value),
-                    None => return ToolReply::Error(NO_AEM_TREE.into()),
-                };
-                match result {
-                    Ok(msg) => {
-                        self.aem_translated_edited(&format!("AI: set {field} on {path}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_aem(format_args!("set {field} on {path}"), |root| {
+                    crate::aem_translated_edit::set_field(root, &path, &field, value)
+                })
             }
             "replace_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
-                let result = match self.aem_tree_mut() {
-                    Some(root) => crate::aem_translated_edit::replace_node(root, &path, node),
-                    None => return ToolReply::Error(NO_AEM_TREE.into()),
-                };
-                match result {
-                    Ok(msg) => {
-                        self.aem_translated_edited(&format!("AI: replace {path}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_aem(format_args!("replace {path}"), |root| {
+                    crate::aem_translated_edit::replace_node(root, &path, node)
+                })
             }
             "insert_aem_translated_node" => {
                 let parent = input["parent_path"]
@@ -2053,31 +2066,15 @@ impl ConversionAgent {
                     Ok(p) => p,
                     Err(e) => return ToolReply::Error(e),
                 };
-                let result = match self.aem_tree_mut() {
-                    Some(root) => crate::aem_translated_edit::insert_node(root, &parent, node, pos),
-                    None => return ToolReply::Error(NO_AEM_TREE.into()),
-                };
-                match result {
-                    Ok(msg) => {
-                        self.aem_translated_edited(&format!("AI: insert into {parent}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_aem(format_args!("insert into {parent}"), |root| {
+                    crate::aem_translated_edit::insert_node(root, &parent, node, pos)
+                })
             }
             "remove_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                let result = match self.aem_tree_mut() {
-                    Some(root) => crate::aem_translated_edit::remove_node(root, &path),
-                    None => return ToolReply::Error(NO_AEM_TREE.into()),
-                };
-                match result {
-                    Ok(msg) => {
-                        self.aem_translated_edited(&format!("AI: remove {path}"));
-                        ToolReply::Text(msg)
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                self.edit_aem(format_args!("remove {path}"), |root| {
+                    crate::aem_translated_edit::remove_node(root, &path)
+                })
             }
 
             // §5 output
@@ -2120,7 +2117,7 @@ impl ConversionAgent {
                         serde_json::to_string_pretty(&paths).unwrap_or_default()
                     ))
                 }
-                None => ToolReply::Error("No package built yet; call build_aem_package.".into()),
+                None => ToolReply::Error(NO_PACKAGE.into()),
             },
             "read_package_file" => {
                 let path = input["path"].as_str().unwrap_or_default();
@@ -2132,13 +2129,13 @@ impl ConversionAgent {
                         },
                         Err(e) => ToolReply::Error(e),
                     },
-                    None => ToolReply::Error("No package built yet.".into()),
+                    None => ToolReply::Error(NO_PACKAGE.into()),
                 }
             }
             "validate_aem_package" => {
                 let Some(pkg) = self.target.aem().and_then(|s| s.package.clone()) else {
                     return ToolReply::Error(
-                        "No package built yet; call build_aem_package.".into(),
+                        NO_PACKAGE.into(),
                     );
                 };
                 match validate_package_bytes(&pkg) {
@@ -2202,7 +2199,7 @@ impl ConversionAgent {
                 };
                 let Some(pkg) = self.target.aem().and_then(|s| s.package.clone()) else {
                     return ToolReply::Error(
-                        "No package built yet; call build_aem_package.".into(),
+                        NO_PACKAGE.into(),
                     );
                 };
                 let cfg = match self.config() {
