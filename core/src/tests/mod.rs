@@ -33305,12 +33305,12 @@ fn passthrough_survives_serde_snapshot_round_trip() {
 }
 
 // ============================================================================
-// Conversion-feedback registry invariants (profiles/ubs/aem/root.xml)
+// Conversion-feedback registry invariants (profiles/ubs/aem/*.xml)
 // ============================================================================
 
-/// Render the real UBS root template around a single trivial child, so the
-/// assertions below run against exactly the XML production emits.
-fn ubs_root_xml() -> String {
+/// Render `children` through the real UBS profile templates, so the assertions
+/// below run against exactly the XML production emits.
+fn ubs_xml(children: Vec<crate::AemNode>) -> String {
     use crate::aem::{AemConfig, AemNode, generate_aem_xml};
 
     let mut vars = std::collections::HashMap::new();
@@ -33324,9 +33324,15 @@ fn ubs_root_xml() -> String {
 
     let root = AemNode::Root {
         title: "Test Form".into(),
-        children: vec![],
+        children,
     };
     generate_aem_xml(&root, &config)
+}
+
+/// Render the real UBS root template around no children at all, for the
+/// assertions that only concern the scaffolding root.xml emits.
+fn ubs_root_xml() -> String {
+    ubs_xml(vec![])
 }
 
 /// The wizard toolbar's Submit and Back buttons must run the UBS navigation
@@ -33382,6 +33388,185 @@ fn root_panel_starts_with_formmetadata_fragment_step() {
         frag < toolbar,
         "FormMetadata must be the first step. Got:\n{}",
         xml
+    );
+}
+
+/// A conditional panel carries its visibility condition on Initialize as well as
+/// on Visibility (feedback registry PROBLEM-visible-on-init, UBS directive
+/// 2026-08-06). A Visibility rule only fires when a value it depends on
+/// *changes*, so on a freshly opened form — or one reloaded from a draft —
+/// nothing has run yet and the panel keeps whatever state the node was left in.
+/// The Initialize copy must assign the result (`this.visible = …`), because an
+/// Initialize rule's evaluated result is discarded.
+#[test]
+fn conditional_panel_visibility_also_runs_on_initialize() {
+    use crate::structured::InputValue;
+    use crate::{AemNode, AemOption, ConditionRule, OptionAlignment};
+    use uuid::Uuid;
+
+    let xml = ubs_xml(vec![
+        AemNode::RadioButton {
+            uuid: Uuid::nil(),
+            name: "RB_Adressat".into(),
+            label: "Choose".into(),
+            options: vec![AemOption {
+                label: "Three".into(),
+                value: "3".into(),
+            }],
+            alignment: OptionAlignment::Vertical,
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            field_id: None,
+            conditions: vec![ConditionRule {
+                target_panel_name: "PN_Cond".into(),
+                value: InputValue::Text("3".into()),
+                show: true,
+            }],
+            bind_ref: None,
+        },
+        AemNode::Panel {
+            uuid: Uuid::nil(),
+            name: "PN_Cond".into(),
+            title: String::new(),
+            children: vec![],
+            is_page: false,
+            dor_exclude: true,
+            visible: false,
+            is_conditional: true,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        },
+    ]);
+
+    assert!(
+        xml.contains("fd:init="),
+        "the conditional panel must carry an Initialize rule. Got:\n{}",
+        xml
+    );
+    assert!(
+        xml.contains("&quot;event&quot;:&quot;Initialize&quot;"),
+        "the copied rule must be registered on the Initialize event. Got:\n{}",
+        xml
+    );
+    // The result becomes an assignment; a bare `true;`/`false;` would be a no-op
+    // on Initialize.
+    assert!(
+        xml.contains("this.visible = true;") && xml.contains("this.visible = false;"),
+        "the Initialize copy must assign this.visible in both branches. Got:\n{}",
+        xml
+    );
+    // Everything else in the script is copied unchanged, so the DoR follows
+    // visibility at init exactly as it does on change.
+    assert_eq!(
+        xml.matches("window.forms.ubs.showAFShowDor(this);").count(),
+        2,
+        "both the Visibility and the Initialize rule must show the DoR. Got:\n{}",
+        xml
+    );
+    assert_eq!(
+        xml.matches("window.forms.ubs.hideAFHideDor(this);").count(),
+        2,
+        "both the Visibility and the Initialize rule must hide the DoR. Got:\n{}",
+        xml
+    );
+    // The Visibility rule itself is untouched.
+    assert!(
+        xml.contains("&quot;event&quot;:&quot;Visibility&quot;"),
+        "the Visibility rule must survive. Got:\n{}",
+        xml
+    );
+}
+
+/// The same invariant for the hand-written custom-element templates, which ship
+/// their rules as literal XML rather than rendering them: a component carrying a
+/// `fd:visible` rule must also carry a `fd:init` one. The two live on sibling
+/// `fd:rules`/`fd:scripts` children of the component, so the check is per
+/// component, not per file — `account_holder.xml` also has `fd:init` nodes that
+/// belong to components with no visibility rule at all.
+#[test]
+fn custom_templates_pair_every_visibility_rule_with_an_initialize_rule() {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    /// One component, and which kinds of rule it has been seen to carry.
+    struct Frame {
+        name: String,
+        has_visible: bool,
+        has_init: bool,
+    }
+
+    let dir = helpers::profiles_path("ubs/aem/custom");
+    let mut files = 0;
+    let mut components = 0;
+
+    for entry in std::fs::read_dir(&dir).expect("failed to read profiles/ubs/aem/custom/") {
+        let path = entry.expect("bad dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("xml") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("failed to read custom template");
+        let file = path.file_name().unwrap().to_string_lossy().to_string();
+
+        let mut reader = Reader::from_str(&src);
+        // The templates are FileVault fragments: prefixed names, no declarations.
+        reader.config_mut().check_end_names = false;
+        let mut stack: Vec<Frame> = Vec::new();
+
+        // A rule node describes its *parent* — the component it hangs on.
+        let note_rules = |stack: &mut Vec<Frame>, e: &quick_xml::events::BytesStart| {
+            let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+            if name != "fd:rules" && name != "fd:scripts" {
+                return;
+            }
+            if let Some(top) = stack.last_mut() {
+                top.has_visible |= e.try_get_attribute("fd:visible").ok().flatten().is_some();
+                top.has_init |= e.try_get_attribute("fd:init").ok().flatten().is_some();
+            }
+        };
+
+        loop {
+            match reader.read_event() {
+                // Only Start opens a component; Empty has no End to pop it.
+                Ok(Event::Start(ref e)) => {
+                    note_rules(&mut stack, e);
+                    stack.push(Frame {
+                        name: String::from_utf8_lossy(e.name().as_ref()).to_string(),
+                        has_visible: false,
+                        has_init: false,
+                    });
+                }
+                Ok(Event::Empty(ref e)) => note_rules(&mut stack, e),
+                Ok(Event::End(_)) => {
+                    if let Some(f) = stack.pop() {
+                        if f.has_visible {
+                            components += 1;
+                            assert!(
+                                f.has_init,
+                                "{file}: component <{}> has a fd:visible rule but no fd:init one, \
+                                 so its visibility never runs on a freshly loaded form \
+                                 (PROBLEM-visible-on-init)",
+                                f.name
+                            );
+                        }
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(e) => panic!("{file} is not well-formed: {e}"),
+            }
+        }
+        files += 1;
+    }
+
+    assert!(files > 0, "no custom templates found in {dir}");
+    assert_eq!(
+        components, 14,
+        "expected the 14 known visibility rules in the custom templates; a change in \
+         that count means a rule was added or removed and needs reviewing"
     );
 }
 
