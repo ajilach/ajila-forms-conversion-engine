@@ -1497,7 +1497,7 @@ impl ConversionAgent {
             // §5 output
             t(
                 "build_aem_package",
-                "Build the AEM FileVault package (ZIP) from the current AEM tree. Requires an AEM tree (run convert_structured_to_aem first). Stores it for upload/export.",
+                "Build the AEM FileVault package (ZIP) from the current AEM tree. Requires an AEM tree (author it with set_aem_translated, or refine the pre-loaded one). Stores it for upload/export.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -1521,7 +1521,7 @@ impl ConversionAgent {
             ),
             t(
                 "review_output",
-                "Fidelity review: compare the input (the engine's merged structured parse) against the converted AEM tree and report input text/elements missing from the output, with a coverage score. Compares the master language only (spot-check other languages with search_xfa). Reads the AEM tree, so edits made only to the content XML are not reflected. Run after convert_structured_to_aem and before finish; investigate every miss (fix the tree, or confirm it was intentionally dropped) and re-run.",
+                "Fidelity review: compare the input (the engine's merged structured parse) against the converted AEM tree and report input text/elements missing from the output, with a coverage score. Compares the master language only (spot-check other languages with search_xfa). Reads the AEM tree, so edits made only to the content XML are not reflected. Run once the tree is authored and before you report the stage done; investigate every miss (fix the tree, or confirm it was intentionally dropped) and re-run.",
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
@@ -2438,6 +2438,187 @@ fn render_pdf_pages(pdf: &[u8]) -> Result<Vec<String>, String> {
                 .map_err(|e| format!("encode: {e}"))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod catalog_guards {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// The checked-in serialisation of [`ConversionAgent::tools`]. Regenerate
+    /// with `UPDATE_SNAPSHOTS=1 cargo test -p agent` after an *intended* change,
+    /// and review the diff — the catalog is prompt surface, so a wording change
+    /// is a behaviour change.
+    const SNAPSHOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/catalog.json");
+
+    /// snake_case words that legitimately appear in tool descriptions and
+    /// prompts without naming a tool in this catalog: AEM/XFA vocabulary, JSON
+    /// field and property names, and the MCP-only tools that the `mcp` crate
+    /// defines rather than the engine.
+    const NON_TOOL_VOCABULARY: &[&str] = &[
+        // AEM / XFA / profile vocabulary appearing verbatim in prose.
+        "affrg",
+        "affrg_germany",
+        "affrg_italy",
+        "afforms_ubs_fragmentlib",
+        "asset_containers",
+        "bind_ref",
+        "dor_exclude",
+        "form_code",
+        "frag_ref",
+        "is_page",
+        "jcr_root",
+        "naming_violations",
+        "styled_panels",
+        // Tool argument and enum values, not tools.
+        "aem_translated",
+        "parent_path",
+        "ref_id",
+        "top_k",
+        // Tool-call protocol vocabulary, not a tool.
+        "tool_result",
+        // MCP-only tools and their arguments, defined in the `mcp` crate.
+        "pdf_base64",
+        "pdf_name",
+        "pdf_path",
+        "pdf_paths",
+        "start_conversion",
+        "write_package",
+        "validate_aem_package_from_file",
+        "upload_aem_package_from_file",
+    ];
+
+    fn catalog() -> Vec<serde_json::Value> {
+        ConversionAgent::new(None, Vec::new(), None, String::new(), OutputTarget::Aem).tools()
+    }
+
+    /// Every `snake_case` word in `text`, which is close enough to "looks like a
+    /// tool name" for a guard-rail: tool names are the only snake_case tokens
+    /// the prose uses apart from [`NON_TOOL_VOCABULARY`].
+    ///
+    /// A run that follows an uppercase letter is a fragment of a CamelCase
+    /// identifier (`AddressBlock_CountryDD` would otherwise yield `lock`), not a
+    /// snake_case word, so it is skipped.
+    fn snake_case_words(text: &str) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        let mut word = String::new();
+        let mut after_uppercase = false;
+        for ch in text.chars().chain(std::iter::once(' ')) {
+            if ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' {
+                word.push(ch);
+                continue;
+            }
+            if !after_uppercase
+                && word.contains('_')
+                && word.starts_with(|c: char| c.is_ascii_lowercase())
+            {
+                out.insert(word.trim_matches('_').to_string());
+            }
+            word.clear();
+            after_uppercase = ch.is_ascii_uppercase();
+        }
+        out
+    }
+
+    /// Tool descriptions and role prompts are shipped into the model's context
+    /// on every turn. Naming a tool that does not exist costs tokens and then
+    /// costs a failed call — so the prose may only name tools that are real.
+    ///
+    /// Regression guard: `build_aem_package` and `review_output` both told the
+    /// model to "run convert_structured_to_aem first", a tool that has never
+    /// existed in this catalog.
+    #[test]
+    fn prose_only_names_tools_that_exist() {
+        let catalog = catalog();
+        let names: BTreeSet<&str> = catalog.iter().filter_map(|t| t["name"].as_str()).collect();
+
+        let mut prose = String::new();
+        for tool in &catalog {
+            prose.push_str(tool["description"].as_str().unwrap_or_default());
+            prose.push('\n');
+        }
+        for constant in [
+            SYSTEM_PROMPT,
+            SHARED_PREAMBLE,
+            ANALYST_ADDENDUM,
+            AUTHOR_ADDENDUM,
+            REVIEWER_ADDENDUM,
+            MCP_ADDENDUM,
+            REDACTO_SYSTEM_PROMPT,
+            REDACTO_SHARED_PREAMBLE,
+            REDACTO_ANALYST_ADDENDUM,
+            REDACTO_AUTHOR_ADDENDUM,
+            REDACTO_REVIEWER_ADDENDUM,
+        ] {
+            prose.push_str(constant);
+            prose.push('\n');
+        }
+
+        let unknown: Vec<String> = snake_case_words(&prose)
+            .into_iter()
+            .filter(|w| !names.contains(w.as_str()) && !NON_TOOL_VOCABULARY.contains(&w.as_str()))
+            .collect();
+
+        assert!(
+            unknown.is_empty(),
+            "prompts or tool descriptions name tools that are not in the catalog: {unknown:?}\n\
+             Either the tool is missing, the name is a typo, or the word belongs in \
+             NON_TOOL_VOCABULARY."
+        );
+    }
+
+    #[test]
+    fn the_catalog_has_no_duplicate_tool_names() {
+        let catalog = catalog();
+        let names: Vec<&str> = catalog.iter().filter_map(|t| t["name"].as_str()).collect();
+        let unique: BTreeSet<&&str> = names.iter().collect();
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "duplicate tool names in the catalog: {names:?}"
+        );
+        assert_eq!(names.len(), catalog.len(), "a tool spec is missing a name");
+    }
+
+    #[test]
+    fn every_tool_declares_an_object_input_schema() {
+        for tool in catalog() {
+            let name = tool["name"].as_str().unwrap_or("<unnamed>");
+            assert_eq!(
+                tool["input_schema"]["type"].as_str(),
+                Some("object"),
+                "{name} must declare an object input_schema"
+            );
+            assert!(
+                tool["description"].as_str().is_some_and(|d| !d.is_empty()),
+                "{name} must carry a description — it is the model's only guidance"
+            );
+        }
+    }
+
+    /// The catalog is prompt surface: an accidental wording or schema change
+    /// silently alters how the model behaves. Pin it.
+    #[test]
+    fn the_catalog_matches_its_checked_in_snapshot() {
+        let actual = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&catalog()).expect("catalog serialises")
+        );
+
+        if std::env::var_os("UPDATE_SNAPSHOTS").is_some() {
+            std::fs::create_dir_all(std::path::Path::new(SNAPSHOT).parent().unwrap()).ok();
+            std::fs::write(SNAPSHOT, &actual).expect("write snapshot");
+            return;
+        }
+
+        let expected = std::fs::read_to_string(SNAPSHOT).unwrap_or_default();
+        assert_eq!(
+            actual, expected,
+            "the tool catalog no longer matches tests/catalog.json. If the change is \
+             intended, regenerate with `UPDATE_SNAPSHOTS=1 cargo test -p agent` and review \
+             the diff."
+        );
+    }
 }
 
 #[cfg(test)]

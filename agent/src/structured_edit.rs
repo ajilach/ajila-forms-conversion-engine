@@ -1,10 +1,9 @@
 //! Path-addressed, structure-aware editing of the working structured tree.
 //!
-//! Mirrors the AEM content-XML editors (`get_aem_xml_outline`,
-//! `set_aem_xml_attribute`, …) so the agent can refine a *seeded* structured
-//! tree node-by-node instead of re-emitting the whole tree through
-//! `set_structured` (which is expensive and risks silently dropping nodes or a
-//! language). See `conversion.rs` for the tool wiring.
+//! The structured-tree counterpart to [`crate::aem_translated_edit`]: it lets
+//! the agent refine a *seeded* tree node-by-node instead of re-emitting the
+//! whole tree through `set_structured` (which is expensive and risks silently
+//! dropping nodes or a language). See `conversion.rs` for the tool wiring.
 //!
 //! ## Path syntax
 //!
@@ -313,7 +312,7 @@ pub fn outline(roots: &[StructuredNode]) -> String {
         walk(node, &i.to_string(), &mut out);
     }
     if out.is_empty() {
-        out.push_str("(empty structured tree — seed it with seed_structured first)");
+        out.push_str("(empty structured tree — seed it with seed_structured_from_state first)");
     }
     out
 }
