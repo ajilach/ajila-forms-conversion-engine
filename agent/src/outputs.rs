@@ -1,8 +1,104 @@
-//! Derived outputs for a converted document: the exports the agent run offers
-//! on its done screen, each generated only when the active profile configures
-//! it and the document actually has content to emit.
+//! Assembling a finished run's artefacts from the agent's working state.
+//!
+//! Split from the UI so the target-dependent rule — *the artefact that ships is
+//! the one the agent actually worked on* — is a pure function with tests, and so
+//! the MCP server can reach the same exports the desktop app offers.
 
-use blueprint::DocumentEnvelope;
+use blueprint::{DocumentEnvelope, OutputTarget};
+
+use crate::ConversionAgent;
+
+/// The artefacts a finished run produces.
+pub struct Outputs {
+    pub envelope: DocumentEnvelope,
+    pub redacto_sql: Option<String>,
+    /// Human-readable notes about anything the run could not produce.
+    pub warnings: Vec<String>,
+}
+
+/// Assemble the run's artefacts from the agent's working trees.
+pub fn build(agent: &mut ConversionAgent, profile: Option<&str>) -> Outputs {
+    let mut warnings: Vec<String> = Vec::new();
+
+    match agent.target() {
+        OutputTarget::Redacto => {
+            // The authored structured tree IS the document. Never fall back to
+            // `structured_from_aem_tree` here: that conversion drops every
+            // non-master language onto a `default` pseudo-language and strips
+            // the inline markup, which would turn a loud failure into a dump
+            // that imports a multilingual document as one fake locale.
+            let content = agent.structured().to_vec();
+            let master = redacto_master_language(agent, profile);
+            let context = agent.source_context(&master);
+
+            let envelope = DocumentEnvelope {
+                context,
+                content,
+                state_count: 1,
+            };
+
+            // Prefer the dump the Author last built and validated, so the SQL
+            // that ships is the SQL that was reviewed.
+            let redacto_sql = agent
+                .redacto_dump()
+                .filter(|dump| !dump.assets.is_empty())
+                .map(|dump| dump.to_sql())
+                .or_else(|| redacto_sql_for(&envelope, profile));
+
+            if redacto_sql.is_none() {
+                warnings.push(if envelope.content.is_empty() {
+                    "No Redacto dump: the agent did not author any content.".to_string()
+                } else {
+                    "No Redacto dump: the authored document produced no text assets.".to_string()
+                });
+            }
+
+            Outputs {
+                envelope,
+                redacto_sql,
+                warnings,
+            }
+        }
+        OutputTarget::Aem => {
+            // The agent authors the AEM tree directly and leaves its structured
+            // tree empty, so lift the authored tree back into structured content
+            // — otherwise both editors open on an empty document.
+            let aem_translated = agent.aem_translated().cloned();
+            let mut content = agent.structured().to_vec();
+            if content.is_empty()
+                && let Some(tree) = &aem_translated
+            {
+                content = crate::session::structured_from_aem_tree(tree, profile);
+            }
+
+            // No Redacto dump here. An AEM run's result panel does not offer one,
+            // and deriving it from the source ran a full extraction and dump
+            // generation for a file nobody could reach. Convert with the Redacto
+            // target to get one.
+            Outputs {
+                envelope: DocumentEnvelope {
+                    context: agent.context().clone(),
+                    content,
+                    state_count: 1,
+                },
+                redacto_sql: None,
+                warnings,
+            }
+        }
+    }
+}
+
+/// The language a Redacto document is written in.
+///
+/// Only the extractor's contexts carry the master-page header the analysis
+/// recovered (`agent.context()` never has it), and each language variant carries
+/// its own — so ask for the master language's rather than taking whichever
+/// variant happened to be uploaded first.
+pub fn redacto_master_language(agent: &ConversionAgent, profile: Option<&str>) -> String {
+    profile
+        .and_then(blueprint::redacto_master_language)
+        .unwrap_or_else(|| agent.context().language().to_string())
+}
 
 /// Generate the XSD schema for `envelope`, if the profile has an `xsd/` section
 /// and the document has content.
@@ -69,8 +165,8 @@ mod tests {
         }
     }
 
-    /// The download button in both UIs is driven purely by
-    /// `ProcessingState::redacto_sql`, so this is the whole data path.
+    /// The download button in both UIs is driven purely by the assembled
+    /// `redacto_sql`, so this is the whole data path.
     #[test]
     fn redacto_sql_is_generated_for_the_ubs_profile() {
         let envelope = envelope_with(&[("formrange_code", "AAAD"), ("formrange_entity", "001")]);

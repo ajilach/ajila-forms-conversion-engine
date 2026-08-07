@@ -16,6 +16,7 @@ pub mod aem_translated_edit;
 pub mod conversion;
 pub mod db;
 pub mod image_encode;
+pub mod outputs;
 pub mod references;
 pub mod session;
 pub mod structured_edit;

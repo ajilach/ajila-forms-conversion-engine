@@ -5,7 +5,6 @@ mod files;
 mod llm;
 mod mcp_install;
 mod models;
-mod processing;
 mod settings;
 mod upload;
 

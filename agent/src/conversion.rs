@@ -1235,8 +1235,7 @@ impl ConversionAgent {
         // Resolve the configuration against the master-language variant, so the
         // header and footer come from the language the document is written in
         // rather than from whichever PDF happened to be uploaded first.
-        let master = blueprint::redacto_master_language(&profile)
-            .unwrap_or_else(|| self.context.language().to_string());
+        let master = crate::outputs::redacto_master_language(self, Some(&profile));
         let ctx = self.source_context(&master);
         let (dump, config) =
             blueprint::to_redacto_dump_for_profile(&profile, &ctx, &self.structured)?;

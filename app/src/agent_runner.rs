@@ -23,7 +23,6 @@ use agent::{
     REDACTO_AUTHOR_ADDENDUM, REDACTO_REVIEWER_ADDENDUM, REDACTO_SHARED_PREAMBLE,
     REDACTO_SYSTEM_PROMPT, REVIEWER_ADDENDUM, SHARED_PREAMBLE, SYSTEM_PROMPT, ToolReply,
 };
-use blueprint::DocumentEnvelope;
 
 use crate::llm::tool_result_message;
 use crate::models::{
@@ -1078,99 +1077,6 @@ impl Run {
     }
 }
 
-/// The artefacts a finished run produces, assembled from the agent's working
-/// state.
-///
-/// Split out of [`finalize`] so the target-dependent part is a pure function —
-/// the rule it enforces (the artefact that ships is the one the agent worked on)
-/// is exactly what needs a test, and a `Signal` write cannot be tested.
-struct Outputs {
-    envelope: DocumentEnvelope,
-    redacto_sql: Option<String>,
-    warnings: Vec<String>,
-}
-
-fn build_outputs(
-    agent: &mut ConversionAgent,
-    target: blueprint::OutputTarget,
-    profile: Option<&str>,
-) -> Outputs {
-    let mut warnings: Vec<String> = Vec::new();
-
-    match target {
-        blueprint::OutputTarget::Redacto => {
-            // The authored structured tree IS the document. Never fall back to
-            // `structured_from_aem_tree` here: that conversion drops every
-            // non-master language onto a `default` pseudo-language and strips
-            // the inline markup, which would turn a loud failure into a dump
-            // that imports a multilingual document as one fake locale.
-            let content = agent.structured().to_vec();
-            // Only the extractor's contexts carry the master-page header the
-            // analysis recovered (`agent.context()` never has it), and each
-            // language variant carries its own — so ask for the master
-            // language's rather than taking whichever was uploaded first.
-            let master = profile
-                .and_then(blueprint::redacto_master_language)
-                .unwrap_or_else(|| agent.context().language().to_string());
-            let context = agent.source_context(&master);
-
-            let envelope = DocumentEnvelope {
-                context,
-                content,
-                state_count: 1,
-            };
-
-            // Prefer the dump the Author last built and validated, so the SQL
-            // that ships is the SQL that was reviewed.
-            let redacto_sql = agent
-                .redacto_dump()
-                .filter(|dump| !dump.assets.is_empty())
-                .map(|dump| dump.to_sql())
-                .or_else(|| crate::processing::redacto_sql_for(&envelope, profile));
-
-            if redacto_sql.is_none() {
-                warnings.push(if envelope.content.is_empty() {
-                    "No Redacto dump: the agent did not author any content.".to_string()
-                } else {
-                    "No Redacto dump: the authored document produced no text assets.".to_string()
-                });
-            }
-
-            Outputs {
-                envelope,
-                redacto_sql,
-                warnings,
-            }
-        }
-        blueprint::OutputTarget::Aem => {
-            // The agent authors the AEM tree directly and leaves its structured
-            // tree empty, so lift the authored tree back into structured content
-            // — otherwise both editors open on an empty document.
-            let aem_translated = agent.aem_translated().cloned();
-            let mut content = agent.structured().to_vec();
-            if content.is_empty()
-                && let Some(tree) = &aem_translated
-            {
-                content = crate::session::structured_from_aem_tree(tree, profile);
-            }
-
-            // No Redacto dump here. An AEM run's result panel does not offer one,
-            // and deriving it from the source ran a full extraction and dump
-            // generation for a file nobody could reach. Convert with the Redacto
-            // target to get one.
-            Outputs {
-                envelope: DocumentEnvelope {
-                    context: agent.context().clone(),
-                    content,
-                    state_count: 1,
-                },
-                redacto_sql: None,
-                warnings,
-            }
-        }
-    }
-}
-
 impl Run {
     /// Build the final `ProcessingState` from the agent's working trees.
     fn finalize(
@@ -1179,11 +1085,11 @@ impl Run {
         current_session: &mut Signal<Option<String>>,
     ) {
         let profile = self.profile.clone();
-        let Outputs {
+        let agent::outputs::Outputs {
             envelope,
             redacto_sql,
             warnings,
-        } = build_outputs(&mut self.agent, self.target, profile.as_deref());
+        } = agent::outputs::build(&mut self.agent, profile.as_deref());
 
         let form_code = self.agent.form_code();
 
@@ -1191,7 +1097,7 @@ impl Run {
         // form code has to be resolved first: it names the form.
         let xsd_schema = (self.target == blueprint::OutputTarget::Aem)
             .then(|| {
-                crate::processing::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref())
+                agent::outputs::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref())
             })
             .flatten();
 
@@ -1440,7 +1346,7 @@ mod tests {
             source_name: None,
         })]);
 
-        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, Some("ubs"));
+        let outputs = agent::outputs::build(&mut agent, Some("ubs"));
 
         let sql = outputs
             .redacto_sql
@@ -1471,7 +1377,7 @@ mod tests {
     fn an_empty_redacto_document_produces_no_sql() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Redacto);
 
-        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, Some("ubs"));
+        let outputs = agent::outputs::build(&mut agent, Some("ubs"));
 
         assert!(outputs.redacto_sql.is_none());
         assert!(
@@ -1491,7 +1397,7 @@ mod tests {
     fn the_aem_target_derives_no_redacto_dump() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Aem);
 
-        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Aem, Some("ubs"));
+        let outputs = agent::outputs::build(&mut agent, Some("ubs"));
 
         assert!(
             outputs.redacto_sql.is_none(),
