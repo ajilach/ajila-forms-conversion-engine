@@ -29,7 +29,7 @@ pub fn download_file(data: &[u8], filename: &str) {
 
 // ── HTML preview ─────────────────────────────────────────────────────
 
-pub fn show_html_preview(html: String, filename: &str) {
+pub fn show_html_preview(html: &str, filename: &str) {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => {
@@ -39,7 +39,7 @@ pub fn show_html_preview(html: String, filename: &str) {
     };
 
     let preview_path = home.join("Downloads").join(filename);
-    if let Err(e) = std::fs::write(&preview_path, &html) {
+    if let Err(e) = std::fs::write(&preview_path, html) {
         eprintln!(
             "✗ Failed to save preview to {}: {}",
             preview_path.display(),

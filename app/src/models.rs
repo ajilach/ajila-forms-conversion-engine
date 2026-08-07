@@ -1,4 +1,6 @@
-#[derive(Clone, Debug, Default, PartialEq)]
+//! The state the agent run publishes to the UI.
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ProcessingStep {
     #[default]
     Idle,
@@ -8,7 +10,7 @@ pub enum ProcessingStep {
 }
 
 /// Kind of an agent activity step.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentStepKind {
     /// The model's visible text for a turn.
     Thought,
@@ -17,15 +19,45 @@ pub enum AgentStepKind {
 }
 
 /// Status of an agent activity step (drives the spinner / checkmark).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentStepStatus {
     Running,
     Done,
     Error,
 }
 
+impl AgentStepStatus {
+    /// The glyph that stands for this status wherever a step is rendered — the
+    /// timeline dots and the Markdown transcript alike, so the three views can
+    /// never drift apart.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Self::Running => "…",
+            Self::Done => "✓",
+            Self::Error => "✗",
+        }
+    }
+
+    /// Modifier class for the timeline dot that carries this status.
+    pub fn dot_class(self) -> &'static str {
+        match self {
+            Self::Running => "run",
+            Self::Done => "ok",
+            Self::Error => "err",
+        }
+    }
+}
+
+impl From<bool> for AgentStepStatus {
+    /// A finished tool call is `Done` when it succeeded and `Error` when it did
+    /// not; the agent loop reports exactly that boolean.
+    fn from(ok: bool) -> Self {
+        if ok { Self::Done } else { Self::Error }
+    }
+}
+
 /// What the user chose when an agent run paused on a failed API turn.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RetryAction {
     /// Re-send the failed turn and carry on.
     Retry,
@@ -34,7 +66,7 @@ pub enum RetryAction {
 }
 
 /// One entry in the Agent Processing activity panel.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentStep {
     /// Tool-call id (for matching start→finish); empty for thoughts.
     pub id: String,
@@ -46,7 +78,7 @@ pub struct AgentStep {
     pub status: AgentStepStatus,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProcessingState {
     pub step: ProcessingStep,
     pub form_code: Option<String>,

@@ -52,7 +52,10 @@ fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
 fn App() -> Element {
     let mut processing_state = use_signal(ProcessingState::default);
     let mut is_processing = use_signal(|| false);
-    let selected_profile = use_signal(|| None::<String>);
+    // The profile list is baked into the binary, so read it once and start on
+    // the first entry rather than re-deriving the default during every render.
+    let profiles = use_hook(blueprint::list_profiles);
+    let selected_profile = use_signal(|| profiles.first().cloned());
     // What the next conversion run produces. Chosen before the run starts,
     // because it decides what the agent authors, not just which file is offered
     // at the end.
@@ -66,8 +69,6 @@ fn App() -> Element {
     // Source PDF bytes of the currently loaded document, retained so a feedback
     // re-run can resume the conversion from the same sources.
     let mut source_pdfs = use_signal(Vec::<(String, Vec<u8>)>::new);
-
-    let profiles = blueprint::list_profiles();
 
     // ── AI processing ───────────────────────────────────────────────────────
     // Hand the uploaded PDFs to the configured LLM and parse the structured

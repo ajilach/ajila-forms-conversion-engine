@@ -1006,6 +1006,7 @@ body > div, #main {
 }
 .ag-file-ext.pdf { background: var(--danger); }
 .ag-file-ext.zip { background: var(--warn-text); }
+.ag-file-ext.file { background: var(--muted); }
 
 /* ---- Collapsible activity timeline ---- */
 .ag-tl {

@@ -957,17 +957,9 @@ async fn run_role(
             );
             let reply = agent.execute(&tc.name, &tc.input).await;
             let ok = !matches!(reply, ToolReply::Error(_));
-            set_step_status(
-                processing_state,
-                &tc.id,
-                if ok {
-                    AgentStepStatus::Done
-                } else {
-                    AgentStepStatus::Error
-                },
-            );
+            set_step_status(processing_state, &tc.id, ok.into());
 
-            // `submit_review`/`finish` end the stage after their result is recorded.
+            // `submit_review` ends the stage after its result is recorded.
             if tc.name == "submit_review" {
                 terminal = true;
             }
@@ -1036,15 +1028,7 @@ async fn ensure_built_and_uploaded(
             .await,
         ToolReply::Error(_)
     );
-    set_step_status(
-        processing_state,
-        "finalize-build",
-        if built {
-            AgentStepStatus::Done
-        } else {
-            AgentStepStatus::Error
-        },
-    );
+    set_step_status(processing_state, "finalize-build", built.into());
 
     if built && settings.aem_connection().is_some() && !agent.aem_uploaded() {
         push_step(
@@ -1061,15 +1045,7 @@ async fn ensure_built_and_uploaded(
             agent.execute("upload_to_aem", &serde_json::json!({})).await,
             ToolReply::Error(_)
         );
-        set_step_status(
-            processing_state,
-            "finalize-upload",
-            if ok {
-                AgentStepStatus::Done
-            } else {
-                AgentStepStatus::Error
-            },
-        );
+        set_step_status(processing_state, "finalize-upload", ok.into());
     }
 }
 

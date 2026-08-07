@@ -3,28 +3,88 @@
 //! timeline is collapsed to its latest step by default and expands in place to
 //! the full, scrollable history. The finished box carries the run's outputs and
 //! the feedback field that re-runs the agent in the same session.
+//!
+//! [`AgentFlow`] owns the flow state and picks a [`Screen`]; everything below it
+//! is a leaf that renders one band of the box.
 
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 
-use super::spinner::Spinner;
-use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction};
+use super::spinner::{Spinner, SpinnerSize};
+use crate::models::{
+    AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
+};
 use crate::platform::{download_file, show_html_preview};
 use crate::upload::read_upload_files;
 
-/// Which phase of the agent flow is currently shown.
-#[derive(PartialEq, Clone, Copy)]
-enum Phase {
+/// What the box shows: either the upload form, or a run in one of its states.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Screen {
     Upload,
+    Run(RunStatus),
+}
+
+/// How a run is doing. `Paused` is a live run waiting on the user's answer to a
+/// failed request — the header, the phase rail and the badge all switch on it,
+/// so it is one value rather than a phase plus a flag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunStatus {
     Running,
+    Paused,
     Done,
     /// The run ended on an error (including the user giving up on a paused,
     /// retryable request) — the box reports it and offers a fresh start.
     Failed,
 }
 
+impl RunStatus {
+    /// Modifier class and glyph for the status badge. `None` glyph means the
+    /// badge shows a spinner instead.
+    fn badge(self) -> (&'static str, Option<&'static str>) {
+        match self {
+            Self::Running => ("run", None),
+            Self::Paused => ("warn", Some("⏸")),
+            Self::Done => ("ok", Some("✓")),
+            Self::Failed => ("err", Some("✗")),
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Running => "Agent is working",
+            Self::Paused => "Agent paused",
+            Self::Done => "Finished",
+            Self::Failed => "Agent stopped",
+        }
+    }
+
+    /// Whether the run reached the end successfully.
+    fn is_done(self) -> bool {
+        self == Self::Done
+    }
+}
+
+/// Derive what to show from the run state. The `Complete` step wins over
+/// everything; a stopped run that recorded an error has failed; anything else
+/// with work in flight is a run in progress.
+fn screen_for(state: &ProcessingState, processing: bool) -> Screen {
+    if state.step == ProcessingStep::Complete {
+        Screen::Run(RunStatus::Done)
+    } else if !processing && state.error.is_some() {
+        Screen::Run(RunStatus::Failed)
+    } else if processing || state.step != ProcessingStep::Idle {
+        Screen::Run(if state.retry_pending {
+            RunStatus::Paused
+        } else {
+            RunStatus::Running
+        })
+    } else {
+        Screen::Upload
+    }
+}
+
 /// Lifecycle of the on-demand "Upload to AEM" action, surfaced inside the button.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum UploadState {
     Idle,
     Uploading,
@@ -34,7 +94,7 @@ enum UploadState {
 
 /// Build a download filename like `forms-package-<code>.zip`, falling back to
 /// `forms-package.zip` when the form code is unknown.
-fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
+fn filename(prefix: &str, form_code: Option<&str>, ext: &str) -> String {
     match form_code {
         Some(code) => format!("{prefix}-{code}.{ext}"),
         None => format!("{prefix}.{ext}"),
@@ -42,7 +102,7 @@ fn filename(prefix: &str, form_code: &Option<String>, ext: &str) -> String {
 }
 
 /// Render the activity timeline as a Markdown transcript of the run.
-fn agent_log_markdown(steps: &[crate::models::AgentStep]) -> String {
+fn agent_log_markdown(steps: &[AgentStep]) -> String {
     let mut out = String::from("# Agent Conversion Log\n\n");
     for step in steps {
         match step.kind {
@@ -50,11 +110,7 @@ fn agent_log_markdown(steps: &[crate::models::AgentStep]) -> String {
                 out.push_str(&format!("> {}\n\n", step.label.replace('\n', "\n> ")));
             }
             AgentStepKind::Tool => {
-                let icon = match step.status {
-                    AgentStepStatus::Done => "✓",
-                    AgentStepStatus::Error => "✗",
-                    AgentStepStatus::Running => "…",
-                };
+                let icon = step.status.glyph();
                 if step.detail.is_empty() {
                     out.push_str(&format!("- {icon} `{}`\n", step.label));
                 } else {
@@ -83,16 +139,16 @@ fn ext_badge(name: &str) -> (&'static str, &'static str) {
     } else if lower.ends_with(".zip") {
         ("zip", "ZIP")
     } else {
-        ("", "FILE")
+        ("file", "FILE")
     }
 }
 
 #[component]
 pub fn AgentFlow(
     processing_state: Signal<ProcessingState>,
-    is_processing: Signal<bool>,
+    is_processing: ReadSignal<bool>,
     profiles: Vec<String>,
-    mut selected_profile: Signal<Option<String>>,
+    selected_profile: Signal<Option<String>>,
     selected_target: Signal<blueprint::OutputTarget>,
     /// Whether agent processing is available (an API key is configured).
     ai_available: bool,
@@ -106,67 +162,32 @@ pub fn AgentFlow(
     on_reset: EventHandler<()>,
 ) -> Element {
     let mut uploaded_files = use_signal(Vec::<(String, Vec<u8>)>::new);
-    let is_dragging = use_signal(|| false);
-    let drag_depth = use_signal(|| 0usize);
     let mut feedback = use_signal(String::new);
     // Whether the activity timeline is expanded to its full history.
     let mut timeline_open = use_signal(|| false);
 
-    // Auto-select the first profile if none is chosen yet.
-    if selected_profile.read().is_none()
-        && let Some(first) = profiles.first()
-    {
-        selected_profile.set(Some(first.clone()));
-    }
-
-    // Keep the timeline pinned to the newest step as the agent works (only
-    // matters while the history is expanded).
-    use_effect(move || {
-        let _ = processing_state.read().agent_steps.len();
-        if *timeline_open.read() {
-            document::eval(
-                r#"setTimeout(() => {
-                    const el = document.getElementById('agent-flow-end');
-                    if (el) el.scrollIntoView({ block: 'end' });
-                }, 0);"#,
-            );
-        }
-    });
-
-    let state = processing_state.read();
-    let processing = *is_processing.read();
-    let phase = if state.step == ProcessingStep::Complete {
-        Phase::Done
-    } else if !processing && state.error.is_some() {
-        Phase::Failed
-    } else if processing || state.step != ProcessingStep::Idle {
-        Phase::Running
-    } else {
-        Phase::Upload
-    };
+    let screen = screen_for(&processing_state.read(), is_processing());
 
     rsx! {
         div { class: "agent-flow",
             div { class: "agent-single",
                 div { class: "agent-page",
-                    match phase {
-                        Phase::Upload => rsx! {
+                    match screen {
+                        Screen::Upload => rsx! {
                             UploadBox {
                                 profiles,
                                 selected_profile,
-            selected_target,
+                                selected_target,
                                 ai_available,
                                 uploaded_files,
-                                is_dragging,
-                                drag_depth,
                                 on_start: move |files: Vec<(String, Vec<u8>)>| on_ai_process.call(files),
                             }
                         },
-                        Phase::Running | Phase::Done | Phase::Failed => rsx! {
+                        Screen::Run(status) => rsx! {
                             RunBox {
-                                phase,
-                                state: state.clone(),
-                                files: uploaded_files.read().clone(),
+                                status,
+                                state: processing_state,
+                                files: uploaded_files,
                                 profile: selected_profile.read().clone(),
                                 aem_connection: aem_connection.clone(),
                                 timeline_open,
@@ -203,10 +224,13 @@ fn UploadBox(
     selected_target: Signal<blueprint::OutputTarget>,
     ai_available: bool,
     mut uploaded_files: Signal<Vec<(String, Vec<u8>)>>,
-    mut is_dragging: Signal<bool>,
-    mut drag_depth: Signal<usize>,
     on_start: EventHandler<Vec<(String, Vec<u8>)>>,
 ) -> Element {
+    // A drop target fires enter/leave for every child element it crosses, so the
+    // highlight follows a depth counter rather than the last event seen.
+    let mut drag_depth = use_signal(|| 0usize);
+    let is_dragging = use_memo(move || drag_depth() > 0);
+
     let files = uploaded_files.read().clone();
     let has_pdf = files
         .iter()
@@ -271,7 +295,7 @@ fn UploadBox(
                         }
                     }
                 }
-                crate::components::OutputTargetSelector {
+                super::OutputTargetSelector {
                     profile: selected_profile.read().clone(),
                     selected_target,
                     disabled: false,
@@ -279,26 +303,20 @@ fn UploadBox(
             }
 
             div {
-                class: if *is_dragging.read() { "upload-dropzone upload-dropzone-dragging agent-dropzone" } else { "upload-dropzone agent-dropzone" },
+                class: if is_dragging() { "upload-dropzone upload-dropzone-dragging agent-dropzone" } else { "upload-dropzone agent-dropzone" },
                 ondragenter: move |evt: Event<DragData>| {
                     evt.prevent_default();
-                    let next = *drag_depth.read() + 1;
-                    drag_depth.set(next);
-                    is_dragging.set(true);
+                    drag_depth += 1;
                 },
                 ondragover: move |evt: Event<DragData>| evt.prevent_default(),
                 ondragleave: move |evt: Event<DragData>| {
                     evt.prevent_default();
-                    let next = (*drag_depth.read()).saturating_sub(1);
+                    let next = drag_depth().saturating_sub(1);
                     drag_depth.set(next);
-                    if next == 0 {
-                        is_dragging.set(false);
-                    }
                 },
                 ondrop: move |evt: Event<DragData>| {
                     evt.prevent_default();
                     drag_depth.set(0);
-                    is_dragging.set(false);
                     let dropped = evt.files();
                     async move {
                         let data = read_upload_files(dropped).await;
@@ -367,13 +385,13 @@ fn UploadBox(
 /// a Retry / Give up prompt.
 #[component]
 fn RunBox(
-    phase: Phase,
-    state: ProcessingState,
-    files: Vec<(String, Vec<u8>)>,
+    status: RunStatus,
+    state: ReadSignal<ProcessingState>,
+    files: ReadSignal<Vec<(String, Vec<u8>)>>,
     profile: Option<String>,
     aem_connection: Option<blueprint::AemConnection>,
-    mut timeline_open: Signal<bool>,
-    mut feedback: Signal<String>,
+    timeline_open: Signal<bool>,
+    feedback: Signal<String>,
     on_feedback: EventHandler<String>,
     /// Resume a paused run by re-sending the request that failed.
     on_retry: EventHandler<()>,
@@ -381,275 +399,24 @@ fn RunBox(
     on_give_up: EventHandler<()>,
     on_new: EventHandler<()>,
 ) -> Element {
-    let done = phase == Phase::Done;
-    let failed = phase == Phase::Failed;
-    // The run is alive but waiting on the user's answer to a failed request.
-    let paused = state.retry_pending;
-    let open = *timeline_open.read();
-    let steps = &state.agent_steps;
-    let latest = steps.last();
-
-    // Context-window fill indicator (shown next to the step count when expanded).
-    let ctx_window = state.context_window;
-    let ctx_used = state.context_used_tokens.min(ctx_window);
-    let ctx_pct = if ctx_window > 0 {
-        (ctx_used as f32 / ctx_window as f32 * 100.0).round() as u32
-    } else {
-        0
+    let done = status.is_done();
+    let box_class = match status {
+        RunStatus::Done => "ag-box done",
+        RunStatus::Failed => "ag-box failed",
+        _ => "ag-box",
     };
-    let ctx_fill = if ctx_pct >= 90 {
-        "var(--danger, #c2185b)"
-    } else if ctx_pct >= 75 {
-        "var(--warn, #dc9e26)"
-    } else {
-        "var(--accent)"
-    };
-    let ctx_ring_style = format!(
-        "background: conic-gradient({ctx_fill} {}deg, var(--border) 0);",
-        ctx_pct * 36 / 10
-    );
-    let ctx_title = format!("Context window · {ctx_used} / {ctx_window} tokens ({ctx_pct}%)");
-    let feedback_empty = feedback.read().trim().is_empty();
-    // Lifecycle of the on-demand AEM upload, reported inside the button.
-    let mut upload_state = use_signal(|| UploadState::Idle);
 
     rsx! {
-        section {
-            class: if done { "ag-box done" } else if failed { "ag-box failed" } else { "ag-box" },
-            // ---- Header ----
-            div { class: "ag-top",
-                if done {
-                    div { class: "ag-badge ok", "✓" }
-                } else if failed {
-                    div { class: "ag-badge err", "✗" }
-                } else if paused {
-                    div { class: "ag-badge warn", "⏸" }
-                } else {
-                    div { class: "ag-badge run",
-                        Spinner { size: "md" }
-                    }
-                }
-                div { class: "ag-top-text",
-                    h2 { class: "ag-title",
-                        if done {
-                            "Finished"
-                        } else if failed {
-                            "Agent stopped"
-                        } else if paused {
-                            "Agent paused"
-                        } else {
-                            "Agent is working"
-                        }
-                    }
-                    div { class: "ag-meta",
-                        if let Some(p) = profile.as_ref() {
-                            span {
-                                "Profile "
-                                b { "{p}" }
-                            }
-                        }
-                        if done {
-                            if let Some(secs) = state.elapsed_secs {
-                                span {
-                                    "in "
-                                    b { "{format_elapsed(secs)}" }
-                                }
-                            }
-                        }
-                    }
-                }
-                if done || failed {
-                    div { class: "ag-actions",
-                        button {
-                            class: "btn btn-secondary btn-sm",
-                            onclick: move |_| on_new.call(()),
-                            "↻ New form"
-                        }
-                    }
-                }
-            }
-
-            // ---- Phase rail ----
-            div { class: "ag-phases",
-                div { class: "ag-phase done",
-                    span { class: "pn", "✓" }
-                    span { class: "pl", "Upload" }
-                }
-                div { class: "ag-pbar done" }
-                if done {
-                    div { class: "ag-phase done",
-                        span { class: "pn", "✓" }
-                        span { class: "pl", "Convert" }
-                    }
-                    div { class: "ag-pbar done" }
-                    div { class: "ag-phase done",
-                        span { class: "pn", "✓" }
-                        span { class: "pl", "Finish" }
-                    }
-                } else if failed {
-                    div { class: "ag-phase failed",
-                        span { class: "pn", "✗" }
-                        span { class: "pl", "Convert" }
-                    }
-                    div { class: "ag-pbar" }
-                    div { class: "ag-phase",
-                        span { class: "pn", "3" }
-                        span { class: "pl", "Finish" }
-                    }
-                } else {
-                    div { class: if paused { "ag-phase paused" } else { "ag-phase active" },
-                        span { class: "pn", if paused { "⏸" } else { "●" } }
-                        span { class: "pl", "Convert" }
-                    }
-                    div { class: "ag-pbar" }
-                    div { class: "ag-phase",
-                        span { class: "pn", "3" }
-                        span { class: "pl", "Finish" }
-                    }
-                }
-            }
-
-            // ---- Source files ----
-            if !files.is_empty() {
-                div { class: "ag-files",
-                    for (name , _bytes) in files.iter() {
-                        {
-                            let (cls, label) = ext_badge(name);
-                            rsx! {
-                                span { class: "ag-file",
-                                    span { class: "ag-file-ext {cls}", "{label}" }
-                                    "{name}"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ---- Collapsible activity timeline ----
-            div { class: "ag-tl",
-                button {
-                    class: "ag-tl-bar",
-                    onclick: move |_| {
-                        let next = !*timeline_open.read();
-                        timeline_open.set(next);
-                    },
-                    if open {
-                        span { class: "ag-tl-title", "Activity · {steps.len()} steps" }
-                        if ctx_window > 0 {
-                            span { class: "ag-ctx", title: "{ctx_title}",
-                                span { class: "ag-ctx-ring", style: "{ctx_ring_style}" }
-                                span { class: "ag-ctx-pct", "{ctx_pct}%" }
-                            }
-                        }
-                    } else {
-                        // Collapsed: show only the latest step.
-                        match latest {
-                            Some(s) if s.kind == AgentStepKind::Tool => rsx! {
-                                span { class: "ag-tl-dot {tl_dot_class(&s.status)}", {tl_dot_inner(&s.status)} }
-                                span { class: "ag-tl-latest",
-                                    span { class: "nm", "{s.label}" }
-                                    if !s.detail.is_empty() {
-                                        span { class: "dt", "{s.detail}" }
-                                    }
-                                }
-                            },
-                            Some(s) => rsx! {
-                                span { class: "ag-tl-dot" }
-                                span { class: "ag-tl-latest",
-                                    span { class: "nm-thought", "{s.label}" }
-                                }
-                            },
-                            None => rsx! {
-                                span { class: "ag-tl-dot",
-                                    Spinner { size: "sm" }
-                                }
-                                span { class: "ag-tl-latest",
-                                    span { class: "nm", "Starting agent…" }
-                                }
-                            },
-                        }
-                    }
-                    span { class: "ag-tl-chevron",
-                        if open {
-                            "Collapse"
-                        } else {
-                            "Show full history"
-                        }
-                        span { class: if open { "chev chev-open" } else { "chev" }, "▾" }
-                    }
-                }
-                if open {
-                    div { class: "ag-tl-full",
-                        div { class: "af-timeline",
-                            if steps.is_empty() {
-                                div { class: "af-thought", "Starting agent…" }
-                            }
-                            for (i , s) in steps.iter().enumerate() {
-                                {
-                                    match s.kind {
-                                        AgentStepKind::Thought => rsx! {
-                                            div { key: "{i}", class: "af-thought", "{s.label}" }
-                                        },
-                                        AgentStepKind::Tool => rsx! {
-                                            div { key: "{i}", class: "af-tool",
-                                                span { class: "af-node",
-                                                    {
-                                                        match s.status {
-                                                            AgentStepStatus::Running => rsx! {
-                                                                Spinner { size: "sm" }
-                                                            },
-                                                            AgentStepStatus::Done => rsx! {
-                                                                span { class: "af-ok", "✓" }
-                                                            },
-                                                            AgentStepStatus::Error => rsx! {
-                                                                span { class: "af-err", "✗" }
-                                                            },
-                                                        }
-                                                    }
-                                                }
-                                                div { class: "af-tool-body",
-                                                    span { class: "af-tool-name", "{s.label}" }
-                                                    if !s.detail.is_empty() {
-                                                        span { class: "af-tool-detail", "{s.detail}" }
-                                                    }
-                                                }
-                                            }
-                                        },
-                                    }
-                                }
-                            }
-                            div { id: "agent-flow-end" }
-                        }
-                    }
-                }
-            }
+        section { class: box_class,
+            RunHeader { status, profile, elapsed_secs: state.read().elapsed_secs, on_new }
+            PhaseRail { status }
+            SourceFiles { files }
+            ActivityTimeline { state, timeline_open }
 
             // ---- Failed request: retry (or give up) without losing the run ----
-            if paused {
-                div { class: "ag-retry",
-                    div { class: "ag-retry-title", "The request to Claude failed — the run is paused." }
-                    if let Some(error) = &state.error {
-                        div { class: "ag-retry-msg", "{error}" }
-                    }
-                    div { class: "ag-retry-hint",
-                        "Everything the agent has built so far is still in memory. Retry re-sends only \
-                         the step that failed."
-                    }
-                    div { class: "ag-retry-actions",
-                        button {
-                            class: "btn btn-primary",
-                            onclick: move |_| on_retry.call(()),
-                            "↻ Retry"
-                        }
-                        button {
-                            class: "btn btn-secondary",
-                            onclick: move |_| on_give_up.call(()),
-                            "Give up"
-                        }
-                    }
-                }
-            } else if let Some(error) = &state.error {
+            if status == RunStatus::Paused {
+                RetryPrompt { error: state.read().error.clone(), on_retry, on_give_up }
+            } else if let Some(error) = state.read().error.as_ref() {
                 div { class: "progress-error",
                     strong { "Error: " }
                     "{error}"
@@ -659,11 +426,11 @@ fn RunBox(
             // Non-fatal problems the run reported — a Redacto dump that could not
             // be built, a cross-language merge that failed. Without this the run
             // looks clean while an output is silently missing.
-            if !state.warnings.is_empty() {
+            if !state.read().warnings.is_empty() {
                 div { class: "progress-warnings",
                     strong { "Warnings:" }
                     ul {
-                        for warning in state.warnings.iter() {
+                        for warning in state.read().warnings.iter() {
                             li { "{warning}" }
                         }
                     }
@@ -672,181 +439,118 @@ fn RunBox(
 
             // ---- Result + feedback (done only) ----
             if done {
-                if state.aem_uploaded && let Some(path) = state.aem_form_path.as_ref() {
+                if state.read().aem_uploaded && let Some(path) = state.read().aem_form_path.as_ref() {
                     div { class: "ag-aem",
                         span { class: "ag-aem-label", "Uploaded to AEM" }
                         span { class: "ag-aem-path", "{path}" }
                     }
                 }
+                ResultActions { state, aem_connection }
+                DownloadRow { state }
+                FeedbackBox { feedback, on_feedback }
+            }
+        }
+    }
+}
 
-                // ---- Row A: act on the result ----
-                div { class: "ag-result-actions",
-                    if let Some(ref aem_data) = state.aem_package {
-                        button {
-                            class: "btn btn-secondary",
-                            title: "Download the AEM content package (CRX) as a ZIP",
-                            onclick: {
-                                let aem_data = aem_data.clone();
-                                let zip_filename = filename("forms-package", &state.form_code, "zip");
-                                move |_| download_file(&aem_data, &zip_filename)
-                            },
-                            "⬇ Download CRX package"
+/// Status badge, title, profile/duration meta, and the "New form" escape hatch.
+#[component]
+fn RunHeader(
+    status: RunStatus,
+    profile: Option<String>,
+    elapsed_secs: Option<u64>,
+    on_new: EventHandler<()>,
+) -> Element {
+    let (badge_class, glyph) = status.badge();
+
+    rsx! {
+        div { class: "ag-top",
+            div { class: "ag-badge {badge_class}",
+                match glyph {
+                    Some(g) => rsx! { "{g}" },
+                    None => rsx! {
+                        Spinner {}
+                    },
+                }
+            }
+            div { class: "ag-top-text",
+                h2 { class: "ag-title", "{status.title()}" }
+                div { class: "ag-meta",
+                    if let Some(p) = profile.as_ref() {
+                        span {
+                            "Profile "
+                            b { "{p}" }
                         }
                     }
-                    if let Some(ref html) = state.html_preview {
-                        button {
-                            class: "btn btn-secondary",
-                            title: "Render the converted document as a standalone HTML page and open it in the browser",
-                            onclick: {
-                                let html = html.clone();
-                                let preview_filename = filename("preview", &state.form_code, "html");
-                                move |_| show_html_preview(html.clone(), &preview_filename)
-                            },
-                            "◹ HTML preview"
-                        }
-                    }
-                    if let Some(ref aem_data) = state.aem_package {
-                        {
-                            let st = upload_state.read().clone();
-                            let uploading = st == UploadState::Uploading;
-                            let no_connection = aem_connection.is_none();
-                            let upload_title = match &st {
-                                UploadState::Error(msg) => msg.clone(),
-                                _ if no_connection => {
-                                    "Configure the AEM connection in Settings to enable this".to_string()
-                                }
-                                _ => "Upload and install the package on the configured AEM instance".to_string(),
-                            };
-
-                            rsx! {
-                                button {
-                                    class: "btn btn-primary",
-                                    disabled: uploading || no_connection,
-                                    title: upload_title,
-                                    onclick: {
-                                        let aem_data = aem_data.clone();
-                                        let connection = aem_connection.clone();
-                                        let package_name = state
-                                            .form_code
-                                            .clone()
-                                            .unwrap_or_else(|| "forms-package".to_string());
-                                        move |_| {
-                                            let Some(conn) = connection.clone() else {
-                                                return;
-                                            };
-                                            let aem_data = aem_data.clone();
-                                            let package_name = package_name.clone();
-                                            upload_state.set(UploadState::Uploading);
-                                            spawn(async move {
-                                                match crate::aem_client::upload_and_install_package(
-                                                    &conn,
-                                                    aem_data,
-                                                    &package_name,
-                                                )
-                                                .await
-                                                {
-                                                    Ok(()) => upload_state.set(UploadState::Success),
-                                                    Err(e) => upload_state.set(UploadState::Error(e)),
-                                                }
-                                            });
-                                        }
-                                    },
-                                    match st {
-                                        UploadState::Uploading => rsx! {
-                                            Spinner { size: "sm" }
-                                            span { "Uploading…" }
-                                        },
-                                        UploadState::Success => rsx! { "✓ Uploaded to AEM" },
-                                        UploadState::Error(_) => rsx! { "⚠ Upload failed — retry" },
-                                        UploadState::Idle => rsx! { "⬆ Upload to AEM" },
-                                    }
-                                }
-                            }
+                    if let Some(secs) = elapsed_secs.filter(|_| status.is_done()) {
+                        span {
+                            "in "
+                            b { "{format_elapsed(secs)}" }
                         }
                     }
                 }
-
-                // ---- Row B: take a copy. Outside the AEM-package guard, since a
-                // Redacto run produces no package but still yields a dump, the
-                // structure and the log ----
-                div { class: "ag-downloads",
-                    span { class: "ag-downloads-label", "Also download" }
-                    if let Some(ref sql_data) = state.redacto_sql {
-                        button {
-                            class: "btn btn-secondary btn-sm",
-                            title: "The Redacto PostgreSQL dump (document, components and text assets)",
-                            onclick: {
-                                let sql_data = sql_data.clone();
-                                let sql_filename = filename("redacto", &state.form_code, "sql");
-                                move |_| download_file(sql_data.as_bytes(), &sql_filename)
-                            },
-                            "Redacto SQL"
-                        }
-                    }
-                    if let Some(ref json_data) = state.merged_json {
-                        button {
-                            class: "btn btn-secondary btn-sm",
-                            title: "The structured document the outputs were generated from",
-                            onclick: {
-                                let json_data = json_data.clone();
-                                let json_filename = filename("structure", &state.form_code, "json");
-                                move |_| download_file(json_data.as_bytes(), &json_filename)
-                            },
-                            "Structure JSON"
-                        }
-                    }
-                    if let Some(ref xsd_data) = state.xsd_schema {
-                        button {
-                            class: "btn btn-secondary btn-sm",
-                            title: "The XML Schema Definition for the converted form",
-                            onclick: {
-                                let xsd_data = xsd_data.clone();
-                                let xsd_filename = filename("schema", &state.form_code, "xsd");
-                                move |_| download_file(xsd_data.as_bytes(), &xsd_filename)
-                            },
-                            "XSD schema"
-                        }
-                    }
-                    if !state.agent_steps.is_empty() {
-                        button {
-                            class: "btn btn-secondary btn-sm",
-                            title: "The agent's full activity timeline as a Markdown transcript",
-                            onclick: {
-                                let steps = state.agent_steps.clone();
-                                let log_filename = filename("agent-log", &state.form_code, "md");
-                                move |_| {
-                                    let md = agent_log_markdown(&steps);
-                                    download_file(md.as_bytes(), &log_filename);
-                                }
-                            },
-                            "Agent log"
-                        }
+            }
+            if matches!(status, RunStatus::Done | RunStatus::Failed) {
+                div { class: "ag-actions",
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: move |_| on_new.call(()),
+                        "↻ New form"
                     }
                 }
+            }
+        }
+    }
+}
 
-                div { class: "ag-fb",
-                    div { class: "ag-fb-label",
-                        "Not quite right? Tell the agent what to change — it re-runs in the same session."
-                    }
-                    textarea {
-                        class: "af-feedback-input",
-                        rows: "3",
-                        placeholder: "e.g. The phone number field should be optional.",
-                        value: "{feedback}",
-                        oninput: move |evt| feedback.set(evt.value()),
-                    }
-                    div { class: "ag-fb-row",
-                        button {
-                            class: "btn btn-primary",
-                            disabled: feedback_empty,
-                            onclick: move |_| {
-                                let text = feedback.read().trim().to_string();
-                                if !text.is_empty() {
-                                    feedback.set(String::new());
-                                    on_feedback.call(text);
-                                }
-                            },
-                            "Send feedback"
+/// Upload → Convert → Finish. Upload is always behind us by the time this
+/// renders; only the Convert step reflects the run status.
+#[component]
+fn PhaseRail(status: RunStatus) -> Element {
+    let (convert_class, convert_glyph) = match status {
+        RunStatus::Running => ("ag-phase active", "●"),
+        RunStatus::Paused => ("ag-phase paused", "⏸"),
+        RunStatus::Done => ("ag-phase done", "✓"),
+        RunStatus::Failed => ("ag-phase failed", "✗"),
+    };
+    let done = status.is_done();
+
+    rsx! {
+        div { class: "ag-phases",
+            div { class: "ag-phase done",
+                span { class: "pn", "✓" }
+                span { class: "pl", "Upload" }
+            }
+            div { class: "ag-pbar done" }
+            div { class: convert_class,
+                span { class: "pn", "{convert_glyph}" }
+                span { class: "pl", "Convert" }
+            }
+            div { class: if done { "ag-pbar done" } else { "ag-pbar" } }
+            div { class: if done { "ag-phase done" } else { "ag-phase" },
+                span { class: "pn", if done { "✓" } else { "3" } }
+                span { class: "pl", "Finish" }
+            }
+        }
+    }
+}
+
+/// The uploaded source files as extension-badged chips.
+#[component]
+fn SourceFiles(files: ReadSignal<Vec<(String, Vec<u8>)>>) -> Element {
+    if files.read().is_empty() {
+        return rsx! {};
+    }
+
+    rsx! {
+        div { class: "ag-files",
+            for (name , _bytes) in files.read().iter() {
+                {
+                    let (cls, label) = ext_badge(name);
+                    rsx! {
+                        span { class: "ag-file",
+                            span { class: "ag-file-ext {cls}", "{label}" }
+                            "{name}"
                         }
                     }
                 }
@@ -855,34 +559,407 @@ fn RunBox(
     }
 }
 
-/// CSS modifier class for the collapsed-bar status dot.
-fn tl_dot_class(status: &AgentStepStatus) -> &'static str {
-    match status {
-        AgentStepStatus::Done => "ok",
-        AgentStepStatus::Error => "err",
-        AgentStepStatus::Running => "",
+/// The run's activity: collapsed to the latest step, or expanded to the full
+/// scrollable history with the context-window indicator.
+#[component]
+fn ActivityTimeline(
+    state: ReadSignal<ProcessingState>,
+    mut timeline_open: Signal<bool>,
+) -> Element {
+    // Keep the timeline pinned to the newest step as the agent works. The memo
+    // makes the dependency explicit — the effect must re-run on a new step, not
+    // on every unrelated change to the run state.
+    let step_count = use_memo(move || state.read().agent_steps.len());
+    use_effect(move || {
+        let _ = step_count();
+        if timeline_open() {
+            document::eval(
+                r#"setTimeout(() => {
+                    const el = document.getElementById('agent-flow-end');
+                    if (el) el.scrollIntoView({ block: 'end' });
+                }, 0);"#,
+            );
+        }
+    });
+
+    let open = timeline_open();
+    let state = state.read();
+    let steps = &state.agent_steps;
+
+    rsx! {
+        div { class: "ag-tl",
+            button {
+                class: "ag-tl-bar",
+                onclick: move |_| timeline_open.toggle(),
+                if open {
+                    span { class: "ag-tl-title", "Activity · {steps.len()} steps" }
+                    ContextGauge {
+                        used: state.context_used_tokens,
+                        window: state.context_window,
+                    }
+                } else {
+                    // Collapsed: show only the latest step.
+                    match steps.last() {
+                        Some(s) if s.kind == AgentStepKind::Tool => rsx! {
+                            span { class: "ag-tl-dot {s.status.dot_class()}", {status_glyph(s.status)} }
+                            span { class: "ag-tl-latest",
+                                span { class: "nm", "{s.label}" }
+                                if !s.detail.is_empty() {
+                                    span { class: "dt", "{s.detail}" }
+                                }
+                            }
+                        },
+                        Some(s) => rsx! {
+                            span { class: "ag-tl-dot" }
+                            span { class: "ag-tl-latest",
+                                span { class: "nm-thought", "{s.label}" }
+                            }
+                        },
+                        None => rsx! {
+                            span { class: "ag-tl-dot",
+                                Spinner { size: SpinnerSize::Sm }
+                            }
+                            span { class: "ag-tl-latest",
+                                span { class: "nm", "Starting agent…" }
+                            }
+                        },
+                    }
+                }
+                span { class: "ag-tl-chevron",
+                    if open {
+                        "Collapse"
+                    } else {
+                        "Show full history"
+                    }
+                    span { class: if open { "chev chev-open" } else { "chev" }, "▾" }
+                }
+            }
+            if open {
+                div { class: "ag-tl-full",
+                    div { class: "af-timeline",
+                        if steps.is_empty() {
+                            div { class: "af-thought", "Starting agent…" }
+                        }
+                        for (i , s) in steps.iter().enumerate() {
+                            {
+                                match s.kind {
+                                    AgentStepKind::Thought => rsx! {
+                                        div { key: "{i}", class: "af-thought", "{s.label}" }
+                                    },
+                                    AgentStepKind::Tool => rsx! {
+                                        div { key: "{i}", class: "af-tool",
+                                            span { class: "af-node", {status_glyph(s.status)} }
+                                            div { class: "af-tool-body",
+                                                span { class: "af-tool-name", "{s.label}" }
+                                                if !s.detail.is_empty() {
+                                                    span { class: "af-tool-detail", "{s.detail}" }
+                                                }
+                                            }
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                        div { id: "agent-flow-end" }
+                    }
+                }
+            }
+        }
     }
 }
 
-/// Inner glyph/spinner for the collapsed-bar status dot.
-fn tl_dot_inner(status: &AgentStepStatus) -> Element {
+/// The glyph (or spinner) that stands for a step's status.
+fn status_glyph(status: AgentStepStatus) -> Element {
     match status {
         AgentStepStatus::Running => rsx! {
-            Spinner { size: "sm" }
+            Spinner { size: SpinnerSize::Sm }
         },
         AgentStepStatus::Done => rsx! {
-            span { class: "af-ok", "✓" }
+            span { class: "af-ok", "{status.glyph()}" }
         },
         AgentStepStatus::Error => rsx! {
-            span { class: "af-err", "✗" }
+            span { class: "af-err", "{status.glyph()}" }
         },
+    }
+}
+
+/// How much of the model's context window the run has filled. Renders nothing
+/// until the agent reports a window.
+#[component]
+fn ContextGauge(used: usize, window: usize) -> Element {
+    if window == 0 {
+        return rsx! {};
+    }
+
+    let used = used.min(window);
+    let pct = (used as f32 / window as f32 * 100.0).round() as u32;
+    let fill = if pct >= 90 {
+        "var(--danger)"
+    } else if pct >= 75 {
+        "var(--warn)"
+    } else {
+        "var(--accent)"
+    };
+    let ring = format!(
+        "background: conic-gradient({fill} {}deg, var(--border) 0);",
+        pct * 36 / 10
+    );
+
+    rsx! {
+        span {
+            class: "ag-ctx",
+            title: "Context window · {used} / {window} tokens ({pct}%)",
+            span { class: "ag-ctx-ring", style: "{ring}" }
+            span { class: "ag-ctx-pct", "{pct}%" }
+        }
+    }
+}
+
+/// A failed request paused the run: offer to re-send it, or to give up.
+#[component]
+fn RetryPrompt(
+    error: Option<String>,
+    on_retry: EventHandler<()>,
+    on_give_up: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "ag-retry",
+            div { class: "ag-retry-title", "The request to Claude failed — the run is paused." }
+            if let Some(error) = error.as_ref() {
+                div { class: "ag-retry-msg", "{error}" }
+            }
+            div { class: "ag-retry-hint",
+                "Everything the agent has built so far is still in memory. Retry re-sends only \
+                 the step that failed."
+            }
+            div { class: "ag-retry-actions",
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |_| on_retry.call(()),
+                    "↻ Retry"
+                }
+                button {
+                    class: "btn btn-secondary",
+                    onclick: move |_| on_give_up.call(()),
+                    "Give up"
+                }
+            }
+        }
+    }
+}
+
+/// Act on the finished result: the package, the preview, the AEM upload.
+#[component]
+fn ResultActions(
+    state: ReadSignal<ProcessingState>,
+    aem_connection: Option<blueprint::AemConnection>,
+) -> Element {
+    let mut upload_state = use_signal(|| UploadState::Idle);
+    let state = state.read();
+    let form_code = state.form_code.as_deref();
+
+    rsx! {
+        div { class: "ag-result-actions",
+            if let Some(package) = state.aem_package.as_ref() {
+                DownloadButton {
+                    class: "btn btn-secondary",
+                    label: "⬇ Download CRX package",
+                    title: "Download the AEM content package (CRX) as a ZIP",
+                    filename: filename("forms-package", form_code, "zip"),
+                    bytes: package.clone(),
+                }
+            }
+            if let Some(html) = state.html_preview.as_ref() {
+                button {
+                    class: "btn btn-secondary",
+                    title: "Render the converted document as a standalone HTML page and open it in the browser",
+                    onclick: {
+                        let html = html.clone();
+                        let preview_filename = filename("preview", form_code, "html");
+                        move |_| show_html_preview(&html, &preview_filename)
+                    },
+                    "◹ HTML preview"
+                }
+            }
+            if let Some(package) = state.aem_package.as_ref() {
+                {
+                    let st = upload_state.read().clone();
+                    let uploading = st == UploadState::Uploading;
+                    let no_connection = aem_connection.is_none();
+                    let upload_title = match &st {
+                        UploadState::Error(msg) => msg.clone(),
+                        _ if no_connection => {
+                            "Configure the AEM connection in Settings to enable this".to_string()
+                        }
+                        _ => "Upload and install the package on the configured AEM instance".to_string(),
+                    };
+
+                    rsx! {
+                        button {
+                            class: "btn btn-primary",
+                            disabled: uploading || no_connection,
+                            title: upload_title,
+                            onclick: {
+                                let package = package.clone();
+                                let connection = aem_connection.clone();
+                                let package_name = state
+                                    .form_code
+                                    .clone()
+                                    .unwrap_or_else(|| "forms-package".to_string());
+                                move |_| {
+                                    let Some(conn) = connection.clone() else {
+                                        return;
+                                    };
+                                    let package = package.clone();
+                                    let package_name = package_name.clone();
+                                    upload_state.set(UploadState::Uploading);
+                                    spawn(async move {
+                                        match crate::aem_client::upload_and_install_package(
+                                            &conn,
+                                            package,
+                                            &package_name,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => upload_state.set(UploadState::Success),
+                                            Err(e) => upload_state.set(UploadState::Error(e)),
+                                        }
+                                    });
+                                }
+                            },
+                            match st {
+                                UploadState::Uploading => rsx! {
+                                    Spinner { size: SpinnerSize::Sm }
+                                    span { "Uploading…" }
+                                },
+                                UploadState::Success => rsx! { "✓ Uploaded to AEM" },
+                                UploadState::Error(_) => rsx! { "⚠ Upload failed — retry" },
+                                UploadState::Idle => rsx! { "⬆ Upload to AEM" },
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Take a copy of the by-products. Outside the AEM-package guard, since a
+/// Redacto run produces no package but still yields a dump, the structure and
+/// the log.
+#[component]
+fn DownloadRow(state: ReadSignal<ProcessingState>) -> Element {
+    let state = state.read();
+    let code = state.form_code.as_deref();
+
+    // (label, title, filename, bytes) — one place where a payload is paired with
+    // the name it is saved under.
+    let mut artifacts: Vec<(&str, &str, String, Vec<u8>)> = Vec::new();
+    if let Some(sql) = state.redacto_sql.as_ref() {
+        artifacts.push((
+            "Redacto SQL",
+            "The Redacto PostgreSQL dump (document, components and text assets)",
+            filename("redacto", code, "sql"),
+            sql.clone().into_bytes(),
+        ));
+    }
+    if let Some(json) = state.merged_json.as_ref() {
+        artifacts.push((
+            "Structure JSON",
+            "The structured document the outputs were generated from",
+            filename("structure", code, "json"),
+            json.clone().into_bytes(),
+        ));
+    }
+    if let Some(xsd) = state.xsd_schema.as_ref() {
+        artifacts.push((
+            "XSD schema",
+            "The XML Schema Definition for the converted form",
+            filename("schema", code, "xsd"),
+            xsd.clone().into_bytes(),
+        ));
+    }
+    if !state.agent_steps.is_empty() {
+        artifacts.push((
+            "Agent log",
+            "The agent's full activity timeline as a Markdown transcript",
+            filename("agent-log", code, "md"),
+            agent_log_markdown(&state.agent_steps).into_bytes(),
+        ));
+    }
+
+    rsx! {
+        div { class: "ag-downloads",
+            span { class: "ag-downloads-label", "Also download" }
+            for (label , title , name , bytes) in artifacts {
+                DownloadButton {
+                    key: "{name}",
+                    class: "btn btn-secondary btn-sm",
+                    label,
+                    title,
+                    filename: name,
+                    bytes,
+                }
+            }
+        }
+    }
+}
+
+/// A button that writes `bytes` to the user's Downloads folder as `filename`.
+#[component]
+fn DownloadButton(
+    class: &'static str,
+    label: &'static str,
+    title: &'static str,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Element {
+    rsx! {
+        button {
+            class,
+            title,
+            onclick: move |_| download_file(&bytes, &filename),
+            "{label}"
+        }
+    }
+}
+
+/// Tell the agent what to change; it re-runs in the same session.
+#[component]
+fn FeedbackBox(mut feedback: Signal<String>, on_feedback: EventHandler<String>) -> Element {
+    rsx! {
+        div { class: "ag-fb",
+            div { class: "ag-fb-label",
+                "Not quite right? Tell the agent what to change — it re-runs in the same session."
+            }
+            textarea {
+                class: "af-feedback-input",
+                rows: "3",
+                placeholder: "e.g. The phone number field should be optional.",
+                value: "{feedback}",
+                oninput: move |evt| feedback.set(evt.value()),
+            }
+            div { class: "ag-fb-row",
+                button {
+                    class: "btn btn-primary",
+                    disabled: feedback.read().trim().is_empty(),
+                    onclick: move |_| {
+                        let text = feedback.read().trim().to_string();
+                        if !text.is_empty() {
+                            feedback.set(String::new());
+                            on_feedback.call(text);
+                        }
+                    },
+                    "Send feedback"
+                }
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::AgentStep;
 
     fn step(kind: AgentStepKind, label: &str, detail: &str, status: AgentStepStatus) -> AgentStep {
         AgentStep {
@@ -897,10 +974,46 @@ mod tests {
     #[test]
     fn filename_falls_back_when_the_form_code_is_unknown() {
         assert_eq!(
-            filename("forms-package", &Some("AAEV".into()), "zip"),
+            filename("forms-package", Some("AAEV"), "zip"),
             "forms-package-AAEV.zip"
         );
-        assert_eq!(filename("redacto", &None, "sql"), "redacto.sql");
+        assert_eq!(filename("redacto", None, "sql"), "redacto.sql");
+    }
+
+    /// The four states the box can be in are derived from three separate fields,
+    /// so pin the mapping down — a wrong screen strands the user.
+    #[test]
+    fn the_screen_follows_the_run_state() {
+        let idle = ProcessingState::default();
+        assert_eq!(screen_for(&idle, false), Screen::Upload);
+
+        let running = ProcessingState {
+            step: ProcessingStep::Running,
+            ..Default::default()
+        };
+        assert_eq!(screen_for(&running, true), Screen::Run(RunStatus::Running));
+
+        let paused = ProcessingState {
+            retry_pending: true,
+            error: Some("boom".into()),
+            ..running.clone()
+        };
+        assert_eq!(screen_for(&paused, true), Screen::Run(RunStatus::Paused));
+
+        // The run stopped and recorded an error: failed, not still running.
+        let failed = ProcessingState {
+            error: Some("boom".into()),
+            ..running.clone()
+        };
+        assert_eq!(screen_for(&failed, false), Screen::Run(RunStatus::Failed));
+
+        // A completed run reports Done even if it also collected an error.
+        let complete = ProcessingState {
+            step: ProcessingStep::Complete,
+            error: Some("boom".into()),
+            ..Default::default()
+        };
+        assert_eq!(screen_for(&complete, false), Screen::Run(RunStatus::Done));
     }
 
     /// The log is the only durable record of a run once the window is closed, so
