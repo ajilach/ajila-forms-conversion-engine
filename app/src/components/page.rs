@@ -7,6 +7,8 @@ use dioxus::prelude::*;
 #[component]
 pub fn FullPage(
     title: &'static str,
+    /// Optional line under the title, e.g. a summary count.
+    subtitle: Option<String>,
     on_close: EventHandler<()>,
     /// Tab bar and content — everything below the header.
     children: Element,
@@ -14,7 +16,12 @@ pub fn FullPage(
     rsx! {
         div { class: "page",
             div { class: "page-header",
-                h2 { "{title}" }
+                div {
+                    h2 { "{title}" }
+                    if let Some(subtitle) = subtitle.as_ref() {
+                        span { class: "page-subtitle", "{subtitle}" }
+                    }
+                }
                 button {
                     class: "btn btn-secondary",
                     onclick: move |_| on_close.call(()),

@@ -215,7 +215,7 @@ fn App() -> Element {
             // Reference-forms manager (full page view)
             ReferencesPage {
                 profile: selected_profile.read().clone(),
-                settings: app_settings.read().clone(),
+                settings: app_settings,
                 on_close: move |_| references_open.set(false),
             }
         } else {

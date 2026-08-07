@@ -11,19 +11,26 @@ fn is_supported_upload_file(name: &str) -> bool {
     name.ends_with(".pdf") || name.ends_with(".zip")
 }
 
-pub(crate) async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
+/// Read every handle into `(name, bytes)`, skipping the ones that cannot be
+/// read. Callers that gate on file type do so through the `accept` attribute.
+pub(crate) async fn read_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
     let mut files_data = Vec::new();
     for file in files {
-        let name = file.name();
-        if !is_supported_upload_file(&name) {
-            continue;
-        }
-
         if let Ok(bytes) = file.read_bytes().await {
-            files_data.push((name, bytes.to_vec()));
+            files_data.push((file.name(), bytes.to_vec()));
         }
     }
     files_data
+}
+
+/// Read the handles a drop or file picker yielded, keeping only the formats the
+/// conversion agent accepts.
+pub(crate) async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
+    read_files(files)
+        .await
+        .into_iter()
+        .filter(|(name, _)| is_supported_upload_file(name))
+        .collect()
 }
 
 #[cfg(test)]
