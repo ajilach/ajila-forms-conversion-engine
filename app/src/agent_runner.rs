@@ -279,6 +279,12 @@ struct TargetRoles {
     analyst: &'static Role,
     author: &'static Role,
     reviewer: &'static Role,
+    /// What the Author stage header says it is doing.
+    author_doing: &'static str,
+    /// Seed message that starts a fresh Author stage.
+    author_seed: &'static str,
+    /// Seed message for an Author stage that applies review feedback.
+    author_fix_seed: &'static str,
 }
 
 fn roles_for(target: blueprint::OutputTarget) -> TargetRoles {
@@ -287,11 +293,21 @@ fn roles_for(target: blueprint::OutputTarget) -> TargetRoles {
             analyst: &ANALYST,
             author: &AUTHOR,
             reviewer: &REVIEWER,
+            author_doing: "building the AEM form",
+            author_seed: "Begin building the form per your CONVERSION PLAN. Author the full tree, \
+                          then build_aem_package and validate_aem_package.",
+            author_fix_seed: "Apply the REVIEW FEEDBACK in your instructions to the working tree, \
+                              then build_aem_package and validate_aem_package.",
         },
         blueprint::OutputTarget::Redacto => TargetRoles {
             analyst: &REDACTO_ANALYST,
             author: &REDACTO_AUTHOR,
             reviewer: &REDACTO_REVIEWER,
+            author_doing: "building the AEM form",
+            author_seed: "Begin building the form per your CONVERSION PLAN. Author the full tree, \
+                          then build_aem_package and validate_aem_package.",
+            author_fix_seed: "Apply the REVIEW FEEDBACK in your instructions to the working tree, \
+                              then build_aem_package and validate_aem_package.",
         },
     }
 }
@@ -337,10 +353,7 @@ fn sys_author(
             format!("{REDACTO_SYSTEM_PROMPT}{extra}\n\n{REDACTO_AUTHOR_ADDENDUM}")
         }
     };
-    if !plan.trim().is_empty() {
-        s.push_str("\n\n## CONVERSION PLAN\n");
-        s.push_str(plan);
-    }
+    append_plan(&mut s, plan);
     append_reviews(
         &mut s,
         "## REVIEW FEEDBACK — address every point across all rounds",
@@ -361,10 +374,7 @@ fn sys_reviewer(
             format!("{REDACTO_SHARED_PREAMBLE}{extra}\n\n{REDACTO_REVIEWER_ADDENDUM}")
         }
     };
-    if !plan.trim().is_empty() {
-        s.push_str("\n\n## CONVERSION PLAN\n");
-        s.push_str(plan);
-    }
+    append_plan(&mut s, plan);
     append_reviews(
         &mut s,
         "## PRIOR REVIEW FEEDBACK (verify each point is now fixed)",
@@ -373,7 +383,18 @@ fn sys_reviewer(
     s
 }
 
+/// Pin the Analyst's plan into a stage's system prompt.
+fn append_plan(s: &mut String, plan: &str) {
+    if plan.trim().is_empty() {
+        return;
+    }
+    s.push_str("\n\n## CONVERSION PLAN\n");
+    s.push_str(plan);
+}
+
 fn append_reviews(s: &mut String, heading: &str, reviews: &[String]) {
+    use std::fmt::Write;
+
     if reviews.is_empty() {
         return;
     }
@@ -381,39 +402,69 @@ fn append_reviews(s: &mut String, heading: &str, reviews: &[String]) {
     s.push_str(heading);
     s.push('\n');
     for (i, r) in reviews.iter().enumerate() {
-        s.push_str(&format!("\n### Round {}\n{}\n", i + 1, r));
+        let _ = write!(s, "\n### Round {}\n{r}\n", i + 1);
     }
 }
 
 // ── Public entry points ────────────────────────────────────────────────────────
 
-/// Run the autonomous conversion pipeline end-to-end on a fresh upload.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_agent(
-    files: Vec<(String, Vec<u8>)>,
+/// The choices the user made before starting a run.
+pub struct RunConfig {
+    pub profile: Option<String>,
+    pub target: blueprint::OutputTarget,
+    pub settings: crate::settings::AppSettings,
+}
+
+/// What starts a run: a fresh analysis, or the user's feedback on the previous
+/// result. Feedback skips the Analyst and becomes the first pinned review.
+enum RunSeed {
+    Fresh,
+    Feedback(String),
+}
+
+/// One conversion run, assembled by the entry points below so the controller
+/// takes a single value instead of ten positional arguments.
+struct Run {
+    agent: ConversionAgent,
+    settings: crate::settings::AppSettings,
     profile: Option<String>,
     target: blueprint::OutputTarget,
-    settings: crate::settings::AppSettings,
+    structured_session: String,
+    /// Extra Author guidance when a template tree was pre-loaded; empty if not.
+    template_note: &'static str,
+    seed: RunSeed,
+    started_at: std::time::Instant,
+}
+
+/// Run the autonomous conversion pipeline end-to-end on a fresh upload.
+pub async fn run_agent(
+    files: Vec<(String, Vec<u8>)>,
+    config: RunConfig,
     session_label: String,
     mut processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
-    let start = std::time::Instant::now();
+    let RunConfig {
+        profile,
+        target,
+        settings,
+    } = config;
+    let started_at = std::time::Instant::now();
 
     // An attached AEM content-package ZIP is pre-loaded as the agent's editable
     // working tree (the ConversionAgent splits PDFs vs. template internally).
     let has_template = files
         .iter()
         .any(|(_, bytes)| blueprint::detect_aem_zip(bytes));
+
+    // Structured history session (seeded empty).
+    // Hash on the PDFs when present, otherwise on the template so the session id
+    // is stable for template-only runs.
     let pdfs: Vec<(String, Vec<u8>)> = files
         .iter()
         .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
         .cloned()
         .collect();
-
-    // Structured history session (seeded empty).
-    // Hash on the PDFs when present, otherwise on the template so the session id
-    // is stable for template-only runs.
     let doc_hash = crate::db::document_hash(if pdfs.is_empty() { &files } else { &pdfs });
     crate::db::upsert_document(&doc_hash, &session_label);
     let Some(structured_session) =
@@ -430,7 +481,7 @@ pub async fn run_agent(
 
     let agent = ConversionAgent::new(
         profile.clone(),
-        files.clone(),
+        files,
         settings.aem_connection(),
         structured_session.clone(),
         target,
@@ -446,36 +497,37 @@ instead of authoring from scratch."
         ""
     };
 
-    run_conversion(
+    Run {
         agent,
         settings,
         profile,
         target,
         structured_session,
-        start,
         template_note,
-        None,
-        processing_state,
-        current_session,
-    )
+        seed: RunSeed::Fresh,
+        started_at,
+    }
+    .execute(processing_state, current_session)
     .await;
 }
 
 /// Resume on an existing session to apply the user's feedback. Skips the Analyst;
 /// the feedback becomes the first pinned "review" and the Author applies it, then
 /// the Reviewer→fix loop runs as usual.
-#[allow(clippy::too_many_arguments)]
 pub async fn run_agent_feedback(
     feedback: String,
     pdfs: Vec<(String, Vec<u8>)>,
-    profile: Option<String>,
-    target: blueprint::OutputTarget,
-    settings: crate::settings::AppSettings,
+    config: RunConfig,
     structured_session: String,
     processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
-    let start = std::time::Instant::now();
+    let RunConfig {
+        profile,
+        target,
+        settings,
+    } = config;
+    let started_at = std::time::Instant::now();
 
     // Seed the agent from the continuing session so feedback applies to the prior
     // result: both the structured content and the AEM tree the last run authored,
@@ -497,136 +549,106 @@ pub async fn run_agent_feedback(
         }
     }
 
-    run_conversion(
+    Run {
         agent,
         settings,
         profile,
         target,
         structured_session,
-        start,
-        "",
-        Some(feedback),
-        processing_state,
-        current_session,
-    )
+        template_note: "",
+        seed: RunSeed::Feedback(feedback),
+        started_at,
+    }
+    .execute(processing_state, current_session)
     .await;
 }
 
 // ── Controller ─────────────────────────────────────────────────────────────────
 
-/// Sequence the specialized stages over one shared [`ConversionAgent`]:
-/// Analyst → Author → (Reviewer → Author-fix)* → finalize. The Analyst's plan and
-/// each Reviewer report are pinned into the recomposed `system` prompt every stage
-/// so they are never evicted.
-#[allow(clippy::too_many_arguments)]
-async fn run_conversion(
-    mut agent: ConversionAgent,
-    settings: crate::settings::AppSettings,
-    profile: Option<String>,
-    target: blueprint::OutputTarget,
-    structured_session: String,
-    start: std::time::Instant,
-    template_note: &str,
-    feedback: Option<String>,
-    mut processing_state: Signal<ProcessingState>,
-    mut current_session: Signal<Option<String>>,
-) {
-    // Load the selected profile's fonts so on-demand renders have the right
-    // typefaces (the font store is global, shared with rendering). Both a fresh
-    // run and a feedback re-run funnel through here, so this covers both.
-    if let Some(profile_name) = profile.as_deref() {
-        let _ = blueprint::load_profile_fonts(profile_name);
-    }
+impl Run {
+    /// Sequence the specialized stages over one shared [`ConversionAgent`]:
+    /// Analyst → Author → (Reviewer → Author-fix)* → finalize. The Analyst's plan
+    /// and each Reviewer report are pinned into the recomposed `system` prompt
+    /// every stage so they are never evicted.
+    async fn execute(
+        mut self,
+        mut processing_state: Signal<ProcessingState>,
+        mut current_session: Signal<Option<String>>,
+    ) {
+        // Load the selected profile's fonts so on-demand renders have the right
+        // typefaces (the font store is global, shared with rendering). Both a fresh
+        // run and a feedback re-run funnel through here, so this covers both.
+        if let Some(profile_name) = self.profile.as_deref() {
+            let _ = blueprint::load_profile_fonts(profile_name);
+        }
 
-    let model = settings.anthropic_model.clone();
-    let agent_max_tokens = max_output_tokens_for(&model);
-    let extra = crate::settings::extra_instructions_block(&settings.agent_instructions);
+        let model = &self.settings.anthropic_model;
+        let agent_max_tokens = max_output_tokens_for(model);
+        let extra = crate::settings::extra_instructions_block(&self.settings.agent_instructions);
 
-    // Surface the context budget once so a mis-detected window is visible.
-    let ctx_window = crate::platform::context_window_for(&model);
-    let ctx_target = crate::platform::prompt_token_target(&model, agent_max_tokens);
-    processing_state.write().context_window = ctx_window;
-    push_step(
-        &mut processing_state,
-        thought(format!(
-            "Context window: {ctx_window} tokens · per-turn budget: {ctx_target} tokens · \
-             output cap: {agent_max_tokens} · model: {model}"
-        )),
-    );
-
-    let roles = roles_for(target);
-    let mut plan = String::new();
-    let mut reviews: Vec<String> = Vec::new();
-
-    if let Some(fb) = feedback {
-        // Feedback run: no Analyst; the user's request is the first pinned "review".
-        reviews.push(format!("User feedback to apply to the form:\n{fb}"));
-    } else {
-        // ── Stage 1: Analyst → conversion plan ──────────────────────────────
+        // Surface the context budget once so a mis-detected window is visible.
+        let ctx_window = crate::platform::context_window_for(model);
+        let ctx_target = crate::platform::prompt_token_target(model, agent_max_tokens);
+        processing_state.write().context_window = ctx_window;
         push_step(
             &mut processing_state,
-            stage_header("Analyst", "analysing the source and researching precedents"),
+            thought(format!(
+                "Context window: {ctx_window} tokens · per-turn budget: {ctx_target} tokens · \
+                 output cap: {agent_max_tokens} · model: {model}"
+            )),
         );
-        let Some(outcome) = run_role(
-            &mut agent,
-            roles.analyst,
-            &sys_analyst(target, &extra),
-            "Analyse the source form and produce the detailed CONVERSION PLAN. \
-             Your final message is the plan.",
-            agent_max_tokens,
-            &settings,
+
+        let target = self.target;
+        let roles = roles_for(target);
+        let mut plan = String::new();
+        let mut reviews: Vec<String> = Vec::new();
+
+        match &self.seed {
+            // Feedback run: no Analyst; the request is the first pinned "review".
+            RunSeed::Feedback(fb) => {
+                reviews.push(format!("User feedback to apply to the form:\n{fb}"));
+            }
+            RunSeed::Fresh => {
+                // ── Stage 1: Analyst → conversion plan ──────────────────────
+                push_step(
+                    &mut processing_state,
+                    stage_header("Analyst", "analysing the source and researching precedents"),
+                );
+                let Some(outcome) = run_role(
+                    &mut self.agent,
+                    roles.analyst,
+                    &sys_analyst(target, &extra),
+                    "Analyse the source form and produce the detailed CONVERSION PLAN. \
+                     Your final message is the plan.",
+                    agent_max_tokens,
+                    &self.settings,
+                    &mut processing_state,
+                )
+                .await
+                else {
+                    return; // fatal API error, already surfaced
+                };
+                plan = outcome;
+            }
+        }
+
+        // ── Stage 2: Author → build the artefact ────────────────────────────
+        push_step(
             &mut processing_state,
-        )
-        .await
-        else {
-            return; // fatal API error, already surfaced
+            stage_header("Author", roles.author_doing),
+        );
+        let author_seed = if reviews.is_empty() {
+            roles.author_seed
+        } else {
+            roles.author_fix_seed
         };
-        plan = outcome;
-    }
-
-    // ── Stage 2: Author → build the tree ────────────────────────────────────
-    push_step(
-        &mut processing_state,
-        stage_header("Author", "building the AEM form"),
-    );
-    let author_seed = if reviews.is_empty() {
-        "Begin building the form per your CONVERSION PLAN. Author the full tree, then \
-         build_aem_package and validate_aem_package."
-    } else {
-        "Apply the REVIEW FEEDBACK in your instructions to the working tree, then \
-         build_aem_package and validate_aem_package."
-    };
-    if run_role(
-        &mut agent,
-        roles.author,
-        &sys_author(target, &extra, template_note, &plan, &reviews),
-        author_seed,
-        agent_max_tokens,
-        &settings,
-        &mut processing_state,
-    )
-    .await
-    .is_none()
-    {
-        return;
-    }
-
-    // ── Stage 3: Reviewer → (Author fix)* ───────────────────────────────────
-    let mut approved = false;
-    let max_review_rounds = settings.max_review_rounds;
-    for round in 0..max_review_rounds {
-        push_step(
-            &mut processing_state,
-            stage_header("Reviewer", &format!("reviewing (round {})", round + 1)),
-        );
         if run_role(
-            &mut agent,
-            roles.reviewer,
-            &sys_reviewer(target, &extra, &plan, &reviews),
-            "Review the built form end to end against the source and the CONVERSION PLAN, \
-             then finish by calling submit_review.",
+            &mut self.agent,
+            roles.author,
+            &sys_author(target, &extra, self.template_note, &plan, &reviews),
+            author_seed,
             agent_max_tokens,
-            &settings,
+            &self.settings,
             &mut processing_state,
         )
         .await
@@ -635,78 +657,95 @@ async fn run_conversion(
             return;
         }
 
-        match agent.take_review() {
-            Some(r) if r.approved => {
-                approved = true;
-                push_step(
-                    &mut processing_state,
-                    thought("Reviewer approved the form.".into()),
-                );
-                break;
+        // ── Stage 3: Reviewer → (Author fix)* ───────────────────────────────
+        let mut approved = false;
+        for round in 0..self.settings.max_review_rounds {
+            push_step(
+                &mut processing_state,
+                stage_header("Reviewer", &format!("reviewing (round {})", round + 1)),
+            );
+            if run_role(
+                &mut self.agent,
+                roles.reviewer,
+                &sys_reviewer(target, &extra, &plan, &reviews),
+                "Review the built form end to end against the source and the CONVERSION PLAN, \
+                 then finish by calling submit_review.",
+                agent_max_tokens,
+                &self.settings,
+                &mut processing_state,
+            )
+            .await
+            .is_none()
+            {
+                return;
             }
-            Some(r) => {
-                push_step(
-                    &mut processing_state,
-                    thought(format!(
-                        "Reviewer requested changes (round {}). Returning to the author.",
-                        round + 1
-                    )),
-                );
-                reviews.push(r.report);
-                push_step(
-                    &mut processing_state,
-                    stage_header(
-                        "Author",
-                        &format!("applying review feedback (round {})", round + 1),
-                    ),
-                );
-                if run_role(
-                    &mut agent,
-                    roles.author,
-                    &sys_author(target, &extra, template_note, &plan, &reviews),
-                    "Apply the REVIEW FEEDBACK in your instructions, then build_aem_package and \
-                     validate_aem_package.",
-                    agent_max_tokens,
-                    &settings,
-                    &mut processing_state,
-                )
-                .await
-                .is_none()
-                {
-                    return;
+
+            match self.agent.take_review() {
+                Some(r) if r.approved => {
+                    approved = true;
+                    push_step(
+                        &mut processing_state,
+                        thought("Reviewer approved the form."),
+                    );
+                    break;
+                }
+                Some(r) => {
+                    push_step(
+                        &mut processing_state,
+                        thought(format!(
+                            "Reviewer requested changes (round {}). Returning to the author.",
+                            round + 1
+                        )),
+                    );
+                    reviews.push(r.report);
+                    push_step(
+                        &mut processing_state,
+                        stage_header(
+                            "Author",
+                            &format!("applying review feedback (round {})", round + 1),
+                        ),
+                    );
+                    if run_role(
+                        &mut self.agent,
+                        roles.author,
+                        &sys_author(target, &extra, self.template_note, &plan, &reviews),
+                        roles.author_fix_seed,
+                        agent_max_tokens,
+                        &self.settings,
+                        &mut processing_state,
+                    )
+                    .await
+                    .is_none()
+                    {
+                        return;
+                    }
+                }
+                None => {
+                    // Reviewer ended without a verdict (budget/stuck). Stop the loop.
+                    processing_state.write().warnings.push(
+                        "The reviewer ended without a verdict — finalizing with what's built."
+                            .into(),
+                    );
+                    break;
                 }
             }
-            None => {
-                // Reviewer ended without a verdict (budget/stuck). Stop the loop.
-                processing_state.write().warnings.push(
-                    "The reviewer ended without a verdict — finalizing with what's built.".into(),
-                );
-                break;
-            }
         }
-    }
 
-    if !approved {
-        processing_state.write().warnings.push(
-            "Finalizing without a clean review — some issues may require manual follow-up.".into(),
-        );
-    }
+        if !approved {
+            processing_state.write().warnings.push(
+                "Finalizing without a clean review — some issues may require manual follow-up."
+                    .into(),
+            );
+        }
 
-    // Building and uploading a CRX package is AEM-only; for any other target the
-    // dump the Author already validated is the artefact, and calling this would
-    // paint a failed build step on an otherwise successful run.
-    if target == blueprint::OutputTarget::Aem {
-        ensure_built_and_uploaded(&mut agent, &settings, &mut processing_state).await;
+        // Building and uploading a CRX package is AEM-only; for any other target
+        // the dump the Author already validated is the artefact, and calling this
+        // would paint a failed build step on an otherwise successful run.
+        if target == blueprint::OutputTarget::Aem {
+            self.ensure_built_and_uploaded(&mut processing_state).await;
+        }
+        self.finalize(&mut processing_state, &mut current_session);
     }
-    finalize(
-        &mut agent,
-        &profile,
-        target,
-        structured_session,
-        start,
-        &mut processing_state,
-        &mut current_session,
-    );
 }
 
 // ── Turn-level failure recovery ────────────────────────────────────────────────
@@ -740,14 +779,14 @@ fn is_transient_error(err: &str) -> bool {
         "internal server error",
         "api_error",
     ];
-    if TRANSIENT.iter().any(|needle| e.contains(needle)) {
-        return true;
-    }
     // `Anthropic API error (429 Too Many Requests): …` — retry the statuses the
     // API documents as retryable, but not 4xx client errors we'd just repeat.
-    ["(429", "(500", "(502", "(503", "(504", "(529"]
+    const RETRYABLE_STATUSES: &[&str] = &["(429", "(500", "(502", "(503", "(504", "(529"];
+
+    TRANSIENT
         .iter()
-        .any(|status| e.contains(status))
+        .chain(RETRYABLE_STATUSES)
+        .any(|needle| e.contains(needle))
 }
 
 /// Pause a stage on a failed turn and wait for the user to press Retry or give
@@ -789,10 +828,7 @@ async fn await_user_retry(
         }
     }
     if action == RetryAction::Retry {
-        push_step(
-            processing_state,
-            thought("Retrying the failed request…".into()),
-        );
+        push_step(processing_state, thought("Retrying the failed request…"));
     }
     action
 }
@@ -851,6 +887,81 @@ async fn turn_with_retry(
     }
 }
 
+/// Watches one tool for "same answer, again and again". A stage that keeps
+/// re-running `validate_aem_package` (or `build_redacto_dump`) on an unchanged
+/// tree is going in circles, and the run has to move on rather than burn its
+/// whole turn budget.
+struct StuckWatch {
+    /// The tool whose repeated identical output counts. `None` disables the watch.
+    tool: Option<&'static str>,
+    /// Digest of the last output seen from that tool.
+    last: Option<u64>,
+    repeats: usize,
+}
+
+impl StuckWatch {
+    fn new(tool: Option<&'static str>) -> Self {
+        Self {
+            tool,
+            last: None,
+            repeats: 0,
+        }
+    }
+
+    /// Record one tool result; `true` once the watched tool has produced the
+    /// same output [`MAX_VALIDATE_REPEATS`] times running. Any other tool call
+    /// means the stage is making progress, and resets the count.
+    fn observe(&mut self, name: &str, reply: &ToolReply) -> bool {
+        if self.tool != Some(name) {
+            self.last = None;
+            self.repeats = 0;
+            return false;
+        }
+
+        // Hash rather than keep the text: a validation report can be large, and
+        // all this needs is "same as last time?".
+        let digest = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            match reply {
+                ToolReply::Text(t) => (0u8, t).hash(&mut hasher),
+                ToolReply::Error(e) => (1u8, e).hash(&mut hasher),
+                ToolReply::Image { .. } => 2u8.hash(&mut hasher),
+            }
+            hasher.finish()
+        };
+
+        if self.last == Some(digest) {
+            self.repeats += 1;
+        } else {
+            self.last = Some(digest);
+            self.repeats = 1;
+        }
+        self.repeats >= MAX_VALIDATE_REPEATS
+    }
+}
+
+/// The message injected when a turn is cut off at the output-token cap: mark
+/// every unexecuted call as failed, then steer toward incremental authoring.
+fn max_tokens_nudge(tool_calls: &[crate::platform::ToolCall]) -> serde_json::Value {
+    let mut content: Vec<serde_json::Value> = tool_calls
+        .iter()
+        .map(|tc| {
+            serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": tc.id,
+                "is_error": true,
+                "content": [{
+                    "type": "text",
+                    "text": "This call was cut off at the output-token limit and was not executed.",
+                }],
+            })
+        })
+        .collect();
+    content.push(serde_json::json!({"type": "text", "text": MAX_TOKENS_NUDGE}));
+    serde_json::json!({"role": "user", "content": content})
+}
+
 /// Drive one role stage to completion: fresh bounded history seeded with
 /// `seed_user_msg`, the role's filtered tool subset, and its `system` prompt, over
 /// the SAME [`crate::platform::anthropic_stream_turn`] path as every other stage
@@ -874,9 +985,7 @@ async fn run_role(
     })];
     let mut final_text = String::new();
 
-    // Stuck-validate + max-tokens-nudge guards.
-    let mut last_validate_output: Option<String> = None;
-    let mut validate_repeat_count: usize = 0;
+    let mut stuck_watch = StuckWatch::new(role.stuck_tool);
     let mut consecutive_max_tokens: usize = 0;
 
     for _ in 0..role.max_iterations {
@@ -910,29 +1019,12 @@ async fn run_role(
                 && consecutive_max_tokens < MAX_MAX_TOKEN_NUDGES
             {
                 consecutive_max_tokens += 1;
-                let mut content: Vec<serde_json::Value> = turn
-                    .tool_calls
-                    .iter()
-                    .map(|tc| {
-                        serde_json::json!({
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "is_error": true,
-                            "content": [{
-                                "type": "text",
-                                "text": "This call was cut off at the output-token limit and was not executed.",
-                            }],
-                        })
-                    })
-                    .collect();
-                content.push(serde_json::json!({"type": "text", "text": MAX_TOKENS_NUDGE}));
-                history.push(serde_json::json!({"role": "user", "content": content}));
+                history.push(max_tokens_nudge(&turn.tool_calls));
                 push_step(
                     processing_state,
                     thought(
                         "Turn hit the output-token limit — asking the agent to author the tree \
-                         incrementally instead of in one call."
-                            .into(),
+                         incrementally instead of in one call.",
                     ),
                 );
                 continue;
@@ -964,26 +1056,7 @@ async fn run_role(
                 terminal = true;
             }
 
-            // Detect a stuck validate loop: same output N times in a row.
-            if role.stuck_tool == Some(tc.name.as_str()) {
-                let output = match &reply {
-                    ToolReply::Text(s) => s.clone(),
-                    ToolReply::Error(s) => format!("error:{s}"),
-                    ToolReply::Image { .. } => "image".into(),
-                };
-                if last_validate_output.as_deref() == Some(&output) {
-                    validate_repeat_count += 1;
-                    if validate_repeat_count >= MAX_VALIDATE_REPEATS {
-                        stuck = true;
-                    }
-                } else {
-                    last_validate_output = Some(output);
-                    validate_repeat_count = 1;
-                }
-            } else {
-                validate_repeat_count = 0;
-                last_validate_output = None;
-            }
+            stuck |= stuck_watch.observe(&tc.name, &reply);
 
             results.push((tc.id.clone(), reply));
         }
@@ -1004,48 +1077,54 @@ async fn run_role(
     Some(final_text)
 }
 
-/// Ensure the package reflects the latest tree (rebuild), then upload if an AEM
-/// connection is configured and it hasn't been uploaded yet. Mirrors the old
-/// stuck-recovery tail; reuses the agent's own tools.
-async fn ensure_built_and_uploaded(
+/// Run one of the agent's own tools as a visible finalize step, reporting its
+/// outcome on the timeline. Returns whether it succeeded.
+async fn tool_step(
     agent: &mut ConversionAgent,
-    settings: &crate::settings::AppSettings,
+    id: &str,
+    tool: &str,
     processing_state: &mut Signal<ProcessingState>,
-) {
+) -> bool {
     push_step(
         processing_state,
         AgentStep {
-            id: "finalize-build".into(),
+            id: id.to_string(),
             kind: AgentStepKind::Tool,
-            label: "build_aem_package".into(),
+            label: tool.to_string(),
             detail: "finalize".into(),
             status: AgentStepStatus::Running,
         },
     );
-    let built = !matches!(
-        agent
-            .execute("build_aem_package", &serde_json::json!({}))
-            .await,
+    let ok = !matches!(
+        agent.execute(tool, &serde_json::json!({})).await,
         ToolReply::Error(_)
     );
-    set_step_status(processing_state, "finalize-build", built.into());
+    set_step_status(processing_state, id, ok.into());
+    ok
+}
 
-    if built && settings.aem_connection().is_some() && !agent.aem_uploaded() {
-        push_step(
+impl Run {
+    /// Ensure the package reflects the latest tree (rebuild), then upload if an
+    /// AEM connection is configured and it hasn't been uploaded yet. Reuses the
+    /// agent's own tools.
+    async fn ensure_built_and_uploaded(&mut self, processing_state: &mut Signal<ProcessingState>) {
+        let built = tool_step(
+            &mut self.agent,
+            "finalize-build",
+            "build_aem_package",
             processing_state,
-            AgentStep {
-                id: "finalize-upload".into(),
-                kind: AgentStepKind::Tool,
-                label: "upload_to_aem".into(),
-                detail: "finalize".into(),
-                status: AgentStepStatus::Running,
-            },
-        );
-        let ok = !matches!(
-            agent.execute("upload_to_aem", &serde_json::json!({})).await,
-            ToolReply::Error(_)
-        );
-        set_step_status(processing_state, "finalize-upload", ok.into());
+        )
+        .await;
+
+        if built && self.settings.aem_connection().is_some() && !self.agent.aem_uploaded() {
+            tool_step(
+                &mut self.agent,
+                "finalize-upload",
+                "upload_to_aem",
+                processing_state,
+            )
+            .await;
+        }
     }
 }
 
@@ -1064,7 +1143,7 @@ struct Outputs {
 fn build_outputs(
     agent: &mut ConversionAgent,
     target: blueprint::OutputTarget,
-    profile: &Option<String>,
+    profile: Option<&str>,
 ) -> Outputs {
     let mut warnings: Vec<String> = Vec::new();
 
@@ -1080,23 +1159,22 @@ fn build_outputs(
             // analysis recovered; `agent.context()` never has it.
             let context = agent.source_envelope().context;
 
+            let envelope = DocumentEnvelope {
+                context,
+                content,
+                state_count: 1,
+            };
+
             // Prefer the dump the Author last built and validated, so the SQL
             // that ships is the SQL that was reviewed.
             let redacto_sql = agent
                 .redacto_dump()
                 .filter(|dump| !dump.assets.is_empty())
                 .map(|dump| dump.to_sql())
-                .or_else(|| {
-                    let envelope = DocumentEnvelope {
-                        context: context.clone(),
-                        content: content.clone(),
-                        state_count: 1,
-                    };
-                    crate::processing::redacto_sql_for(&envelope, profile.as_deref())
-                });
+                .or_else(|| crate::processing::redacto_sql_for(&envelope, profile));
 
             if redacto_sql.is_none() {
-                warnings.push(if content.is_empty() {
+                warnings.push(if envelope.content.is_empty() {
                     "No Redacto dump: the agent did not author any content.".to_string()
                 } else {
                     "No Redacto dump: the authored document produced no text assets.".to_string()
@@ -1104,11 +1182,7 @@ fn build_outputs(
             }
 
             Outputs {
-                envelope: DocumentEnvelope {
-                    context,
-                    content,
-                    state_count: 1,
-                },
+                envelope,
                 redacto_sql,
                 warnings,
             }
@@ -1122,19 +1196,16 @@ fn build_outputs(
             if content.is_empty()
                 && let Some(tree) = &aem_translated
             {
-                content = crate::session::structured_from_aem_tree(tree, profile.as_deref());
+                content = crate::session::structured_from_aem_tree(tree, profile);
             }
 
             // A Redacto dump is still offered as a byproduct when the profile has
             // a Redacto section, built from the converted source document — the
             // same content the CLI exports. `source_envelope()` rather than
             // `agent.context()` so the recovered master-page header survives.
-            let redacto_sql = if profile
-                .as_deref()
-                .is_some_and(blueprint::has_redacto_config)
-            {
+            let redacto_sql = if profile.is_some_and(blueprint::has_redacto_config) {
                 let source = agent.source_envelope();
-                let sql = crate::processing::redacto_sql_for(&source, profile.as_deref());
+                let sql = crate::processing::redacto_sql_for(&source, profile);
                 // An empty source is not necessarily an empty document: when the
                 // language variants are too dissimilar to merge, the engine
                 // yields nothing and every derived output would silently be empty.
@@ -1165,63 +1236,62 @@ fn build_outputs(
     }
 }
 
-/// Build the final `ProcessingState` from the agent's working trees.
-#[allow(clippy::too_many_arguments)]
-fn finalize(
-    agent: &mut ConversionAgent,
-    profile: &Option<String>,
-    target: blueprint::OutputTarget,
-    structured_session: String,
-    start: std::time::Instant,
-    processing_state: &mut Signal<ProcessingState>,
-    current_session: &mut Signal<Option<String>>,
-) {
-    let Outputs {
-        envelope,
-        redacto_sql,
-        warnings,
-    } = build_outputs(agent, target, profile);
+impl Run {
+    /// Build the final `ProcessingState` from the agent's working trees.
+    fn finalize(
+        &mut self,
+        processing_state: &mut Signal<ProcessingState>,
+        current_session: &mut Signal<Option<String>>,
+    ) {
+        let profile = self.profile.clone();
+        let Outputs {
+            envelope,
+            redacto_sql,
+            warnings,
+        } = build_outputs(&mut self.agent, self.target, profile.as_deref());
 
-    let merged_json = serde_json::to_string_pretty(&envelope).ok();
-    let form_code = agent.form_code();
+        let merged_json = serde_json::to_string_pretty(&envelope).ok();
+        let form_code = self.agent.form_code();
 
-    // Derived exports for the done screen. The form code has to be resolved
-    // first: it names the form the schema describes.
-    let html_preview = crate::processing::html_preview_for(&envelope, profile.as_deref());
-    let xsd_schema =
-        crate::processing::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref());
+        // Derived exports for the done screen. The form code has to be resolved
+        // first: it names the form the schema describes.
+        let html_preview = crate::processing::html_preview_for(&envelope, profile.as_deref());
+        let xsd_schema =
+            crate::processing::xsd_schema_for(&envelope, profile.as_deref(), form_code.as_deref());
 
-    // Record the result in the structured history, so the run can be reopened
-    // from the session browser. Without this the session holds nothing but the
-    // empty seed and there is nothing to load.
-    if let Ok(json) = serde_json::to_string(&envelope) {
-        crate::db::insert_edit(&structured_session, "Agent conversion", &json);
+        // Record the result in the structured history, so the run can be reopened
+        // from the session browser. Without this the session holds nothing but the
+        // empty seed and there is nothing to load.
+        if let Ok(json) = serde_json::to_string(&envelope) {
+            crate::db::insert_edit(&self.structured_session, "Agent conversion", &json);
+        }
+
+        {
+            let mut state = processing_state.write();
+            state.warnings.extend(warnings);
+            state.step = ProcessingStep::Complete;
+            state.merged_json = merged_json;
+            state.html_preview = html_preview;
+            state.xsd_schema = xsd_schema;
+            state.aem_package = self.agent.package();
+            state.redacto_sql = redacto_sql;
+            state.form_code = form_code;
+            state.aem_uploaded = self.agent.aem_uploaded();
+            state.aem_form_path = self.agent.aem_form_path();
+            state.elapsed_secs = Some(self.started_at.elapsed().as_secs());
+        }
+
+        current_session.set(Some(self.structured_session.clone()));
     }
-
-    let mut state = processing_state.write();
-    state.warnings.extend(warnings);
-    state.step = ProcessingStep::Complete;
-    state.merged_json = merged_json;
-    state.html_preview = html_preview;
-    state.xsd_schema = xsd_schema;
-    state.aem_package = agent.package();
-    state.redacto_sql = redacto_sql;
-    state.form_code = form_code;
-    state.aem_uploaded = agent.aem_uploaded();
-    state.aem_form_path = agent.aem_form_path();
-    state.elapsed_secs = Some(start.elapsed().as_secs());
-    drop(state);
-
-    current_session.set(Some(structured_session));
 }
 
 // ── UI step helpers ──────────────────────────────────────────────────────────
 
-fn thought(label: String) -> AgentStep {
+fn thought(label: impl Into<String>) -> AgentStep {
     AgentStep {
         id: String::new(),
         kind: AgentStepKind::Thought,
-        label,
+        label: label.into(),
         detail: String::new(),
         status: AgentStepStatus::Done,
     }
@@ -1262,6 +1332,44 @@ fn summarize_input(input: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The stuck guard is what stops a stage burning its whole turn budget
+    /// re-validating an unchanged tree, so pin down when it fires — and when it
+    /// must not.
+    #[test]
+    fn the_stuck_watch_fires_only_on_repeats_of_the_watched_tool() {
+        let same = || ToolReply::Text("3 errors".to_string());
+        let mut watch = StuckWatch::new(Some("validate_aem_package"));
+
+        assert!(!watch.observe("validate_aem_package", &same()));
+        assert!(!watch.observe("validate_aem_package", &same()));
+        // Third identical result in a row: the stage is going in circles.
+        assert!(watch.observe("validate_aem_package", &same()));
+    }
+
+    #[test]
+    fn the_stuck_watch_resets_on_progress() {
+        let mut watch = StuckWatch::new(Some("validate_aem_package"));
+
+        assert!(!watch.observe("validate_aem_package", &ToolReply::Text("3 errors".into())));
+        assert!(!watch.observe("validate_aem_package", &ToolReply::Text("3 errors".into())));
+        // A different output means the tree changed.
+        assert!(!watch.observe("validate_aem_package", &ToolReply::Text("1 error".into())));
+        assert!(!watch.observe("validate_aem_package", &ToolReply::Text("1 error".into())));
+
+        // An intervening edit resets the count too.
+        assert!(!watch.observe("set_aem_translated_field", &ToolReply::Text("ok".into())));
+        assert!(!watch.observe("validate_aem_package", &ToolReply::Text("1 error".into())));
+    }
+
+    /// A role with no watched tool must never report stuck, however repetitive.
+    #[test]
+    fn a_stage_without_a_stuck_tool_never_reports_stuck() {
+        let mut watch = StuckWatch::new(None);
+        for _ in 0..10 {
+            assert!(!watch.observe("get_source_info", &ToolReply::Text("same".into())));
+        }
+    }
 
     #[test]
     fn summarize_input_truncates() {
@@ -1421,11 +1529,7 @@ mod tests {
             source_name: None,
         })]);
 
-        let outputs = build_outputs(
-            &mut agent,
-            blueprint::OutputTarget::Redacto,
-            &Some("ubs".into()),
-        );
+        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, Some("ubs"));
 
         let sql = outputs
             .redacto_sql
@@ -1456,11 +1560,7 @@ mod tests {
     fn an_empty_redacto_document_produces_no_sql() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Redacto);
 
-        let outputs = build_outputs(
-            &mut agent,
-            blueprint::OutputTarget::Redacto,
-            &Some("ubs".into()),
-        );
+        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, Some("ubs"));
 
         assert!(outputs.redacto_sql.is_none());
         assert!(
@@ -1479,11 +1579,7 @@ mod tests {
     fn the_aem_target_still_derives_its_redacto_byproduct_from_the_source() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Aem);
 
-        let outputs = build_outputs(
-            &mut agent,
-            blueprint::OutputTarget::Aem,
-            &Some("ubs".into()),
-        );
+        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Aem, Some("ubs"));
 
         let sql = outputs
             .redacto_sql

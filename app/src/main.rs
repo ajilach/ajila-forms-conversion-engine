@@ -73,9 +73,27 @@ fn App() -> Element {
     // handler that uses it.
     let window = dioxus::desktop::use_window();
 
+    // Both entry points below start a run the same way: capture the user's
+    // choices, flip the flow into its running phase, and let the agent drive.
+    let run_config = move || agent_runner::RunConfig {
+        profile: selected_profile.read().clone(),
+        target: *selected_target.read(),
+        settings: app_settings.read().clone(),
+    };
+    let mut begin_run = move || {
+        is_processing.set(true);
+        processing_state.set(ProcessingState {
+            step: ProcessingStep::Running,
+            ..ProcessingState::default()
+        });
+    };
+
     // ── AI processing ───────────────────────────────────────────────────────
-    // Hand the uploaded PDFs to the configured LLM and parse the structured
-    // document straight from its response, skipping the core pipeline.
+    // Hand the whole conversion to the autonomous agent: it drives the engine
+    // via tools (extract → structure → convert → AEM → package → upload/verify),
+    // versioning each step, and finalizes the result. The full file set is passed
+    // so an attached content-package ZIP can be pre-loaded as the agent's
+    // editable working tree.
     let mut on_ai_process = move |file_data: Vec<(String, Vec<u8>)>| {
         let pdfs: Vec<(String, Vec<u8>)> = file_data
             .iter()
@@ -91,19 +109,12 @@ fn App() -> Element {
             return;
         }
 
-        is_processing.set(true);
         current_session.set(None);
         // Retain the PDF sources so a feedback re-run can reuse them.
-        source_pdfs.set(pdfs.clone());
+        source_pdfs.set(pdfs);
 
-        let profile = selected_profile.read().clone();
-        let target = *selected_target.read();
-        let settings = app_settings.read().clone();
-
-        processing_state.set(ProcessingState {
-            step: ProcessingStep::Running,
-            ..ProcessingState::default()
-        });
+        let config = run_config();
+        begin_run();
 
         spawn(async move {
             let session_label = file_data
@@ -112,16 +123,9 @@ fn App() -> Element {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            // Hand the whole conversion to the autonomous agent: it drives the
-            // engine via tools (extract → structure → convert → AEM → package →
-            // upload/verify), versioning each step, and finalizes the result.
-            // The full file set is passed so an attached content-package ZIP can
-            // be pre-loaded as the agent's editable working tree.
-            crate::agent_runner::run_agent(
+            agent_runner::run_agent(
                 file_data,
-                profile,
-                target,
-                settings,
+                config,
                 session_label,
                 processing_state,
                 current_session,
@@ -144,24 +148,14 @@ fn App() -> Element {
             return;
         }
 
-        let profile = selected_profile.read().clone();
-        let target = *selected_target.read();
-        let settings = app_settings.read().clone();
-
-        is_processing.set(true);
-        // Return to the running phase with a fresh activity log.
-        processing_state.set(ProcessingState {
-            step: ProcessingStep::Running,
-            ..ProcessingState::default()
-        });
+        let config = run_config();
+        begin_run();
 
         spawn(async move {
-            crate::agent_runner::run_agent_feedback(
+            agent_runner::run_agent_feedback(
                 feedback,
                 pdfs,
-                profile,
-                target,
-                settings,
+                config,
                 session,
                 processing_state,
                 current_session,
