@@ -76,10 +76,7 @@ impl ToolExecutor for CompositeToolExecutor {
 
     fn execute(&self, name: &str, input: &serde_json::Value) -> ToolReply {
         for e in &self.executors {
-            if e.tools()
-                .iter()
-                .any(|t| t["name"].as_str() == Some(name))
-            {
+            if e.tools().iter().any(|t| t["name"].as_str() == Some(name)) {
                 return e.execute(name, input);
             }
         }
@@ -103,7 +100,8 @@ struct StateEntry {
     context: blueprint::Context,
 }
 
-/// Tool executor for whole-document AI generation.
+/// Tool executor over the source PDFs of a reference form: the states, their
+/// renders, their flattened structure and the raw XFA.
 pub struct FormToolContext {
     states: Vec<StateEntry>,
     /// PDF name → XFA XML (only PDFs that actually carry XFA).
@@ -245,9 +243,7 @@ impl ToolExecutor for FormToolContext {
                     return ToolReply::Error(format!("Unknown state_label: {label:?}"));
                 };
                 let envelope = entry.state.structured(entry.context.clone());
-                ToolReply::Text(
-                    serde_json::to_string_pretty(&envelope.content).unwrap_or_default(),
-                )
+                ToolReply::Text(serde_json::to_string_pretty(&envelope.content).unwrap_or_default())
             }
             "get_xfa" => {
                 if let Some(pdf) = input["pdf_name"].as_str() {
@@ -345,8 +341,6 @@ impl ToolExecutor for PackageToolContext {
         }
     }
 }
-
-// ── Shared tool definitions ──────────────────────────────────────────────────
 
 fn tool_list_states() -> serde_json::Value {
     serde_json::json!({

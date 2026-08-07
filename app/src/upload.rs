@@ -4,9 +4,11 @@
 
 use dioxus::html::FileData;
 
-pub(crate) fn is_supported_upload_file(name: &str) -> bool {
+/// The upload formats the conversion agent can actually consume: source PDFs,
+/// and an AEM content-package ZIP to pre-load as its working tree.
+fn is_supported_upload_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
-    name.ends_with(".pdf") || name.ends_with(".zip") || name.ends_with(".json")
+    name.ends_with(".pdf") || name.ends_with(".zip")
 }
 
 pub(crate) async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<u8>)> {
@@ -23,7 +25,6 @@ pub(crate) async fn read_upload_files(files: Vec<FileData>) -> Vec<(String, Vec<
     }
     files_data
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -102,6 +103,12 @@ mod tests {
             FileData::new(TestFileData {
                 name: "notes.txt".to_string(),
                 bytes: vec![4, 5, 6],
+            }),
+            // Nothing consumes a structured-JSON upload any more, so it must not
+            // be accepted and then silently ignored.
+            FileData::new(TestFileData {
+                name: "structure.json".to_string(),
+                bytes: vec![7, 8, 9],
             }),
         ];
 

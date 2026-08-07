@@ -13,8 +13,8 @@
 //! the Reviewer's reports are pinned into the `system` field so they survive the
 //! whole run without being evicted.
 //!
-//! `run_role` is a thin generalization of the old single loop; the per-stage
-//! sequencing lives in `run_conversion`.
+//! `run_role` runs one such stage; the per-stage sequencing lives in
+//! `run_conversion`.
 
 use dioxus::prelude::*;
 
@@ -303,11 +303,7 @@ fn role_tools(agent: &ConversionAgent, allowed: &[&str]) -> Vec<serde_json::Valu
     agent
         .tools()
         .into_iter()
-        .filter(|t| {
-            t["name"]
-                .as_str()
-                .is_some_and(|n| allowed.contains(&n))
-        })
+        .filter(|t| t["name"].as_str().is_some_and(|n| allowed.contains(&n)))
         .collect()
 }
 
@@ -345,7 +341,11 @@ fn sys_author(
         s.push_str("\n\n## CONVERSION PLAN\n");
         s.push_str(plan);
     }
-    append_reviews(&mut s, "## REVIEW FEEDBACK — address every point across all rounds", reviews);
+    append_reviews(
+        &mut s,
+        "## REVIEW FEEDBACK — address every point across all rounds",
+        reviews,
+    );
     s
 }
 
@@ -365,7 +365,11 @@ fn sys_reviewer(
         s.push_str("\n\n## CONVERSION PLAN\n");
         s.push_str(plan);
     }
-    append_reviews(&mut s, "## PRIOR REVIEW FEEDBACK (verify each point is now fixed)", reviews);
+    append_reviews(
+        &mut s,
+        "## PRIOR REVIEW FEEDBACK (verify each point is now fixed)",
+        reviews,
+    );
     s
 }
 
@@ -407,7 +411,7 @@ pub async fn run_agent(
         .cloned()
         .collect();
 
-    // Structured history session (seeded empty); shown in the structured editor.
+    // Structured history session (seeded empty).
     // Hash on the PDFs when present, otherwise on the template so the session id
     // is stable for template-only runs.
     let doc_hash = crate::db::document_hash(if pdfs.is_empty() { &files } else { &pdfs });
@@ -418,7 +422,7 @@ pub async fn run_agent(
         processing_state.set(ProcessingState {
             step: ProcessingStep::Running,
             error: Some("Could not create an edit-history session.".into()),
-            ..ProcessingState::new()
+            ..ProcessingState::default()
         });
         return;
     };
@@ -559,7 +563,10 @@ async fn run_conversion(
         reviews.push(format!("User feedback to apply to the form:\n{fb}"));
     } else {
         // ── Stage 1: Analyst → conversion plan ──────────────────────────────
-        push_step(&mut processing_state, stage_header("Analyst", "analysing the source and researching precedents"));
+        push_step(
+            &mut processing_state,
+            stage_header("Analyst", "analysing the source and researching precedents"),
+        );
         let Some(outcome) = run_role(
             &mut agent,
             roles.analyst,
@@ -574,11 +581,14 @@ async fn run_conversion(
         else {
             return; // fatal API error, already surfaced
         };
-        plan = outcome.final_text;
+        plan = outcome;
     }
 
     // ── Stage 2: Author → build the tree ────────────────────────────────────
-    push_step(&mut processing_state, stage_header("Author", "building the AEM form"));
+    push_step(
+        &mut processing_state,
+        stage_header("Author", "building the AEM form"),
+    );
     let author_seed = if reviews.is_empty() {
         "Begin building the form per your CONVERSION PLAN. Author the full tree, then \
          build_aem_package and validate_aem_package."
@@ -603,9 +613,12 @@ async fn run_conversion(
 
     // ── Stage 3: Reviewer → (Author fix)* ───────────────────────────────────
     let mut approved = false;
-    let max_review_rounds = settings.max_review_rounds.max(1);
+    let max_review_rounds = settings.max_review_rounds;
     for round in 0..max_review_rounds {
-        push_step(&mut processing_state, stage_header("Reviewer", &format!("reviewing (round {})", round + 1)));
+        push_step(
+            &mut processing_state,
+            stage_header("Reviewer", &format!("reviewing (round {})", round + 1)),
+        );
         if run_role(
             &mut agent,
             roles.reviewer,
@@ -625,16 +638,28 @@ async fn run_conversion(
         match agent.take_review() {
             Some(r) if r.approved => {
                 approved = true;
-                push_step(&mut processing_state, thought("Reviewer approved the form.".into()));
+                push_step(
+                    &mut processing_state,
+                    thought("Reviewer approved the form.".into()),
+                );
                 break;
             }
             Some(r) => {
                 push_step(
                     &mut processing_state,
-                    thought(format!("Reviewer requested changes (round {}). Returning to the author.", round + 1)),
+                    thought(format!(
+                        "Reviewer requested changes (round {}). Returning to the author.",
+                        round + 1
+                    )),
                 );
                 reviews.push(r.report);
-                push_step(&mut processing_state, stage_header("Author", &format!("applying review feedback (round {})", round + 1)));
+                push_step(
+                    &mut processing_state,
+                    stage_header(
+                        "Author",
+                        &format!("applying review feedback (round {})", round + 1),
+                    ),
+                );
                 if run_role(
                     &mut agent,
                     roles.author,
@@ -682,12 +707,6 @@ async fn run_conversion(
         &mut processing_state,
         &mut current_session,
     );
-}
-
-/// The outcome of running one role stage: the role's final (non-tool) message,
-/// used as the handoff brief (the Analyst's plan / a stage summary).
-struct RoleOutcome {
-    final_text: String,
 }
 
 // ── Turn-level failure recovery ────────────────────────────────────────────────
@@ -847,7 +866,7 @@ async fn run_role(
     agent_max_tokens: u32,
     settings: &crate::settings::AppSettings,
     processing_state: &mut Signal<ProcessingState>,
-) -> Option<RoleOutcome> {
+) -> Option<String> {
     let tools = role_tools(agent, role.allowed_tools);
     let mut history: Vec<serde_json::Value> = vec![serde_json::json!({
         "role": "user",
@@ -855,7 +874,7 @@ async fn run_role(
     })];
     let mut final_text = String::new();
 
-    // Stuck-validate + max-tokens-nudge guards (identical to the old single loop).
+    // Stuck-validate + max-tokens-nudge guards.
     let mut last_validate_output: Option<String> = None;
     let mut validate_repeat_count: usize = 0;
     let mut consecutive_max_tokens: usize = 0;
@@ -941,11 +960,15 @@ async fn run_role(
             set_step_status(
                 processing_state,
                 &tc.id,
-                if ok { AgentStepStatus::Done } else { AgentStepStatus::Error },
+                if ok {
+                    AgentStepStatus::Done
+                } else {
+                    AgentStepStatus::Error
+                },
             );
 
             // `submit_review`/`finish` end the stage after their result is recorded.
-            if tc.name == "submit_review" || tc.name == "finish" {
+            if tc.name == "submit_review" {
                 terminal = true;
             }
 
@@ -986,7 +1009,7 @@ async fn run_role(
         }
     }
 
-    Some(RoleOutcome { final_text })
+    Some(final_text)
 }
 
 /// Ensure the package reflects the latest tree (rebuild), then upload if an AEM
@@ -1008,13 +1031,19 @@ async fn ensure_built_and_uploaded(
         },
     );
     let built = !matches!(
-        agent.execute("build_aem_package", &serde_json::json!({})).await,
+        agent
+            .execute("build_aem_package", &serde_json::json!({}))
+            .await,
         ToolReply::Error(_)
     );
     set_step_status(
         processing_state,
         "finalize-build",
-        if built { AgentStepStatus::Done } else { AgentStepStatus::Error },
+        if built {
+            AgentStepStatus::Done
+        } else {
+            AgentStepStatus::Error
+        },
     );
 
     if built && settings.aem_connection().is_some() && !agent.aem_uploaded() {
@@ -1035,7 +1064,11 @@ async fn ensure_built_and_uploaded(
         set_step_status(
             processing_state,
             "finalize-upload",
-            if ok { AgentStepStatus::Done } else { AgentStepStatus::Error },
+            if ok {
+                AgentStepStatus::Done
+            } else {
+                AgentStepStatus::Error
+            },
         );
     }
 }
@@ -1090,8 +1123,7 @@ fn build_outputs(
                 warnings.push(if content.is_empty() {
                     "No Redacto dump: the agent did not author any content.".to_string()
                 } else {
-                    "No Redacto dump: the authored document produced no text assets."
-                        .to_string()
+                    "No Redacto dump: the authored document produced no text assets.".to_string()
                 });
             }
 
@@ -1121,7 +1153,10 @@ fn build_outputs(
             // a Redacto section, built from the converted source document — the
             // same content the CLI exports. `source_envelope()` rather than
             // `agent.context()` so the recovered master-page header survives.
-            let redacto_sql = if profile.as_deref().is_some_and(blueprint::has_redacto_config) {
+            let redacto_sql = if profile
+                .as_deref()
+                .is_some_and(blueprint::has_redacto_config)
+            {
                 let source = agent.source_envelope();
                 let sql = crate::processing::redacto_sql_for(&source, profile.as_deref());
                 // An empty source is not necessarily an empty document: when the
@@ -1308,8 +1343,16 @@ mod tests {
     #[test]
     fn redacto_role_tool_sets_are_scoped() {
         // The Redacto stages author the structured tree...
-        assert!(REDACTO_AUTHOR.allowed_tools.contains(&"seed_structured_from_state"));
-        assert!(REDACTO_AUTHOR.allowed_tools.contains(&"set_structured_field"));
+        assert!(
+            REDACTO_AUTHOR
+                .allowed_tools
+                .contains(&"seed_structured_from_state")
+        );
+        assert!(
+            REDACTO_AUTHOR
+                .allowed_tools
+                .contains(&"set_structured_field")
+        );
         assert!(REDACTO_AUTHOR.allowed_tools.contains(&"build_redacto_dump"));
         // ...and must never reach for the AEM machinery.
         for forbidden in [
@@ -1341,7 +1384,10 @@ mod tests {
     /// capability with no error anywhere. Catch it here instead.
     #[test]
     fn every_allowed_tool_exists_in_the_catalog() {
-        for target in [blueprint::OutputTarget::Aem, blueprint::OutputTarget::Redacto] {
+        for target in [
+            blueprint::OutputTarget::Aem,
+            blueprint::OutputTarget::Redacto,
+        ] {
             let agent = ConversionAgent::new(None, Vec::new(), None, String::new(), target);
             let catalog: Vec<String> = agent
                 .tools()
@@ -1370,8 +1416,8 @@ mod tests {
     }
 
     fn fixture_agent(target: blueprint::OutputTarget) -> ConversionAgent {
-        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../core/input/AAEV_019_EN.pdf");
+        let pdf =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input/AAEV_019_EN.pdf");
         let bytes = std::fs::read(&pdf).expect("read AAEV_019_EN.pdf");
         ConversionAgent::new(
             Some("ubs".into()),
@@ -1399,9 +1445,15 @@ mod tests {
             source_name: None,
         })]);
 
-        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, &Some("ubs".into()));
+        let outputs = build_outputs(
+            &mut agent,
+            blueprint::OutputTarget::Redacto,
+            &Some("ubs".into()),
+        );
 
-        let sql = outputs.redacto_sql.expect("the authored document yields a dump");
+        let sql = outputs
+            .redacto_sql
+            .expect("the authored document yields a dump");
         assert!(
             sql.contains("AUTHORED-BY-THE-AGENT-MARKER"),
             "the dump must be generated from the authored tree"
@@ -1428,11 +1480,18 @@ mod tests {
     fn an_empty_redacto_document_produces_no_sql() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Redacto);
 
-        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Redacto, &Some("ubs".into()));
+        let outputs = build_outputs(
+            &mut agent,
+            blueprint::OutputTarget::Redacto,
+            &Some("ubs".into()),
+        );
 
         assert!(outputs.redacto_sql.is_none());
         assert!(
-            outputs.warnings.iter().any(|w| w.contains("No Redacto dump")),
+            outputs
+                .warnings
+                .iter()
+                .any(|w| w.contains("No Redacto dump")),
             "the reason must be reported: {:?}",
             outputs.warnings
         );
@@ -1444,7 +1503,11 @@ mod tests {
     fn the_aem_target_still_derives_its_redacto_byproduct_from_the_source() {
         let mut agent = fixture_agent(blueprint::OutputTarget::Aem);
 
-        let outputs = build_outputs(&mut agent, blueprint::OutputTarget::Aem, &Some("ubs".into()));
+        let outputs = build_outputs(
+            &mut agent,
+            blueprint::OutputTarget::Aem,
+            &Some("ubs".into()),
+        );
 
         let sql = outputs
             .redacto_sql

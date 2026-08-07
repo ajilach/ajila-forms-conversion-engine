@@ -9,7 +9,7 @@ use blueprint::DocumentEnvelope;
 ///
 /// The profile's typefaces travel inside the document: `load_html_custom_styles`
 /// embeds them as base64 `@font-face` data-URIs, so the preview needs no font
-/// manager. Shared by the standard pipeline and the agent run.
+/// manager.
 pub fn html_preview_for(envelope: &DocumentEnvelope, profile: Option<&str>) -> Option<String> {
     let profile_name = profile?;
     if envelope.content.is_empty() || !blueprint::has_html_config(profile_name) {

@@ -8,11 +8,9 @@ use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 
 use super::spinner::Spinner;
-use crate::upload::read_upload_files;
-use crate::models::{
-    AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction,
-};
+use crate::models::{AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep, RetryAction};
 use crate::platform::{download_file, show_html_preview};
+use crate::upload::read_upload_files;
 
 /// Which phase of the agent flow is currently shown.
 #[derive(PartialEq, Clone, Copy)]
@@ -84,8 +82,6 @@ fn ext_badge(name: &str) -> (&'static str, &'static str) {
         ("pdf", "PDF")
     } else if lower.ends_with(".zip") {
         ("zip", "ZIP")
-    } else if lower.ends_with(".json") {
-        ("json", "JSON")
     } else {
         ("", "FILE")
     }
@@ -276,7 +272,6 @@ fn UploadBox(
                     }
                 }
                 crate::components::OutputTargetSelector {
-                    id: "agent-target-select".to_string(),
                     profile: selected_profile.read().clone(),
                     selected_target,
                     disabled: false,
@@ -330,7 +325,7 @@ fn UploadBox(
                     class: "upload-input-hidden",
                     r#type: "file",
                     multiple: true,
-                    accept: ".pdf,.zip,.json",
+                    accept: ".pdf,.zip",
                     onchange: move |evt: Event<FormData>| {
                         let chosen = evt.files();
                         async move {
@@ -409,8 +404,10 @@ fn RunBox(
     } else {
         "var(--accent)"
     };
-    let ctx_ring_style =
-        format!("background: conic-gradient({ctx_fill} {}deg, var(--border) 0);", ctx_pct * 36 / 10);
+    let ctx_ring_style = format!(
+        "background: conic-gradient({ctx_fill} {}deg, var(--border) 0);",
+        ctx_pct * 36 / 10
+    );
     let ctx_title = format!("Context window · {ctx_used} / {ctx_window} tokens ({ctx_pct}%)");
     let feedback_empty = feedback.read().trim().is_empty();
     // Lifecycle of the on-demand AEM upload, reported inside the button.
@@ -691,7 +688,7 @@ fn RunBox(
                             onclick: {
                                 let aem_data = aem_data.clone();
                                 let zip_filename = filename("forms-package", &state.form_code, "zip");
-                                move |_| download_file(&aem_data, &zip_filename, "application/zip")
+                                move |_| download_file(&aem_data, &zip_filename)
                             },
                             "⬇ Download CRX package"
                         }
@@ -781,11 +778,7 @@ fn RunBox(
                             onclick: {
                                 let sql_data = sql_data.clone();
                                 let sql_filename = filename("redacto", &state.form_code, "sql");
-                                move |_| download_file(
-                                    sql_data.as_bytes(),
-                                    &sql_filename,
-                                    "application/sql",
-                                )
+                                move |_| download_file(sql_data.as_bytes(), &sql_filename)
                             },
                             "Redacto SQL"
                         }
@@ -797,11 +790,7 @@ fn RunBox(
                             onclick: {
                                 let json_data = json_data.clone();
                                 let json_filename = filename("structure", &state.form_code, "json");
-                                move |_| download_file(
-                                    json_data.as_bytes(),
-                                    &json_filename,
-                                    "application/json",
-                                )
+                                move |_| download_file(json_data.as_bytes(), &json_filename)
                             },
                             "Structure JSON"
                         }
@@ -813,11 +802,7 @@ fn RunBox(
                             onclick: {
                                 let xsd_data = xsd_data.clone();
                                 let xsd_filename = filename("schema", &state.form_code, "xsd");
-                                move |_| download_file(
-                                    xsd_data.as_bytes(),
-                                    &xsd_filename,
-                                    "application/xml",
-                                )
+                                move |_| download_file(xsd_data.as_bytes(), &xsd_filename)
                             },
                             "XSD schema"
                         }
@@ -831,7 +816,7 @@ fn RunBox(
                                 let log_filename = filename("agent-log", &state.form_code, "md");
                                 move |_| {
                                     let md = agent_log_markdown(&steps);
-                                    download_file(md.as_bytes(), &log_filename, "text/markdown");
+                                    download_file(md.as_bytes(), &log_filename);
                                 }
                             },
                             "Agent log"
@@ -923,7 +908,12 @@ mod tests {
     #[test]
     fn agent_log_renders_thoughts_and_tool_calls() {
         let md = agent_log_markdown(&[
-            step(AgentStepKind::Thought, "Analysing", "", AgentStepStatus::Done),
+            step(
+                AgentStepKind::Thought,
+                "Analysing",
+                "",
+                AgentStepStatus::Done,
+            ),
             step(
                 AgentStepKind::Tool,
                 "build_aem_package",

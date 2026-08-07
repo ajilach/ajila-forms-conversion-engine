@@ -13,11 +13,11 @@ use blueprint::OutputTarget;
 ///
 /// Renders nothing when the profile supports fewer than two — there is no
 /// choice to make, and an empty picker is just noise.
+/// DOM id of the `<select>`, so the label can point at it.
+const SELECT_ID: &str = "agent-target-select";
+
 #[component]
 pub fn OutputTargetSelector(
-    /// DOM id, so the two call sites (the agent flow and the legacy upload
-    /// section) don't collide when both are mounted.
-    id: String,
     /// The currently selected profile; its sections decide the options.
     profile: Option<String>,
     selected_target: Signal<OutputTarget>,
@@ -40,9 +40,9 @@ pub fn OutputTargetSelector(
 
     rsx! {
         div { class: "profile-selector",
-            label { r#for: "{id}", "Output" }
+            label { r#for: SELECT_ID, "Output" }
             select {
-                id: "{id}",
+                id: SELECT_ID,
                 disabled,
                 onchange: move |evt: Event<FormData>| {
                     if let Some(target) = OutputTarget::parse(&evt.value()) {

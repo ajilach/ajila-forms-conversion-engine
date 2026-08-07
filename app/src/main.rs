@@ -50,7 +50,7 @@ fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
 
 #[component]
 fn App() -> Element {
-    let mut processing_state = use_signal(ProcessingState::new);
+    let mut processing_state = use_signal(ProcessingState::default);
     let mut is_processing = use_signal(|| false);
     let selected_profile = use_signal(|| None::<String>);
     // What the next conversion run produces. Chosen before the run starts,
@@ -61,7 +61,7 @@ fn App() -> Element {
     // Whether the full-page reference-forms manager is open.
     let mut references_open = use_signal(|| false);
     let mut app_settings = use_signal(AppSettings::load);
-    // Edit-history session id for the currently loaded document (desktop only).
+    // Edit-history session id for the currently loaded document.
     let mut current_session = use_signal(|| None::<String>);
     // Source PDF bytes of the currently loaded document, retained so a feedback
     // re-run can resume the conversion from the same sources.
@@ -98,7 +98,7 @@ fn App() -> Element {
 
         processing_state.set(ProcessingState {
             step: ProcessingStep::Running,
-            ..ProcessingState::new()
+            ..ProcessingState::default()
         });
 
         spawn(async move {
@@ -148,7 +148,7 @@ fn App() -> Element {
         // Return to the running phase with a fresh activity log.
         processing_state.set(ProcessingState {
             step: ProcessingStep::Running,
-            ..ProcessingState::new()
+            ..ProcessingState::default()
         });
 
         spawn(async move {
@@ -190,8 +190,8 @@ fn App() -> Element {
             }
         }
 
-        // Show either the settings, editor, AEM preview, references manager, or
-        // main content (full-page views, under the persistent header).
+        // Settings, the references manager, or the agent flow — full-page views
+        // under the persistent header.
         if *settings_open.read() {
             SettingsPage {
                 on_close: move |_| settings_open.set(false),
@@ -234,7 +234,7 @@ fn App() -> Element {
                     is_processing.set(false);
                     current_session.set(None);
                     source_pdfs.set(Vec::new());
-                    processing_state.set(ProcessingState::new());
+                    processing_state.set(ProcessingState::default());
                 },
             }
         }

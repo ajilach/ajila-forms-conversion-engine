@@ -84,9 +84,3 @@ pub struct ProcessingState {
     /// indicator. 0 until the agent run sets it.
     pub context_window: usize,
 }
-
-impl ProcessingState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}

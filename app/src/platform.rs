@@ -1,8 +1,9 @@
-//! Platform-aware helpers: async sleep, file download, HTML preview, file explorer.
+//! Desktop integration (file download, HTML preview, file explorer) and the
+//! Anthropic Messages-API client that drives every agent turn.
 
 // ── File download / preview helpers ──────────────────────────────────
 
-pub fn download_file(data: &[u8], filename: &str, _mime_type: &str) {
+pub fn download_file(data: &[u8], filename: &str) {
     match dirs::home_dir() {
         Some(home) => {
             let download_path = home.join("Downloads").join(filename);
@@ -67,14 +68,6 @@ pub fn show_html_preview(html: String, filename: &str) {
     }
 }
 
-/// List the available Anthropic model identifiers.
-pub async fn list_models(api_key: &str) -> Result<Vec<String>, String> {
-    anthropic_list_models(api_key).await
-}
-
-
-// ── Smart edit (Anthropic API) ───────────────────────────────────────
-
 /// Format a `reqwest` error together with its underlying source chain.
 ///
 /// `reqwest`'s top-level message is often opaque (e.g. "error decoding response
@@ -91,7 +84,6 @@ fn describe_error(e: &reqwest::Error) -> String {
     }
     msg
 }
-
 
 // ── Agentic tool loop (Anthropic) ────────────────────────────────────
 
@@ -116,7 +108,7 @@ pub const DEFAULT_ELIDE_TEXT_OVER_CHARS: usize = 2000;
 /// Default: `tool_use` input longer than this (chars) is elided once stale.
 pub const DEFAULT_ELIDE_INPUT_OVER_CHARS: usize = 2000;
 /// Default: eviction is a no-op until the serialized history exceeds this size,
-/// so short calls (most smart-edits, chat turns) are never touched.
+/// so short runs are never touched.
 pub const DEFAULT_EVICT_TRIGGER_BYTES: usize = 200_000;
 /// Sentinel prefix marking an already-elided block. Makes eviction idempotent:
 /// repeated passes are byte-identical, so the cached prefix is not invalidated.
@@ -328,9 +320,7 @@ fn image_token_cost(data_b64: &str) -> usize {
 /// the budget and [`token_calibration`].
 fn image_payload_stats(v: &serde_json::Value) -> (usize, usize) {
     match v {
-        serde_json::Value::Object(o)
-            if o.get("type").and_then(|t| t.as_str()) == Some("image") =>
-        {
+        serde_json::Value::Object(o) if o.get("type").and_then(|t| t.as_str()) == Some("image") => {
             let data = o
                 .get("source")
                 .and_then(|s| s.get("data"))
@@ -629,8 +619,7 @@ pub struct TurnOutput {
 /// `tool_use` stop reason (or [`MAX_TOOL_ITERATIONS`] is hit).
 ///
 /// The assistant `tool_use` messages and the user `tool_result` messages are
-/// appended to `history`, so a subsequent [`chat_turn`] (e.g. a repair turn)
-/// continues the same thread.
+/// appended to `history`, so a subsequent turn continues the same thread.
 pub async fn anthropic_agentic_turn(
     history: &mut Vec<serde_json::Value>,
     user_text: &str,
@@ -1207,7 +1196,10 @@ mod tests {
         // it lands between), and stays within the clamp band.
         record_token_calibration(2000, 1000);
         let k = token_calibration();
-        assert!(k > 1.0 && k < 2.0, "EMA should land between 1.0 and 2.0, got {k}");
+        assert!(
+            k > 1.0 && k < 2.0,
+            "EMA should land between 1.0 and 2.0, got {k}"
+        );
         // Zero inputs are ignored (no divide-by-zero, no change).
         let before = CFG_TOKEN_CALIBRATION_MILLI.load(Ordering::Relaxed);
         record_token_calibration(0, 1000);

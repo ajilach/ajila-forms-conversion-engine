@@ -64,12 +64,15 @@ pub fn SettingsPage(
     // Fetch the available Anthropic models.
     let models = use_resource(move || {
         let key = fetch_dep();
-        async move { crate::platform::list_models(&key).await }
+        async move { crate::platform::anthropic_list_models(&key).await }
     });
 
     let model_list: Vec<String> = match &*models.read() {
         Some(Ok(list)) if !list.is_empty() => list.clone(),
-        _ => ANTHROPIC_FALLBACK_MODELS.iter().map(|s| s.to_string()).collect(),
+        _ => ANTHROPIC_FALLBACK_MODELS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     };
 
     let api_key_desc =

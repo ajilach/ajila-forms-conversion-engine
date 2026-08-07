@@ -58,8 +58,7 @@ pub fn ReferencesPage(
 
     // Profile that new references are added to / imported into / exported from.
     // Defaults to the active profile, falling back to the first configured one.
-    let mut selected_profile =
-        use_signal(|| profile.clone().or_else(|| profiles.first().cloned()));
+    let mut selected_profile = use_signal(|| profile.clone().or_else(|| profiles.first().cloned()));
 
     // No profiles configured → nothing to scope references to.
     if profiles.is_empty() {
