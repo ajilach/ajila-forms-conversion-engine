@@ -53,10 +53,11 @@ const MAX_VALIDATE_REPEATS: usize = 3;
 const MAX_MAX_TOKEN_NUDGES: usize = 3;
 
 /// Injected when a turn is cut off at the output-token cap — almost always
-/// mid-way through one oversized tool call (a monolithic `set_aem_translated`
-/// for a large form). Steers the agent to author the tree incrementally so no
-/// single call has to fit under the output-token cap.
-const MAX_TOKENS_NUDGE: &str = "\
+/// mid-way through one oversized tool call (a monolithic whole-tree write for a
+/// large form). Steers the agent to author incrementally so no single call has
+/// to fit under the output-token cap. Per target, because it names the tools the
+/// target actually has.
+const AEM_MAX_TOKENS_NUDGE: &str = "\
 Your previous turn was cut off at the output-token limit before it completed — that call \
 was NOT executed. This almost always means you tried to emit too much in a single tool call \
 (e.g. authoring a whole large form in one set_aem_translated). Do NOT retry it as one call. \
@@ -65,6 +66,17 @@ Instead author the tree incrementally so no single call is oversized:\n\
 top-level section (titles set, no inner fields yet).\n\
 2. Then fill in each section one at a time with insert_aem_translated_node (add each field / \
 sub-panel into its section's Panel), replace_aem_translated_node and set_aem_translated_field.\n\
+Keep every individual call small. Proceed now.";
+
+const REDACTO_MAX_TOKENS_NUDGE: &str = "\
+Your previous turn was cut off at the output-token limit before it completed — that call \
+was NOT executed. This almost always means you tried to emit too much in a single tool call \
+(e.g. authoring a whole large document in one set_structured). Do NOT retry it as one call. \
+Instead author the document incrementally so no single call is oversized:\n\
+1. Call set_structured with a SMALL skeleton only: one empty section per top-level heading \
+(titles set, no inner content yet).\n\
+2. Then fill in each section one at a time with insert_structured_node (add each paragraph / \
+field into its section), replace_structured_node and set_structured_field.\n\
 Keep every individual call small. Proceed now.";
 
 // ── Roles ────────────────────────────────────────────────────────────────────
@@ -80,12 +92,19 @@ struct Role {
     /// The tool whose repeated identical output means the stage is going in
     /// circles. `None` for stages that have no such tool.
     stuck_tool: Option<&'static str>,
+    /// What [`Role::stuck_tool`] does, for the warning shown when it loops.
+    stuck_activity: &'static str,
+    /// Injected when a turn overflows the output-token cap. Names the authoring
+    /// tools this role actually has, so it must be per target.
+    max_tokens_nudge: &'static str,
 }
 
 const ANALYST: Role = Role {
     name: "Analyst",
     max_iterations: 25,
     stuck_tool: None,
+    stuck_activity: "analysis",
+    max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
     allowed_tools: &[
         "get_source_info",
         "get_profile_info",
@@ -111,6 +130,8 @@ const AUTHOR: Role = Role {
     name: "Author",
     max_iterations: 110,
     stuck_tool: Some("validate_aem_package"),
+    stuck_activity: "validation",
+    max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
     // No `finish` — the Author never terminates the run; a stage ends on the
     // natural no-tool-use turn. The Reviewer owns termination via `submit_review`.
     allowed_tools: &[
@@ -153,6 +174,8 @@ const REVIEWER: Role = Role {
     name: "Reviewer",
     max_iterations: 30,
     stuck_tool: Some("validate_aem_package"),
+    stuck_activity: "validation",
+    max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
     allowed_tools: &[
         "build_aem_package",
         "get_package_info",
@@ -184,6 +207,8 @@ const REDACTO_ANALYST: Role = Role {
     name: "Analyst",
     max_iterations: 25,
     stuck_tool: None,
+    stuck_activity: "analysis",
+    max_tokens_nudge: REDACTO_MAX_TOKENS_NUDGE,
     allowed_tools: &[
         "get_source_info",
         "list_states",
@@ -203,6 +228,8 @@ const REDACTO_AUTHOR: Role = Role {
     name: "Author",
     max_iterations: 110,
     stuck_tool: Some("build_redacto_dump"),
+    stuck_activity: "the dump build",
+    max_tokens_nudge: REDACTO_MAX_TOKENS_NUDGE,
     // No `finish` — as with the AEM Author, the Reviewer owns termination.
     allowed_tools: &[
         "get_source_info",
@@ -232,6 +259,8 @@ const REDACTO_REVIEWER: Role = Role {
     name: "Reviewer",
     max_iterations: 30,
     stuck_tool: Some("build_redacto_dump"),
+    stuck_activity: "the dump build",
+    max_tokens_nudge: REDACTO_MAX_TOKENS_NUDGE,
     allowed_tools: &[
         "get_structured_outline",
         "get_structured_node",
@@ -274,11 +303,11 @@ fn roles_for(target: blueprint::OutputTarget) -> TargetRoles {
             analyst: &REDACTO_ANALYST,
             author: &REDACTO_AUTHOR,
             reviewer: &REDACTO_REVIEWER,
-            author_doing: "building the AEM form",
-            author_seed: "Begin building the form per your CONVERSION PLAN. Author the full tree, \
-                          then build_aem_package and validate_aem_package.",
-            author_fix_seed: "Apply the REVIEW FEEDBACK in your instructions to the working tree, \
-                              then build_aem_package and validate_aem_package.",
+            author_doing: "building the Redacto document",
+            author_seed: "Begin building the document per your CONVERSION PLAN. Author the full \
+                          structured content, then build_redacto_dump and review_redacto_output.",
+            author_fix_seed: "Apply the REVIEW FEEDBACK in your instructions to the structured \
+                              content, then build_redacto_dump and review_redacto_output.",
         },
     }
 }
@@ -914,7 +943,7 @@ impl StuckWatch {
 
 /// The message injected when a turn is cut off at the output-token cap: mark
 /// every unexecuted call as failed, then steer toward incremental authoring.
-fn max_tokens_nudge(tool_calls: &[crate::llm::ToolCall]) -> serde_json::Value {
+fn max_tokens_nudge(role: &Role, tool_calls: &[crate::llm::ToolCall]) -> serde_json::Value {
     let mut content: Vec<serde_json::Value> = tool_calls
         .iter()
         .map(|tc| {
@@ -929,7 +958,7 @@ fn max_tokens_nudge(tool_calls: &[crate::llm::ToolCall]) -> serde_json::Value {
             })
         })
         .collect();
-    content.push(serde_json::json!({"type": "text", "text": MAX_TOKENS_NUDGE}));
+    content.push(serde_json::json!({"type": "text", "text": role.max_tokens_nudge}));
     serde_json::json!({"role": "user", "content": content})
 }
 
@@ -990,7 +1019,7 @@ async fn run_role(
                 && consecutive_max_tokens < MAX_MAX_TOKEN_NUDGES
             {
                 consecutive_max_tokens += 1;
-                history.push(max_tokens_nudge(&turn.tool_calls));
+                history.push(max_tokens_nudge(role, &turn.tool_calls));
                 push_step(
                     processing_state,
                     thought(
@@ -1038,8 +1067,8 @@ async fn run_role(
         }
         if stuck {
             processing_state.write().warnings.push(format!(
-                "{}: validation produced the same result {} times in a row — moving on.",
-                role.name, MAX_VALIDATE_REPEATS
+                "{}: {} produced the same result {} times in a row — moving on.",
+                role.name, role.stuck_activity, MAX_VALIDATE_REPEATS
             ));
             break;
         }
@@ -1597,6 +1626,53 @@ mod tests {
         let aem = sys_author(blueprint::OutputTarget::Aem, "", "", "", &[]);
         assert!(aem.contains("AemNodeTranslated"));
         assert!(!aem.contains("build_redacto_dump"));
+    }
+
+    /// The system prompts were split per target, but the controller's own prose
+    /// — stage headers, Author seeds, the output-cap nudge — was not. Telling a
+    /// Redacto run to call `build_aem_package` names a tool the agent refuses,
+    /// so cover every string the controller sends, not just the prompts.
+    #[test]
+    fn redacto_stage_prose_does_not_mention_aem_tools() {
+        let roles = roles_for(blueprint::OutputTarget::Redacto);
+        let prose = [
+            roles.author_doing,
+            roles.author_seed,
+            roles.author_fix_seed,
+            roles.author.max_tokens_nudge,
+            roles.analyst.max_tokens_nudge,
+            roles.reviewer.max_tokens_nudge,
+            roles.author.stuck_activity,
+        ];
+
+        for text in prose {
+            for leaked in [
+                "AEM",
+                "build_aem_package",
+                "validate_aem_package",
+                "set_aem_translated",
+                "insert_aem_translated_node",
+                "replace_aem_translated_node",
+            ] {
+                assert!(
+                    !text.contains(leaked),
+                    "Redacto stage prose must not mention '{leaked}': {text}"
+                );
+            }
+        }
+
+        // Every tool the seeds name must be one the Redacto Author may call.
+        for tool in ["build_redacto_dump", "review_redacto_output"] {
+            assert!(
+                REDACTO_AUTHOR.allowed_tools.contains(&tool),
+                "the Redacto Author seed names '{tool}', which it cannot call"
+            );
+        }
+
+        // The AEM side keeps its own vocabulary.
+        let aem = roles_for(blueprint::OutputTarget::Aem);
+        assert!(aem.author_seed.contains("build_aem_package"));
+        assert!(aem.author.max_tokens_nudge.contains("set_aem_translated"));
     }
 
     #[test]
