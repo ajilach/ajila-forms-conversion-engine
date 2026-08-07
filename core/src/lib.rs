@@ -162,19 +162,9 @@ pub fn structured_schema() -> serde_json::Value {
         .expect("StructuredNode schema serializes")
 }
 
-/// JSON Schema for a single AEM node tree (`AemNode`).
-///
-/// Generated from the AEM intermediate model via `schemars`. Intended to be
-/// embedded as text in LLM prompts (Smart AEM Edit) so the model knows the
-/// exact shape to emit — like [`structured_schema`], it is not used as a
-/// structured-output constraint.
-pub fn aem_schema() -> serde_json::Value {
-    serde_json::to_value(schemars::schema_for!(AemNode)).expect("AemNode schema serializes")
-}
-
 /// JSON Schema for the multilingual AEM node tree (`AemNodeTranslated`).
 ///
-/// Like [`aem_schema`] but for the translations-in-place type the agent authors
+/// Like [`structured_schema`] but for the translations-in-place AEM type the agent authors
 /// directly. Embedded as text in the agent prompt so the model knows the exact
 /// shape to emit (text fields are per-language maps).
 pub fn aem_translated_schema() -> serde_json::Value {
@@ -195,8 +185,6 @@ pub use aem::{
     generate_aem_xml, parse_aem_zip,
     parse_fragment_content, scan_fragments, translation_data_from_master_dict,
     validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
-    InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
-    remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,
 };
 
 // Post-conversion fidelity review

@@ -1,20 +1,6 @@
 pub mod helpers;
 
 #[test]
-fn aem_schema_is_object_with_defs() {
-    let schema = crate::aem_schema();
-    let obj = schema.as_object().expect("schema is a JSON object");
-    let defs = obj
-        .get("$defs")
-        .and_then(|d| d.as_object())
-        .expect("schema has $defs");
-    assert!(
-        defs.contains_key("AemOption"),
-        "$defs should contain nested AemOption type"
-    );
-}
-
-#[test]
 fn aem_node_json_round_trips() {
     use crate::{AemNode, AemOption, OptionAlignment};
     use uuid::Uuid;

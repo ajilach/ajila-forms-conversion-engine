@@ -30,7 +30,6 @@ pub mod script_engine;
 pub mod to_structured;
 pub mod to_translated;
 pub mod translated;
-pub mod xml_edit;
 mod xml_writer;
 pub mod xml_validation;
 
@@ -53,10 +52,6 @@ pub use to_translated::aem_to_translated;
 pub use translated::{
     AemI18nText, AemNodeTranslated, AemOptionTranslated, I18nDict, LowerConflict,
     translation_data_from_master_dict,
-};
-pub use xml_edit::{
-    InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
-    remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,
 };
 pub use xml_validation::{
     validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,

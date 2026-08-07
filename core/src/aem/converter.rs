@@ -3052,10 +3052,8 @@ mod tests {
         // A translated paragraph followed by an orphan list (EN missing) merges
         // into a single element; the master (EN) render contains both blocks
         // only where EN has content.
-        let nodes = vec![
-            ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
-            ml_list(&[&[("en", "x"), ("de", "y")], &[("en", ""), ("de", "z")]]),
-        ];
+        let nodes = [ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
+            ml_list(&[&[("en", "x"), ("de", "y")], &[("en", ""), ("de", "z")]])];
         let refs: Vec<&StructuredNode> = nodes.iter().collect();
         // The list has a partial gap on item 2 but is non-empty in EN, so it is
         // NOT itself an orphan; the run is fully translated → no merge.
@@ -3082,10 +3080,8 @@ mod tests {
     fn merged_block_value_matches_shared_renderer() {
         // The TextDraw _value is exactly what the shared renderer produces for
         // the master language — the same fn the dictionary extraction uses.
-        let nodes = vec![
-            ml_para(&[("en", "A"), ("de", "A-de")]),
-            ml_para(&[("en", ""), ("de", "B-de")]),
-        ];
+        let nodes = [ml_para(&[("en", "A"), ("de", "A-de")]),
+            ml_para(&[("en", ""), ("de", "B-de")])];
         let refs: Vec<&StructuredNode> = nodes.iter().collect();
         let expected = render_rich_text_block_html(&refs, "en");
         assert_eq!(expected, "<p>A</p>");
