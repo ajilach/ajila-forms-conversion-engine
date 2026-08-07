@@ -153,7 +153,7 @@ pub fn SettingsPage(
                                 }
                             }
                             if *mcp_installed.read() {
-                                span { class: "local-model-downloaded", "Installed ✓" }
+                                span { class: "mcp-installed", "Installed ✓" }
                             } else {
                                 button {
                                     class: "btn btn-primary btn-sm",
@@ -171,7 +171,7 @@ pub fn SettingsPage(
                             }
                         }
                         if let Some(err) = mcp_install_error.read().as_ref() {
-                            div { class: "local-model-error", "{err}" }
+                            div { class: "mcp-error", "{err}" }
                         }
                     }
                 }
@@ -186,7 +186,7 @@ pub fn SettingsPage(
                                 span { class: "settings-row-desc", "{api_key_desc}" }
                             }
                             input {
-                                class: "settings-input-apikey",
+                                class: "settings-input-text",
                                 r#type: "password",
                                 placeholder: "sk-ant-...",
                                 value: "{active_api_key}",
@@ -207,7 +207,7 @@ pub fn SettingsPage(
                                 span { class: "settings-row-desc", "{model_desc}" }
                             }
                             select {
-                                class: "settings-select-model",
+                                class: "settings-select",
                                 value: "{active_model}",
                                 onchange: {
                                     let on_changed = on_settings_changed;
@@ -235,7 +235,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-port",
+                                class: "settings-input-number",
                                 r#type: "number",
                                 min: "1",
                                 step: "1",
@@ -264,7 +264,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-port",
+                                class: "settings-input-number",
                                 r#type: "number",
                                 min: "2",
                                 step: "2",
@@ -290,7 +290,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-port",
+                                class: "settings-input-number",
                                 r#type: "number",
                                 min: "0",
                                 step: "10",
@@ -316,7 +316,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-port",
+                                class: "settings-input-number",
                                 r#type: "number",
                                 min: "0",
                                 step: "500",
@@ -342,7 +342,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-port",
+                                class: "settings-input-number",
                                 r#type: "number",
                                 min: "0",
                                 step: "500",
@@ -401,7 +401,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-apikey",
+                                class: "settings-input-text",
                                 r#type: "text",
                                 placeholder: "http://localhost:4502",
                                 value: "{settings_for_aem_host.aem_host}",
@@ -422,7 +422,7 @@ pub fn SettingsPage(
                                 span { class: "settings-row-desc", "Username for AEM HTTP basic auth." }
                             }
                             input {
-                                class: "settings-input-apikey",
+                                class: "settings-input-text",
                                 r#type: "text",
                                 placeholder: "admin",
                                 value: "{settings_for_aem_user.aem_username}",
@@ -445,7 +445,7 @@ pub fn SettingsPage(
                                 }
                             }
                             input {
-                                class: "settings-input-apikey",
+                                class: "settings-input-text",
                                 r#type: "password",
                                 placeholder: "••••••••",
                                 value: "{settings_for_aem_pass.aem_password}",

@@ -2,188 +2,53 @@
    Blueprint UI — External Stylesheet
    ========================================== */
 
-/* ---- Design Tokens ---- */
-
-:root {
-    /* Colors — Brand Primary (gold) */
-    --primary:             #dc9e26;
-    --primary100:          #fffffe;
-    --primary200:          #ffffbc;
-    --primary300:          #ffff8a;
-    --primary400:          #ffd058;
-    --primary500:          #dc9e26;
-    --primary600:          #aa6c00;
-    --primary700:          #783a00;
-    --primary800:          #460800;
-    --primary900:          #140000;
-
-    /* Colors — Brand Secondary (navy) */
-    --secondary:           #062544;
-    --secondary100:        #ceedff;
-    --secondary200:        #9cbbda;
-    --secondary300:        #6a89a8;
-    --secondary400:        #385776;
-    --secondary500:        #062544;
-    --secondary600:        #000012;
-    --secondary700:        #000;
-    --secondary800:        #000;
-    --secondary900:        #000;
-
-    /* Colors — Dark scale */
-    --dark:                #000;
-    --dark100:             #505050;
-    --dark200:             #3c3c3c;
-    --dark300:             #282828;
-    --dark400:             #141414;
-    --dark500:             #000;
-    --dark600:             #000;
-    --dark700:             #000;
-    --dark800:             #000;
-    --dark900:             #000;
-
-    /* Colors — Gray scale */
-    --gray:                #7e7e7e;
-    --gray100:             #fff;
-    --gray200:             #fff;
-    --gray300:             #e2e2e2;
-    --gray400:             #b0b0b0;
-    --gray500:             #7e7e7e;
-    --gray600:             #4c4c4c;
-    --gray700:             #1a1a1a;
-    --gray800:             #000;
-    --gray900:             #000;
-
-    /* Colors — Semantic */
-    --success:             #3dcc79;
-    --warning:             #dc9e26;
-    --danger:              #c2185b;
-    --light:               #fff;
-    --lightgray:           #e7e7e7;
-    --base:                #454545;
-    --border-radius:       100px;
-
-    /* Heading colors (inherit by default) */
-    --h1-color:            inherit;
-    --h2-color:            inherit;
-    --h3-color:            inherit;
-    --h4-color:            inherit;
-    --h5-color:            inherit;
-    --h6-color:            inherit;
-
-    /* Mapped color aliases used throughout the stylesheet */
-    --color-primary:       var(--primary);
-    --color-success:       var(--success);
-    --color-danger:        var(--danger);
-    --color-info:          var(--secondary300);
-    --color-secondary:     var(--secondary);
-
-    --color-text:          var(--dark100);
-    --color-text-muted:    var(--gray500);
-    --color-border:        var(--gray300);
-    --color-border-light:  var(--gray400);
-    --color-bg-light:      #f5f5f5;
-    --color-bg-neutral:    var(--lightgray);
-    --color-app-bg:        #f8f9fb;
-
-    /* Semantic state backgrounds / borders */
-    --color-bg-error:      rgba(194, 24, 91, 0.08);
-    --color-border-error:  rgba(194, 24, 91, 0.3);
-    --color-text-error:    var(--danger);
-    --color-bg-warning:    rgba(220, 158, 38, 0.08);
-    --color-border-warning: rgba(220, 158, 38, 0.3);
-    --color-text-warning:  var(--warning);
-    --color-bg-success:    rgba(61, 204, 121, 0.12);
-    --color-bg-results:    rgba(61, 204, 121, 0.08);
-
-    /* Typography */
-    --font-family:         system-ui, -apple-system, sans-serif;
-    --font-size-sm:        11px;
-    --font-size-base:      16px;
-    --font-size-lg:        20px;
-
-    /* Spacing */
-    --space-xs:            5px;
-    --space-sm:            10px;
-    --space-md:            15px;
-    --space-lg:            20px;
-    --space-xl:            30px;
-
-    /* Radii */
-    --radius-sm:           4px;
-    --radius-md:           8px;
-    --radius-round:        50%;
-
-    /* Layout */
-    --max-width-app:       1400px;
-
-    /* Transitions */
-    --transition-fast:     0.2s;
-
-    /* Shadows */
-    --shadow-modal:        0 4px 20px rgba(0, 0, 0, 0.5);
-
-    /* Z-index layers */
-    --z-modal:             1000;
-    --z-modal-close:       1001;
-}
-
 /* ============================================================
-   Graphite · Ajila — unified design tokens
+   Graphite · Ajila — design tokens
    ------------------------------------------------------------
    Single source of truth for the whole app. Compact developer-
    tool aesthetic in the Ajila brand palette: navy #062544
-   primary, gold #dc9e26 highlight, white surfaces on light
-   grey, hairline navy-tinted borders, mono for data.
-   This block overrides the legacy tokens above and maps every
-   legacy alias onto the new system so all components stay
-   consistent.
+   accent, gold #dc9e26 highlight, white surfaces on light grey,
+   hairline navy-tinted borders, mono for data.
    ============================================================ */
 :root {
     /* Typefaces */
-    --font:        "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --font-family: var(--font);
-    --font-mono:   "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --font:      "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
     /* Surfaces */
-    --bg:         #f2f2f2;
-    --surface:    #ffffff;
-    --surface-2:  #f4f4f4;
-    --text:       #111111;
-    --muted:      #5b6168;
+    --bg:        #f2f2f2;
+    --surface:   #ffffff;
+    --surface-2: #f4f4f4;
+    --text:      #111111;
+    --muted:     #5b6168;
 
     /* Borders */
     --border:        rgba(6, 37, 68, 0.12);
     --border-strong: rgba(6, 37, 68, 0.28);
 
     /* Accent — Ajila navy */
-    --accent:       #062544;
-    --accent-grad:  linear-gradient(135deg, #062544 0%, #0e3a5c 55%, #155378 100%);
-    --accent-soft:  rgba(6, 37, 68, 0.10);
-    --accent-ring:  rgba(6, 37, 68, 0.26);
-    --on-accent:    #ffffff;
-    --gold:         #dc9e26;
+    --accent:      #062544;
+    --accent-soft: rgba(6, 37, 68, 0.10);
+    --accent-ring: rgba(6, 37, 68, 0.26);
+    --on-accent:   #ffffff;
 
     /* Semantic */
-    --success:      #1f9d57;
-    --success-soft: rgba(31, 157, 87, 0.12);
-    --warn:         #dc9e26;
-    --warn-soft:    rgba(220, 158, 38, 0.14);
-    --danger:       #c2185b;
-    --danger-soft:  rgba(194, 24, 91, 0.10);
+    --success:       #1f9d57;
+    --success-soft:  rgba(31, 157, 87, 0.12);
+    --warn:          #dc9e26;
+    --warn-soft:     rgba(220, 158, 38, 0.14);
+    --warn-border:   rgba(220, 158, 38, 0.35);
+    --warn-text:     #a96f0d;
+    --danger:        #c2185b;
+    --danger-soft:   rgba(194, 24, 91, 0.10);
+    --danger-border: rgba(194, 24, 91, 0.30);
 
     /* Radii */
-    --radius:       10px;
-    --radius-sm:    8px;
-    --radius-md:    10px;
-    --radius-lg:    14px;
-    --radius-pill:  999px;
-    --border-radius: 999px;
-    --radius-round: 50%;
+    --radius:    10px;
+    --radius-sm: 8px;
 
     /* Shadows */
-    --shadow:       0 1px 0 rgba(255, 255, 255, 0.6), 0 12px 32px rgba(6, 37, 68, 0.10);
-    --shadow-soft:  0 6px 20px rgba(6, 37, 68, 0.08);
-    --shadow-modal: 0 18px 48px rgba(6, 37, 68, 0.24);
+    --shadow-soft: 0 6px 20px rgba(6, 37, 68, 0.08);
 
     /* Spacing scale (compact) */
     --space-2: 6px;
@@ -191,16 +56,13 @@
     --space-4: 14px;
     --space-5: 20px;
     --space-7: 32px;
-    --space-9: 56px;
-    /* Legacy spacing aliases */
+    /* Spacing aliases used by the older component rules */
     --space-xs: 6px;
     --space-sm: 10px;
     --space-md: 14px;
     --space-lg: 20px;
-    --space-xl: 32px;
 
     /* Typography sizes */
-    --font-size-xs:   11px;
     --font-size-sm:   12px;
     --font-size-base: 13.5px;
     --font-size-md:   15px;
@@ -212,69 +74,8 @@
     --header-border: rgba(255, 255, 255, 0.14);
     --header-text:   #ffffff;
 
-    /* Layout */
-    --shell-max:     920px;
-    --max-width-app: 920px;
-
     /* Motion */
     --transition-fast: 0.15s;
-
-    /* ---- Legacy alias bridge (old token name → new value) ---- */
-    --light:          var(--surface);
-    --lightgray:      var(--surface-2);
-    --base:           var(--text);
-
-    --primary:        var(--accent);
-    --primary200:     rgba(6, 37, 68, 0.12);
-    --primary400:     #155378;
-    --primary500:     var(--accent);
-    --primary600:     #041a30;
-    --primary700:     #02101f;
-    --primary500-rgb: 6, 37, 68;
-    --color-primary-rgb: 6, 37, 68;
-
-    --secondary:      #062544;
-    --secondary100:   rgba(6, 37, 68, 0.10);
-    --secondary300:   #6a89a8;
-    --secondary400:   #385776;
-    --secondary500:   #062544;
-
-    --warning:        var(--warn);
-    --danger500:      var(--danger);
-
-    --gray100: #ffffff;
-    --gray300: #e2e2e2;
-    --gray400: #b0b0b0;
-    --gray500: var(--muted);
-    --gray600: #4c4c4c;
-    --dark100: var(--text);
-
-    --color-primary:      var(--accent);
-    --color-secondary:    var(--accent);
-    --color-success:      var(--success);
-    --color-danger:       var(--danger);
-    --color-info:         var(--accent);
-    --color-text:         var(--text);
-    --color-text-muted:   var(--muted);
-    --color-border:       var(--border);
-    --color-border-light: var(--border-strong);
-    --color-surface:      var(--surface);
-    --color-bg:           var(--surface);
-    --color-bg-input:     var(--surface-2);
-    --color-bg-light:     var(--surface-2);
-    --color-bg-neutral:   var(--surface-2);
-    --color-app-bg:       var(--bg);
-    --color-hover:        var(--accent-soft);
-    --color-bg-hover:     var(--accent-soft);
-
-    --color-bg-error:      var(--danger-soft);
-    --color-border-error:  rgba(194, 24, 91, 0.30);
-    --color-text-error:    var(--danger);
-    --color-bg-warning:    var(--warn-soft);
-    --color-border-warning: rgba(220, 158, 38, 0.35);
-    --color-text-warning:  #a96f0d;
-    --color-bg-success:    var(--success-soft);
-    --color-bg-results:    var(--success-soft);
 }
 
 /* ---- Global Reset ---- */
@@ -284,9 +85,9 @@ html, body {
     padding: 0;
     height: 100vh;
     overflow: hidden;
-    font-family: var(--font-family);
-    background-color: var(--color-app-bg);
-    color: var(--color-text);
+    font-family: var(--font);
+    background-color: var(--bg);
+    color: var(--text);
 }
 
 body {
@@ -397,7 +198,7 @@ body > div, #main {
 
 .btn-sm { height: 32px; padding: 0 var(--space-3); font-size: 12.5px; }
 
-/* ---- Upload action row (Choose Files / Load Previous Session) ---- */
+/* ---- Upload action row ---- */
 
 .upload-actions {
     display: flex;
@@ -430,7 +231,7 @@ body > div, #main {
 }
 
 .upload-hint {
-    color: var(--color-text-muted);
+    color: var(--muted);
 }
 
 .profile-selector {
@@ -443,7 +244,7 @@ body > div, #main {
 .profile-selector label {
     font-weight: 600;
     font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
@@ -451,11 +252,11 @@ body > div, #main {
 .profile-selector select {
     flex: 1;
     padding: 8px 12px;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    background-color: var(--light);
-    color: var(--color-text);
-    font-family: var(--font-family);
+    background-color: var(--surface);
+    color: var(--text);
+    font-family: var(--font);
     font-size: var(--font-size-base);
     cursor: pointer;
     appearance: none;
@@ -468,37 +269,37 @@ body > div, #main {
 }
 
 .profile-selector select:hover {
-    border-color: var(--secondary300);
+    border-color: var(--border-strong);
 }
 
 .profile-selector select:focus {
     outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(220, 158, 38, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--warn-soft);
 }
 
 .profile-selector select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-    background-color: var(--color-bg-light);
+    background-color: var(--surface-2);
 }
 
 .progress-error {
     margin-top: var(--space-lg);
     padding: var(--space-md);
-    background-color: var(--color-bg-error);
-    border: 1px solid var(--color-border-error);
+    background-color: var(--danger-soft);
+    border: 1px solid var(--danger-border);
     border-radius: var(--radius-sm);
-    color: var(--color-text-error);
+    color: var(--danger);
 }
 
 .progress-warnings {
     margin-top: var(--space-lg);
     padding: var(--space-md);
-    background-color: var(--color-bg-warning);
-    border: 1px solid var(--color-border-warning);
+    background-color: var(--warn-soft);
+    border: 1px solid var(--warn-border);
     border-radius: var(--radius-sm);
-    color: var(--color-text-warning);
+    color: var(--warn-text);
 }
 
 /* ---- Spinner (reusable) ---- */
@@ -509,9 +310,10 @@ body > div, #main {
 
 .spinner {
     display: inline-block;
+    border-width: 2px;
     border-style: solid;
-    border-color: var(--color-border);
-    border-top-color: var(--color-primary);
+    border-color: var(--border);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spinner-spin 0.8s linear infinite;
     vertical-align: middle;
@@ -520,19 +322,11 @@ body > div, #main {
 .spinner-sm {
     width: 14px;
     height: 14px;
-    border-width: 2px;
 }
 
 .spinner-md {
-    width: 24px;
-    height: 24px;
-    border-width: 3px;
-}
-
-.spinner-lg {
-    width: 32px;
-    height: 32px;
-    border-width: 3px;
+    width: 20px;
+    height: 20px;
 }
 
 /* Spinner inside a filled primary button: inherit the button's text colour so
@@ -541,19 +335,6 @@ body > div, #main {
     border-color: color-mix(in srgb, currentColor 35%, transparent);
     border-top-color: currentColor;
     margin-right: var(--space-2);
-}
-
-/* ---- Step Indicator ---- */
-
-.step {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    margin: var(--space-2) 0;
-    border-radius: var(--radius-sm);
-    border: 1px solid transparent;
-    font-size: 13.5px;
 }
 
 .session-list {
@@ -571,7 +352,7 @@ body > div, #main {
     justify-content: space-between;
     gap: 1rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: 6px;
 }
 
@@ -602,7 +383,7 @@ body > div, #main {
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
-    background: var(--light);
+    background: var(--surface);
 }
 
 .references-header {
@@ -610,8 +391,8 @@ body > div, #main {
     align-items: center;
     justify-content: space-between;
     padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-bg-light);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
 }
 
 .references-header h2 {
@@ -621,15 +402,15 @@ body > div, #main {
 
 .references-subtitle {
     font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    color: var(--muted);
 }
 
 .references-tabs {
     display: flex;
     gap: var(--space-xs);
     padding: var(--space-sm) var(--space-md) 0;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-bg-light);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
 }
 
 .references-tab {
@@ -638,7 +419,7 @@ body > div, #main {
     border-bottom: none;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     background: transparent;
-    color: var(--color-text-muted);
+    color: var(--muted);
     cursor: pointer;
     font-size: var(--font-size-sm);
     font-weight: 500;
@@ -646,14 +427,14 @@ body > div, #main {
 }
 
 .references-tab:hover {
-    color: var(--color-text);
+    color: var(--text);
 }
 
 .references-tab.active {
-    background: var(--light);
-    color: var(--color-primary);
-    border-color: var(--color-border);
-    border-bottom-color: var(--light);
+    background: var(--surface);
+    color: var(--accent);
+    border-color: var(--border);
+    border-bottom-color: var(--surface);
 }
 
 .references-content {
@@ -670,21 +451,21 @@ body > div, #main {
 }
 
 .references-card {
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: var(--space-md);
-    background: var(--color-surface, #fff);
+    background: var(--surface);
 }
 
 .references-card h3 {
     margin: 0 0 var(--space-sm) 0;
-    font-size: var(--font-size-md, 1rem);
+    font-size: var(--font-size-md);
 }
 
 .references-card-desc {
     margin: 0 0 var(--space-md) 0;
     font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    color: var(--muted);
 }
 
 .references-row {
@@ -712,12 +493,12 @@ body > div, #main {
 
 .references-row-desc {
     font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    color: var(--muted);
 }
 
 .references-empty {
     font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    color: var(--muted);
     margin: 0;
 }
 
@@ -726,7 +507,7 @@ body > div, #main {
     box-sizing: border-box;
     padding: var(--space-sm) var(--space-md);
     margin-bottom: var(--space-md);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: 6px;
     font-size: var(--font-size-sm);
 }
@@ -740,7 +521,7 @@ body > div, #main {
 .references-item-desc {
     margin-top: 0.25rem;
     font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
+    color: var(--muted);
     line-height: 1.4;
     cursor: pointer;
     display: block;
@@ -763,48 +544,12 @@ body > div, #main {
 }
 
 .references-status-ok {
-    background: rgba(39, 174, 96, 0.12);
+    background: var(--success-soft);
 }
 
 .references-status-err {
-    background: var(--danger-soft, rgba(194, 24, 91, 0.10));
+    background: var(--danger-soft);
     color: var(--danger);
-}
-
-/* Reusable spinner used across toolbar/buttons */
-.spinner {
-    display: inline-block;
-    border-width: 2px;
-    border-style: solid;
-    border-color: var(--color-border);
-    border-top-color: var(--color-primary);
-    border-radius: 50%;
-    animation: spinner-spin 0.8s linear infinite;
-}
-
-.spinner-sm {
-    width: 14px;
-    height: 14px;
-    border-width: 2px;
-}
-
-.spinner-md {
-    width: 20px;
-    height: 20px;
-    border-width: 2px;
-}
-
-.spinner-lg {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--color-border);
-    border-top-color: var(--color-primary);
-}
-
-@keyframes spinner-spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 /* ── Settings button in header ── */
@@ -832,10 +577,9 @@ body > div, #main {
 .settings-btn:hover {
     background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.20);
-    color: #ffffff;
+    color: var(--on-accent);
 }
 
-/* ── Settings backdrop (cierra al clickar fuera) ── */
 /* ── Settings (full-page view) ── */
 .settings-page {
     flex: 1;
@@ -843,7 +587,7 @@ body > div, #main {
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
-    background: var(--light);
+    background: var(--surface);
 }
 
 .settings-header {
@@ -851,8 +595,8 @@ body > div, #main {
     align-items: center;
     justify-content: space-between;
     padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-bg-light);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
 }
 
 .settings-header h2 {
@@ -870,7 +614,12 @@ body > div, #main {
     margin: 0 auto;
 }
 
-/* ── Contenido del dropdown ── */
+/* ── Settings sections, rows and controls ── */
+.settings-section {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: var(--space-lg);
+}
 .settings-section-title {
     font-size: 0.75rem;
     text-transform: uppercase;
@@ -883,6 +632,7 @@ body > div, #main {
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    padding: var(--space-sm) 0;
 }
 .settings-row-info { display: flex; flex-direction: column; gap: 0.2rem; }
 .settings-row-label { font-weight: 500; font-size: 0.9rem; }
@@ -890,15 +640,62 @@ body > div, #main {
 
 /* Stacked variant: label/description on top, full-width control below. */
 .settings-row-stack { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+
+/* The three settings controls share one base; only their width and the
+   select's caret differ. */
+.settings-input-text,
+.settings-input-number,
+.settings-select {
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--font-size-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.settings-input-text:focus,
+.settings-input-number:focus,
+.settings-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.settings-input-text {
+    flex: 1;
+    min-width: 280px;
+    font-family: var(--font-mono);
+}
+
+.settings-input-number {
+    width: 96px;
+    text-align: right;
+}
+
+.settings-select {
+    min-width: 260px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23505050' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+}
+
 .settings-textarea {
     width: 100%;
     box-sizing: border-box;
     resize: vertical;
     font: inherit;
     padding: var(--space-sm);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    background: var(--color-bg);
+    background: var(--surface);
     color: inherit;
 }
 
@@ -907,7 +704,7 @@ body > div, #main {
 .toggle-switch input { opacity: 0; width: 0; height: 0; }
 .toggle-slider {
     position: absolute; inset: 0;
-    background: var(--color-border, #ccc);
+    background: var(--border);
     border-radius: 24px;
     cursor: pointer;
     transition: background 0.2s;
@@ -917,7 +714,7 @@ body > div, #main {
     position: absolute;
     width: 18px; height: 18px;
     left: 3px; top: 3px;
-    background: #fff;
+    background: var(--surface);
     border-radius: 50%;
     transition: transform 0.2s;
 }
@@ -942,9 +739,9 @@ body > div, #main {
     margin: 0;
     padding: 0;
     text-align: center;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
-    color: var(--color-text-muted, #7e7e7e);
+    color: var(--muted);
 }
 .file-list-compact li {
     padding: 2px 0;
@@ -970,7 +767,7 @@ body > div, #main {
     color: var(--text);
     padding: 10px 13px;
     margin-bottom: 14px;
-    background: var(--color-bg-light, #f5f5f5);
+    background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 10px;
 }
@@ -1001,24 +798,24 @@ body > div, #main {
     min-width: 0;
 }
 .af-tool-name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-weight: 600;
     font-size: 13px;
     color: var(--text);
 }
 .af-tool-detail {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--color-text-muted, #7e7e7e);
+    color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .af-ok {
-    color: #2e9e5b;
+    color: var(--success);
 }
 .af-err {
-    color: #c0392b;
+    color: var(--danger);
 }
 .af-feedback-input {
     width: 100%;
@@ -1035,7 +832,7 @@ body > div, #main {
 }
 .af-feedback-input:focus {
     outline: none;
-    border-color: var(--primary, #dc9e26);
+    border-color: var(--accent);
 }
 
 /* ============================================================
@@ -1105,16 +902,16 @@ body > div, #main {
     box-shadow: none;
 }
 .ag-badge.run .spinner {
-    border-color: rgba(6, 37, 68, 0.2);
+    border-color: var(--accent-ring);
     border-top-color: var(--accent);
 }
 .ag-badge.ok {
     background: var(--success);
-    color: #fff;
+    color: var(--on-accent);
 }
 .ag-badge.err {
     background: var(--danger);
-    color: #fff;
+    color: var(--on-accent);
 }
 .ag-badge.warn {
     background: var(--warn-soft);
@@ -1163,9 +960,9 @@ body > div, #main {
     color: var(--muted);
     background: var(--surface);
 }
-.ag-phase.done .pn { background: var(--success); border-color: var(--success); color: #fff; }
+.ag-phase.done .pn { background: var(--success); border-color: var(--success); color: var(--on-accent); }
 .ag-phase.active .pn { border-color: var(--accent); color: var(--accent); }
-.ag-phase.failed .pn { background: var(--danger); border-color: var(--danger); color: #fff; }
+.ag-phase.failed .pn { background: var(--danger); border-color: var(--danger); color: var(--on-accent); }
 .ag-phase.paused .pn { border-color: var(--warn); color: var(--warn); }
 .ag-phase .pl { font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .ag-phase.done .pl,
@@ -1202,14 +999,13 @@ body > div, #main {
 .ag-file-ext {
     font-size: 10px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-accent);
     padding: 2px 6px;
     border-radius: 4px;
     background: var(--accent);
 }
 .ag-file-ext.pdf { background: var(--danger); }
-.ag-file-ext.json { background: #0e6b8c; }
-.ag-file-ext.zip { background: #a96f0d; }
+.ag-file-ext.zip { background: var(--warn-text); }
 
 /* ---- Collapsible activity timeline ---- */
 .ag-tl {
@@ -1245,8 +1041,8 @@ body > div, #main {
     place-items: center;
     font-size: 11px;
 }
-.ag-tl-dot.ok { background: var(--success); border-color: var(--success); color: #fff; }
-.ag-tl-dot.ok .af-ok { color: #fff; }
+.ag-tl-dot.ok { background: var(--success); border-color: var(--success); color: var(--on-accent); }
+.ag-tl-dot.ok .af-ok { color: var(--on-accent); }
 .ag-tl-latest { display: flex; flex-direction: column; min-width: 0; }
 .ag-tl-latest .nm {
     font-family: var(--font-mono);
@@ -1413,5 +1209,5 @@ body > div, #main {
 }
 
 /* Status indicators (MCP install state) */
-.local-model-downloaded { color: var(--success, #22c55e); font-size: 12px; }
-.local-model-error { color: var(--error, #ef4444); font-size: 12px; margin-top: var(--space-2); }
+.mcp-installed { color: var(--success); font-size: 12px; }
+.mcp-error { color: var(--danger); font-size: 12px; margin-top: var(--space-2); }

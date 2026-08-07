@@ -177,7 +177,7 @@ pub fn ReferencesPage(
                             }
                         }
                         select {
-                            class: "settings-select-model",
+                            class: "settings-select",
                             value: "{current_profile}",
                             onchange: move |e: Event<FormData>| selected_profile.set(Some(e.value())),
                             for p in profiles.iter() {
