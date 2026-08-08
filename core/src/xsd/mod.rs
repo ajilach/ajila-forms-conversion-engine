@@ -426,6 +426,14 @@ pub struct XsdConfig {
     /// Built from global element declarations in the parsed XSD files.
     pub type_to_element_name: HashMap<String, String>,
 
+    /// Every global element declaration: element name → type name.
+    ///
+    /// E.g. `"BankingRelationship" → "BankingRelationshipType"`. Membership in
+    /// this map is what decides whether an element is emitted as
+    /// `<xs:element ref="X"/>` (declared globally) or as
+    /// `<xs:element name="X" type="T"/>` (not declared globally).
+    pub global_elements: HashMap<String, String>,
+
     /// Optional master language code (e.g. `"en"`).
     ///
     /// When set, element names derived from headings and field labels will
@@ -454,6 +462,7 @@ impl XsdConfig {
             type_to_file,
             registered_types,
             type_to_element_name,
+            global_elements: HashMap::new(),
             master_language,
             form_code: None,
         }
@@ -467,9 +476,24 @@ impl XsdConfig {
             type_to_file: HashMap::new(),
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
+            global_elements: HashMap::new(),
             master_language,
             form_code: None,
         }
+    }
+
+    /// Set the global element declarations (element name → type name).
+    pub fn with_global_elements(mut self, global_elements: HashMap<String, String>) -> Self {
+        self.global_elements = global_elements;
+        self
+    }
+
+    /// Whether `name` is declared as a global element in the type library.
+    ///
+    /// Global elements are referenced with `<xs:element ref="..."/>`; everything
+    /// else is declared inline with `name=`/`type=`.
+    pub fn is_global_element(&self, name: &str) -> bool {
+        self.global_elements.contains_key(name)
     }
 
     /// Set the master language for element name resolution.
@@ -719,12 +743,18 @@ fn get_attr(e: &quick_xml::events::BytesStart, attr_name: &[u8]) -> Option<Strin
 /// 3. Resolves `xs:extension base="Y"` inheritance by prepending base type elements.
 /// 4. Associates each type with its `schemaLocation` path.
 ///
-/// Returns `(registered_types, type_to_element_name)` where `type_to_element_name`
-/// maps complex type names to their global element names (e.g. `"AddressType" → "Address"`).
+/// Returns `(registered_types, type_to_element_name, global_elements)`:
+/// - `type_to_element_name` maps complex type names to a global element name
+///   (e.g. `"AddressType" → "Address"`); when several elements share a type the
+///   alphabetically first one wins, so the result is deterministic.
+/// - `global_elements` maps every global element name to its type. This is the
+///   forward direction and is what decides `xs:element ref=` versus
+///   `xs:element name=`/`type=`.
 pub fn build_registered_types(
     parsed_schemas: &[(ParsedSchema, String)], // (schema, schemaLocation)
 ) -> (
     HashMap<String, RegisteredComplexType>,
+    HashMap<String, String>,
     HashMap<String, String>,
 ) {
     // Collect all global elements across all files (for ref resolution)
@@ -835,13 +865,23 @@ pub fn build_registered_types(
         }
     }
 
-    // Build reverse map: type name → element name (e.g. "AddressType" → "Address")
+    // Build reverse map: type name → element name (e.g. "AddressType" → "Address").
+    //
+    // Several global elements may share one type — `AFFragments/Signature.xsd`
+    // declares four elements of `SignatureType`. Iterating a `HashMap` would
+    // pick an arbitrary winner that varies between runs, so sort by element
+    // name and let the first one win. Callers that need to distinguish them
+    // must match on the element name via `global_elements`, not on the type.
+    let mut by_name: Vec<(&String, &String)> = all_global_elements.iter().collect();
+    by_name.sort_unstable();
     let mut type_to_element_name: HashMap<String, String> = HashMap::new();
-    for (elem_name, type_name) in &all_global_elements {
-        type_to_element_name.insert(type_name.clone(), elem_name.clone());
+    for (elem_name, type_name) in by_name {
+        type_to_element_name
+            .entry(type_name.clone())
+            .or_insert_with(|| elem_name.clone());
     }
 
-    (resolved, type_to_element_name)
+    (resolved, type_to_element_name, all_global_elements)
 }
 
 /// Build a full [`XsdConfig`] from pre-discovered type source files.
@@ -863,13 +903,15 @@ pub fn build_xsd_config_from_type_sources(
         parsed_schemas.push((parse_schema(content), schema_location));
     }
 
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let (registered_types, type_to_element_name, global_elements) =
+        build_registered_types(&parsed_schemas);
     XsdConfig::new(
         profile,
         type_to_file,
         registered_types,
         type_to_element_name,
     )
+    .with_global_elements(global_elements)
 }
 
 /// Collect all `*.xsd` files recursively from `types_dir` and return
@@ -947,6 +989,77 @@ fn path_to_forward_slash_string(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::path_to_forward_slash_string;
+    use super::{build_registered_types, parse_schema, to_pascal_case, to_xsd_element_name};
+
+    #[test]
+    fn to_xsd_element_name_joins_words_without_separators() {
+        assert_eq!(to_xsd_element_name("Email address"), "EmailAddress");
+        assert_eq!(to_xsd_element_name("Domain name"), "DomainName");
+        assert_eq!(to_xsd_element_name("IBAN"), "IBAN");
+    }
+
+    #[test]
+    fn to_xsd_element_name_maps_slash_to_or() {
+        assert_eq!(to_xsd_element_name("Company/Entity"), "CompanyOrEntity");
+    }
+
+    /// The reason this helper exists at all: `to_pascal_case` lower-cases the
+    /// tail of every word, which mangles an already-camel-cased name.
+    #[test]
+    fn to_xsd_element_name_preserves_inner_capitals_unlike_to_pascal_case() {
+        assert_eq!(
+            to_xsd_element_name("IsNonResidentOfTaxHaven"),
+            "IsNonResidentOfTaxHaven"
+        );
+        assert_eq!(
+            to_pascal_case("IsNonResidentOfTaxHaven"),
+            "Isnonresidentoftaxhaven"
+        );
+    }
+
+    #[test]
+    fn to_xsd_element_name_falls_back_for_empty_input() {
+        assert_eq!(to_xsd_element_name("   "), "Unknown");
+    }
+
+    /// Several global elements may share one complex type. The winner must not
+    /// depend on `HashMap` iteration order, or the generated schema changes
+    /// between runs.
+    #[test]
+    fn type_to_element_name_is_deterministic_when_several_elements_share_a_type() {
+        let schema = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="Signature" type="SignatureType"/>
+    <xs:element name="CardHolderSignature" type="SignatureType"/>
+    <xs:element name="CardLegalRepSignature" type="SignatureType"/>
+    <xs:complexType name="SignatureType">
+        <xs:sequence>
+            <xs:element name="Place" type="xs:string"/>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>"#;
+
+        let parsed = vec![(
+            parse_schema(schema),
+            "../AFFragments/Signature.xsd".to_string(),
+        )];
+        let (_, type_to_element_name, global_elements) = build_registered_types(&parsed);
+
+        // Alphabetically first of the three, on every run.
+        assert_eq!(
+            type_to_element_name
+                .get("SignatureType")
+                .map(String::as_str),
+            Some("CardHolderSignature")
+        );
+
+        // The forward map keeps all of them, which is what `ref=` resolution needs.
+        assert_eq!(global_elements.len(), 3);
+        assert_eq!(
+            global_elements.get("Signature").map(String::as_str),
+            Some("SignatureType")
+        );
+    }
 
     #[test]
     fn path_to_forward_slash_string_uses_forward_slashes() {
@@ -1306,6 +1419,42 @@ pub fn to_snake_case(label: &str) -> String {
         .map(|w| w.to_lowercase())
         .collect::<Vec<_>>()
         .join("_")
+}
+
+/// Derive an XSD element name from a label, using UBS normalisation rules.
+///
+/// Unlike [`to_pascal_case`], the tail of each word is preserved verbatim, so
+/// an already-camel-cased label survives the round trip:
+/// `to_pascal_case("IsNonResidentOfTaxHaven")` yields `Isnonresidentoftaxhaven`,
+/// which is why config-supplied names must never go through it.
+///
+/// - `/` becomes ` Or `, so `"Company/Entity"` → `"CompanyOrEntity"`
+/// - the label is split on non-alphanumeric characters
+/// - each segment's first character is upper-cased; the rest is left alone
+///
+/// Example: `"Email address"` → `"EmailAddress"`, `"IBAN"` → `"IBAN"`.
+pub fn to_xsd_element_name(label: &str) -> String {
+    let replaced = label.replace('/', " Or ");
+    let segments: Vec<&str> = replaced
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    if segments.is_empty() {
+        return "Unknown".to_string();
+    }
+
+    segments
+        .iter()
+        .map(|seg| {
+            let mut chars = seg.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 /// Convert a label string to a PascalCase identifier suitable for XSD names.

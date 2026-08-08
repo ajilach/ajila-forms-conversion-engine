@@ -18429,13 +18429,15 @@ fn test_aaai_en_xsd_signature_type_matching() {
         }
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let (registered_types, type_to_element_name, global_elements) =
+        build_registered_types(&parsed_schemas);
     let config = XsdConfig::new(
         profile,
         type_to_file,
         registered_types,
         type_to_element_name,
-    );
+    )
+    .with_global_elements(global_elements);
 
     // 3) Generate intermediate XSD schema
     let schema = generate_xsd_schema(&nodes, &config);
@@ -18612,13 +18614,15 @@ fn test_aaai_en_xsd_authorized_rep_type_pair() {
         }
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let (registered_types, type_to_element_name, global_elements) =
+        build_registered_types(&parsed_schemas);
     let config = XsdConfig::new(
         profile,
         type_to_file,
         registered_types,
         type_to_element_name,
-    );
+    )
+    .with_global_elements(global_elements);
 
     let schema = generate_xsd_schema(&nodes, &config);
 
@@ -19125,13 +19129,15 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
         }
         parsed_schemas.push((parse_schema(&content), schema_location));
     }
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let (registered_types, type_to_element_name, global_elements) =
+        build_registered_types(&parsed_schemas);
     let config = XsdConfig::new(
         profile,
         type_to_file,
         registered_types,
         type_to_element_name,
-    );
+    )
+    .with_global_elements(global_elements);
 
     // 3) Generate XSD schema and compute bind refs
     let schema = generate_xsd_schema(&nodes, &config);
