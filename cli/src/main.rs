@@ -265,7 +265,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Extract form code from merged name (e.g. "AAAI_019" → "AAAI")
         let form_code = merged_name.split('_').next().unwrap_or(&merged_name);
         xsd_config.form_code = Some(form_code.to_string());
-        let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
+        let aem_config = blueprint::load_aem_config(profile_name, &output.merged.context)
+            .map_err(|e| format!("Failed to load AEM profile for XSD generation: {e}"))?;
+        let xsd = blueprint::to_xsd(&output.merged.content, &aem_config, &xsd_config);
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
         std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;
         info!("XSD: {}", xsd_path.display());

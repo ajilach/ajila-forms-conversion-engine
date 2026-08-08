@@ -205,9 +205,10 @@ pub use html::{
 // XSD generation
 pub use xsd::{
     BindRefMaps, ElementMapping, RegisteredComplexType, SectionMapping, TypeChildElement,
-    XsdConfig, XsdNode, XsdProfile, XsdRestriction, XsdSchema, build_registered_types,
+    XsdConfig, XsdNode, XsdProfile, XsdSchema, build_registered_types,
+    generate_xsd_from_aem, generate_xsd_string_from_aem,
     build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
-    extract_declared_names, find_matching_types, generate_xsd, generate_xsd_schema,
+    extract_declared_names, find_matching_types,
     load_xsd_config_from_dir, parse_schema, resolve_section_name,
     resolve_section_name_with_heading,
 };
@@ -1265,9 +1266,19 @@ pub fn to_aem(content: &[StructuredNode], config: &AemConfig) -> String {
     generate_aem_xml(&root, &config)
 }
 
-/// Generate an XSD schema from structured nodes.
-pub fn to_xsd(content: &[StructuredNode], config: &XsdConfig) -> String {
-    generate_xsd(content, config)
+/// Generate the XSD schema for the form `content` produces.
+///
+/// The schema is derived from the AEM tree, not from `content` directly, so a
+/// standalone XSD is byte-identical to the one bundled in the package and its
+/// element paths are exactly the `bindRef`s that form carries.
+pub fn to_xsd(
+    content: &[StructuredNode],
+    aem_config: &AemConfig,
+    xsd_config: &XsdConfig,
+) -> String {
+    let aem_config = resolve_aem_languages(content, aem_config);
+    let root = convert_to_aem(content, &aem_config);
+    crate::xsd::generate_xsd_string_from_aem(&root, xsd_config, &aem_config.fragments)
 }
 
 /// Generate a PostgreSQL dump for the Redacto platform from structured nodes.

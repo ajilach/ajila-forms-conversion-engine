@@ -435,19 +435,41 @@ impl ConversionAgent {
                     Some(p) if blueprint::has_xsd_config(&p) => p,
                     _ => return ToolReply::Error("This profile has no XSD config.".into()),
                 };
+                let mut cfg = match blueprint::load_xsd_config(&p) {
+                    Ok(cfg) => cfg,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                // The AEM tree is the source of truth on an AEM run, so derive
+                // the schema straight from it: that is the same tree the package
+                // ships, and its bindRefs are the schema's element paths. Fall
+                // back to the structured content only when no tree exists yet.
+                let fragments = self
+                    .config()
+                    .map(|c| {
+                        cfg.form_code = Some(c.form_code.clone());
+                        c.fragments.clone()
+                    })
+                    .unwrap_or_default();
+
+                if self.aem_translated().is_some() {
+                    let (aem, _) = match self.lower_aem_translated_lenient() {
+                        Ok(pair) => pair,
+                        Err(e) => return ToolReply::Error(e),
+                    };
+                    return ToolReply::Text(blueprint::generate_xsd_string_from_aem(
+                        &aem, &cfg, &fragments,
+                    ));
+                }
+
                 let content = match self.derived_output_content() {
                     Ok(c) => c,
                     Err(e) => return ToolReply::Error(e),
                 };
-                match blueprint::load_xsd_config(&p) {
-                    Ok(mut cfg) => {
-                        if let Ok(c) = self.config() {
-                            cfg.form_code = Some(c.form_code.clone());
-                        }
-                        ToolReply::Text(blueprint::to_xsd(&content, &cfg))
-                    }
-                    Err(e) => ToolReply::Error(e),
-                }
+                let aem_config = match self.config() {
+                    Ok(c) => c,
+                    Err(e) => return ToolReply::Error(e),
+                };
+                ToolReply::Text(blueprint::to_xsd(&content, &aem_config, &cfg))
             }
             "generate_html" => {
                 let p = match self.profile.clone() {

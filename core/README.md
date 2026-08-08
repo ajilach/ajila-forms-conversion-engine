@@ -52,7 +52,7 @@ run takes and which section of the profile configures it.
 | `structured` | Converts the analyzed `Document` into a serialisable `StructuredNode` tree wrapped in a `DocumentEnvelope`. Includes the `RecursiveMerger` for merging multiple form states into conditional trees, and a `TranslationMerger` for multilingual LCS-based alignment. |
 | `semantic` | Sentence-embedding matcher (`candle` + a quantized MiniLM in `models/`) used to align translations that differ structurally. Behind the default `semantic-matching` feature. |
 | `html` | Renders `Vec<StructuredNode>` into a standalone HTML page with embedded CSS/JS for dynamic repeatables, conditionals, and multilingual support. |
-| `xsd` | Renders the structured tree as an XML Schema Definition. |
+| `xsd` | Derives an XML Schema Definition from the AEM tree, assigning each node's `bindRef` in the same walk so the two agree by construction. |
 | `aem` | Converts structured nodes into an AEM Adaptive Forms JCR content package (XML + FileVault ZIP), and parses one back. Includes package validation. |
 | `redacto` | Renders the structured tree as a Redacto PostgreSQL dump, with its own content model and validation. |
 | `review` | Post-conversion fidelity review: compares the source parse against a converted tree and reports missing content with a coverage score. |

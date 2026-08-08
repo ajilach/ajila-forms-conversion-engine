@@ -17203,894 +17203,18 @@ fn test_bage_aem_has_expected_fields() {
 // XSD generation tests
 // ============================================================================
 
-#[test]
-fn test_xsd_basic_field_generation() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
 
-    // Build a simple structured tree with one field
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.phone"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Phone Number")),
-        input_type: FieldType::Text {
-            regex: None,
-            max_length: None,
-            min_length: None,
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
 
-    // Config with a matching synonym
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::from_profile(profile);
 
-    let xsd = generate_xsd(&nodes, &config);
 
-    // Verify the output contains the expected element
-    assert!(
-        xsd.contains("<xs:element name=\"phone\" type=\"xs:string\"/>"),
-        "XSD should contain phone element. Got:\n{}",
-        xsd
-    );
-    assert!(xsd.contains("<xs:schema"), "Should have schema root");
-    assert!(xsd.contains("</xs:schema>"), "Should close schema root");
-}
 
-#[test]
-fn test_xsd_unmatched_field_uses_snake_case() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
 
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.dob"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Date of Birth")),
-        input_type: FieldType::Text {
-            regex: None,
-            max_length: None,
-            min_length: None,
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
 
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
 
-    // Unmatched field should use PascalCase name and xs:string type
-    assert!(
-        xsd.contains("<xs:element name=\"DateOfBirth\" type=\"xs:string\"/>"),
-        "Unmatched field should use PascalCase name. Got:\n{}",
-        xsd
-    );
-}
 
-#[test]
-fn test_xsd_heading_creates_complex_type() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
 
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account Details"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.iban"),
-            som_path: None,
-            label: Some(TranslatedText::plain("IBAN")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
 
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "IBAN".to_string(),
-        ElementMapping {
-            synonyms: vec!["IBAN".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
 
-    // Register a type that contains IBAN as a child
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement {
-                    name: "IBAN".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Currency".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-            ],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should match AccountType (IBAN is a subset) and use type ref
-    assert!(
-        xsd.contains("<xs:element name=\"AccountDetails\" type=\"AccountType\"/>"),
-        "Should create element with matched type. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_heading_with_type_ref() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account Details"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.num"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Account Number")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "AccountNumber".to_string(),
-        ElementMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that contains AccountNumber
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![TypeChildElement {
-                name: "AccountNumber".to_string(),
-                type_ref: "xs:string".to_string(),
-            }],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let mut type_to_file = std::collections::HashMap::new();
-    type_to_file.insert(
-        "AccountType".to_string(),
-        "../AFFragments/Account.xsd".to_string(),
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should reference the registered type and emit include
-    assert!(
-        xsd.contains("<xs:element name=\"AccountDetails\" type=\"AccountType\"/>"),
-        "Should reference registered type. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:include schemaLocation=\"../AFFragments/Account.xsd\"/>"),
-        "Should include the file for AccountType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_child_validation_required_present() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.iban"),
-            som_path: None,
-            label: Some(TranslatedText::plain("IBAN")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Phone")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "IBAN".to_string(),
-        ElementMapping {
-            synonyms: vec!["IBAN".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    elements.insert(
-        "Phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that includes both IBAN and Phone
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement {
-                    name: "IBAN".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Phone".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Currency".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-            ],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Both children are a subset of AccountType → match
-    assert!(
-        xsd.contains("<xs:element name=\"Account\" type=\"AccountType\"/>"),
-        "Should use type ref when children are subset. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_child_validation_required_missing() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    // Only "Phone" field; registered type requires IBAN which has a different type
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Phone")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "Phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that only has IBAN (not Phone) → no match
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![TypeChildElement {
-                name: "IBAN".to_string(),
-                type_ref: "xs:string".to_string(),
-            }],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Phone is not in AccountType's elements → no match → fallback
-    assert!(
-        !xsd.contains("AccountType"),
-        "Should NOT use type ref when child not in registered type. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:element name=\"Account\">"),
-        "Should fall back to inline complexType. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:complexType>"),
-        "Should generate inline complexType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_child_validation_extra_child() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    // Has "IBAN", "Phone", and "Email" — but registered type only has IBAN and Phone
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.iban"),
-            som_path: None,
-            label: Some(TranslatedText::plain("IBAN")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Phone")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.email"),
-            som_path: None,
-            label: Some(TranslatedText::plain("E-Mail")),
-            input_type: FieldType::Email,
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "IBAN".to_string(),
-        ElementMapping {
-            synonyms: vec!["IBAN".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    elements.insert(
-        "Phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    elements.insert(
-        "Email".to_string(),
-        ElementMapping {
-            synonyms: vec!["E-Mail".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type with only IBAN and Phone (not Email)
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement {
-                    name: "IBAN".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Phone".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-            ],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Email is not in AccountType → not a subset → fallback
-    assert!(
-        !xsd.contains("AccountType"),
-        "Should NOT use type ref when extra child not in registered type. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:element name=\"Account\">"),
-        "Should fall back to inline complexType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_conditional_creates_choice() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let field_id = FieldId::from("test.selector");
-
-    let nodes = vec![
-        StructuredNode::Conditional(ConditionalNode {
-            condition: FieldCondition {
-                field_name: field_id.clone(),
-                value: InputValue::Text("option1".to_string()),
-            },
-            content: Box::new(StructuredNode::Field(FieldNode {
-                name: FieldId::from("test.field_a"),
-                som_path: None,
-                label: Some(TranslatedText::plain("Field A")),
-                input_type: FieldType::Text {
-                    regex: None,
-                    max_length: None,
-                    min_length: None,
-                },
-                value: None,
-                placeholder: None,
-                required: false,
-            })),
-        }),
-        StructuredNode::Conditional(ConditionalNode {
-            condition: FieldCondition {
-                field_name: field_id.clone(),
-                value: InputValue::Text("option2".to_string()),
-            },
-            content: Box::new(StructuredNode::Field(FieldNode {
-                name: FieldId::from("test.field_b"),
-                som_path: None,
-                label: Some(TranslatedText::plain("Field B")),
-                input_type: FieldType::Text {
-                    regex: None,
-                    max_length: None,
-                    min_length: None,
-                },
-                value: None,
-                placeholder: None,
-                required: false,
-            })),
-        }),
-    ];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should produce xs:choice with two xs:sequence branches
-    assert!(
-        xsd.contains("<xs:choice>"),
-        "Should contain xs:choice. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("</xs:choice>"),
-        "Should close xs:choice. Got:\n{}",
-        xsd
-    );
-
-    let sequence_count = xsd.matches("<xs:sequence>").count();
-    // The root sequence + 2 branches = at least 3
-    assert!(
-        sequence_count >= 3,
-        "Should have at least 3 xs:sequence elements (root + 2 branches). Found: {}. Got:\n{}",
-        sequence_count,
-        xsd
-    );
-
-    assert!(
-        xsd.contains("FieldA"),
-        "Should contain FieldA. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("FieldB"),
-        "Should contain FieldB. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_repeatable_min_max_occurs() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Repeatable(RepeatableNode {
-        item: Box::new(StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.item"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Item")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        })),
-        min_occurrences: 0,
-        max_occurrences: None, // unbounded
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should have minOccurs and maxOccurs attributes
-    assert!(
-        xsd.contains("minOccurs=\"0\""),
-        "Should have minOccurs=0. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("maxOccurs=\"unbounded\""),
-        "Should have maxOccurs=unbounded. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_field_with_restrictions() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.name"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Full Name")),
-        input_type: FieldType::Text {
-            regex: Some("[A-Za-z ]+".to_string()),
-            max_length: Some(100),
-            min_length: Some(1),
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    assert!(
-        xsd.contains("<xs:restriction base=\"xs:string\">"),
-        "Should have restriction. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:pattern value=\"[A-Za-z ]+\"/>"),
-        "Should have pattern. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:minLength value=\"1\"/>"),
-        "Should have minLength. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:maxLength value=\"100\"/>"),
-        "Should have maxLength. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_radio_creates_enumeration() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.color"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Color")),
-        input_type: FieldType::Radio {
-            options: vec![
-                NameValue {
-                    name: TranslatableString::Plain("Red".to_string()),
-                    value: InputValue::Text("red".to_string()),
-                },
-                NameValue {
-                    name: TranslatableString::Plain("Blue".to_string()),
-                    value: InputValue::Text("blue".to_string()),
-                },
-                NameValue {
-                    name: TranslatableString::Plain("Green".to_string()),
-                    value: InputValue::Text("green".to_string()),
-                },
-            ],
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    assert!(
-        xsd.contains("<xs:enumeration value=\"red\"/>"),
-        "Should have red enumeration. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:enumeration value=\"blue\"/>"),
-        "Should have blue enumeration. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:enumeration value=\"green\"/>"),
-        "Should have green enumeration. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_predefined_types_included() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // Map CurrencyType to an external file. A field that references it should
-    // cause an <xs:include> to be emitted.
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("CurrencyType".to_string(), "currency-types.xsd".to_string());
-
-    let mut elements = HashMap::new();
-    elements.insert(
-        "currency".to_string(),
-        ElementMapping {
-            synonyms: vec!["Currency".to_string()],
-            type_ref: "CurrencyType".to_string(),
-        },
-    );
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.currency"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Currency")),
-        input_type: FieldType::Text {
-            regex: None,
-            max_length: None,
-            min_length: None,
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let profile = XsdProfile {
-        elements,
-        ..XsdProfile::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    assert!(
-        xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
-        "Should include the file that declares CurrencyType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_nested_heading_levels() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H1,
-            content: TranslatedText::plain("Top Section"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Sub Section"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.field"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Inner Field")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // H1 should create outer complexType, H2 should create inner complexType
-    assert!(
-        xsd.contains("TopSection"),
-        "Should contain TopSection. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("SubSection"),
-        "Should contain SubSection. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("InnerField"),
-        "Should contain InnerField. Got:\n{}",
-        xsd
-    );
-
-    // Count complexType occurrences — at least 3 (root form + outer heading + inner heading)
-    let ct_count = xsd.matches("<xs:complexType>").count();
-    assert!(
-        ct_count >= 3,
-        "Should have at least 3 complexTypes (form root + 2 headings). Found: {}. Got:\n{}",
-        ct_count,
-        xsd
-    );
-}
 
 #[test]
 fn test_xsd_snake_case_conversion() {
@@ -18156,553 +17280,11 @@ fn test_xsd_extract_declared_names() {
     );
 }
 
-#[test]
-fn test_xsd_includes_only_emitted_when_type_is_used() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
 
-    // Two types indexed, but only AddressType will be referenced
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("AddressType".to_string(), "address.xsd".to_string());
-    type_to_file.insert("PersonType".to_string(), "person.xsd".to_string());
 
-    // Only "address" element uses AddressType; "name" uses xs:string (no include needed)
-    let mut elements = HashMap::new();
-    elements.insert(
-        "address".to_string(),
-        ElementMapping {
-            synonyms: vec!["Address".to_string()],
-            type_ref: "AddressType".to_string(),
-        },
-    );
-    elements.insert(
-        "name".to_string(),
-        ElementMapping {
-            synonyms: vec!["Name".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
 
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.address"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Address")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.name"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Name")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
 
-    let profile = XsdProfile {
-        elements,
-        ..XsdProfile::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
 
-    // AddressType is used → address.xsd should be included
-    assert!(
-        xsd.contains("<xs:include schemaLocation=\"address.xsd\"/>"),
-        "Used type include should appear. Got:\n{}",
-        xsd
-    );
-
-    // PersonType is NOT used → person.xsd should NOT be included
-    assert!(
-        !xsd.contains("person.xsd"),
-        "Unused type include should not appear. Got:\n{}",
-        xsd
-    );
-
-    // Include should appear before the root form element
-    let include_pos = xsd.find("<xs:include").unwrap();
-    let form_pos = xsd.find("<xs:element name=\"form\">").unwrap();
-    assert!(
-        include_pos < form_pos,
-        "Includes should appear before the root element. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_includes_deduplicated_by_path() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // Two different logical type names → same physical file
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("TypeA".to_string(), "shared.xsd".to_string());
-    type_to_file.insert("TypeB".to_string(), "shared.xsd".to_string());
-
-    let mut elements = HashMap::new();
-    elements.insert(
-        "field_a".to_string(),
-        ElementMapping {
-            synonyms: vec!["Field A".to_string()],
-            type_ref: "TypeA".to_string(),
-        },
-    );
-    elements.insert(
-        "field_b".to_string(),
-        ElementMapping {
-            synonyms: vec!["Field B".to_string()],
-            type_ref: "TypeB".to_string(),
-        },
-    );
-
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.a"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Field A")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.b"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Field B")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let profile = XsdProfile {
-        elements,
-        ..XsdProfile::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Both types used, but same path → only one xs:include
-    let count = xsd
-        .matches("<xs:include schemaLocation=\"shared.xsd\"/>")
-        .count();
-    assert_eq!(
-        count, 1,
-        "Duplicate include path should appear only once, found {}. Got:\n{}",
-        count, xsd
-    );
-}
-
-#[test]
-fn test_xsd_unused_includes_not_emitted() {
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("SomeType".to_string(), "some-types.xsd".to_string());
-
-    let config = XsdConfig::new(
-        XsdProfile::default(),
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    // No nodes at all → SomeType is never referenced
-    let xsd = generate_xsd(&[], &config);
-
-    assert!(
-        !xsd.contains("<xs:include"),
-        "No includes should appear when no types are used. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_no_includes_no_extra_whitespace() {
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&[], &config);
-
-    // With no includes, there should be no xs:include directives
-    assert!(
-        !xsd.contains("<xs:include"),
-        "Should not contain xs:include when none configured. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_aaai_en_xsd_signature_type_matching() {
-    // Test that the "Client" and "UBS Europe SE" signature sections
-    // in AAAI EN are matched to "SignatureType" because they each
-    // contain the child elements Place, Name, and Date which are a
-    // subset of SignatureType's children.
-    use crate::run_exhaustive_to_merged;
-    use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
-    };
-    use std::collections::HashMap;
-    use std::path::Path;
-
-    // 1) Load the PDF and get structured nodes
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI_019_EN");
-
-    // 2) Load the UBS XSD profile (same logic as CLI's load_xsd_config)
-    let profile_dir_str = helpers::profiles_path("ubs/xsd");
-    let profile_dir = Path::new(&profile_dir_str);
-    let config_path = profile_dir.join("config.toml");
-    let profile: XsdProfile = {
-        let toml_str =
-            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
-        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
-    };
-
-    let types_dir = profile_dir.join("types");
-    let mut type_to_file = HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk_xsd(&path, out);
-                } else if path.extension().is_some_and(|e| e == "xsd") {
-                    out.push(path);
-                }
-            }
-        }
-    }
-    let mut xsd_files = Vec::new();
-    walk_xsd(&types_dir, &mut xsd_files);
-    xsd_files.sort();
-    for xsd_path in &xsd_files {
-        let rel = xsd_path
-            .strip_prefix(&types_dir)
-            .unwrap_or(xsd_path)
-            .to_string_lossy();
-        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-        let content = std::fs::read_to_string(xsd_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
-        for name in extract_declared_names(&content) {
-            type_to_file.insert(name, schema_location.clone());
-        }
-        parsed_schemas.push((parse_schema(&content), schema_location));
-    }
-    let (registered_types, type_to_element_name, global_elements) =
-        build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    )
-    .with_global_elements(global_elements);
-
-    // 3) Generate intermediate XSD schema
-    let schema = generate_xsd_schema(&nodes, &config);
-
-    // 4) Walk the XsdNode tree to find elements by name
-    fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
-        match node {
-            XsdNode::Element {
-                name: n, content, ..
-            } => {
-                if n == name {
-                    results.push(node);
-                }
-                if let Some(child) = content {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                if ref_name == name {
-                    results.push(node);
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        find_elements_by_name(child, name, results);
-                    }
-                }
-            }
-        }
-    }
-
-    // 5) Assert "Client" (under Signature(s)) has type SignatureType
-    //    There are two "Client" elements in the tree (one under the
-    //    main H2 and one under "Signature(s)"). The one under signatures
-    //    is the second occurrence (depth-first).
-    let mut client_matches = Vec::new();
-    find_elements_by_name(&schema.root, "Client", &mut client_matches);
-    assert!(
-        client_matches.len() >= 2,
-        "Should find at least 2 elements named 'Client' (one main, one signature). Found: {}",
-        client_matches.len()
-    );
-    // The second "Client" is the one under Signature(s)
-    if let XsdNode::Element { type_ref, .. } = client_matches[1] {
-        assert_eq!(
-            type_ref.as_deref(),
-            Some("SignatureType"),
-            "Signature 'Client' element should be matched to SignatureType"
-        );
-    }
-
-    // 6) Assert "UBSEuropeSE" has type SignatureType
-    let mut ubs_matches = Vec::new();
-    find_elements_by_name(&schema.root, "UBSEuropeSE", &mut ubs_matches);
-    assert!(
-        !ubs_matches.is_empty(),
-        "Should find an element named 'UBSEuropeSE' in the XSD tree"
-    );
-    if let XsdNode::Element { type_ref, .. } = ubs_matches[0] {
-        assert_eq!(
-            type_ref.as_deref(),
-            Some("SignatureType"),
-            "Element 'UBSEuropeSE' should be matched to SignatureType"
-        );
-    }
-
-    // 7) Assert the AuthRep section is matched to multiple types
-    //    (IndividualBasicType + AddressType), so it contains typed child elements.
-    let mut auth_rep_matches = Vec::new();
-    find_elements_by_name(&schema.root, "AuthRep", &mut auth_rep_matches);
-    assert!(
-        !auth_rep_matches.is_empty(),
-        "Should find 'AuthRep' element"
-    );
-    if let XsdNode::Element {
-        content, type_ref, ..
-    } = auth_rep_matches[0]
-    {
-        assert!(
-            type_ref.is_none(),
-            "AuthRep should have inline content (multi-type match)"
-        );
-        let content = content.as_ref().expect("Should have inline content");
-        if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
-            let child_type_refs: Vec<&str> = sequence
-                .iter()
-                .filter_map(|node| {
-                    if let XsdNode::Element { type_ref, .. } = node {
-                        type_ref.as_deref()
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            assert!(
-                child_type_refs.contains(&"IndividualBasicType"),
-                "Should contain IndividualBasicType. Got: {:?}",
-                child_type_refs
-            );
-            assert!(
-                child_type_refs.contains(&"AddressType"),
-                "Should contain AddressType. Got: {:?}",
-                child_type_refs
-            );
-        } else {
-            panic!("Expected ComplexType content for AuthRep");
-        }
-    }
-}
-
-#[test]
-fn test_aaai_en_xsd_authorized_rep_type_pair() {
-    // Test that "authorized_representative_s" is matched to a pair of disjoint
-    // types: IndividualBasicType (for LastName/FirstName) and AddressType
-    // (for Street/StreetNumber/PostalCode/City/Country), because its child
-    // elements span both types but neither alone covers all children.
-    // LetterAddressType is rejected because it contains a LetterAddress child
-    // of type AddressType, making them non-disjoint at the leaf level.
-    use crate::run_exhaustive_to_merged;
-    use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
-    };
-    use std::collections::HashMap;
-    use std::path::Path;
-
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI_019_EN");
-
-    let profile_dir_str = helpers::profiles_path("ubs/xsd");
-    let profile_dir = Path::new(&profile_dir_str);
-    let config_path = profile_dir.join("config.toml");
-    let profile: XsdProfile = {
-        let toml_str =
-            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
-        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
-    };
-
-    let types_dir = profile_dir.join("types");
-    let mut type_to_file = HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk_xsd(&path, out);
-                } else if path.extension().is_some_and(|e| e == "xsd") {
-                    out.push(path);
-                }
-            }
-        }
-    }
-    let mut xsd_files = Vec::new();
-    walk_xsd(&types_dir, &mut xsd_files);
-    xsd_files.sort();
-    for xsd_path in &xsd_files {
-        let rel = xsd_path
-            .strip_prefix(&types_dir)
-            .unwrap_or(xsd_path)
-            .to_string_lossy();
-        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-        let content = std::fs::read_to_string(xsd_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
-        for name in extract_declared_names(&content) {
-            type_to_file.insert(name, schema_location.clone());
-        }
-        parsed_schemas.push((parse_schema(&content), schema_location));
-    }
-    let (registered_types, type_to_element_name, global_elements) =
-        build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    )
-    .with_global_elements(global_elements);
-
-    let schema = generate_xsd_schema(&nodes, &config);
-
-    // Walk the tree to find \"authorized_representative_s\"
-    fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
-        match node {
-            XsdNode::Element {
-                name: n, content, ..
-            } => {
-                if n == name {
-                    results.push(node);
-                }
-                if let Some(child) = content {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                if ref_name == name {
-                    results.push(node);
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        find_elements_by_name(child, name, results);
-                    }
-                }
-            }
-        }
-    }
-
-    let mut matches = Vec::new();
-    find_elements_by_name(&schema.root, "AuthRep", &mut matches);
-    assert!(!matches.is_empty(), "Should find 'AuthRep' element");
-
-    // It should be an inline complexType containing two typed child elements
-    if let XsdNode::Element {
-        content, type_ref, ..
-    } = matches[0]
-    {
-        assert!(
-            type_ref.is_none(),
-            "AuthRep should NOT have a single type_ref"
-        );
-        let content = content.as_ref().expect("Should have inline content");
-        if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
-            // Collect child element type_refs
-            let child_types: Vec<Option<&str>> = sequence
-                .iter()
-                .filter_map(|node| {
-                    if let XsdNode::Element { type_ref, .. } = node {
-                        Some(type_ref.as_deref())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            assert!(
-                child_types.contains(&Some("IndividualBasicType")),
-                "Should contain IndividualBasicType child. Got types: {:?}",
-                child_types
-            );
-            assert!(
-                child_types.contains(&Some("AddressType")),
-                "Should contain AddressType child. Got types: {:?}",
-                child_types
-            );
-        } else {
-            panic!("Expected ComplexType content");
-        }
-    }
-}
 
 // ============================================================================
 // compute_bind_refs unit tests
@@ -19071,175 +17653,6 @@ fn test_bind_refs_preamble_fields() {
     );
 }
 
-#[test]
-fn test_aaai_en_bind_refs_match_xsd_structure() {
-    // Integration test: verify that compute_bind_refs produces paths that are
-    // structurally consistent with generate_xsd_schema for the AAAI EN form.
-    // Specifically, for multi-type matched sections the wrapper element names
-    // must appear in the bindRef field paths.
-    use crate::run_exhaustive_to_merged;
-    use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, compute_bind_refs,
-        extract_declared_names, generate_xsd_schema, parse_schema,
-    };
-    use std::collections::HashMap;
-    use std::path::Path;
-
-    // 1) Load the PDF and get structured nodes
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI_019_EN");
-
-    // 2) Load the UBS XSD profile
-    let profile_dir_str = helpers::profiles_path("ubs/xsd");
-    let profile_dir = Path::new(&profile_dir_str);
-    let config_path = profile_dir.join("config.toml");
-    let profile: XsdProfile = {
-        let toml_str =
-            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
-        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
-    };
-
-    let types_dir = profile_dir.join("types");
-    let mut type_to_file = HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk_xsd(&path, out);
-                } else if path.extension().is_some_and(|e| e == "xsd") {
-                    out.push(path);
-                }
-            }
-        }
-    }
-    let mut xsd_files = Vec::new();
-    walk_xsd(&types_dir, &mut xsd_files);
-    xsd_files.sort();
-    for xsd_path in &xsd_files {
-        let rel = xsd_path
-            .strip_prefix(&types_dir)
-            .unwrap_or(xsd_path)
-            .to_string_lossy();
-        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-        let content = std::fs::read_to_string(xsd_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
-        for name in extract_declared_names(&content) {
-            type_to_file.insert(name, schema_location.clone());
-        }
-        parsed_schemas.push((parse_schema(&content), schema_location));
-    }
-    let (registered_types, type_to_element_name, global_elements) =
-        build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    )
-    .with_global_elements(global_elements);
-
-    // 3) Generate XSD schema and compute bind refs
-    let schema = generate_xsd_schema(&nodes, &config);
-    let maps = compute_bind_refs(&nodes, &config);
-
-    // 4) Collect all element paths from the XSD tree, expanding typed elements
-    //    by recursively resolving registered types' child elements.
-    fn collect_xsd_paths(
-        node: &XsdNode,
-        parent: &str,
-        paths: &mut HashSet<String>,
-        registered_types: &HashMap<String, crate::RegisteredComplexType>,
-    ) {
-        match node {
-            XsdNode::Element {
-                name,
-                type_ref,
-                content,
-                ..
-            } => {
-                let path = format!("{}/{}", parent, name);
-                paths.insert(path.clone());
-                if let Some(child) = content {
-                    collect_xsd_paths(child, &path, paths, registered_types);
-                }
-                // Expand external type references: add child element paths
-                // that would exist in the data instance.
-                if let Some(tr) = type_ref {
-                    if let Some(rt) = registered_types.get(tr.as_str()) {
-                        for elem in &rt.elements {
-                            paths.insert(format!("{}/{}", path, elem.name));
-                        }
-                    }
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    collect_xsd_paths(child, parent, paths, registered_types);
-                }
-            }
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        collect_xsd_paths(child, parent, paths, registered_types);
-                    }
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Ref { ref_name, .. } => {
-                let path = format!("{}/{}", parent, ref_name);
-                paths.insert(path.clone());
-                // Expand ref: find the registered type matching this global
-                // element and add its children as sub-paths.
-                for rt in registered_types.values() {
-                    for elem in &rt.elements {
-                        paths.insert(format!("{}/{}", path, elem.name));
-                    }
-                }
-            }
-        }
-    }
-    use std::collections::HashSet;
-    let mut xsd_paths = HashSet::new();
-    collect_xsd_paths(&schema.root, "", &mut xsd_paths, &config.registered_types);
-
-    // 5) Every field bindRef path should exist as an element in the XSD tree
-    for (field_id, bind_path) in &maps.fields {
-        assert!(
-            xsd_paths.contains(bind_path),
-            "Field {} has bindRef {} but no matching element in the XSD tree. \
-             Available XSD element paths (sample): {:?}",
-            field_id,
-            bind_path,
-            xsd_paths.iter().take(20).collect::<Vec<_>>()
-        );
-    }
-
-    // 6) Verify specific multi-type section: authorized_representative_s
-    //    Fields in this section should have wrapper paths (e.g. IndividualBasic/LastName).
-    let auth_rep_fields: Vec<_> = maps
-        .fields
-        .iter()
-        .filter(|(_, path)| path.contains("/AuthRep/"))
-        .collect();
-    assert!(
-        !auth_rep_fields.is_empty(),
-        "Should have fields under AuthRep section"
-    );
-    // At least some fields should go through wrapper elements (IndividualBasic or Address),
-    // not be directly under AuthRep.
-    let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
-        // Find the part after "AuthRep/"
-        let after = path.split("/AuthRep/").last().unwrap_or("");
-        after.contains('/') // has another segment before the field name (= wrapper)
-    });
-    assert!(
-        has_wrapper_paths,
-        "Multi-type section AuthRep should have wrapper paths. Got: {:?}",
-        auth_rep_fields
-    );
-}
 
 #[test]
 fn test_created_form_aem_bind_refs_match_xsd() {
@@ -19299,90 +17712,6 @@ fn test_created_form_aem_bind_refs_match_xsd() {
     }
 }
 
-#[test]
-fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
-    // When merging DE + EN PDFs and generating an XSD, element names
-    // derived from headings and field labels should use the master
-    // language ("en") rather than whichever translation happens to be
-    // first in the map.
-    //
-    // Before the fix, `as_plain_text()` was used, which picks the first
-    // available translation (often "de" due to HashMap ordering), so
-    // headings like "Kunde" appeared instead of "client".
-    use crate::run_exhaustive_to_envelope;
-    use crate::structured;
-    use crate::xsd::{XsdNode, generate_xsd_schema};
-
-    // 1) Merge DE + EN (DE first so it appears first in maps)
-    let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
-        .expect("Failed to process AAAI DE");
-    let en_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_EN.pdf"), "en")
-        .expect("Failed to process AAAI EN");
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
-        .expect("Failed to merge translations");
-
-    // 2) Load XSD config with master_language = "en"
-    let config = helpers::load_ubs_xsd_config().with_master_language("en");
-
-    // 3) Generate XSD schema from merged content
-    let schema = generate_xsd_schema(&merged.content, &config);
-
-    // 4) Collect all element names from the XSD tree
-    fn collect_element_names(node: &XsdNode, out: &mut Vec<String>) {
-        match node {
-            XsdNode::Element { name, content, .. } => {
-                out.push(name.clone());
-                if let Some(child) = content {
-                    collect_element_names(child, out);
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                out.push(ref_name.clone());
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    collect_element_names(child, out);
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        collect_element_names(child, out);
-                    }
-                }
-            }
-        }
-    }
-    let mut names = Vec::new();
-    collect_element_names(&schema.root, &mut names);
-
-    // 5) The heading "Kunde" (DE) / "Client" (EN) should produce "Client",
-    //    not "Kunde", when the master language is "en".
-    assert!(
-        names.contains(&"Client".to_string()),
-        "XSD should contain element 'Client' (English), not 'Kunde' (German). Got: {:?}",
-        names
-    );
-    assert!(
-        !names.contains(&"Kunde".to_string()),
-        "XSD should NOT contain element 'Kunde' (German) when master language is 'en'. Got: {:?}",
-        names
-    );
-
-    // 6) Similarly, "Unterschrift(en)" / "Signature(s)" should produce
-    //    "Signature" (from config pattern) not "UnterschriftEn".
-    assert!(
-        names.contains(&"Signature".to_string()),
-        "XSD should contain element 'Signature' (from config pattern). Got: {:?}",
-        names
-    );
-    assert!(
-        !names.contains(&"UnterschriftEn".to_string()),
-        "XSD should NOT contain element 'UnterschriftEn' (German). Got: {:?}",
-        names
-    );
-}
 
 #[test]
 fn test_xsd_profile_master_language_from_toml_is_applied() {
@@ -19409,119 +17738,7 @@ fn test_xsd_profile_master_language_defaults_to_none() {
     assert_eq!(config.master_language.as_deref(), None);
 }
 
-#[test]
-fn test_xsd_section_name_override_via_pattern() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{SectionMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
 
-    // A section with heading "Step 4" but body content mentioning "signature"
-    // and "client" should be renamed to "AccountHolderSignature" by pattern.
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Step 4"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.sig_name"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Signature of client")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut sections = HashMap::new();
-    sections.insert(
-        "AccountHolderSignature".to_string(),
-        SectionMapping {
-            patterns: vec!["(?:signature|unterschrift).*(?:client|kunde)".to_string()],
-        },
-    );
-
-    let profile = XsdProfile {
-        sections,
-        ..Default::default()
-    };
-    let config = XsdConfig::from_profile(profile);
-
-    let xsd = generate_xsd(&nodes, &config);
-
-    // The section should use the configured name, not PascalCase of "Step 4"
-    assert!(
-        xsd.contains("name=\"AccountHolderSignature\""),
-        "XSD section should use configured name 'AccountHolderSignature'. Got:\n{}",
-        xsd
-    );
-    assert!(
-        !xsd.contains("name=\"Step4\""),
-        "XSD section should NOT use heading-derived name 'Step4'. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_section_name_override_no_match_falls_back() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{SectionMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // A section that does NOT match any pattern should use the default name
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Personal Data"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.name"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Full Name")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut sections = HashMap::new();
-    sections.insert(
-        "AccountHolderSignature".to_string(),
-        SectionMapping {
-            patterns: vec!["(?:signature|unterschrift).*(?:client|kunde)".to_string()],
-        },
-    );
-
-    let profile = XsdProfile {
-        sections,
-        ..Default::default()
-    };
-    let config = XsdConfig::from_profile(profile);
-
-    let xsd = generate_xsd(&nodes, &config);
-
-    // The section should use the default PascalCase name since no pattern matched
-    assert!(
-        xsd.contains("name=\"PersonalData\""),
-        "XSD section should fall back to PascalCase 'PersonalData'. Got:\n{}",
-        xsd
-    );
-}
 
 #[test]
 #[should_panic(expected = "bind_to_xsd=true requires xsd_config to be set")]
@@ -34824,5 +33041,259 @@ mod aem_xsd_fixtures {
                 "{pdf}: duplicate sibling element names in the generated XSD: {dupes:?}"
             );
         }
+    }
+}
+
+
+// ============================================================================
+// AEM → XSD naming and classification rules
+// ============================================================================
+
+/// Unit coverage for the rules that turn one AEM node into one XSD element,
+/// driven off the real `profiles/ubs/xsd/types/` registry rather than a
+/// hand-written table.
+mod ubs_xsd_naming {
+    use super::helpers;
+    use crate::aem::{AemNode, AemOption, OptionAlignment};
+    use crate::xsd::{XsdConfig, XsdSchema};
+    use uuid::Uuid;
+
+    fn config() -> XsdConfig {
+        let mut cfg = helpers::load_ubs_xsd_config();
+        cfg.form_code = Some("TEST".to_string());
+        cfg
+    }
+
+    fn page(title: &str, children: Vec<AemNode>) -> AemNode {
+        AemNode::Panel {
+            uuid: Uuid::nil(),
+            name: "PN_Page".into(),
+            title: title.into(),
+            children,
+            is_page: true,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }
+    }
+
+    fn frag(name: &str, title: &str, frag_ref: &str) -> AemNode {
+        AemNode::Fragment {
+            uuid: Uuid::new_v4(),
+            name: name.into(),
+            title: title.into(),
+            frag_ref: frag_ref.into(),
+            bind_ref: None,
+        }
+    }
+
+    fn textbox(name: &str, label: &str) -> AemNode {
+        AemNode::TextField {
+            uuid: Uuid::new_v4(),
+            name: name.into(),
+            label: label.into(),
+            mandatory: false,
+            visible: true,
+            max_chars: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        }
+    }
+
+    fn radio(name: &str, label: &str, options: &[&str]) -> AemNode {
+        AemNode::RadioButton {
+            uuid: Uuid::new_v4(),
+            name: name.into(),
+            label: label.into(),
+            options: options
+                .iter()
+                .enumerate()
+                .map(|(i, l)| AemOption {
+                    label: (*l).to_string(),
+                    value: (i + 1).to_string(),
+                })
+                .collect(),
+            alignment: OptionAlignment::Vertical,
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            field_id: None,
+            conditions: vec![],
+            bind_ref: None,
+        }
+    }
+
+    fn root(children: Vec<AemNode>) -> AemNode {
+        AemNode::Root {
+            title: "Test".into(),
+            children,
+        }
+    }
+
+    fn schema_for(children: Vec<AemNode>) -> XsdSchema {
+        let fragments = helpers::load_ubs_fragments();
+        crate::xsd::generate_xsd_from_aem(&root(children), &config(), &fragments).schema
+    }
+
+    fn xml_for(children: Vec<AemNode>) -> String {
+        schema_for(children).to_xml()
+    }
+
+    const SIGNATURE: &str =
+        "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1";
+    const BANKING: &str =
+        "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_BankingRelationship1";
+
+    #[test]
+    fn field_label_becomes_the_element_name() {
+        let xml = xml_for(vec![textbox("TXT_x", "Email address")]);
+        assert!(
+            xml.contains(r#"<xs:element name="EmailAddress" type="xs:string" minOccurs="0"/>"#),
+            "got:\n{xml}"
+        );
+    }
+
+    #[test]
+    fn field_type_comes_from_the_component_kind() {
+        let xml = xml_for(vec![AemNode::DatePicker {
+            uuid: Uuid::new_v4(),
+            name: "DATE_x".into(),
+            label: "Date of birth".into(),
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        }]);
+        assert!(xml.contains(r#"type="xs:date""#), "got:\n{xml}");
+    }
+
+    /// A fragment whose type has a global element declaration is referenced,
+    /// never re-declared.
+    #[test]
+    fn fragment_with_a_global_element_is_emitted_as_a_ref() {
+        let xml = xml_for(vec![frag("PN_BR", "", BANKING)]);
+        assert!(
+            xml.contains(r#"<xs:element ref="BankingRelationship""#),
+            "got:\n{xml}"
+        );
+        assert!(
+            xml.contains(r#"schemaLocation="../AFFragments/BankingRelationship.xsd""#),
+            "the include for the referenced type must be emitted. got:\n{xml}"
+        );
+    }
+
+    /// One fragRef, two elements: only the panel title tells them apart.
+    #[test]
+    fn one_fragment_ref_yields_two_names_disambiguated_by_title() {
+        let xml = xml_for(vec![
+            frag("PN_A", "Client", SIGNATURE),
+            frag("PN_B", "Authorized representative", SIGNATURE),
+        ]);
+        assert!(
+            xml.contains(
+                r#"<xs:element name="AccountHolderSignature" type="SignatureType" minOccurs="0"/>"#
+            ),
+            "got:\n{xml}"
+        );
+        assert!(
+            xml.contains(r#"<xs:element name="AuthRepSignature" type="SignatureType""#),
+            "got:\n{xml}"
+        );
+    }
+
+    /// Option-set matching ignores order, case, numeric prefixes and markup.
+    #[test]
+    fn option_set_rule_selects_the_partner_class_ref() {
+        for options in [
+            vec!["Individual", "Company/Entity"],
+            vec!["Company/Entity", "Individual"],
+            vec!["individual", "COMPANY/ENTITY"],
+            vec!["<p>Individual</p>", "<b>Company/Entity</b>"],
+        ] {
+            let xml = xml_for(vec![radio("RB_CPType", "", &options)]);
+            assert!(
+                xml.contains(r#"<xs:element ref="AccountHolderPartnerClass""#),
+                "options {options:?} should match the partner-class rule. got:\n{xml}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_matching_option_set_falls_back_to_a_typed_element() {
+        let xml = xml_for(vec![radio("RB_x", "Delivery", &["Post", "Email"])]);
+        assert!(
+            xml.contains(r#"<xs:element name="Delivery" type="xs:string""#),
+            "got:\n{xml}"
+        );
+    }
+
+    /// A layout panel contributes no level; a titled page panel does, so that
+    /// two sections holding the same field cannot collide.
+    #[test]
+    fn layout_panels_are_transparent_but_titled_pages_group() {
+        let xml = xml_for(vec![page(
+            "Personal Data",
+            vec![textbox("TXT_a", "Last name")],
+        )]);
+        assert!(xml.contains(r#"<xs:element name="PersonalData""#), "got:\n{xml}");
+        assert!(xml.contains(r#"<xs:element name="LastName""#), "got:\n{xml}");
+    }
+
+    /// Repeated sibling names would make the schema invalid and bind two nodes
+    /// to one path, so the second occurrence is suffixed.
+    #[test]
+    fn repeated_sibling_names_are_disambiguated() {
+        let result = crate::xsd::generate_xsd_from_aem(
+            &root(vec![textbox("a", "No"), textbox("b", "No")]),
+            &config(),
+            &[],
+        );
+        let xml = result.schema.to_xml();
+        assert!(xml.contains(r#"name="No""#), "got:\n{xml}");
+        assert!(xml.contains(r#"name="No2""#), "got:\n{xml}");
+
+        let mut paths: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, vec!["/UBSAF_TEST/No", "/UBSAF_TEST/No2"]);
+    }
+
+    /// The generated schema never contains the constructs the UBS format does
+    /// not use — they are not even representable any more.
+    #[test]
+    fn generated_schema_uses_only_the_ubs_vocabulary() {
+        let xml = xml_for(vec![
+            page("Section", vec![textbox("TXT_a", "Street")]),
+            frag("PN_BR", "", BANKING),
+        ]);
+        for forbidden in [
+            "<xs:choice",
+            "<xs:simpleType",
+            "<xs:restriction",
+            "<xs:annotation",
+            "<xs:import",
+            "<xs:enumeration",
+            "<xs:pattern",
+        ] {
+            assert!(!xml.contains(forbidden), "{forbidden} must never be emitted. got:\n{xml}");
+        }
+    }
+
+    /// The always-include entry is emitted first, ahead of anything the walk
+    /// discovers, and regardless of whether a type from it is used.
+    #[test]
+    fn simple_elements_include_is_always_first() {
+        let schema = schema_for(vec![frag("PN_BR", "", BANKING)]);
+        assert_eq!(
+            schema.includes.first().map(String::as_str),
+            Some("../AFSimpleTypeElements/AFSimpleElements.xsd")
+        );
     }
 }

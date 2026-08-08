@@ -281,6 +281,19 @@ fn walk(
                 if let Some(children) = child_nodes(node) {
                     walk(children, &path, &mut sequence, &mut inner_used, st, ctx);
                 }
+
+                // A group whose children all resolved to nothing carries no
+                // data. Emitting it would put an empty `xs:sequence` in the
+                // schema and, if it repeats, bind a node to a path with nothing
+                // under it. Drop it and release its name and binding.
+                if sequence.is_empty() {
+                    if let Some(uuid) = node_uuid(node) {
+                        st.bind_refs.remove(&uuid);
+                    }
+                    used.remove(&name);
+                    continue;
+                }
+
                 out.push(XsdNode::Element {
                     name,
                     type_ref: None,

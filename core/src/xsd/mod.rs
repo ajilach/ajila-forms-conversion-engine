@@ -1,39 +1,49 @@
 //! XSD (XML Schema Definition) Output Module
 //!
-//! Converts structured form nodes into an XSD schema that describes the form's
-//! data model. Headings create nested `xs:complexType` hierarchies, fields
-//! become `xs:element` declarations, conditional sections map to `xs:choice`,
-//! and repeatable sections use `minOccurs`/`maxOccurs`.
+//! Describes a form's data model as an XSD schema. The schema is derived from
+//! the **AEM node tree**, and every node's `bindRef` is assigned during the same
+//! walk, so a form and its schema agree by construction rather than because two
+//! code paths were kept in step.
 //!
 //! # Architecture
 //!
 //! ```text
-//! StructuredNode ──► generate_xsd() ──► XSD String
+//! StructuredNode ──► convert_to_aem() ──► AemNode ──► generate_xsd_from_aem()
+//!                                            │                    │
+//!                                            └── bindRef ◄─────────┘
 //! ```
+//!
+//! [`compute_bind_refs`] still derives *provisional* paths from the structured
+//! tree, but only as an input to fragment matching in the AEM converter; those
+//! paths never reach the emitted XML.
+//!
+//! The generated vocabulary is deliberately narrow — `xs:schema`, `xs:include`,
+//! `xs:element`, `xs:complexType`, `xs:sequence` — because that is what the UBS
+//! toolchain consumes. There is no `xs:choice`, no `xs:simpleType` and no
+//! restriction facet, and [`XsdNode`] cannot express them.
 //!
 //! # Profile configuration
 //!
-//! The module reads a TOML config from `profiles/{name}/xsd/config.toml` with:
-//! - `[elements.<name>]` — synonym mappings for fields → xs:element declarations
-//! - `schemaLocationPrefix`  — prefix prepended to auto-discovered include paths
-//!   (default: `"../"`)
+//! The module reads a TOML config from `profiles/{name}/xsd/config.toml`:
+//! - `[[aemElements]]` — ordered rules for the AEM → XSD walk (see
+//!   [`AemElementRule`]): which nodes to ignore, the element names a title
+//!   cannot yield, and occurrence overrides
+//! - `[defaultTypes]` — XSD type per AEM component kind
+//! - `[elements.<name>]` — synonym mappings used by [`compute_bind_refs`]
+//! - `rootElementName`, `maxOccursValue`, `alwaysInclude`, `schemaLocationPrefix`
 //!
 //! `xs:include` directives are generated automatically by indexing all `*.xsd`
-//! files in `profiles/{name}/xsd/types/`. An include is emitted only when a
-//! type declared in that file is actually referenced by the generated schema.
+//! files in `profiles/{name}/xsd/types/`. `alwaysInclude` entries come first;
+//! the rest are emitted in first-appearance order, and only for a type the
+//! schema actually references.
 //!
-//! Complex types are auto-matched: the `xs:complexType` definitions from the
-//! `types/` directory are parsed (including `xs:extension` inheritance and
-//! `xs:element ref` resolution) to build a registry of known types with their
-//! child elements (name + type pairs). During generation, a heading's resolved
-//! children are compared against this registry — if all children form a subset
-//! of a registered type's elements, the best-matching type (most element
-//! overlap) is used and the corresponding file is included via `xs:include`.
+//! Those same files also decide `ref=` versus `name=`/`type=`: an element name
+//! declared globally under `types/` is referenced, never re-declared.
 
 mod converter;
 pub mod from_aem;
 
-pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd, generate_xsd_schema};
+pub use converter::{BindRefMaps, compute_bind_refs};
 pub use from_aem::{
     AemXsdResult, apply_bind_refs, generate_xsd_from_aem, generate_xsd_string_from_aem,
 };
@@ -44,22 +54,9 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::util::escape_html as xml_escape;
-
 // ============================================================================
 // XSD node types (intermediate representation)
 // ============================================================================
-
-/// An XSD restriction facet.
-#[derive(Debug, Clone, PartialEq)]
-pub enum XsdRestriction {
-    Pattern(String),
-    MinLength(usize),
-    MaxLength(usize),
-    MinInclusive(String),
-    MaxInclusive(String),
-    Enumeration(String),
-}
 
 /// An XSD node in the intermediate schema tree.
 #[derive(Debug, Clone, PartialEq)]
@@ -83,13 +80,6 @@ pub enum XsdNode {
         name: Option<String>,
         sequence: Vec<XsdNode>,
     },
-    /// `<xs:simpleType>` with restriction facets
-    SimpleType {
-        base: String,
-        restrictions: Vec<XsdRestriction>,
-    },
-    /// `<xs:choice>` — each option is one `<xs:sequence>` branch
-    Choice { options: Vec<Vec<XsdNode>> },
 }
 
 /// A complete XSD schema with includes and a root element.
@@ -179,60 +169,6 @@ impl XsdNode {
                 }
                 out.push_str(&format!("{}  </xs:sequence>\n", pad));
                 out.push_str(&format!("{}</xs:complexType>\n", pad));
-            }
-            XsdNode::SimpleType { base, restrictions } => {
-                out.push_str(&format!("{}<xs:simpleType>\n", pad));
-                out.push_str(&format!("{}  <xs:restriction base=\"{}\">\n", pad, base));
-                for r in restrictions {
-                    r.write_xml(out, indent + 4);
-                }
-                out.push_str(&format!("{}  </xs:restriction>\n", pad));
-                out.push_str(&format!("{}</xs:simpleType>\n", pad));
-            }
-            XsdNode::Choice { options } => {
-                out.push_str(&format!("{}<xs:choice>\n", pad));
-                for option in options {
-                    out.push_str(&format!("{}  <xs:sequence>\n", pad));
-                    for child in option {
-                        child.write_xml(out, indent + 4);
-                    }
-                    out.push_str(&format!("{}  </xs:sequence>\n", pad));
-                }
-                out.push_str(&format!("{}</xs:choice>\n", pad));
-            }
-        }
-    }
-}
-
-impl XsdRestriction {
-    fn write_xml(&self, out: &mut String, indent: usize) {
-        let pad = " ".repeat(indent);
-        match self {
-            XsdRestriction::Pattern(v) => {
-                out.push_str(&format!(
-                    "{}<xs:pattern value=\"{}\"/>\n",
-                    pad,
-                    xml_escape(v)
-                ));
-            }
-            XsdRestriction::MinLength(v) => {
-                out.push_str(&format!("{}<xs:minLength value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::MaxLength(v) => {
-                out.push_str(&format!("{}<xs:maxLength value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::MinInclusive(v) => {
-                out.push_str(&format!("{}<xs:minInclusive value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::MaxInclusive(v) => {
-                out.push_str(&format!("{}<xs:maxInclusive value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::Enumeration(v) => {
-                out.push_str(&format!(
-                    "{}<xs:enumeration value=\"{}\"/>\n",
-                    pad,
-                    xml_escape(v)
-                ));
             }
         }
     }

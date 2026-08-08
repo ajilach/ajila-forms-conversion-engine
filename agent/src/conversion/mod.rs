@@ -997,6 +997,22 @@ impl ConversionAgent {
         Ok(tree.lower(&cfg.master_language, &cfg.languages))
     }
 
+    /// Lower the working AEM tree without needing a fully-resolved profile.
+    ///
+    /// Rendering the profile's templates needs variables that only exist once a
+    /// source document has been ingested. Read-only derivations such as
+    /// `generate_xsd` should still work on an authored tree before that, so fall
+    /// back to the run's own language when the config cannot be built.
+    fn lower_aem_translated_lenient(&mut self) -> Result<(AemNode, I18nDict), String> {
+        if let Ok(cfg) = self.config() {
+            let tree = self.aem_tree().ok_or(NO_AEM_TREE)?;
+            return Ok(tree.lower(&cfg.master_language, &cfg.languages));
+        }
+        let master = self.context().language().to_string();
+        let tree = self.aem_tree().ok_or(NO_AEM_TREE)?;
+        Ok(tree.lower(&master, std::slice::from_ref(&master)))
+    }
+
     // ── Tool execution (async: some tools hit the network) ──────────────────────
 
     /// Why `name` cannot run under this run's output target, if it cannot.

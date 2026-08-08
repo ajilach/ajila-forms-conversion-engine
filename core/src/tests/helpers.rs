@@ -169,14 +169,6 @@ pub fn xsd_element_paths_in_order(schema: &crate::xsd::XsdSchema) -> Vec<String>
                     go(child, parent, out);
                 }
             }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        go(child, parent, out);
-                    }
-                }
-            }
         }
     }
 

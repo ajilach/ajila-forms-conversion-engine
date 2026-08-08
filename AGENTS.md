@@ -20,6 +20,7 @@
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.
 - Tests should never work with the ouput files. Instead they should analyze the intermediate structures (StrucuredNode, FlattenedNode, Document, ...) directly.
 - AEM output should be moved as much as possible to the templating engine.
+- The XSD is generated from the **AemNode** tree (`core/src/xsd/from_aem.rs`), and each node's `bindRef` is assigned during that same walk, so a form's bindRefs are by construction exact element paths in its schema. Do not add a second XSD source. Customer-specific element names, ignore rules and occurrence overrides belong in `profiles/<name>/xsd/config.toml` under `[[aemElements]]`, never in Rust.
 
 ## Layout
 

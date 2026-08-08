@@ -118,7 +118,10 @@ pub fn xsd_schema_for(
     if let Some(code) = form_code {
         config.form_code = Some(code.to_string());
     }
-    Some(blueprint::to_xsd(&envelope.content, &config))
+    // Generated off the AEM tree, so the downloadable schema is the same one the
+    // package bundles and matches the form's bindRefs.
+    let aem_config = blueprint::load_aem_config(profile_name, &envelope.context).ok()?;
+    Some(blueprint::to_xsd(&envelope.content, &aem_config, &config))
 }
 
 /// Generate the Redacto PostgreSQL dump for `envelope`, if the profile has a
