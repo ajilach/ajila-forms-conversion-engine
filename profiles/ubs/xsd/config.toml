@@ -33,6 +33,13 @@ fragmentBindRefPrefix = "UBSAF_{{ form_code }}"
 
 masterLanguage = "en"
 
+# `maxOccursValue` is emitted for every repeating element in the AEM -> XSD walk,
+# regardless of the AEM node's real `maxOccur`, matching UBS's own schemas.
+maxOccursValue = 50
+
+# The simple-element library is always included, referenced or not.
+alwaysInclude = ["../AFSimpleTypeElements/AFSimpleElements.xsd"]
+
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---
@@ -354,3 +361,133 @@ patterns = [
 patterns = [
     "signature.*client.*poa holder|signature.*client.*PoA|unterschrift.*kunde.*vollmacht",
 ]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AEM → XSD walk
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# The schema is derived from the AEM node tree, and each node's `bindRef` is
+# assigned during the same walk, so the two agree by construction.
+#
+# Two rules below need no configuration and do most of the work:
+#   • A plain layout panel adds no XSD level — its children bubble up. Only a
+#     panel that repeats or that came from a fragment produces an element.
+#   • `ref=` versus `name=`/`type=` is decided by looking the resolved element
+#     name up among the global elements declared under `types/`.
+#
+# `maxOccursValue` is emitted for every repeating element regardless of the AEM
+# node's real `maxOccur`, which is what UBS's own schemas do.
+
+# Default XSD type per AEM component kind, used when neither an [elements]
+# synonym nor an [[aemElements]] rule supplies one.
+[defaultTypes]
+textbox = "xs:string"
+radiobutton = "xs:string"
+checkbox = "xs:string"
+dropdownlist = "xs:string"
+numericbox = "xs:decimal"
+datepicker = "xs:date"
+
+# ─── Rules, in order — first match wins ───────────────────────────────────────
+#
+# Match keys (all optional, ANDed): kind, fragRef (substring), name / names,
+# title / titles (case-insensitive), options (set equality ignoring order, case,
+# numeric prefixes and markup), visible.
+# Actions: ignore, element, type, occurs ("none" | "optional" | "optionalRepeating").
+#
+# `element` is used verbatim, so an already-camel-cased name survives.
+
+# --- Nodes that carry no form data -------------------------------------------
+
+# Form metadata and the internal-bank-use block are presentation only.
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_global_fragmentlib/formmetadata"
+ignore = true
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_global_InternalBankUse"
+ignore = true
+
+# Hidden bookkeeping text boxes: counters, the form code, the DoR header slots.
+[[aemElements]]
+kind = "textbox"
+visible = false
+ignore = true
+
+# --- Fragments ---------------------------------------------------------------
+
+# BankingRelationship is declared globally, so it is referenced, and it is the
+# one element UBS emits with no occurrence attributes at all.
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_BankingRelationship1"
+element = "BankingRelationship"
+occurs = "none"
+
+# Two panels share affrg_SignatureGeneric1 and only the title tells them apart.
+# Neither name is a global element in Signature.xsd, so both are emitted as
+# name=/type=. The titled rules must precede the untitled fallback.
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_SignatureGeneric1"
+titles = ["Client", "Kunde", "Cliente", "Titular"]
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_SignatureGeneric1"
+titles = [
+    "Authorized representative",
+    "Authorised representative",
+    "Bevollmächtigter",
+    "Rappresentante autorizzato",
+]
+element = "AuthRepSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_SignatureGeneric1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+# --- Partner class -----------------------------------------------------------
+
+# The Individual / Company-Entity radio selects which partner shape follows.
+# AccountHolderPartnerClass is global in AFSimpleElements, hence `ref=`.
+[[aemElements]]
+kind = "radiobutton"
+options = ["Individual", "Company/Entity"]
+element = "AccountHolderPartnerClass"
+
+# --- Repeating panels --------------------------------------------------------
+
+[[aemElements]]
+kind = "repeatable"
+titles = ["Email address instructions"]
+element = "EmailAddressInstruction"
+
+[[aemElements]]
+kind = "repeatable"
+titles = ["Domain name of the Client"]
+element = "DomainInstruction"
+
+# --- Field names that the label does not yield -------------------------------
+
+[[aemElements]]
+kind = "textbox"
+titles = ["Function in the company"]
+element = "Function"
+
+[[aemElements]]
+kind = "textbox"
+titles = ["Domain"]
+element = "DomainName"
+
+[[aemElements]]
+kind = "checkbox"
+titles = ["Communication Preferences"]
+element = "ExcludeAndExchangeInfo"

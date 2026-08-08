@@ -31,8 +31,12 @@
 //! overlap) is used and the corresponding file is included via `xs:include`.
 
 mod converter;
+pub mod from_aem;
 
 pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd, generate_xsd_schema};
+pub use from_aem::{
+    AemXsdResult, apply_bind_refs, generate_xsd_from_aem, generate_xsd_string_from_aem,
+};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -234,6 +238,69 @@ impl XsdRestriction {
     }
 }
 
+/// The occurrence attributes an element carries.
+///
+/// `None`/`None` means no attributes at all — which is different from
+/// `minOccurs="1"`, even though the two validate identically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Occurs {
+    pub min: Option<u32>,
+    pub max: Option<Option<u32>>,
+}
+
+impl Occurs {
+    /// No occurrence attributes: the element is required and single.
+    pub fn required() -> Self {
+        Self {
+            min: None,
+            max: None,
+        }
+    }
+
+    /// `minOccurs="0"`.
+    pub fn optional() -> Self {
+        Self {
+            min: Some(0),
+            max: None,
+        }
+    }
+
+    /// `minOccurs="0" maxOccurs="{max}"`.
+    pub fn optional_repeating(max: u32) -> Self {
+        Self {
+            min: Some(0),
+            max: Some(Some(max)),
+        }
+    }
+
+    /// Whether this element may occur more than once.
+    pub fn repeats(&self) -> bool {
+        matches!(self.max, Some(None)) || matches!(self.max, Some(Some(n)) if n > 1)
+    }
+}
+
+/// How an [`AemElementRule`] spells its occurrence override.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OccursSpec {
+    /// No `minOccurs`/`maxOccurs` at all.
+    None,
+    /// `minOccurs="0"`.
+    Optional,
+    /// `minOccurs="0"` plus the profile's `maxOccursValue`.
+    OptionalRepeating,
+}
+
+impl OccursSpec {
+    fn to_occurs(&self, max_occurs_value: u32) -> Occurs {
+        match self {
+            OccursSpec::None => Occurs::required(),
+            OccursSpec::Optional => Occurs::optional(),
+            OccursSpec::OptionalRepeating => Occurs::optional_repeating(max_occurs_value),
+        }
+    }
+}
+
 /// Build `minOccurs`/`maxOccurs` attribute string for an element.
 fn build_occurrence_attrs(min_occurs: Option<u32>, max_occurs: Option<Option<u32>>) -> String {
     let mut attrs = String::new();
@@ -323,6 +390,223 @@ pub struct XsdProfile {
     /// use the form-specific root unless overridden).
     #[serde(default)]
     pub fragment_bind_ref_prefix: Option<String>,
+
+    /// Ordered rules driving [`from_aem`] generation. First match wins.
+    ///
+    /// Written in TOML as repeated `[[aemElements]]` tables, which — unlike the
+    /// map-backed `[elements]` — preserve document order, and order is
+    /// significant here: a rule matching `fragRef` plus `title` must come before
+    /// the untitled fallback for the same `fragRef`.
+    #[serde(default, rename = "aemElements")]
+    pub aem_elements: Vec<AemElementRule>,
+
+    /// `maxOccurs` emitted for any repeating element.
+    ///
+    /// UBS uses a flat 50 regardless of the AEM node's real `maxOccur`.
+    #[serde(default = "default_max_occurs_value")]
+    pub max_occurs_value: u32,
+
+    /// Include paths emitted first, before anything the walk discovers.
+    ///
+    /// UBS always includes the simple-element library, whether or not a type
+    /// from it is referenced.
+    #[serde(default)]
+    pub always_include: Vec<String>,
+
+    /// Default XSD type per AEM component kind, e.g. `numericbox = "xs:decimal"`.
+    ///
+    /// Used for a data leaf that no `[elements]` synonym and no `[[aemElements]]`
+    /// rule types. Kinds are the ones listed on [`AemElementRule::kind`].
+    #[serde(default)]
+    pub default_types: HashMap<String, String>,
+}
+
+fn default_max_occurs_value() -> u32 {
+    50
+}
+
+/// One ordered rule for the AEM → XSD walk.
+///
+/// Every match key is optional and they are ANDed. A rule with no match keys
+/// matches every node, which is only ever useful as a final fallback.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AemElementRule {
+    // --- match keys ---
+    /// Node kind: `panel`, `repeatable`, `fragment`, `textbox`, `numericbox`,
+    /// `datepicker`, `dropdownlist`, `checkbox`, `radiobutton`, `custom`, or
+    /// `field` for any data leaf.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Substring match against the node's `fragRef`.
+    #[serde(default)]
+    pub frag_ref: Option<String>,
+    /// Exact match against the node's AEM `name`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Exact match (case-insensitive, trimmed) against `jcr:title` / label.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Any of these names matches, as an alternative to a single `name`.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Any of these titles matches, as an alternative to a single `title`.
+    #[serde(default)]
+    pub titles: Vec<String>,
+    /// Option-set equality, ignoring order, case and markup.
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// Match only nodes with this visibility.
+    #[serde(default)]
+    pub visible: Option<bool>,
+
+    // --- actions ---
+    /// Drop the node (and, for a container, its whole subtree).
+    #[serde(default)]
+    pub ignore: bool,
+    /// The XSD element name. Used verbatim — `to_pascal_case` would mangle an
+    /// already-camel-cased name such as `IsNonResidentOfTaxHaven`.
+    #[serde(default)]
+    pub element: Option<String>,
+    /// Force `name=`/`type=` with this type rather than resolving `ref=`.
+    #[serde(default, rename = "type")]
+    pub type_ref: Option<String>,
+    /// Override the occurrence attributes.
+    #[serde(default)]
+    pub occurs: Option<OccursSpec>,
+}
+
+/// The node facts an [`AemElementRule`] is matched against.
+pub struct AemRuleSubject<'a> {
+    pub kind: &'a str,
+    pub name: &'a str,
+    pub title: &'a str,
+    pub frag_ref: Option<&'a str>,
+    pub options: Option<Vec<&'a str>>,
+    pub visible: bool,
+}
+
+/// Normalise an option label for set comparison: strip a leading `N=` value
+/// prefix and any HTML markup, collapse whitespace, lower-case.
+///
+/// Mirrors the UBS tool's `normalizeOptions`, so an option set written in the
+/// config matches however AEM happens to have serialised it.
+pub fn normalize_option_label(label: &str) -> String {
+    let without_prefix = match label.find('=') {
+        Some(idx) if label[..idx].chars().all(|c| c.is_ascii_digit()) && idx > 0 => {
+            &label[idx + 1..]
+        }
+        _ => label,
+    };
+
+    let mut out = String::with_capacity(without_prefix.len());
+    let mut in_tag = false;
+    for ch in without_prefix.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if in_tag => {}
+            _ => out.push(ch),
+        }
+    }
+
+    out.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+impl XsdProfile {
+    /// The first `[[aemElements]]` rule matching `subject`, if any.
+    pub fn match_aem_rule(&self, subject: &AemRuleSubject<'_>) -> Option<&AemElementRule> {
+        self.aem_elements.iter().find(|rule| rule.matches(subject))
+    }
+
+    /// The default XSD type for an AEM component kind.
+    pub fn default_type_for(&self, kind: &str) -> String {
+        self.default_types
+            .get(kind)
+            .cloned()
+            .unwrap_or_else(|| "xs:string".to_string())
+    }
+}
+
+impl AemElementRule {
+    fn matches(&self, subject: &AemRuleSubject<'_>) -> bool {
+        if let Some(kind) = &self.kind {
+            let ok = kind == subject.kind
+                || (kind == "field"
+                    && matches!(
+                        subject.kind,
+                        "textbox"
+                            | "numericbox"
+                            | "datepicker"
+                            | "dropdownlist"
+                            | "checkbox"
+                            | "radiobutton"
+                            | "custom"
+                    ));
+            if !ok {
+                return false;
+            }
+        }
+
+        if let Some(needle) = &self.frag_ref {
+            match subject.frag_ref {
+                Some(fr) if fr.contains(needle.as_str()) => {}
+                _ => return false,
+            }
+        }
+
+        if !self.name_matches(subject.name) {
+            return false;
+        }
+        if !self.title_matches(subject.title) {
+            return false;
+        }
+
+        if !self.options.is_empty() {
+            let Some(actual) = &subject.options else {
+                return false;
+            };
+            let expected: HashSet<String> = self
+                .options
+                .iter()
+                .map(|o| normalize_option_label(o))
+                .collect();
+            let found: HashSet<String> = actual.iter().map(|o| normalize_option_label(o)).collect();
+            if expected != found {
+                return false;
+            }
+        }
+
+        if let Some(want) = self.visible {
+            if want != subject.visible {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn name_matches(&self, actual: &str) -> bool {
+        match (&self.name, self.names.is_empty()) {
+            (None, true) => true,
+            (Some(n), true) => n == actual,
+            (None, false) => self.names.iter().any(|n| n == actual),
+            (Some(n), false) => n == actual || self.names.iter().any(|x| x == actual),
+        }
+    }
+
+    fn title_matches(&self, actual: &str) -> bool {
+        let eq = |want: &String| want.trim().eq_ignore_ascii_case(actual.trim());
+        match (&self.title, self.titles.is_empty()) {
+            (None, true) => true,
+            (Some(t), true) => eq(t),
+            (None, false) => self.titles.iter().any(eq),
+            (Some(t), false) => eq(t) || self.titles.iter().any(eq),
+        }
+    }
 }
 
 impl Default for XsdProfile {
@@ -334,6 +618,10 @@ impl Default for XsdProfile {
             master_language: None,
             root_element_name: default_root_element_name(),
             fragment_bind_ref_prefix: None,
+            aem_elements: Vec::new(),
+            max_occurs_value: default_max_occurs_value(),
+            always_include: Vec::new(),
+            default_types: HashMap::new(),
         }
     }
 }

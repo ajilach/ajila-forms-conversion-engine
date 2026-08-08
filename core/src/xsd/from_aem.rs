@@ -1,0 +1,588 @@
+//! XSD generation from an AEM node tree.
+//!
+//! The schema and the `bindRef` of every node are produced by **one** walk, so
+//! they cannot disagree: an element is emitted and its bind path recorded at the
+//! same moment. That is the whole point of deriving the schema from `AemNode`
+//! rather than from the structured tree the AEM tree was built from.
+//!
+//! # Shape rules
+//!
+//! Two rules do most of the work and need no configuration:
+//!
+//! 1. **Panels are transparent.** A plain layout panel contributes no XSD level;
+//!    its children bubble up to the nearest enclosing element. Only a panel that
+//!    repeats or that came from a fragment produces one. This is what collapses
+//!    a deeply nested AEM layout into a flat schema.
+//! 2. **`ref=` versus `name=`/`type=` is a lookup, not a convention.** If the
+//!    resolved element name is declared as a global element in the profile's
+//!    type library, `<xs:element ref="…"/>` is emitted; otherwise
+//!    `<xs:element name="…" type="…"/>`.
+//!
+//! Everything else — which nodes to ignore, the element names that cannot be
+//! derived from a title, and the occurrence values — comes from
+//! `profiles/{name}/xsd/config.toml`. See [`AemElementRule`].
+
+use std::collections::{HashMap, HashSet};
+
+use uuid::Uuid;
+
+use crate::aem::{AemNode, ParsedFragment};
+
+use super::{
+    AemElementRule, AemRuleSubject, Occurs, XsdConfig, XsdNode, XsdSchema, to_xsd_element_name,
+};
+
+/// The schema derived from an AEM tree, plus the `bindRef` each node earned.
+pub struct AemXsdResult {
+    /// The generated schema.
+    pub schema: XsdSchema,
+    /// Node uuid → absolute bind path (e.g. `/UBSAF_ABFA/EmailAddressInstruction`).
+    /// Only nodes that own an XSD element appear.
+    pub bind_refs: HashMap<Uuid, String>,
+}
+
+/// Derive an [`XsdSchema`] from a final AEM tree and record every `bindRef`.
+///
+/// `fragments` is the profile's parsed fragment library; it maps a `fragRef`
+/// onto the XSD type the fragment binds to (`fragmentModelRoot`).
+pub fn generate_xsd_from_aem(
+    root: &AemNode,
+    config: &XsdConfig,
+    fragments: &[ParsedFragment],
+) -> AemXsdResult {
+    let frag_types: HashMap<&str, &str> = fragments
+        .iter()
+        .map(|f| (f.frag_ref.as_str(), f.xsd_type_name.as_str()))
+        .collect();
+
+    let root_name = config.root_element_name();
+    let root_path = format!("/{root_name}");
+
+    let mut state = BuildState {
+        includes: Vec::new(),
+        seen_includes: HashSet::new(),
+        bind_refs: HashMap::new(),
+    };
+    // Emitted first and unconditionally, ahead of anything the walk discovers.
+    for path in &config.profile.always_include {
+        state.note_include(path);
+    }
+
+    let children = match root {
+        AemNode::Root { children, .. } => children.as_slice(),
+        single => std::slice::from_ref(single),
+    };
+
+    let mut body = Vec::new();
+    walk(
+        children,
+        &root_path,
+        &mut body,
+        &mut state,
+        &Ctx {
+            config,
+            frag_types: &frag_types,
+        },
+    );
+
+    let schema = XsdSchema {
+        includes: state.includes,
+        root: XsdNode::Element {
+            name: root_name,
+            type_ref: None,
+            min_occurs: None,
+            max_occurs: None,
+            content: Some(Box::new(XsdNode::ComplexType {
+                name: None,
+                sequence: body,
+            })),
+        },
+    };
+
+    AemXsdResult {
+        schema,
+        bind_refs: state.bind_refs,
+    }
+}
+
+/// Convenience wrapper returning the serialised schema.
+pub fn generate_xsd_string_from_aem(
+    root: &AemNode,
+    config: &XsdConfig,
+    fragments: &[ParsedFragment],
+) -> String {
+    generate_xsd_from_aem(root, config, fragments)
+        .schema
+        .to_xml()
+}
+
+/// Write `refs` into the tree by uuid, clearing `bind_ref` on every node absent
+/// from the map. Idempotent.
+pub fn apply_bind_refs(root: &mut AemNode, refs: &HashMap<Uuid, String>) {
+    visit_bind_ref_slots(root, &mut |uuid, slot| {
+        *slot = refs.get(&uuid).cloned();
+    });
+}
+
+/// Call `f` with the uuid and `bind_ref` slot of every node that has one.
+fn visit_bind_ref_slots(node: &mut AemNode, f: &mut impl FnMut(Uuid, &mut Option<String>)) {
+    macro_rules! slot {
+        ($uuid:expr, $bind_ref:expr) => {{
+            let uuid = *$uuid;
+            f(uuid, $bind_ref);
+        }};
+    }
+
+    match node {
+        AemNode::Root { children, .. } => {
+            for child in children {
+                visit_bind_ref_slots(child, f);
+            }
+        }
+        AemNode::Panel {
+            uuid,
+            bind_ref,
+            children,
+            ..
+        }
+        | AemNode::Repeatable {
+            uuid,
+            bind_ref,
+            children,
+            ..
+        } => {
+            slot!(uuid, bind_ref);
+            for child in children {
+                visit_bind_ref_slots(child, f);
+            }
+        }
+        AemNode::TextField { uuid, bind_ref, .. }
+        | AemNode::NumberField { uuid, bind_ref, .. }
+        | AemNode::DatePicker { uuid, bind_ref, .. }
+        | AemNode::Dropdown { uuid, bind_ref, .. }
+        | AemNode::Checkbox { uuid, bind_ref, .. }
+        | AemNode::RadioButton { uuid, bind_ref, .. }
+        | AemNode::Fragment { uuid, bind_ref, .. }
+        | AemNode::Custom { uuid, bind_ref, .. } => slot!(uuid, bind_ref),
+        AemNode::TextDraw { .. }
+        | AemNode::TitleDraw { .. }
+        | AemNode::Preface { .. }
+        | AemNode::Appendix { .. }
+        | AemNode::FootnotePlaceholder { .. } => {}
+    }
+}
+
+// ============================================================================
+// Walk
+// ============================================================================
+
+struct Ctx<'a> {
+    config: &'a XsdConfig,
+    /// `fragRef` → the XSD type it binds to (`fragmentModelRoot`).
+    frag_types: &'a HashMap<&'a str, &'a str>,
+}
+
+struct BuildState {
+    /// Include paths in first-appearance order.
+    includes: Vec<String>,
+    seen_includes: HashSet<String>,
+    bind_refs: HashMap<Uuid, String>,
+}
+
+impl BuildState {
+    fn note_include(&mut self, path: &str) {
+        if self.seen_includes.insert(path.to_string()) {
+            self.includes.push(path.to_string());
+        }
+    }
+}
+
+/// What a node contributes to the schema.
+enum Emit {
+    /// Contributes nothing, not even through its children.
+    Skip,
+    /// Contributes no element of its own; children bubble up.
+    Transparent,
+    /// `<xs:element ref="…"/>` — a global element in the type library.
+    Ref { name: String, occurs: Occurs },
+    /// `<xs:element name="…" type="…"/>` — a typed leaf.
+    Leaf {
+        name: String,
+        type_ref: String,
+        occurs: Occurs,
+    },
+    /// `<xs:element name="…"><xs:complexType><xs:sequence>` around its children.
+    Group { name: String, occurs: Occurs },
+}
+
+fn walk(
+    nodes: &[AemNode],
+    parent_path: &str,
+    out: &mut Vec<XsdNode>,
+    st: &mut BuildState,
+    ctx: &Ctx,
+) {
+    for node in nodes {
+        match classify(node, ctx) {
+            Emit::Skip => {}
+            Emit::Transparent => {
+                if let Some(children) = child_nodes(node) {
+                    walk(children, parent_path, out, st, ctx);
+                }
+            }
+            Emit::Ref { name, occurs } => {
+                bind(node, parent_path, &name, st);
+                note_include_for(&name, st, ctx);
+                out.push(XsdNode::Ref {
+                    ref_name: name,
+                    min_occurs: occurs.min,
+                    max_occurs: occurs.max,
+                });
+            }
+            Emit::Leaf {
+                name,
+                type_ref,
+                occurs,
+            } => {
+                bind(node, parent_path, &name, st);
+                note_include_for(&type_ref, st, ctx);
+                out.push(XsdNode::Element {
+                    name,
+                    type_ref: Some(type_ref),
+                    min_occurs: occurs.min,
+                    max_occurs: occurs.max,
+                    content: None,
+                });
+            }
+            Emit::Group { name, occurs } => {
+                let path = format!("{parent_path}/{name}");
+                // A grouping element is bound only when it repeats — a
+                // non-repeating group is a pure schema convenience with no AEM
+                // node to attach data to.
+                if occurs.repeats() {
+                    if let Some(uuid) = node_uuid(node) {
+                        st.bind_refs.insert(uuid, path.clone());
+                    }
+                }
+                let mut sequence = Vec::new();
+                if let Some(children) = child_nodes(node) {
+                    walk(children, &path, &mut sequence, st, ctx);
+                }
+                out.push(XsdNode::Element {
+                    name,
+                    type_ref: None,
+                    min_occurs: occurs.min,
+                    max_occurs: occurs.max,
+                    content: Some(Box::new(XsdNode::ComplexType {
+                        name: None,
+                        sequence,
+                    })),
+                });
+            }
+        }
+    }
+}
+
+fn bind(node: &AemNode, parent_path: &str, name: &str, st: &mut BuildState) {
+    if let Some(uuid) = node_uuid(node) {
+        st.bind_refs.insert(uuid, format!("{parent_path}/{name}"));
+    }
+}
+
+/// Record the `xs:include` that declares `name`, if the type library has one.
+fn note_include_for(name: &str, st: &mut BuildState, ctx: &Ctx) {
+    if name.starts_with("xs:") {
+        return;
+    }
+    if let Some(path) = ctx.config.type_to_file.get(name) {
+        st.note_include(path);
+    }
+}
+
+fn node_uuid(node: &AemNode) -> Option<Uuid> {
+    match node {
+        AemNode::Root { .. } => None,
+        AemNode::Panel { uuid, .. }
+        | AemNode::Repeatable { uuid, .. }
+        | AemNode::TextField { uuid, .. }
+        | AemNode::NumberField { uuid, .. }
+        | AemNode::DatePicker { uuid, .. }
+        | AemNode::Dropdown { uuid, .. }
+        | AemNode::Checkbox { uuid, .. }
+        | AemNode::RadioButton { uuid, .. }
+        | AemNode::Fragment { uuid, .. }
+        | AemNode::Custom { uuid, .. }
+        | AemNode::TextDraw { uuid, .. }
+        | AemNode::TitleDraw { uuid, .. }
+        | AemNode::Preface { uuid, .. }
+        | AemNode::Appendix { uuid, .. }
+        | AemNode::FootnotePlaceholder { uuid, .. } => Some(*uuid),
+    }
+}
+
+fn child_nodes(node: &AemNode) -> Option<&[AemNode]> {
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => Some(children),
+        _ => None,
+    }
+}
+
+// ============================================================================
+// Classification
+// ============================================================================
+
+/// Node kinds an [`AemElementRule`] can match on.
+fn node_kind(node: &AemNode) -> &'static str {
+    // A panel or repeatable whose fragment content was inlined is still a
+    // fragment as far as the schema is concerned — it contributes one element
+    // of the fragment's type, not a group around its inlined children.
+    if node_frag_ref(node).is_some() {
+        return "fragment";
+    }
+    match node {
+        AemNode::Root { .. } => "root",
+        AemNode::Panel { .. } => "panel",
+        AemNode::Repeatable { .. } => "repeatable",
+        AemNode::Fragment { .. } => "fragment",
+        AemNode::TextField { .. } => "textbox",
+        AemNode::NumberField { .. } => "numericbox",
+        AemNode::DatePicker { .. } => "datepicker",
+        AemNode::Dropdown { .. } => "dropdownlist",
+        AemNode::Checkbox { .. } => "checkbox",
+        AemNode::RadioButton { .. } => "radiobutton",
+        AemNode::Custom { .. } => "custom",
+        AemNode::TextDraw { .. } => "textdraw",
+        AemNode::TitleDraw { .. } => "titledraw",
+        AemNode::Preface { .. } => "preface",
+        AemNode::Appendix { .. } => "appendix",
+        AemNode::FootnotePlaceholder { .. } => "footnoteplaceholder",
+    }
+}
+
+/// The node's AEM `name` attribute, if it has one.
+fn node_name(node: &AemNode) -> &str {
+    match node {
+        AemNode::Root { .. } => "",
+        AemNode::Panel { name, .. }
+        | AemNode::Repeatable { name, .. }
+        | AemNode::TextField { name, .. }
+        | AemNode::NumberField { name, .. }
+        | AemNode::DatePicker { name, .. }
+        | AemNode::Dropdown { name, .. }
+        | AemNode::Checkbox { name, .. }
+        | AemNode::RadioButton { name, .. }
+        | AemNode::Fragment { name, .. }
+        | AemNode::Custom { name, .. }
+        | AemNode::TextDraw { name, .. }
+        | AemNode::TitleDraw { name, .. }
+        | AemNode::Preface { name, .. }
+        | AemNode::Appendix { name, .. }
+        | AemNode::FootnotePlaceholder { name, .. } => name,
+    }
+}
+
+/// The node's user-visible `jcr:title` / label.
+fn node_title(node: &AemNode) -> &str {
+    match node {
+        AemNode::Root { title, .. }
+        | AemNode::Panel { title, .. }
+        | AemNode::Repeatable { title, .. }
+        | AemNode::Fragment { title, .. } => title,
+        AemNode::TextField { label, .. }
+        | AemNode::NumberField { label, .. }
+        | AemNode::DatePicker { label, .. }
+        | AemNode::Dropdown { label, .. }
+        | AemNode::Checkbox { label, .. }
+        | AemNode::RadioButton { label, .. }
+        | AemNode::Custom { label, .. } => label,
+        _ => "",
+    }
+}
+
+/// Whether the node is visible. Invisible *fields* carry no data worth binding;
+/// invisible *panels* routinely wrap conditional content that does.
+fn node_visible(node: &AemNode) -> bool {
+    match node {
+        AemNode::Panel { visible, .. }
+        | AemNode::TextField { visible, .. }
+        | AemNode::NumberField { visible, .. }
+        | AemNode::DatePicker { visible, .. }
+        | AemNode::Dropdown { visible, .. }
+        | AemNode::Checkbox { visible, .. }
+        | AemNode::RadioButton { visible, .. }
+        | AemNode::Custom { visible, .. } => *visible,
+        _ => true,
+    }
+}
+
+/// Option labels, for rules that match on an option set.
+fn node_options(node: &AemNode) -> Option<Vec<&str>> {
+    match node {
+        AemNode::Dropdown { options, .. }
+        | AemNode::Checkbox { options, .. }
+        | AemNode::RadioButton { options, .. }
+        | AemNode::Custom { options, .. } => {
+            Some(options.iter().map(|o| o.label.as_str()).collect())
+        }
+        _ => None,
+    }
+}
+
+/// The `fragRef` behind this node, whether it is an opaque `Fragment` or a
+/// `Panel`/`Repeatable` whose fragment content was inlined.
+fn node_frag_ref(node: &AemNode) -> Option<&str> {
+    match node {
+        AemNode::Fragment { frag_ref, .. } => Some(frag_ref),
+        AemNode::Panel {
+            frag_ref: Some(fr), ..
+        }
+        | AemNode::Repeatable {
+            frag_ref: Some(fr), ..
+        } => Some(fr),
+        _ => None,
+    }
+}
+
+/// Whether the node repeats, and hence needs `maxOccurs`.
+fn node_repeats(node: &AemNode) -> bool {
+    matches!(node, AemNode::Repeatable { .. })
+}
+
+fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
+    let profile = &ctx.config.profile;
+    let rule = profile.match_aem_rule(&AemRuleSubject {
+        kind: node_kind(node),
+        name: node_name(node),
+        title: node_title(node),
+        frag_ref: node_frag_ref(node),
+        options: node_options(node),
+        visible: node_visible(node),
+    });
+
+    if rule.is_some_and(|r| r.ignore) {
+        return Emit::Skip;
+    }
+
+    // Structural nodes never carry data.
+    match node {
+        AemNode::Root { .. }
+        | AemNode::TextDraw { .. }
+        | AemNode::TitleDraw { .. }
+        | AemNode::Preface { .. }
+        | AemNode::Appendix { .. }
+        | AemNode::FootnotePlaceholder { .. } => return Emit::Skip,
+        _ => {}
+    }
+
+    let occurs = |default: Occurs| -> Occurs {
+        rule.and_then(|r| r.occurs.as_ref())
+            .map(|spec| spec.to_occurs(profile.max_occurs_value))
+            .unwrap_or(default)
+    };
+
+    // A fragment is a leaf in the schema: its internals live in its own type.
+    if let Some(frag_ref) = node_frag_ref(node) {
+        let default = if node_repeats(node) {
+            Occurs::optional_repeating(profile.max_occurs_value)
+        } else {
+            Occurs::optional()
+        };
+        return fragment_emit(frag_ref, rule, occurs(default), ctx);
+    }
+
+    match node {
+        // A repeating panel becomes a grouping element with maxOccurs.
+        AemNode::Repeatable { .. } => {
+            let name = rule
+                .and_then(|r| r.element.clone())
+                .unwrap_or_else(|| to_xsd_element_name(node_title(node)));
+            Emit::Group {
+                name,
+                occurs: occurs(Occurs::optional_repeating(profile.max_occurs_value)),
+            }
+        }
+
+        // A plain panel adds no level: its children bubble up. A config rule
+        // naming an element turns it into a grouping element instead.
+        AemNode::Panel { .. } => match rule.and_then(|r| r.element.clone()) {
+            Some(name) => Emit::Group {
+                name,
+                occurs: occurs(Occurs::optional()),
+            },
+            None => Emit::Transparent,
+        },
+
+        // Everything else is a data leaf.
+        _ => {
+            let name = rule
+                .and_then(|r| r.element.clone())
+                .unwrap_or_else(|| to_xsd_element_name(node_title(node)));
+
+            if name.is_empty() || name == "Unknown" {
+                return Emit::Skip;
+            }
+
+            let occurs = occurs(Occurs::optional());
+
+            // A global element is referenced, never re-declared.
+            if ctx.config.is_global_element(&name) && rule.is_none_or(|r| r.type_ref.is_none()) {
+                return Emit::Ref { name, occurs };
+            }
+
+            let type_ref = rule
+                .and_then(|r| r.type_ref.clone())
+                .unwrap_or_else(|| profile.default_type_for(node_kind(node)));
+
+            Emit::Leaf {
+                name,
+                type_ref,
+                occurs,
+            }
+        }
+    }
+}
+
+/// Resolve a fragment node to its XSD element.
+///
+/// The element name comes from the config rule when there is one — the same
+/// `fragRef` can appear twice in a form under different titles — and otherwise
+/// from the global element declared for the fragment's `fragmentModelRoot` type.
+fn fragment_emit(frag_ref: &str, rule: Option<&AemElementRule>, occurs: Occurs, ctx: &Ctx) -> Emit {
+    let type_name = ctx.frag_types.get(frag_ref).copied();
+
+    let name = rule
+        .and_then(|r| r.element.clone())
+        .or_else(|| type_name.and_then(|t| ctx.config.type_to_element_name.get(t).cloned()));
+
+    let Some(name) = name else {
+        // Neither config nor the type library knows this fragment. Emitting a
+        // guessed element would corrupt the schema, so leave it out.
+        log::warn!("No XSD element for fragment {frag_ref}; omitted from the schema");
+        return Emit::Skip;
+    };
+
+    // An explicit `type` in the rule forces the name=/type= form, which is how
+    // two panels sharing one fragRef get distinct element names.
+    if let Some(type_ref) = rule.and_then(|r| r.type_ref.clone()) {
+        return Emit::Leaf {
+            name,
+            type_ref,
+            occurs,
+        };
+    }
+
+    if ctx.config.is_global_element(&name) {
+        return Emit::Ref { name, occurs };
+    }
+
+    match type_name {
+        Some(t) => Emit::Leaf {
+            name,
+            type_ref: t.to_string(),
+            occurs,
+        },
+        None => Emit::Skip,
+    }
+}

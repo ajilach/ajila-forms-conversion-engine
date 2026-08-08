@@ -87,6 +87,25 @@ pub fn parse_fixture_form(form_code: &str) -> crate::aem::AemNode {
     parsed.root
 }
 
+/// Load the UBS profile's parsed fragment library, as `load_aem_config` does.
+pub fn load_ubs_fragments() -> Vec<crate::aem::ParsedFragment> {
+    let (profile, _, _) = load_ubs_profile();
+    let prefix = profile
+        .fragment_ref_prefix
+        .as_deref()
+        .unwrap_or("/content/dam/formsanddocuments/");
+    let paths: Vec<String> = profile
+        .fragment_paths
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    crate::profiles::load_aem_fragments("ubs", prefix, &paths)
+        .expect("load UBS fragment library")
+}
+
 /// Every `fragRef` reachable in an AEM tree.
 ///
 /// Covers all three shapes a fragment can take: an opaque `Fragment` node (the

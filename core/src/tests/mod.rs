@@ -34635,4 +34635,117 @@ mod aem_xsd_fixtures {
             );
         }
     }
+
+    /// Compare a generated schema with the UBS reference **structurally**: the
+    /// element tree, names, `ref` versus `name`/`type`, occurrence attributes
+    /// and the ordered include list. Our formatting (2-space indent, no XMLSpy
+    /// header comment) deliberately differs from theirs, so a byte comparison
+    /// would test the wrong thing.
+    fn xsd_shape(xsd: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut depth = 0usize;
+        for raw in xsd.lines() {
+            let line = raw.trim();
+            if line.starts_with("<xs:include") {
+                let loc = attr(line, "schemaLocation").unwrap_or_default();
+                out.push(format!("include {loc}"));
+            } else if line.starts_with("<xs:element") {
+                let mut parts = vec![format!("{}element", "  ".repeat(depth))];
+                for key in ["name", "ref", "type", "minOccurs", "maxOccurs"] {
+                    if let Some(v) = attr(line, key) {
+                        parts.push(format!("{key}={v}"));
+                    }
+                }
+                out.push(parts.join(" "));
+                if !line.ends_with("/>") {
+                    depth += 1;
+                }
+            } else if line.starts_with("</xs:element") {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        out
+    }
+
+    fn attr(line: &str, key: &str) -> Option<String> {
+        let needle = format!("{key}=\"");
+        let start = line.find(&needle)? + needle.len();
+        let rest = &line[start..];
+        let end = rest.find('"')?;
+        Some(rest[..end].to_string())
+    }
+
+    /// Load the fixture form and generate its schema through the real UBS
+    /// profile, exactly as production would.
+    fn abfa_generated_xsd() -> String {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("ABFA".to_string());
+        let fragments = helpers::load_ubs_fragments();
+        crate::xsd::generate_xsd_string_from_aem(&root, &config, &fragments)
+    }
+
+    /// The headline acceptance check: our AEM → XSD walk reproduces the schema
+    /// UBS derives for the same form.
+    #[test]
+    fn abfa_aem_to_xsd_matches_ubs_reference_shape() {
+        let actual = xsd_shape(&abfa_generated_xsd());
+        let expected = xsd_shape(&helpers::read_fixture(
+            "aem_xsd/AF_ABFA/reference.schema.xsd",
+        ));
+
+        if actual != expected {
+            let mut msg = String::from("generated schema differs from the UBS reference\n");
+            for (i, line) in expected.iter().enumerate() {
+                let got = actual.get(i).map(String::as_str).unwrap_or("<missing>");
+                let mark = if got == line { " " } else { "!" };
+                msg.push_str(&format!("{mark} want: {line}\n{mark}  got: {got}\n"));
+            }
+            for extra in actual.iter().skip(expected.len()) {
+                msg.push_str(&format!("! unexpected: {extra}\n"));
+            }
+            panic!("{msg}");
+        }
+    }
+
+    /// Print the generated schema for eyeballing.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn show_abfa_xsd() {
+        println!("{}", abfa_generated_xsd());
+    }
+
+    /// The bindRefs our walk assigns must be the ones UBS injected into
+    /// `reference.content.xml` — same paths, same order.
+    ///
+    /// Two of UBS's sixteen bindRefs are rooted at the generic `/UBSAF/` prefix
+    /// and address the *global fragment library's* schema, not this form's, so
+    /// they are excluded here (see the fixture README).
+    #[test]
+    fn abfa_bind_refs_match_the_ubs_reference_form() {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("ABFA".to_string());
+        let fragments = helpers::load_ubs_fragments();
+
+        let result = crate::xsd::generate_xsd_from_aem(&root, &config, &fragments);
+        let mut ours: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+        ours.sort_unstable();
+
+        let reference = helpers::read_fixture("aem_xsd/AF_ABFA/reference.content.xml");
+        let mut theirs: Vec<&str> = reference
+            .match_indices("bindRef=\"")
+            .filter_map(|(i, m)| {
+                let rest = &reference[i + m.len()..];
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .filter(|b| b.starts_with("/UBSAF_ABFA/"))
+            .collect();
+        theirs.sort_unstable();
+
+        assert_eq!(
+            ours, theirs,
+            "our bindRefs differ from the ones UBS injected into the same form"
+        );
+    }
 }

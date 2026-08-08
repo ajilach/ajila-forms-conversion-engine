@@ -602,7 +602,13 @@ fn convert_jcr_to_aem(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<A
     let type_suffix = resource_type.rsplit('/').next().unwrap_or(resource_type);
 
     match type_suffix {
-        "textbox" | "guideTextBox" => Ok(Some(convert_textbox(node, ctx))),
+        // `email`, `telephone` and `textboxMultiline` are single-line/multi-line
+        // text inputs in the UBS component set. They carry data, so dropping
+        // them loses form fields outright — they map onto TextField like any
+        // other text input.
+        "textbox" | "guideTextBox" | "textboxMultiline" | "email" | "telephone" => {
+            Ok(Some(convert_textbox(node, ctx)))
+        }
         "numericbox" | "guideNumericBox" => Ok(Some(convert_numberfield(node, ctx))),
         "datepicker" | "guideDatePicker" => Ok(Some(convert_datepicker(node, ctx))),
         "radiobutton" | "guideRadioButton" => Ok(Some(convert_radiobutton(node, ctx))),
