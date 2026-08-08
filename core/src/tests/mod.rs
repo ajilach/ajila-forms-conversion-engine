@@ -19243,16 +19243,15 @@ fn test_aaai_en_bind_refs_match_xsd_structure() {
 
 #[test]
 fn test_created_form_aem_bind_refs_match_xsd() {
-    // End-to-end check: build a form, generate both the AEM XML and the XSD,
-    // then verify every `bindRef` emitted into the AEM points at an element
-    // path that actually exists in the generated XSD schema.
+    // The core contract of deriving the schema from the AEM tree: because the
+    // walk emits an element and records its bind path in the same step, every
+    // `bindRef` that reaches the rendered XML is an exact element path in the
+    // schema generated from the same tree.
     use crate::Context;
     use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdNode, XsdProfile, generate_xsd, generate_xsd_schema};
-    use std::collections::HashSet;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
-    // 1) Create a form: two sections, each with a couple of fields.
     let nodes = vec![
         StructuredNode::Heading(make_heading(2, "Personal Data")),
         StructuredNode::Field(make_field("f.first", "First Name")),
@@ -19262,13 +19261,8 @@ fn test_created_form_aem_bind_refs_match_xsd() {
         StructuredNode::Field(make_field("f.city", "City")),
     ];
 
-    // 2) XSD configuration (default profile: root element "form", no
-    //    externally registered types, so every field becomes an inline
-    //    nested element).
     let xsd_config = XsdConfig::from_profile(XsdProfile::default());
 
-    // 3) Build an AEM config from the real UBS profile (so the templates
-    //    actually emit `bindRef` attributes), with XSD binding enabled.
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut vars = std::collections::HashMap::new();
     vars.insert("formrange_code".to_string(), "TEST".to_string());
@@ -19277,80 +19271,30 @@ fn test_created_form_aem_bind_refs_match_xsd() {
     let mut aem_config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
         .expect("Failed to build AEM config");
     aem_config.bind_to_xsd = true;
-    // Disable fragment replacement so that all bindRefs are derived from the
-    // generated XSD (fragment bindRefs point into separate fragment types).
     aem_config.use_fragments = false;
     aem_config.xsd_config = Some(xsd_config.clone());
 
-    // 4) Generate the AEM XML and the XSD from the same form.
     let root = convert_to_aem(&nodes, &aem_config);
     let aem_xml = generate_aem_xml(&root, &aem_config);
-    let xsd_string = generate_xsd(&nodes, &xsd_config);
-    let schema = generate_xsd_schema(&nodes, &xsd_config);
+    let schema = crate::xsd::generate_xsd_from_aem(&root, &xsd_config, &[]).schema;
 
-    // Sanity: the XSD really contains the expected section/field elements.
-    assert!(xsd_string.contains("name=\"PersonalData\""));
-    assert!(xsd_string.contains("name=\"FirstName\""));
-
-    // 5) Collect every element path that exists in the XSD tree.
-    fn collect_xsd_paths(node: &XsdNode, parent: &str, paths: &mut HashSet<String>) {
-        match node {
-            XsdNode::Element { name, content, .. } => {
-                let path = format!("{}/{}", parent, name);
-                paths.insert(path.clone());
-                if let Some(child) = content {
-                    collect_xsd_paths(child, &path, paths);
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    collect_xsd_paths(child, parent, paths);
-                }
-            }
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        collect_xsd_paths(child, parent, paths);
-                    }
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                paths.insert(format!("{}/{}", parent, ref_name));
-            }
-            XsdNode::SimpleType { .. } => {}
-        }
-    }
-    let mut xsd_paths = HashSet::new();
-    collect_xsd_paths(&schema.root, "", &mut xsd_paths);
-
-    // 6) Extract every `bindRef="..."` value emitted into the AEM XML.
-    let mut bind_refs = Vec::new();
-    let needle = "bindRef=\"";
-    let mut cursor = aem_xml.as_str();
-    while let Some(pos) = cursor.find(needle) {
-        let after = &cursor[pos + needle.len()..];
-        if let Some(end) = after.find('"') {
-            bind_refs.push(after[..end].to_string());
-            cursor = &after[end + 1..];
-        } else {
-            break;
-        }
-    }
+    let xsd_paths = helpers::xsd_element_paths_in_order(&schema);
+    let bind_refs = helpers::scrape_bind_refs(&aem_xml);
 
     assert!(
         !bind_refs.is_empty(),
         "Generated AEM XML should contain bindRef attributes when bind_to_xsd=true"
     );
 
-    // 7) Every bindRef must resolve to an element present in the XSD.
-    let mut sorted_xsd: Vec<_> = xsd_paths.iter().cloned().collect();
-    sorted_xsd.sort();
+    // Sections still nest, so the two same-named fields stay distinct.
+    assert!(xsd_paths.iter().any(|p| p == "/form/PersonalData/FirstName"));
+    assert!(xsd_paths.iter().any(|p| p == "/form/Address/Street"));
+
     for bind_ref in &bind_refs {
         assert!(
-            xsd_paths.contains(bind_ref),
-            "AEM bindRef {} has no matching element in the generated XSD.\nXSD element paths: {:?}",
-            bind_ref,
-            sorted_xsd
+            xsd_paths.iter().any(|p| p == bind_ref),
+            "AEM bindRef {bind_ref} has no matching element in the generated XSD.\n\
+             XSD element paths: {xsd_paths:?}"
         );
     }
 }
@@ -19679,12 +19623,18 @@ fn test_aaai_has_address_and_individual_fragments() {
         fragment_refs
     );
 
-    // The IndividualBasic fragment bind_ref should contain "AuthRep/IndividualBasic"
+    // The IndividualBasic fragment is bound under its enclosing section.
+    //
+    // The schema is derived from the AEM tree, where only page panels nest —
+    // an H3 sub-heading such as "Authorized representative" becomes a sibling
+    // TitleDraw, not a container — so the path names the page ("Client"), not
+    // the sub-heading. The bind path and the XSD element still agree, which is
+    // what `aem_bind_refs_are_exact_xsd_paths` enforces.
     for (_, bind_ref) in &individual_frags {
         let br = bind_ref.as_deref().unwrap_or("");
         assert!(
-            br.contains("/AuthRep/IndividualBasic"),
-            "IndividualBasic fragment bind_ref should include AuthRep/IndividualBasic. Got: {}",
+            br.ends_with("/IndividualBasic") && br.matches('/').count() >= 3,
+            "IndividualBasic fragment should be bound under its section. Got: {}",
             br
         );
     }
@@ -26909,21 +26859,22 @@ fn test_fragment_bind_refs_use_configured_prefix() {
         );
     }
 
-    // Non-fragment panels with bind_to_xsd=true should also use the form root.
+    // Every other bound node uses the same form root. Note that a *non-repeating*
+    // grouping panel is deliberately left unbound: it is a schema convenience
+    // with no data of its own, which is how UBS's own forms are bound.
     let mut found_form_root = false;
     helpers::walk_aem_nodes(&root, &mut |node| {
-        if let crate::aem::AemNode::Panel {
-            bind_ref: Some(br), ..
-        } = node
-        {
-            if br.starts_with("/UBSAF_AAAI/") {
-                found_form_root = true;
-            }
+        if let Some(br) = helpers::node_bind_ref(node) {
+            assert!(
+                br.starts_with("/UBSAF_AAAI/"),
+                "bindRef {br} should start with the form root '/UBSAF_AAAI/'"
+            );
+            found_form_root = true;
         }
     });
     assert!(
         found_form_root,
-        "Expected at least one panel with form-specific root '/UBSAF_AAAI/'"
+        "Expected at least one node bound under '/UBSAF_AAAI/'"
     );
 }
 
@@ -34747,5 +34698,131 @@ mod aem_xsd_fixtures {
             ours, theirs,
             "our bindRefs differ from the ones UBS injected into the same form"
         );
+    }
+
+    /// Measure how the flat-panel rule behaves on our own generated forms.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn measure_bind_ref_collisions_on_real_forms() {
+        for (pdf, lang) in [
+            ("AAAI_019_EN.pdf", "en"),
+            ("AAFM_019_EN.pdf", "en"),
+            ("AACB_033_IT.pdf", "it"),
+        ] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().unwrap();
+            let result =
+                crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            let mut counts: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
+            for path in result.bind_refs.values() {
+                *counts.entry(path.as_str()).or_default() += 1;
+            }
+            let xsd = result.schema.to_xml();
+            let dupes = duplicate_sibling_names(&xsd);
+            println!(
+                "{pdf}: {} bound nodes, {} distinct paths, duplicate sibling elements: {:?}",
+                result.bind_refs.len(),
+                counts.len(),
+                dupes
+            );
+        }
+    }
+
+    /// Element names that appear twice inside the same `xs:sequence`.
+    fn duplicate_sibling_names(xsd: &str) -> Vec<String> {
+        let mut stack: Vec<Vec<String>> = vec![Vec::new()];
+        let mut dupes = Vec::new();
+        for raw in xsd.lines() {
+            let line = raw.trim();
+            if line.starts_with("<xs:sequence") {
+                stack.push(Vec::new());
+            } else if line.starts_with("</xs:sequence") {
+                stack.pop();
+            } else if line.starts_with("<xs:element") {
+                let name = attr(line, "name").or_else(|| attr(line, "ref"));
+                if let (Some(name), Some(top)) = (name, stack.last_mut()) {
+                    if top.contains(&name) {
+                        dupes.push(name.clone());
+                    }
+                    top.push(name);
+                }
+            }
+        }
+        dupes
+    }
+
+    /// The structural contract, over real forms produced by the full pipeline.
+    ///
+    /// Because `convert_to_aem` derives the schema from the finished AEM tree
+    /// and writes each node's `bind_ref` during that same walk, these must hold
+    /// for every form — no fixture involved, so the test keeps its value as the
+    /// generator evolves.
+    #[test]
+    fn aem_bind_refs_are_exact_xsd_paths() {
+        use std::collections::{HashMap, HashSet};
+
+        for (pdf, lang) in [
+            ("AAAI_019_EN.pdf", "en"),
+            ("AAFM_019_EN.pdf", "en"),
+            ("AACB_033_IT.pdf", "it"),
+        ] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().expect("bound config has an XSD config");
+            let schema =
+                crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments).schema;
+
+            let xsd_paths = helpers::xsd_element_paths_in_order(&schema);
+            let known: HashSet<&str> = xsd_paths.iter().map(String::as_str).collect();
+
+            // Collect the bindRefs in document order, alongside the node that
+            // owns each, so failures name the culprit.
+            let mut bound: Vec<(String, String)> = Vec::new();
+            helpers::walk_aem_nodes(&root, &mut |node| {
+                if let Some(br) = helpers::node_bind_ref(node) {
+                    bound.push((node.element_name(), br.to_string()));
+                }
+            });
+
+            assert!(!bound.is_empty(), "{pdf}: no node was bound at all");
+
+            // (1) Every bindRef is an exact element path — never a prefix match.
+            for (owner, br) in &bound {
+                assert!(
+                    known.contains(br.as_str()),
+                    "{pdf}: {owner} is bound to {br}, which is not an element in the generated XSD"
+                );
+            }
+
+            // (2) No path is bound twice; two nodes sharing one path would write
+            //     to the same place in the submitted data.
+            let mut seen: HashMap<&str, &str> = HashMap::new();
+            for (owner, br) in &bound {
+                if let Some(prev) = seen.insert(br.as_str(), owner.as_str()) {
+                    panic!("{pdf}: {br} is bound by both {prev} and {owner}");
+                }
+            }
+
+            // (3) Document order of the bindRefs follows the schema's own order.
+            //     A subsequence, not equality: the schema also contains elements
+            //     nothing binds, such as a non-repeating grouping element.
+            let mut next = 0usize;
+            for (owner, br) in &bound {
+                match xsd_paths[next..].iter().position(|p| p == br) {
+                    Some(offset) => next += offset + 1,
+                    None => panic!(
+                        "{pdf}: {owner} bound to {br} appears out of order relative to the schema"
+                    ),
+                }
+            }
+
+            // (4) Element names are unique within each sequence, or the schema
+            //     would not validate.
+            let dupes = duplicate_sibling_names(&schema.to_xml());
+            assert!(
+                dupes.is_empty(),
+                "{pdf}: duplicate sibling element names in the generated XSD: {dupes:?}"
+            );
+        }
     }
 }

@@ -74,10 +74,12 @@ pub fn generate_xsd_from_aem(
     };
 
     let mut body = Vec::new();
+    let mut used = HashSet::new();
     walk(
         children,
         &root_path,
         &mut body,
+        &mut used,
         &mut state,
         &Ctx {
             config,
@@ -215,10 +217,17 @@ enum Emit {
     Group { name: String, occurs: Occurs },
 }
 
+/// Walk `nodes`, appending their elements to the `out` sequence.
+///
+/// `used` holds the element names already taken in that sequence. It is owned by
+/// the sequence, not by the call: a transparent panel appends into its parent's
+/// sequence and so must share the parent's scope, while a group starts a fresh
+/// one.
 fn walk(
     nodes: &[AemNode],
     parent_path: &str,
     out: &mut Vec<XsdNode>,
+    used: &mut HashSet<String>,
     st: &mut BuildState,
     ctx: &Ctx,
 ) {
@@ -227,10 +236,11 @@ fn walk(
             Emit::Skip => {}
             Emit::Transparent => {
                 if let Some(children) = child_nodes(node) {
-                    walk(children, parent_path, out, st, ctx);
+                    walk(children, parent_path, out, used, st, ctx);
                 }
             }
             Emit::Ref { name, occurs } => {
+                let name = unique_name(name, used);
                 bind(node, parent_path, &name, st);
                 note_include_for(&name, st, ctx);
                 out.push(XsdNode::Ref {
@@ -244,6 +254,7 @@ fn walk(
                 type_ref,
                 occurs,
             } => {
+                let name = unique_name(name, used);
                 bind(node, parent_path, &name, st);
                 note_include_for(&type_ref, st, ctx);
                 out.push(XsdNode::Element {
@@ -255,6 +266,7 @@ fn walk(
                 });
             }
             Emit::Group { name, occurs } => {
+                let name = unique_name(name, used);
                 let path = format!("{parent_path}/{name}");
                 // A grouping element is bound only when it repeats — a
                 // non-repeating group is a pure schema convenience with no AEM
@@ -265,8 +277,9 @@ fn walk(
                     }
                 }
                 let mut sequence = Vec::new();
+                let mut inner_used = HashSet::new();
                 if let Some(children) = child_nodes(node) {
-                    walk(children, &path, &mut sequence, st, ctx);
+                    walk(children, &path, &mut sequence, &mut inner_used, st, ctx);
                 }
                 out.push(XsdNode::Element {
                     name,
@@ -281,6 +294,20 @@ fn walk(
             }
         }
     }
+}
+
+/// Reserve `name` within a sequence, suffixing with 2, 3, … if already taken.
+fn unique_name(name: String, used: &mut HashSet<String>) -> String {
+    if used.insert(name.clone()) {
+        return name;
+    }
+    for n in 2u32.. {
+        let candidate = format!("{name}{n}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("an unused suffix always exists")
 }
 
 fn bind(node: &AemNode, parent_path: &str, name: &str, st: &mut BuildState) {
@@ -504,11 +531,25 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
             }
         }
 
-        // A plain panel adds no level: its children bubble up. A config rule
-        // naming an element turns it into a grouping element instead.
-        AemNode::Panel { .. } => match rule.and_then(|r| r.element.clone()) {
+        // A layout panel adds no level: its children bubble up.
+        //
+        // The exception is a titled *page* panel — a section of the form. Those
+        // do add a level, because without one two sections that repeat the same
+        // field or fragment (a "Client" and an "Authorized representative" block
+        // each holding an IndividualBasic fragment) would collide into duplicate
+        // sibling elements, which is invalid XSD and would bind two nodes to one
+        // path.
+        //
+        // A parsed form's wizard steps are not marked as pages, so a schema
+        // derived from an existing package stays flat — matching how UBS's own
+        // schemas are shaped. A config rule naming an element wins over both.
+        AemNode::Panel { is_page, title, .. } => match rule.and_then(|r| r.element.clone()) {
             Some(name) => Emit::Group {
                 name,
+                occurs: occurs(Occurs::optional()),
+            },
+            None if *is_page && !title.trim().is_empty() => Emit::Group {
+                name: to_xsd_element_name(title),
                 occurs: occurs(Occurs::optional()),
             },
             None => Emit::Transparent,

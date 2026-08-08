@@ -472,25 +472,37 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
     }
 
-    // --- Fourth pass: propagate bind_ref from section panels to repeatables ---
-    // In reference forms, the repeatable inner panel (with maxOccur) carries the
-    // bindRef, not the wrapping section panel.  Move the section panel's bind_ref
-    // to its child Repeatable when applicable.
-    propagate_bind_ref_to_repeatables(&mut children);
+    // --- Final pass: remove empty non-page panels ---
+    // Done before the bind_ref pass so a panel that is about to disappear can
+    // never claim an XSD element.
+    remove_empty_panels(&mut children);
+
+    let mut root = AemNode::Root {
+        title: form_display_title,
+        children,
+    };
+
+    // --- Authoritative bind_ref pass ---
+    //
+    // Everything above used bind_refs derived from the structured tree, which
+    // exist only to drive fragment matching. Discard them and re-derive the
+    // schema from the finished AEM tree, writing each node's bind_ref during the
+    // same walk. That is what makes `bindRef` and the generated XSD agree by
+    // construction rather than by two code paths staying in step.
+    if let Some(xsd_config) = &config.xsd_config {
+        let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+        crate::xsd::apply_bind_refs(&mut root, &result.bind_refs);
+    }
 
     // When bind_to_xsd is disabled, strip bind_ref from all non-Fragment nodes
     // (bind_refs were only needed internally for fragment matching).
     if !config.bind_to_xsd {
-        strip_bind_refs(&mut children);
+        if let AemNode::Root { children, .. } = &mut root {
+            strip_bind_refs(children);
+        }
     }
 
-    // --- Final pass: remove empty non-page panels ---
-    remove_empty_panels(&mut children);
-
-    AemNode::Root {
-        title: form_display_title,
-        children,
-    }
+    root
 }
 
 fn inject_page_edge_templates(
@@ -2603,51 +2615,6 @@ fn compute_intermediate_matches(
     }
 
     matched
-}
-
-/// Move `bind_ref` from section Panels to their child Repeatable nodes.
-///
-/// In reference AEM forms, the repeatable inner panel (with `maxOccur`)
-/// carries the `bindRef` — not the wrapping section panel.  This function
-/// walks the tree and, for any Panel that has a `bind_ref` and contains a
-/// `Repeatable` child, moves the bind_ref to the Repeatable.
-fn propagate_bind_ref_to_repeatables(nodes: &mut [AemNode]) {
-    for node in nodes.iter_mut() {
-        match node {
-            AemNode::Panel {
-                children, bind_ref, ..
-            } => {
-                // First recurse into children
-                propagate_bind_ref_to_repeatables(children);
-
-                // If this panel has a bind_ref and contains a Repeatable child,
-                // move the bind_ref to the Repeatable (the section panel itself
-                // should not emit bindRef — the repeatable inner panel owns it).
-                if bind_ref.is_some() {
-                    let has_repeatable = children
-                        .iter()
-                        .any(|c| matches!(c, AemNode::Repeatable { .. }));
-                    if has_repeatable {
-                        let br = bind_ref.take().unwrap();
-                        for child in children.iter_mut() {
-                            if let AemNode::Repeatable {
-                                bind_ref: rep_br, ..
-                            } = child
-                            {
-                                if rep_br.is_none() {
-                                    *rep_br = Some(br.clone());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
-                propagate_bind_ref_to_repeatables(children);
-            }
-            _ => {}
-        }
-    }
 }
 
 /// Recursively clear `bind_ref` on all nodes except `Fragment` nodes.

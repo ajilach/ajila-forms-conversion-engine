@@ -38,17 +38,26 @@ pub fn generate_aem_package(
     // Form-content translations come from the structured source tree.
     let translations = extract_translations(content, &config.master_language);
 
-    // XSD schema is only emitted when binding is enabled and configured.
-    let xsd_content = if config.bind_to_xsd && config.xsd_path.is_some() {
-        config
-            .xsd_config
-            .as_ref()
-            .map(|xsd_config| crate::xsd::generate_xsd(content, xsd_config))
-    } else {
-        None
-    };
+    assemble_package(root, config, translations, xsd_for_tree(root, config), None)
+}
 
-    assemble_package(root, config, translations, xsd_content, None)
+/// The XSD for a finished AEM tree, or `None` when the profile does not bind to
+/// one.
+///
+/// Derived from the node tree rather than from the structured source, so every
+/// entry point below — including the ones the agent uses, which have no
+/// structured tree at all — can ship a schema, and so the schema always matches
+/// the `bindRef`s the same walk assigned in `convert_to_aem`.
+fn xsd_for_tree(root: &AemNode, config: &AemConfig) -> Option<String> {
+    if !config.bind_to_xsd || config.xsd_path.is_none() {
+        return None;
+    }
+    let xsd_config = config.xsd_config.as_ref()?;
+    Some(crate::xsd::generate_xsd_string_from_aem(
+        root,
+        xsd_config,
+        &config.fragments,
+    ))
 }
 
 /// Generate a package directly from an edited [`AemNode`] tree, without an
@@ -57,9 +66,10 @@ pub fn generate_aem_package(
 /// Used by the AEM editor, where the `AemNode` tree is the source of truth.
 /// Because the node tree only carries master-language strings, no form-content
 /// translation dictionary is derived here (only the profile's
-/// `default_translations` are emitted); XSD generation is skipped.
+/// `default_translations` are emitted).
 pub fn generate_aem_package_from_node(root: &AemNode, config: &AemConfig) -> Vec<u8> {
-    assemble_package(root, config, I18nDictionary::new(), None, None)
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, I18nDictionary::new(), xsd, None)
 }
 
 /// Like [`generate_aem_package_from_node`] but with an explicit form-content
@@ -70,7 +80,8 @@ pub fn generate_aem_package_from_node_with_translations(
     config: &AemConfig,
     translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 ) -> Vec<u8> {
-    assemble_package(root, config, translations, None, None)
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, translations, xsd, None)
 }
 
 /// Like [`generate_aem_package_from_node_with_translations`] but uses a
@@ -86,7 +97,8 @@ pub fn generate_aem_package_from_node_with_xml(
     translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     form_xml: String,
 ) -> Vec<u8> {
-    assemble_package(root, config, translations, None, Some(form_xml))
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, translations, xsd, Some(form_xml))
 }
 
 /// Like [`generate_aem_package_from_node_with_translations`] but re-emits each
@@ -102,7 +114,8 @@ pub fn generate_aem_package_from_node_with_passthrough(
 ) -> Vec<u8> {
     let form_xml =
         crate::aem::xml_writer::generate_aem_xml_with_passthrough(root, config, passthrough);
-    assemble_package(root, config, translations, None, Some(form_xml))
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, translations, xsd, Some(form_xml))
 }
 
 /// Extract the form-content translation dictionary from structured nodes.

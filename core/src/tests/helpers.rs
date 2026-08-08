@@ -87,6 +87,49 @@ pub fn parse_fixture_form(form_code: &str) -> crate::aem::AemNode {
     parsed.root
 }
 
+/// Like [`build_aem_test_output`] but with XSD binding and fragments enabled,
+/// i.e. the configuration production actually ships.
+pub(super) fn build_aem_test_output_bound(
+    pdfs: &[(&str, &str)],
+) -> (
+    Vec<StructuredNode>,
+    crate::aem::AemNode,
+    crate::aem::AemConfig,
+) {
+    use crate::aem::{AemConfig, convert_to_aem};
+
+    let envelopes: Vec<_> = pdfs
+        .iter()
+        .map(|(file, lang)| {
+            crate::run_exhaustive_to_envelope(input_path(file), lang)
+                .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"))
+        })
+        .collect();
+
+    let (ctx, content) = if envelopes.len() == 1 {
+        let env = envelopes.into_iter().next().unwrap();
+        (env.context, env.content)
+    } else {
+        let merged = crate::structured::merge_translations(envelopes, None)
+            .expect("Failed to merge translations");
+        (merged.context, merged.content)
+    };
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let mut xsd_config = load_ubs_xsd_config();
+    xsd_config.form_code = Some(config.form_code.clone());
+    config.xsd_config = Some(xsd_config);
+    config.fragments = load_ubs_fragments();
+    config.use_fragments = true;
+    config.bind_to_xsd = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+    (content, root, config)
+}
+
 /// Load the UBS profile's parsed fragment library, as `load_aem_config` does.
 pub fn load_ubs_fragments() -> Vec<crate::aem::ParsedFragment> {
     let (profile, _, _) = load_ubs_profile();
@@ -102,8 +145,80 @@ pub fn load_ubs_fragments() -> Vec<crate::aem::ParsedFragment> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    crate::profiles::load_aem_fragments("ubs", prefix, &paths)
-        .expect("load UBS fragment library")
+    crate::profiles::load_aem_fragments("ubs", prefix, &paths).expect("load UBS fragment library")
+}
+
+/// Every element path in a schema, in depth-first document order.
+///
+/// Paths are absolute and rooted at the schema's root element, so they are
+/// directly comparable with `bindRef` values.
+pub fn xsd_element_paths_in_order(schema: &crate::xsd::XsdSchema) -> Vec<String> {
+    fn go(node: &crate::xsd::XsdNode, parent: &str, out: &mut Vec<String>) {
+        use crate::xsd::XsdNode;
+        match node {
+            XsdNode::Element { name, content, .. } => {
+                let path = format!("{parent}/{name}");
+                out.push(path.clone());
+                if let Some(child) = content {
+                    go(child, &path, out);
+                }
+            }
+            XsdNode::Ref { ref_name, .. } => out.push(format!("{parent}/{ref_name}")),
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    go(child, parent, out);
+                }
+            }
+            XsdNode::SimpleType { .. } => {}
+            XsdNode::Choice { options } => {
+                for branch in options {
+                    for child in branch {
+                        go(child, parent, out);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    go(&schema.root, "", &mut out);
+    out
+}
+
+/// Every `bindRef="…"` value in a rendered AEM XML, in document order.
+pub fn scrape_bind_refs(xml: &str) -> Vec<String> {
+    let needle = "bindRef=\"";
+    let mut out = Vec::new();
+    let mut cursor = xml;
+    while let Some(pos) = cursor.find(needle) {
+        let after = &cursor[pos + needle.len()..];
+        match after.find('"') {
+            Some(end) => {
+                out.push(after[..end].to_string());
+                cursor = &after[end + 1..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// The `bind_ref` of any node that can carry one.
+pub fn node_bind_ref(node: &crate::aem::AemNode) -> Option<&str> {
+    use crate::aem::AemNode;
+    match node {
+        AemNode::Panel { bind_ref, .. }
+        | AemNode::Repeatable { bind_ref, .. }
+        | AemNode::TextField { bind_ref, .. }
+        | AemNode::NumberField { bind_ref, .. }
+        | AemNode::DatePicker { bind_ref, .. }
+        | AemNode::Dropdown { bind_ref, .. }
+        | AemNode::Checkbox { bind_ref, .. }
+        | AemNode::RadioButton { bind_ref, .. }
+        | AemNode::Fragment { bind_ref, .. }
+        | AemNode::Custom { bind_ref, .. } => bind_ref.as_deref(),
+        _ => None,
+    }
 }
 
 /// Every `fragRef` reachable in an AEM tree.
@@ -117,12 +232,10 @@ pub fn collect_frag_refs(root: &crate::aem::AemNode) -> Vec<String> {
     walk_aem_nodes(root, &mut |node| match node {
         AemNode::Fragment { frag_ref, .. } => found.push(frag_ref.clone()),
         AemNode::Panel {
-            frag_ref: Some(fr),
-            ..
+            frag_ref: Some(fr), ..
         }
         | AemNode::Repeatable {
-            frag_ref: Some(fr),
-            ..
+            frag_ref: Some(fr), ..
         } => found.push(fr.clone()),
         _ => {}
     });
@@ -654,7 +767,6 @@ pub(super) fn build_aem_test_output(
     (content, root, config)
 }
 
-
 /// Load the UBS XSD config from `profiles/ubs/xsd/`, including registered types.
 pub fn load_ubs_xsd_config() -> crate::xsd::XsdConfig {
     let dir_path = profiles_path("ubs/xsd");
@@ -722,8 +834,8 @@ pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig 
 /// `ctx` (mirrors [`load_ubs_profile`]).
 pub fn load_ubs_redacto_config(ctx: &crate::Context) -> crate::redacto::RedactoConfig {
     let path = profiles_path("ubs/redacto/config.toml");
-    let toml_str = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    let toml_str =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
     let profile: crate::redacto::RedactoProfile =
         toml::from_str(&toml_str).expect("Failed to parse UBS redacto config.toml");
     crate::redacto::RedactoConfig::from_profile(&profile, ctx)
