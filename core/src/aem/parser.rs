@@ -976,6 +976,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
             colspan: parse_colspan(node),
             dor_colspan: parse_dor_colspan(node),
             bind_ref: node.attr("bindRef").map(|s| s.to_string()),
+            frag_ref: None,
         }))
     }
 }
@@ -1034,6 +1035,10 @@ fn convert_fragment(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<Aem
                 colspan: parse_colspan(node),
                 dor_colspan: parse_dor_colspan(node),
                 bind_ref: node.attr("bindRef").map(|s| s.to_string()),
+                // The fragment's children have been inlined, but the panel
+                // remembers where they came from so the XSD walk can emit a
+                // single fragment element instead of descending into them.
+                frag_ref: Some(frag_ref.clone()),
             }))
         };
 
@@ -1076,6 +1081,7 @@ fn convert_fragment(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<Aem
     Ok(Some(AemNode::Fragment {
         uuid,
         name,
+        title: node.attr("jcr:title").unwrap_or_default().to_string(),
         frag_ref,
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
     }))

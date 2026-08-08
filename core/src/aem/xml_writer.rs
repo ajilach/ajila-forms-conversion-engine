@@ -342,6 +342,7 @@ fn build_node_context(
             colspan,
             dor_colspan,
             bind_ref,
+            frag_ref: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -600,11 +601,13 @@ fn build_node_context(
         AemNode::Fragment {
             uuid,
             name,
+            title,
             frag_ref,
             bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
+            ctx.insert("title", title);
             ctx.insert("frag_ref", frag_ref);
             ctx.insert("bind_ref", bind_ref);
         }
@@ -1193,6 +1196,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                frag_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1224,6 +1228,7 @@ mod tests {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         }
     }
 
@@ -1538,6 +1543,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                frag_ref: None,
                 children: vec![
                     AemNode::TextField {
                         uuid: fixed_uuid(),
@@ -1853,6 +1859,7 @@ mod tests {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 

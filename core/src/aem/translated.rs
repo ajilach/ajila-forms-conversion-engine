@@ -131,6 +131,10 @@ pub enum AemNodeTranslated {
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
+        /// `fragRef` this panel was expanded from, when the parser inlined a
+        /// fragment's children into it.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
     TextField {
         uuid: Uuid,
@@ -264,6 +268,10 @@ pub enum AemNodeTranslated {
         #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
         passthrough: Passthrough,
         name: String,
+        /// `jcr:title` of the panel this fragment replaced. Distinguishes two
+        /// fragments that share a `frag_ref` when resolving XSD element names.
+        #[serde(default)]
+        title: AemI18nText,
         frag_ref: String,
         bind_ref: Option<String>,
     },
@@ -474,6 +482,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                frag_ref,
                 ..
             } => AemNode::Panel {
                 uuid: *uuid,
@@ -488,6 +497,7 @@ impl AemNodeTranslated {
                 colspan: *colspan,
                 dor_colspan: *dor_colspan,
                 bind_ref: bind_ref.clone(),
+                frag_ref: frag_ref.clone(),
             },
             AemNodeTranslated::TextField {
                 uuid,
@@ -684,12 +694,14 @@ impl AemNodeTranslated {
             AemNodeTranslated::Fragment {
                 uuid,
                 name,
+                title,
                 frag_ref,
                 bind_ref,
                 ..
             } => AemNode::Fragment {
                 uuid: *uuid,
                 name: name.clone(),
+                title: text!(title),
                 frag_ref: frag_ref.clone(),
                 bind_ref: bind_ref.clone(),
             },
@@ -799,6 +811,7 @@ mod tests {
                     colspan: 12,
                     dor_colspan: None,
                     bind_ref: None,
+                    frag_ref: None,
                 },
             ],
         }

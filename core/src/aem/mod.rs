@@ -527,6 +527,15 @@ pub enum AemNode {
         /// XSD path for `bindRef` attribute (e.g. `/form/personal_data`).
         /// `None` when `bind_to_xsd` is `false` or the panel has no corresponding XSD element.
         bind_ref: Option<String>,
+        /// `fragRef` of the fragment this panel was expanded from, when the
+        /// parser inlined a fragment's children into it.
+        ///
+        /// `None` for ordinary panels. Keeping it means a package that is loaded
+        /// and saved again still knows which panels came from a fragment, which
+        /// is what lets the XSD walk emit a fragment element rather than
+        /// descending into the inlined children.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
 
     /// Single-line text input (`guideTextBox`).
@@ -674,6 +683,15 @@ pub enum AemNode {
     Fragment {
         uuid: Uuid,
         name: String,
+        /// `jcr:title` of the panel this fragment replaced.
+        ///
+        /// Several panels may share one `frag_ref` — a form can hold two
+        /// `affrg_SignatureGeneric1` fragments, one for the client and one for
+        /// the authorized representative — and the title is the only thing that
+        /// tells them apart when resolving the XSD element name. Empty when the
+        /// replaced panel had no title.
+        #[serde(default)]
+        title: String,
         /// JCR path to the fragment (e.g.
         /// `"/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_Address1"`).
         frag_ref: String,

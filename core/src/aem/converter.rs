@@ -416,6 +416,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 colspan: config.grid_columns,
                 dor_colspan: None,
                 bind_ref,
+                frag_ref: None,
             });
         } else {
             // Preamble (before first H2) → collect nodes, don't create page.
@@ -441,6 +442,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             colspan: config.grid_columns,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         });
     }
 
@@ -1483,6 +1485,7 @@ fn convert_table(
         colspan: config.grid_columns,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1747,6 +1750,7 @@ fn convert_group(
         colspan,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1796,6 +1800,7 @@ fn convert_conditional(
         colspan,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1831,6 +1836,7 @@ fn convert_grid_layout(
         colspan,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -2188,6 +2194,7 @@ fn count_fragment_instances(fragment: &ParsedFragment, leaves: &[String]) -> usi
 fn make_fragment_nodes(
     n: usize,
     fragment: &ParsedFragment,
+    title: &str,
     bind_ref: Option<String>,
     ctx: &mut ConversionContext,
 ) -> Vec<AemNode> {
@@ -2198,6 +2205,7 @@ fn make_fragment_nodes(
             AemNode::Fragment {
                 uuid,
                 name,
+                title: title.to_string(),
                 frag_ref: fragment.frag_ref.clone(),
                 bind_ref: bind_ref.clone(),
             }
@@ -2222,10 +2230,14 @@ fn replace_with_fragments(
             children,
             bind_ref: Some(br),
             is_conditional,
+            title: panel_title,
             ..
         } = &nodes[i]
         {
             let is_conditional = *is_conditional;
+            // Carried onto every Fragment produced from this panel: it is the
+            // only thing that distinguishes two fragments sharing a `frag_ref`.
+            let panel_title = panel_title.clone();
             let full_paths = collect_child_bind_ref_full_paths(children);
             let br_prefix = format!("{}/", br);
 
@@ -2266,13 +2278,15 @@ fn replace_with_fragments(
                             nodes[i] = AemNode::Fragment {
                                 uuid,
                                 name,
+                                title: panel_title.clone(),
                                 frag_ref: fragment.frag_ref,
                                 bind_ref,
                             };
                         } else {
                             // Multiple instances: replace children with N
                             // Fragment nodes inside the panel.
-                            let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                            let frag_nodes =
+                                make_fragment_nodes(n, &fragment, &panel_title, bind_ref, ctx);
                             if let AemNode::Panel { children, .. } = &mut nodes[i] {
                                 *children = frag_nodes;
                             }
@@ -2315,6 +2329,7 @@ fn replace_with_fragments(
                             frag_nodes.push(AemNode::Fragment {
                                 uuid,
                                 name,
+                                title: panel_title.clone(),
                                 frag_ref: fragment.frag_ref.clone(),
                                 bind_ref: Some(to_fragment_bind_ref(&full_path, xsd_config)),
                             });
@@ -2436,9 +2451,11 @@ fn replace_with_fragments(
             children,
             bind_ref: None,
             is_conditional,
+            title: panel_title,
             ..
         } = &nodes[i]
         {
+            let panel_title = panel_title.clone();
             // For conditional panels: always try to match (they wrap visibility logic).
             // For non-conditional panels: only try if they have no sub-panel children
             // (to avoid over-matching higher-level structural panels).
@@ -2458,7 +2475,8 @@ fn replace_with_fragments(
                         let bind_ref = compute_common_bind_ref_prefix(&full_paths)
                             .map(|p| to_fragment_bind_ref(&p, xsd_config));
                         let n = count_fragment_instances(&fragment, &leaves);
-                        let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                        let frag_nodes =
+                            make_fragment_nodes(n, &fragment, &panel_title, bind_ref, ctx);
                         if let AemNode::Panel { children, .. } = &mut nodes[i] {
                             *children = frag_nodes;
                         }
@@ -2471,7 +2489,13 @@ fn replace_with_fragments(
         // fragment type, replace the children with Fragment nodes inside the
         // Repeatable (preserving the add/remove wrapper). This mirrors the
         // conditional panel handler above.
-        if let AemNode::Repeatable { children, .. } = &nodes[i] {
+        if let AemNode::Repeatable {
+            children,
+            title: repeat_title,
+            ..
+        } = &nodes[i]
+        {
+            let repeat_title = repeat_title.clone();
             let leaves = collect_child_bind_ref_leaves(children);
             if !leaves.is_empty() {
                 if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
@@ -2480,7 +2504,8 @@ fn replace_with_fragments(
                     let bind_ref = compute_common_bind_ref_prefix(&full_paths)
                         .map(|p| to_fragment_bind_ref(&p, xsd_config));
                     let n = count_fragment_instances(&fragment, &leaves);
-                    let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                    let frag_nodes =
+                        make_fragment_nodes(n, &fragment, &repeat_title, bind_ref, ctx);
                     if let AemNode::Repeatable { children, .. } = &mut nodes[i] {
                         *children = frag_nodes;
                     }

@@ -49,6 +49,7 @@ fn aem_node_json_round_trips() {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         }],
     };
 
@@ -33445,6 +33446,7 @@ fn conditional_panel_visibility_also_runs_on_initialize() {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         },
     ]);
 

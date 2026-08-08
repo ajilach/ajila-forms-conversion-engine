@@ -249,6 +249,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                frag_ref: None,
             }],
         }
     }
