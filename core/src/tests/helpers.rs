@@ -38,6 +38,78 @@ pub fn profiles_path(subpath: &str) -> String {
     format!("{}/../profiles/{}", manifest_dir, subpath)
 }
 
+/// Build a path to a file in the `fixtures/` directory.
+///
+/// Unlike [`input_path`], this does not load profile fonts — fixtures are text,
+/// and font loading costs seconds.
+pub fn fixture_path(subpath: &str) -> String {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    format!("{}/fixtures/{}", manifest_dir, subpath)
+}
+
+/// Read a fixture file as a `String`, panicking with the full path on failure.
+pub fn read_fixture(subpath: &str) -> String {
+    let path = fixture_path(subpath);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture {path}: {e}"))
+}
+
+/// Wrap a bare AEM form `.content.xml` in a minimal in-memory FileVault ZIP so
+/// it can go through the real [`crate::aem::parse_aem_zip`] entry point.
+///
+/// `parse_aem_zip` only requires that some entry under
+/// `jcr_root/content/forms/af/` ends in `/.content.xml` and mentions
+/// `guideContainer`; it never reads `META-INF`. That makes this the cheapest way
+/// to parse a fixture that ships as a bare form XML rather than a full package.
+pub fn aem_zip_from_form_xml(form_code: &str, content_xml: &str) -> Vec<u8> {
+    use std::io::Write;
+
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::<u8>::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    writer
+        .start_file(
+            format!("jcr_root/content/forms/af/fixtures/{form_code}/.content.xml"),
+            options,
+        )
+        .expect("start zip entry");
+    writer
+        .write_all(content_xml.as_bytes())
+        .expect("write zip entry");
+    writer.finish().expect("finish zip").into_inner()
+}
+
+/// Parse a fixture's bare form `.content.xml` into an [`crate::aem::AemNode`] tree.
+pub fn parse_fixture_form(form_code: &str) -> crate::aem::AemNode {
+    let xml = read_fixture(&format!("aem_xsd/{form_code}/source.content.xml"));
+    let zip = aem_zip_from_form_xml(form_code, &xml);
+    let parsed = crate::aem::parse_aem_zip(&zip)
+        .unwrap_or_else(|e| panic!("parse fixture form {form_code}: {e}"));
+    parsed.root
+}
+
+/// Every `fragRef` reachable in an AEM tree.
+///
+/// Covers all three shapes a fragment can take: an opaque `Fragment` node (the
+/// fragment could not be resolved), a `Panel` whose fragment was inlined, and a
+/// `Repeatable` built from a repeating fragment panel.
+pub fn collect_frag_refs(root: &crate::aem::AemNode) -> Vec<String> {
+    use crate::aem::AemNode;
+    let mut found = Vec::new();
+    walk_aem_nodes(root, &mut |node| match node {
+        AemNode::Fragment { frag_ref, .. } => found.push(frag_ref.clone()),
+        AemNode::Panel {
+            frag_ref: Some(fr),
+            ..
+        }
+        | AemNode::Repeatable {
+            frag_ref: Some(fr),
+            ..
+        } => found.push(fr.clone()),
+        _ => {}
+    });
+    found
+}
+
 /// Recursively walk a tree of `StructuredNode`s, calling `callback` on every
 /// node encountered (depth-first, pre-order).
 ///

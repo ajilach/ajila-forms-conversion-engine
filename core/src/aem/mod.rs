@@ -675,6 +675,15 @@ pub enum AemNode {
         max_occur: u32,
         /// XSD path for `bindRef` attribute on the repeatable inner panel.
         bind_ref: Option<String>,
+        /// `fragRef` of the fragment this repeatable wraps, when a repeating
+        /// panel carried a `fragRef` and its content was inlined.
+        ///
+        /// A repeating fragment (`maxOccur` on a `fragRef` panel) is the shape
+        /// behind an XSD element such as
+        /// `<xs:element name="AuthRepSignature" type="SignatureType" maxOccurs="50"/>`,
+        /// so the reference has to survive the unwrapping.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
 
     /// Fragment reference — replaces a panel whose XSD type matches a
@@ -746,6 +755,12 @@ pub enum AemNode {
 // ============================================================================
 
 impl AemNode {
+    /// `max_occur` value standing for "unbounded".
+    ///
+    /// AEM spells this `maxOccur="-1"`, which does not fit the `u32` the model
+    /// uses, so it is carried as this sentinel and written back out as `-1`.
+    pub const UNBOUNDED_OCCUR: u32 = u32::MAX;
+
     /// Get the element tag name used in JCR XML (e.g. `"panel_<uuid>"`).
     pub fn element_name(&self) -> String {
         match self {

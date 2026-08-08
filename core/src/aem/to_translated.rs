@@ -313,6 +313,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             min_occur,
             max_occur,
             bind_ref,
+            frag_ref,
         } => AemNodeTranslated::Repeatable {
             uuid: *uuid,
             passthrough: ctx.passthrough(uuid),
@@ -322,6 +323,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             min_occur: *min_occur,
             max_occur: *max_occur,
             bind_ref: bind_ref.clone(),
+            frag_ref: frag_ref.clone(),
         },
         AemNode::Fragment {
             uuid,

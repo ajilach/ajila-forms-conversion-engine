@@ -34549,3 +34549,90 @@ fn redacto_validation_counts_report_the_footnote_panel() {
     assert_eq!(counts.styled_panels.get("footnote"), Some(&1));
     assert!(counts.asset_containers >= 1);
 }
+
+// ============================================================================
+// AEM → XSD fixture tests
+// ============================================================================
+
+/// Tests driven by the UBS `af-xsd-automation` reference fixtures under
+/// `core/fixtures/aem_xsd/`. See that directory's README for provenance and for
+/// which parts of the reference are derivable versus config-supplied.
+mod aem_xsd_fixtures {
+    use super::helpers;
+
+    /// The AEM → XSD walk needs each fragment panel's `fragRef` to pick the
+    /// right global element or complex type.
+    ///
+    /// `convert_fragment` inlines every fragment it can resolve — from the ZIP
+    /// or from `profiles/ubs/aem/fragments/` — into a plain `Panel`, so the
+    /// panel has to carry `frag_ref` for the reference to be reproducible at
+    /// all: four of AF_ABFA's fourteen XSD elements come from such fragments.
+    #[test]
+    fn parsed_abfa_retains_every_fragment_ref() {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let found = helpers::collect_frag_refs(&root);
+
+        // The three fragments that become top-level XSD elements. The form also
+        // nests `affrg_global_AccountHolder1` inside the ContractualPartnerGeneric
+        // panel, but resolving that panel replaces its children with the
+        // fragment library's own content — and the nested fragment is
+        // fragment-internal, so it never reaches the form schema anyway.
+        for expected in [
+            "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
+            "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_ContractualPartnerGeneric1",
+            "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1",
+        ] {
+            assert!(
+                found.iter().any(|f| f == expected),
+                "fragRef {expected} was lost during parse.\nFound: {found:#?}"
+            );
+        }
+
+        // Two panels share affrg_SignatureGeneric1; both must survive, because
+        // only their titles tell the client signature from the authorized
+        // representative's.
+        let signature_refs = found
+            .iter()
+            .filter(|f| f.ends_with("affrg_SignatureGeneric1"))
+            .count();
+        assert_eq!(
+            signature_refs, 2,
+            "expected both SignatureGeneric fragments, found {signature_refs}"
+        );
+    }
+
+    /// AF_ABFA's two repeating panels use `maxOccur="-1"` (unbounded). They must
+    /// survive as `Repeatable`, because they are what produce the
+    /// `EmailAddressInstruction` and `DomainInstruction` elements with
+    /// `maxOccurs="50"` — a plain `Panel` would emit no grouping element at all.
+    #[test]
+    fn parsed_abfa_recognises_unbounded_repeat_panels() {
+        use crate::aem::AemNode;
+
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let mut repeats = Vec::new();
+        helpers::walk_aem_nodes(&root, &mut |node| {
+            if let AemNode::Repeatable {
+                name,
+                title,
+                max_occur,
+                ..
+            } = node
+            {
+                repeats.push((name.clone(), title.clone(), *max_occur));
+            }
+        });
+
+        for expected in ["PN_RepeatEmailAddress", "PN_RepeatDomain"] {
+            let found = repeats.iter().find(|(n, _, _)| n == expected);
+            let (_, _, max_occur) = found.unwrap_or_else(|| {
+                panic!("{expected} was not parsed as a Repeatable.\nFound: {repeats:#?}")
+            });
+            assert_eq!(
+                *max_occur,
+                AemNode::UNBOUNDED_OCCUR,
+                "{expected} has maxOccur=\"-1\" and must round-trip as unbounded"
+            );
+        }
+    }
+}

@@ -1,2 +1,5 @@
 core/models/** filter=lfs diff=lfs merge=lfs -text
 core/input/** filter=lfs diff=lfs merge=lfs -text
+# Fixtures are compared as text by the test suite, so a CRLF checkout would
+# fail every comparison. Keep them plain (not LFS) so diffs stay reviewable.
+core/fixtures/** text eol=lf

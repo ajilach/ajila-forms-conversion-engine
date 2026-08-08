@@ -1722,6 +1722,7 @@ fn convert_repeatable(
         min_occur: r.min_occurrences,
         max_occur: r.max_occurrences.unwrap_or(config.repeatable_max_occur),
         bind_ref: None,
+        frag_ref: None,
     }
 }
 

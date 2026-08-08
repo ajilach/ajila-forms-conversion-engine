@@ -902,15 +902,21 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
         REGENERATED_CHILD_TAGS,
     );
 
-    // Check for repeatable
+    // Check for repeatable.
+    //
+    // AEM writes `maxOccur="-1"` for an unbounded repeat. Parsing that as `u32`
+    // fails, so it used to fall back to 0 and the panel was flattened into an
+    // ordinary `Panel` with its occurrence silently dropped. Parse as `i64` and
+    // map any negative value onto [`AemNode::UNBOUNDED_OCCUR`].
     let min_occur = node
         .attr("minOccur")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    let max_occur = node
-        .attr("maxOccur")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let max_occur = match node.attr("maxOccur").and_then(|v| v.parse::<i64>().ok()) {
+        Some(v) if v < 0 => AemNode::UNBOUNDED_OCCUR,
+        Some(v) => u32::try_from(v).unwrap_or(0),
+        None => 0,
+    };
 
     let is_repeatable = max_occur > 1;
 
@@ -919,7 +925,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
     let is_page = false; // Determined by parent context, not self attributes
 
     // Check for fragment reference
-    if node.attr("fragRef").is_some() {
+    if let Some(frag_ref_for_repeat) = node.attr("fragRef").map(|s| s.to_string()) {
         let fragment_result = convert_fragment(node, ctx)?;
         if is_repeatable {
             if let Some(inner) = fragment_result {
@@ -935,6 +941,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
                     min_occur: min_occur.max(1),
                     max_occur,
                     bind_ref: node.attr("bindRef").map(|s| s.to_string()),
+                    frag_ref: Some(frag_ref_for_repeat),
                 }));
             }
         }
@@ -961,6 +968,7 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
             min_occur: min_occur.max(1),
             max_occur,
             bind_ref: node.attr("bindRef").map(|s| s.to_string()),
+            frag_ref: None,
         }))
     } else {
         Ok(Some(AemNode::Panel {

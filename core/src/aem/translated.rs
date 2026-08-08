@@ -261,6 +261,10 @@ pub enum AemNodeTranslated {
         min_occur: u32,
         max_occur: u32,
         bind_ref: Option<String>,
+        /// `fragRef` this repeatable wraps, when a repeating panel carried a
+        /// `fragRef` and its content was inlined.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
     Fragment {
         uuid: Uuid,
@@ -681,6 +685,7 @@ impl AemNodeTranslated {
                 min_occur,
                 max_occur,
                 bind_ref,
+                frag_ref,
                 ..
             } => AemNode::Repeatable {
                 uuid: *uuid,
@@ -690,6 +695,7 @@ impl AemNodeTranslated {
                 min_occur: *min_occur,
                 max_occur: *max_occur,
                 bind_ref: bind_ref.clone(),
+                frag_ref: frag_ref.clone(),
             },
             AemNodeTranslated::Fragment {
                 uuid,
