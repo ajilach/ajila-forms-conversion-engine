@@ -12,9 +12,9 @@ same output from our own `AemNode` tree.
 
 ## What this fixture pins
 
-`reference.schema.xsd` is UBS's file, **not** ours — never regenerate it.
-`helpers::assert_matches_golden` refuses any path containing `reference.` for
-exactly this reason.
+`reference.schema.xsd` is UBS's file, **not** ours — never regenerate it from
+our output. If our schema disagrees with it, the generator or the config is
+wrong, not the reference.
 
 Our own output uses our formatting (2-space indent, no XMLSpy header comment),
 so the comparison is **structural**: element tree, names, types, `ref` versus
@@ -32,9 +32,15 @@ supplied by `[[aemElements]]` rules in `profiles/ubs/xsd/config.toml`:
   `jcr:title` ("Client" → `AccountHolderSignature`, "Authorized representative"
   → `AuthRepSignature`)
 
-`abfa_shape_is_derivable_without_config_names` asserts that removing those rules
-changes only names, never the shape — config must never be able to paper over a
-generator regression.
+`abfa_shape_is_derivable_without_config_names` regenerates with those rules
+stripped and asserts the result is a subsequence of the full schema: config may
+name what the tree cannot name on its own, but may never reorder or re-nest what
+it already determines, so a generator regression cannot be papered over by
+adding a config entry.
+
+Two nodes exist *only* because config names them — the partner-class radio,
+whose `jcr:title` is empty, and the ContractualPartnerGeneric fragment, whose
+identity is its element name in the type library.
 
 ## Two bindRefs point somewhere else
 

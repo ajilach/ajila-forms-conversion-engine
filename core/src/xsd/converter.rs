@@ -323,12 +323,7 @@ fn collect_node_name_type_pairs(
 }
 
 // ============================================================================
-// Node → XsdNode building
-// ============================================================================
-
-// ============================================================================
-// ============================================================================
-// BindRef computation (for AEM XSD binding)
+// BindRef computation (provisional; input to fragment matching)
 // ============================================================================
 
 /// Maps produced by [`compute_bind_refs`] and consumed by the AEM converter
@@ -342,10 +337,11 @@ pub struct BindRefMaps {
     pub sections: std::collections::HashMap<String, String>,
 }
 
-/// Compute XSD bind-ref paths for all fields and heading sections in `nodes`.
+/// Compute provisional bind-ref paths for all fields and heading sections.
 ///
-/// Reuses the same name-resolution logic as [`generate_xsd`] so that the
-/// resulting paths exactly match the elements produced by the XSD generator.
+/// These feed fragment matching in [`crate::aem::convert_to_aem`] and are then
+/// discarded — the paths a form ships with come from
+/// [`crate::xsd::generate_xsd_from_aem`], which walks the finished AEM tree.
 pub fn compute_bind_refs(nodes: &[StructuredNode], config: &super::XsdConfig) -> BindRefMaps {
     let mut maps = BindRefMaps {
         fields: std::collections::HashMap::new(),

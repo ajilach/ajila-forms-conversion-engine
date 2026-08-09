@@ -164,7 +164,9 @@ impl ConversionAgent {
                         let count = nodes.len();
                         self.structured = nodes;
                         self.structured_edited("AI: set structured tree");
-                        ToolReply::Text(format!("OK — working structured tree set ({count} top-level nodes)."))
+                        ToolReply::Text(format!(
+                            "OK — working structured tree set ({count} top-level nodes)."
+                        ))
                     }
                     Err(e) => ToolReply::Error(format!("Invalid StructuredNode JSON: {e}")),
                 }
@@ -187,7 +189,10 @@ impl ConversionAgent {
             "set_structured_field" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
                 let field = input["field"].as_str().unwrap_or_default().to_string();
-                let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                let value = input
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let result =
                     crate::structured_edit::set_field(&mut self.structured, &path, &field, value);
                 self.edit_structured(format_args!("set {field} on {path}"), result)
@@ -214,14 +219,23 @@ impl ConversionAgent {
             }
             "replace_structured_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let node = input
+                    .get("node")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let result =
                     crate::structured_edit::replace_node(&mut self.structured, &path, node);
                 self.edit_structured(format_args!("replace {path}"), result)
             }
             "insert_structured_node" => {
-                let parent = input["parent_path"].as_str().unwrap_or_default().to_string();
-                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let parent = input["parent_path"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let node = input
+                    .get("node")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let pos = match crate::structured_edit::parse_insert_pos(
                     input.get("position").unwrap_or(&serde_json::Value::Null),
                 ) {
@@ -299,14 +313,14 @@ impl ConversionAgent {
             }
             "get_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                self.read_aem(|root| {
-                    match crate::aem_translated_edit::resolve_mut(root, &path) {
+                self.read_aem(
+                    |root| match crate::aem_translated_edit::resolve_mut(root, &path) {
                         Ok(node) => {
                             ToolReply::Text(serde_json::to_string_pretty(node).unwrap_or_default())
                         }
                         Err(e) => ToolReply::Error(e),
-                    }
-                })
+                    },
+                )
             }
             "set_aem_translated_field" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
@@ -314,14 +328,20 @@ impl ConversionAgent {
                 if field.is_empty() {
                     return ToolReply::Error("`field` must not be empty.".into());
                 }
-                let value = input.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                let value = input
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 self.edit_aem(format_args!("set {field} on {path}"), |root| {
                     crate::aem_translated_edit::set_field(root, &path, &field, value)
                 })
             }
             "replace_aem_translated_node" => {
                 let path = input["path"].as_str().unwrap_or_default().to_string();
-                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let node = input
+                    .get("node")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 self.edit_aem(format_args!("replace {path}"), |root| {
                     crate::aem_translated_edit::replace_node(root, &path, node)
                 })
@@ -331,7 +351,10 @@ impl ConversionAgent {
                     .as_str()
                     .unwrap_or_default()
                     .to_string();
-                let node = input.get("node").cloned().unwrap_or(serde_json::Value::Null);
+                let node = input
+                    .get("node")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let pos = match crate::aem_translated_edit::parse_insert_pos(&input["position"]) {
                     Ok(p) => p,
                     Err(e) => return ToolReply::Error(e),
@@ -404,9 +427,7 @@ impl ConversionAgent {
             }
             "validate_aem_package" => {
                 let Some(pkg) = self.target.aem().and_then(|s| s.package.clone()) else {
-                    return ToolReply::Error(
-                        NO_PACKAGE.into(),
-                    );
+                    return ToolReply::Error(NO_PACKAGE.into());
                 };
                 match validate_package_bytes(&pkg) {
                     Ok(msg) => ToolReply::Text(msg),
@@ -498,9 +519,7 @@ impl ConversionAgent {
                     return ToolReply::Error("No AEM connection configured.".into());
                 };
                 let Some(pkg) = self.target.aem().and_then(|s| s.package.clone()) else {
-                    return ToolReply::Error(
-                        NO_PACKAGE.into(),
-                    );
+                    return ToolReply::Error(NO_PACKAGE.into());
                 };
                 let cfg = match self.config() {
                     Ok(c) => c,

@@ -9,7 +9,7 @@
 //! This module converts a [`StructuredNode`](crate::structured::StructuredNode)
 //! tree into a [`RedactoDump`] (the typed intermediate representation, one
 //! `Vec` per table) and serialises that dump to SQL. The split mirrors the XSD
-//! target ([`generate_xsd_schema`](crate::xsd::generate_xsd_schema) →
+//! target ([`generate_xsd_from_aem`](crate::xsd::generate_xsd_from_aem) →
 //! [`XsdSchema::to_xml`](crate::xsd::XsdSchema::to_xml)) and lets tests assert
 //! on the IR rather than on generated text.
 //!

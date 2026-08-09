@@ -32883,6 +32883,130 @@ mod aem_xsd_fixtures {
         println!("{}", abfa_generated_xsd());
     }
 
+    /// A profile custom element must not become a schema element.
+    ///
+    /// `apply_custom_elements` replaces a whole panel's contents with a single
+    /// `Custom` node whose label is the panel title. Classifying that as a data
+    /// leaf would emit one `xs:string` named after the section — `Kundendaten`,
+    /// `SignatureS` — and silently drop every field the section holds, which is
+    /// exactly the account-holder and signature blocks.
+    ///
+    /// The rest of the suite loads the UBS profile with `custom_elements`
+    /// cleared, so only a test that enables them can catch this.
+    #[test]
+    fn custom_elements_do_not_become_schema_elements() {
+        let root =
+            helpers::build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+
+        let mut customs = Vec::new();
+        helpers::walk_aem_nodes(&root, &mut |node| {
+            if let crate::aem::AemNode::Custom { label, .. } = node {
+                customs.push(label.clone());
+            }
+        });
+        assert!(
+            !customs.is_empty(),
+            "this form should exercise the custom-element rules"
+        );
+
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("AAGZ".to_string());
+        let result =
+            crate::xsd::generate_xsd_from_aem(&root, &config, &helpers::load_ubs_fragments());
+        let xml = result.schema.to_xml();
+
+        for label in &customs {
+            let derived = crate::xsd::to_xsd_element_name(label);
+            assert!(
+                !xml.contains(&format!("name=\"{derived}\"")),
+                "the custom element {label:?} leaked into the schema as {derived:?}:\n{xml}"
+            );
+        }
+    }
+
+    /// Config may name nodes the AEM tree cannot name on its own; it must never
+    /// reorder or re-nest what the tree already determines.
+    ///
+    /// Regenerate AF_ABFA with every naming action (`element` / `type`) stripped
+    /// from the `[[aemElements]]` rules — keeping `ignore` and `occurs`, which
+    /// are shape rules by design — and assert the result is a strict
+    /// *subsequence* of the full schema's skeleton.
+    ///
+    /// Not equality: a node with nothing to derive a name from can only exist
+    /// because config names it. AF_ABFA has two — the partner-class radio, whose
+    /// `jcr:title` is empty, and the ContractualPartnerGeneric fragment, whose
+    /// identity is its element name in the type library. Everything else must
+    /// survive with its nesting and cardinality intact, so a generator
+    /// regression that drops or reorders an element cannot be papered over by
+    /// adding a config entry.
+    #[test]
+    fn abfa_shape_is_derivable_without_config_names() {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let fragments = helpers::load_ubs_fragments();
+
+        let mut with_names = helpers::load_ubs_xsd_config();
+        with_names.form_code = Some("ABFA".to_string());
+
+        let mut without_names = with_names.clone();
+        for rule in &mut without_names.profile.aem_elements {
+            if !rule.ignore {
+                rule.element = None;
+                rule.type_ref = None;
+            }
+        }
+
+        let full = skeleton(
+            &crate::xsd::generate_xsd_from_aem(&root, &with_names, &fragments)
+                .schema
+                .to_xml(),
+        );
+        let stripped = skeleton(
+            &crate::xsd::generate_xsd_from_aem(&root, &without_names, &fragments)
+                .schema
+                .to_xml(),
+        );
+
+        let mut next = 0usize;
+        for entry in &stripped {
+            match full[next..].iter().position(|e| e == entry) {
+                Some(offset) => next += offset + 1,
+                None => panic!(
+                    "stripping the naming rules changed the schema shape: {entry} is out of \
+                     order or missing.\nfull:     {full:#?}\nstripped: {stripped:#?}"
+                ),
+            }
+        }
+
+        // Config must be adding identity, not bulk: at most a couple of elements.
+        assert!(
+            full.len() - stripped.len() <= 2,
+            "config added {} elements; it should only name what the tree cannot",
+            full.len() - stripped.len()
+        );
+    }
+
+    /// The nesting depth and occurrence attributes of every element, with names,
+    /// refs and types blanked.
+    fn skeleton(xsd: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut depth = 0usize;
+        for raw in xsd.lines() {
+            let line = raw.trim();
+            if line.starts_with("<xs:element") {
+                let min = attr(line, "minOccurs").unwrap_or_else(|| "-".into());
+                let max = attr(line, "maxOccurs").unwrap_or_else(|| "-".into());
+                let kind = if line.ends_with("/>") { "leaf" } else { "group" };
+                out.push(format!("{depth} {kind} min={min} max={max}"));
+                if !line.ends_with("/>") {
+                    depth += 1;
+                }
+            } else if line.starts_with("</xs:element") {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        out
+    }
+
     /// The bindRefs our walk assigns must be the ones UBS injected into
     /// `reference.content.xml` — same paths, same order.
     ///
@@ -33082,6 +33206,24 @@ mod ubs_xsd_naming {
         }
     }
 
+    fn layout(children: Vec<AemNode>) -> AemNode {
+        AemNode::Panel {
+            uuid: Uuid::new_v4(),
+            name: "PN_Layout".into(),
+            title: String::new(),
+            children,
+            is_page: false,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }
+    }
+
     fn frag(name: &str, title: &str, frag_ref: &str) -> AemNode {
         AemNode::Fragment {
             uuid: Uuid::new_v4(),
@@ -33239,12 +33381,46 @@ mod ubs_xsd_naming {
     /// two sections holding the same field cannot collide.
     #[test]
     fn layout_panels_are_transparent_but_titled_pages_group() {
+        // A titled page wrapping a layout panel: the page adds a level, the
+        // layout panel does not, so the field lands one level down — not two.
         let xml = xml_for(vec![page(
             "Personal Data",
-            vec![textbox("TXT_a", "Last name")],
+            vec![layout(vec![textbox("TXT_a", "Last name")])],
         )]);
-        assert!(xml.contains(r#"<xs:element name="PersonalData""#), "got:\n{xml}");
-        assert!(xml.contains(r#"<xs:element name="LastName""#), "got:\n{xml}");
+
+        let paths = helpers::xsd_element_paths_in_order(&schema_for(vec![page(
+            "Personal Data",
+            vec![layout(vec![textbox("TXT_a", "Last name")])],
+        )]));
+        assert_eq!(
+            paths,
+            vec![
+                "/UBSAF_TEST".to_string(),
+                "/UBSAF_TEST/PersonalData".to_string(),
+                "/UBSAF_TEST/PersonalData/LastName".to_string(),
+            ],
+            "got:\n{xml}"
+        );
+    }
+
+    /// A titleless, non-page panel: pure layout, no XSD level and no binding.
+    #[test]
+    fn an_untitled_layout_panel_adds_no_level_and_no_binding() {
+        let result = crate::xsd::generate_xsd_from_aem(
+            &root(vec![layout(vec![textbox("TXT_a", "Street")])]),
+            &config(),
+            &[],
+        );
+        let paths = helpers::xsd_element_paths_in_order(&result.schema);
+        assert_eq!(
+            paths,
+            vec!["/UBSAF_TEST".to_string(), "/UBSAF_TEST/Street".to_string()]
+        );
+        assert_eq!(
+            result.bind_refs.len(),
+            1,
+            "only the field is bound, not the layout panel"
+        );
     }
 
     /// Repeated sibling names would make the schema invalid and bind two nodes

@@ -17,8 +17,8 @@
 use std::collections::HashMap;
 
 use blueprint::{
-    AemConfig, AemConnection, AemI18nText, AemNode, AemNodeTranslated, AemOptionTranslated, Context,
-    DocumentEnvelope, OutputTarget, RedactoDump, StructuredNode,
+    AemConfig, AemConnection, AemI18nText, AemNode, AemNodeTranslated, AemOptionTranslated,
+    Context, DocumentEnvelope, OutputTarget, RedactoDump, StructuredNode,
 };
 
 /// Error returned by the AEM-tree tools when nothing has been authored yet.
@@ -58,11 +58,15 @@ pub(crate) fn collect_translated_languages(
                 add(title, out);
                 children.iter().for_each(|c| walk(c, out));
             }
-            AemNodeTranslated::Panel { title, children, .. } => {
+            AemNodeTranslated::Panel {
+                title, children, ..
+            } => {
                 add(title, out);
                 children.iter().for_each(|c| walk(c, out));
             }
-            AemNodeTranslated::Repeatable { title, children, .. } => {
+            AemNodeTranslated::Repeatable {
+                title, children, ..
+            } => {
                 add(title, out);
                 children.iter().for_each(|c| walk(c, out));
             }
@@ -791,12 +795,7 @@ impl ConversionAgent {
     /// prefers the AEM profile's list) is the wrong answer for a Redacto
     /// document — that uses `resolve_redacto_languages` instead.
     fn config(&mut self) -> Result<AemConfig, String> {
-        let cached = self
-            .target
-            .aem()
-            .ok_or(AEM_ONLY_STATE)?
-            .config
-            .clone();
+        let cached = self.target.aem().ok_or(AEM_ONLY_STATE)?.config.clone();
         let cfg = match cached {
             Some(cfg) => cfg,
             None => {
@@ -838,7 +837,6 @@ impl ConversionAgent {
         }
         Ok(cfg)
     }
-
 
     /// Snapshot the working AEM (translated) tree for versioning.
     fn snapshot_aem_translated(&mut self, label: &str) {
@@ -994,7 +992,20 @@ impl ConversionAgent {
     fn lower_aem_translated(&mut self) -> Result<(AemNode, I18nDict), String> {
         let cfg = self.config()?;
         let tree = self.aem_tree().ok_or(NO_AEM_TREE)?;
-        Ok(tree.lower(&cfg.master_language, &cfg.languages))
+        let (mut node, dict) = tree.lower(&cfg.master_language, &cfg.languages);
+
+        // Re-derive the bindRefs from the lowered tree.
+        //
+        // The agent edits the working tree freely — moving a field between
+        // sections changes its bind path — and the package writer generates the
+        // schema from this same tree. Without this the two would drift: the
+        // shipped `.content.xml` would carry bindRefs from whenever the tree was
+        // last built while the bundled XSD described the tree as it is now.
+        if let Some(xsd_config) = cfg.xsd_config.as_ref().filter(|_| cfg.bind_to_xsd) {
+            let result = blueprint::generate_xsd_from_aem(&node, xsd_config, &cfg.fragments);
+            blueprint::apply_bind_refs(&mut node, &result.bind_refs);
+        }
+        Ok((node, dict))
     }
 
     /// Lower the working AEM tree without needing a fully-resolved profile.
@@ -1118,8 +1129,8 @@ mod tests {
     /// `structured()` silently produced an empty document.
     #[test]
     fn source_structured_holds_the_converted_document_while_structured_is_empty() {
-        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../core/input/AAEV_019_EN.pdf");
+        let pdf =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input/AAEV_019_EN.pdf");
         let bytes = std::fs::read(&pdf).expect("read AAEV_019_EN.pdf");
 
         let mut agent = ConversionAgent::new(
@@ -1222,7 +1233,9 @@ mod tests {
     }
 
     fn fixture(name: &str) -> (String, Vec<u8>) {
-        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input").join(name);
+        let pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../core/input")
+            .join(name);
         let bytes = std::fs::read(&pdf).unwrap_or_else(|e| panic!("read {name}: {e}"));
         (name.to_string(), bytes)
     }
@@ -1250,7 +1263,10 @@ mod tests {
             agent.source_envelope().context.header.is_some(),
             "the merged envelope must carry the header the analysis recovered"
         );
-        assert!(agent.source_merge_error().is_none(), "one PDF needs no merge");
+        assert!(
+            agent.source_merge_error().is_none(),
+            "one PDF needs no merge"
+        );
     }
 
     /// Each language variant carries its own master-page header and its own
@@ -1395,7 +1411,11 @@ mod tests {
             OutputTarget::Redacto,
         );
 
-        let structured = reply_text(agent.execute("get_schema", &serde_json::json!({"kind": "structured"})).await);
+        let structured = reply_text(
+            agent
+                .execute("get_schema", &serde_json::json!({"kind": "structured"}))
+                .await,
+        );
         assert!(
             structured.contains("StructuredNode"),
             "expected the structured schema, got: {}",
@@ -1403,9 +1423,16 @@ mod tests {
         );
 
         // Absent or unknown `kind` keeps the historical AEM answer.
-        for input in [serde_json::json!({}), serde_json::json!({"kind": "nonsense"})] {
+        for input in [
+            serde_json::json!({}),
+            serde_json::json!({"kind": "nonsense"}),
+        ] {
             let aem = reply_text(agent.execute("get_schema", &input).await);
-            assert!(aem.contains("AemNodeTranslated"), "got: {}", &aem[..200.min(aem.len())]);
+            assert!(
+                aem.contains("AemNodeTranslated"),
+                "got: {}",
+                &aem[..200.min(aem.len())]
+            );
         }
     }
 
@@ -1433,7 +1460,10 @@ mod tests {
 
         // Nothing authored yet: the dump tool must say so rather than emit an
         // empty document.
-        match agent.execute("build_redacto_dump", &serde_json::json!({})).await {
+        match agent
+            .execute("build_redacto_dump", &serde_json::json!({}))
+            .await
+        {
             ToolReply::Error(e) => assert_eq!(e, NO_STRUCTURED_TREE),
             _ => panic!("an unseeded tree must not build a dump"),
         }
@@ -1458,7 +1488,11 @@ mod tests {
             "seeding must fill the working tree"
         );
 
-        let built = reply_text(agent.execute("build_redacto_dump", &serde_json::json!({})).await);
+        let built = reply_text(
+            agent
+                .execute("build_redacto_dump", &serde_json::json!({}))
+                .await,
+        );
         let report: serde_json::Value = serde_json::from_str(&built).unwrap();
         assert_eq!(
             report["problems"].as_array().map(Vec::len),
@@ -1469,7 +1503,10 @@ mod tests {
             report["assets"].as_u64().unwrap_or(0) > 5,
             "expected a text-heavy document: {built}"
         );
-        assert!(agent.redacto_dump().is_some(), "the dump must be cached for finalize");
+        assert!(
+            agent.redacto_dump().is_some(),
+            "the dump must be cached for finalize"
+        );
     }
 
     /// The same tools stay reachable under the AEM target — the guard is about
@@ -1576,6 +1613,6 @@ mod catalog;
 mod execute;
 mod prompts;
 
-pub use catalog::{ToolSpec, all_tools, catalog, scope, target, tools_for};
 use catalog::target_mask;
+pub use catalog::{ToolSpec, all_tools, catalog, scope, target, tools_for};
 pub use prompts::*;

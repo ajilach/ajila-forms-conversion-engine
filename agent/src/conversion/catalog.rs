@@ -718,9 +718,21 @@ mod catalog_guards {
         };
 
         // Only the Author writes; only the Reviewer terminates.
-        assert!(has(OutputTarget::Aem, scope::AEM_AUTHOR, "set_aem_translated"));
-        assert!(!has(OutputTarget::Aem, scope::AEM_ANALYST, "set_aem_translated"));
-        assert!(!has(OutputTarget::Aem, scope::AEM_REVIEWER, "set_aem_translated"));
+        assert!(has(
+            OutputTarget::Aem,
+            scope::AEM_AUTHOR,
+            "set_aem_translated"
+        ));
+        assert!(!has(
+            OutputTarget::Aem,
+            scope::AEM_ANALYST,
+            "set_aem_translated"
+        ));
+        assert!(!has(
+            OutputTarget::Aem,
+            scope::AEM_REVIEWER,
+            "set_aem_translated"
+        ));
         assert!(has(OutputTarget::Aem, scope::AEM_REVIEWER, "submit_review"));
         assert!(!has(OutputTarget::Aem, scope::AEM_AUTHOR, "submit_review"));
         assert!(!has(OutputTarget::Aem, scope::AEM_ANALYST, "submit_review"));
@@ -735,9 +747,21 @@ mod catalog_guards {
 
         // The Redacto Author edits the structured tree but never re-emits it
         // wholesale: set_structured discards the grouping the seed carried.
-        assert!(has(OutputTarget::Redacto, scope::REDACTO_AUTHOR, "seed_structured_from_state"));
-        assert!(has(OutputTarget::Redacto, scope::REDACTO_AUTHOR, "build_redacto_dump"));
-        assert!(!has(OutputTarget::Redacto, scope::REDACTO_AUTHOR, "set_structured"));
+        assert!(has(
+            OutputTarget::Redacto,
+            scope::REDACTO_AUTHOR,
+            "seed_structured_from_state"
+        ));
+        assert!(has(
+            OutputTarget::Redacto,
+            scope::REDACTO_AUTHOR,
+            "build_redacto_dump"
+        ));
+        assert!(!has(
+            OutputTarget::Redacto,
+            scope::REDACTO_AUTHOR,
+            "set_structured"
+        ));
 
         // The Analyst reads and never edits.
         for stage in [scope::AEM_ANALYST, scope::REDACTO_ANALYST] {
@@ -746,8 +770,15 @@ mod catalog_guards {
             } else {
                 OutputTarget::Redacto
             };
-            for writer in ["set_structured_field", "set_aem_translated_field", "build_aem_package"] {
-                assert!(!has(target, stage, writer), "the Analyst must not have {writer}");
+            for writer in [
+                "set_structured_field",
+                "set_aem_translated_field",
+                "build_aem_package",
+            ] {
+                assert!(
+                    !has(target, stage, writer),
+                    "the Analyst must not have {writer}"
+                );
             }
         }
     }

@@ -489,14 +489,20 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     // schema from the finished AEM tree, writing each node's bind_ref during the
     // same walk. That is what makes `bindRef` and the generated XSD agree by
     // construction rather than by two code paths staying in step.
-    if let Some(xsd_config) = &config.xsd_config {
-        let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
-        crate::xsd::apply_bind_refs(&mut root, &result.bind_refs);
-    }
-
-    // When bind_to_xsd is disabled, strip bind_ref from all non-Fragment nodes
-    // (bind_refs were only needed internally for fragment matching).
-    if !config.bind_to_xsd {
+    //
+    // Only when the profile actually binds to a schema. With `bind_to_xsd`
+    // off, `strip_bind_refs` would discard the result anyway except on
+    // fragments, which must keep the fragment-prefixed paths
+    // `to_fragment_bind_ref` gave them rather than form-schema paths.
+    if config.bind_to_xsd {
+        if let Some(xsd_config) = &config.xsd_config {
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            crate::xsd::apply_bind_refs(&mut root, &result.bind_refs);
+        }
+    } else {
+        // bind_refs were only needed internally for fragment matching; strip
+        // them from everything except fragments, whose bindRef is their data
+        // bind path and is emitted regardless.
         if let AemNode::Root { children, .. } = &mut root {
             strip_bind_refs(children);
         }
@@ -1253,7 +1259,8 @@ fn list_nonempty_in(list: &ListNode, lang: &str) -> bool {
 pub(crate) fn rich_text_has_gap(node: &StructuredNode) -> bool {
     match node {
         StructuredNode::Paragraph(p) => {
-            p.content.languages().count() >= 2 && !p.content.missing_translation_languages().is_empty()
+            p.content.languages().count() >= 2
+                && !p.content.missing_translation_languages().is_empty()
         }
         StructuredNode::List(l) => list_has_gap(l),
         _ => false,
@@ -2648,15 +2655,15 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::DatePicker { bind_ref, .. }
             | AemNode::Dropdown { bind_ref, .. }
             | AemNode::Checkbox { bind_ref, .. }
-            | AemNode::RadioButton { bind_ref, .. } => {
+            | AemNode::RadioButton { bind_ref, .. }
+            | AemNode::Custom { bind_ref, .. } => {
                 *bind_ref = None;
             }
             AemNode::TextDraw { .. }
             | AemNode::TitleDraw { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
-            | AemNode::FootnotePlaceholder { .. }
-            | AemNode::Custom { .. } => {}
+            | AemNode::FootnotePlaceholder { .. } => {}
         }
     }
 }
@@ -3029,7 +3036,11 @@ mod tests {
         ];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
-        assert_eq!(children.len(), 1, "orphan should be merged into one element");
+        assert_eq!(
+            children.len(),
+            1,
+            "orphan should be merged into one element"
+        );
         match &children[0] {
             AemNode::TextDraw { content, name, .. } => {
                 // Master language is "en" → only the translated paragraph renders.
@@ -3045,8 +3056,10 @@ mod tests {
         // A translated paragraph followed by an orphan list (EN missing) merges
         // into a single element; the master (EN) render contains both blocks
         // only where EN has content.
-        let nodes = [ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
-            ml_list(&[&[("en", "x"), ("de", "y")], &[("en", ""), ("de", "z")]])];
+        let nodes = [
+            ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
+            ml_list(&[&[("en", "x"), ("de", "y")], &[("en", ""), ("de", "z")]]),
+        ];
         let refs: Vec<&StructuredNode> = nodes.iter().collect();
         // The list has a partial gap on item 2 but is non-empty in EN, so it is
         // NOT itself an orphan; the run is fully translated → no merge.
@@ -3073,8 +3086,10 @@ mod tests {
     fn merged_block_value_matches_shared_renderer() {
         // The TextDraw _value is exactly what the shared renderer produces for
         // the master language — the same fn the dictionary extraction uses.
-        let nodes = [ml_para(&[("en", "A"), ("de", "A-de")]),
-            ml_para(&[("en", ""), ("de", "B-de")])];
+        let nodes = [
+            ml_para(&[("en", "A"), ("de", "A-de")]),
+            ml_para(&[("en", ""), ("de", "B-de")]),
+        ];
         let refs: Vec<&StructuredNode> = nodes.iter().collect();
         let expected = render_rich_text_block_html(&refs, "en");
         assert_eq!(expected, "<p>A</p>");

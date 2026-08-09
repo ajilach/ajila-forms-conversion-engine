@@ -513,6 +513,18 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
         | AemNode::Preface { .. }
         | AemNode::Appendix { .. }
         | AemNode::FootnotePlaceholder { .. } => return Emit::Skip,
+
+        // A Custom node stands in for a whole hand-written profile template —
+        // `apply_custom_elements` replaces a panel's entire contents with one of
+        // them, keeping only the panel title as its label. The fields it renders
+        // live in the template, not in the model, so there is nothing here to
+        // describe. Treating it as a data leaf would emit one `xs:string` named
+        // after the section and silently drop every field the section holds.
+        //
+        // A rule naming an `element` opts a specific custom template back in.
+        AemNode::Custom { .. } if rule.and_then(|r| r.element.as_ref()).is_none() => {
+            return Emit::Skip;
+        }
         _ => {}
     }
 
@@ -637,6 +649,12 @@ fn fragment_emit(frag_ref: &str, rule: Option<&AemElementRule>, occurs: Occurs, 
             type_ref: t.to_string(),
             occurs,
         },
-        None => Emit::Skip,
+        None => {
+            log::warn!(
+                "Fragment {frag_ref} resolves to element {name}, but no fragment in the \
+                 library declares its type; omitted from the schema"
+            );
+            Emit::Skip
+        }
     }
 }

@@ -206,7 +206,7 @@ pub use html::{
 pub use xsd::{
     BindRefMaps, ElementMapping, RegisteredComplexType, SectionMapping, TypeChildElement,
     XsdConfig, XsdNode, XsdProfile, XsdSchema, build_registered_types,
-    generate_xsd_from_aem, generate_xsd_string_from_aem,
+    apply_bind_refs, generate_xsd_from_aem, generate_xsd_string_from_aem,
     build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
     extract_declared_names, find_matching_types,
     load_xsd_config_from_dir, parse_schema, resolve_section_name,
