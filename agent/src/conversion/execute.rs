@@ -395,10 +395,39 @@ impl ConversionAgent {
                     &passthrough,
                 );
                 let size = pkg.len();
+
+                // Also build the bound variant, so binding to the schema is a
+                // choice at download time rather than a re-run. It needs its own
+                // lowering: `bindRef`s are only derived when `bind_to_xsd` is on.
+                let mut bound_note = String::new();
+                let bound = if cfg.bind_to_xsd || cfg.xsd_path.is_none() {
+                    // Already bound, or the profile names no schema location.
+                    None
+                } else {
+                    let mut bound_cfg = cfg.clone();
+                    bound_cfg.bind_to_xsd = true;
+                    match self.lower_aem_translated_with(&bound_cfg) {
+                        Ok((bound_aem, bound_translations)) => {
+                            let bound_pkg = blueprint::to_aem_package_from_node_with_passthrough(
+                                &bound_aem,
+                                &bound_cfg,
+                                bound_translations,
+                                &passthrough,
+                            );
+                            bound_note = format!(" With bindRefs: {} bytes.", bound_pkg.len());
+                            Some(bound_pkg)
+                        }
+                        Err(e) => {
+                            bound_note = format!(" The bindRef variant failed: {e}");
+                            None
+                        }
+                    }
+                };
                 if let Some(aem) = self.target.aem_mut() {
                     aem.package = Some(pkg);
+                    aem.package_bound = bound;
                 }
-                ToolReply::Text(format!("Built package ({size} bytes)."))
+                ToolReply::Text(format!("Built package ({size} bytes).{bound_note}"))
             }
             "get_package_info" => match self.target.aem().and_then(|s| s.package.as_ref()) {
                 Some(pkg) => {

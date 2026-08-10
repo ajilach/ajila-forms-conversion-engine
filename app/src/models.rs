@@ -83,6 +83,8 @@ pub struct ProcessingState {
     pub target: blueprint::OutputTarget,
     pub form_code: Option<String>,
     pub aem_package: Option<Vec<u8>>,
+    /// The AEM package built with `bind_to_xsd` on, offered as its own download.
+    pub aem_package_bound: Option<Vec<u8>>,
     pub xsd_schema: Option<String>,
     /// PostgreSQL dump for the Redacto platform (text-only documents).
     pub redacto_sql: Option<String>,

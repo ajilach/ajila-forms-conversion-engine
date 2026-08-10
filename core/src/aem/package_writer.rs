@@ -433,7 +433,15 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
         ctx.insert("bind_to_xsd", &config.bind_to_xsd);
-        let xsd_ref = config.xsd_ref().unwrap_or_default();
+        // Advertise the schema only when the package actually binds to one.
+        // `xsd_path` names where the schema *would* live, which is needed to
+        // build a bound package on demand; a package built without binding must
+        // not claim `formmodel="xsd"` and point at a file it does not contain.
+        let xsd_ref = config
+            .bind_to_xsd
+            .then(|| config.xsd_ref())
+            .flatten()
+            .unwrap_or_default();
         ctx.insert("xsd_ref", &xsd_ref);
 
         match template::render_string(dam_template, &ctx) {

@@ -43,6 +43,9 @@ pub enum RunSeed {
 pub struct RunOutcome {
     pub envelope: DocumentEnvelope,
     pub aem_package: Option<Vec<u8>>,
+    /// The same package built with `bind_to_xsd` on: every field carries a
+    /// `bindRef` and the schema is bundled. Offered as a separate download.
+    pub aem_package_bound: Option<Vec<u8>>,
     pub xsd_schema: Option<String>,
     pub redacto_sql: Option<String>,
     pub form_code: Option<String>,
@@ -222,6 +225,7 @@ fn finalize(
     RunOutcome {
         envelope,
         aem_package: agent.package(),
+        aem_package_bound: agent.package_bound(),
         xsd_schema,
         redacto_sql,
         form_code,

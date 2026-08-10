@@ -77,7 +77,10 @@ fn structured_schema_is_object_with_defs() {
         .get("$defs")
         .and_then(|d| d.as_object())
         .expect("schema has $defs");
-    assert!(defs.contains_key("StructuredNode"), "$defs has StructuredNode");
+    assert!(
+        defs.contains_key("StructuredNode"),
+        "$defs has StructuredNode"
+    );
 
     // FieldId is annotated `#[schemars(with = "String")]`, so the FieldNode
     // `name` property must be a plain string schema (not an object/ref).
@@ -11532,9 +11535,17 @@ fn test_aaab_aem_config_form_path_title_code() {
         "form_dir() should be 'AF_AAAB'"
     );
 
+    // `xsd_path` names where the schema *would* live, so a bound package can be
+    // built on demand. Binding is opt-in and off by default, which is what keeps
+    // the schema out of the plain package.
     assert_eq!(
-        config.xsd_path, None,
-        "xsd_path should be None when not configured in the profile"
+        config.xsd_path.as_deref(),
+        Some("/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_AAAB.xsd"),
+        "xsd_path should be rendered from the profile with the form code"
+    );
+    assert!(
+        !config.bind_to_xsd,
+        "binding to the schema must stay opt-in"
     );
 }
 
@@ -17203,19 +17214,6 @@ fn test_bage_aem_has_expected_fields() {
 // XSD generation tests
 // ============================================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 #[test]
 fn test_xsd_snake_case_conversion() {
     use crate::xsd::to_snake_case;
@@ -17279,12 +17277,6 @@ fn test_xsd_extract_declared_names() {
         names
     );
 }
-
-
-
-
-
-
 
 // ============================================================================
 // compute_bind_refs unit tests
@@ -17653,7 +17645,6 @@ fn test_bind_refs_preamble_fields() {
     );
 }
 
-
 #[test]
 fn test_created_form_aem_bind_refs_match_xsd() {
     // The core contract of deriving the schema from the AEM tree: because the
@@ -17700,7 +17691,11 @@ fn test_created_form_aem_bind_refs_match_xsd() {
     );
 
     // Sections still nest, so the two same-named fields stay distinct.
-    assert!(xsd_paths.iter().any(|p| p == "/form/PersonalData/FirstName"));
+    assert!(
+        xsd_paths
+            .iter()
+            .any(|p| p == "/form/PersonalData/FirstName")
+    );
     assert!(xsd_paths.iter().any(|p| p == "/form/Address/Street"));
 
     for bind_ref in &bind_refs {
@@ -17711,7 +17706,6 @@ fn test_created_form_aem_bind_refs_match_xsd() {
         );
     }
 }
-
 
 #[test]
 fn test_xsd_profile_master_language_from_toml_is_applied() {
@@ -17737,8 +17731,6 @@ fn test_xsd_profile_master_language_defaults_to_none() {
 
     assert_eq!(config.master_language.as_deref(), None);
 }
-
-
 
 #[test]
 #[should_panic(expected = "bind_to_xsd=true requires xsd_config to be set")]
@@ -22263,9 +22255,9 @@ fn test_aari_has_list_with_expected_items() {
         texts
     );
     assert!(
-        texts
-            .iter()
-            .any(|t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi")),
+        texts.iter().any(
+            |t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi")
+        ),
         "List should contain the d) item about 'chiusura di rapporti produttivi'.\nItems: {:?}",
         texts
     );
@@ -30697,7 +30689,6 @@ fn test_aael_tabular_radio_buttons() {
     );
 }
 
-
 #[test]
 fn test_aahx_zwischen_section_precedes_vereinbarung_with_party_fields() {
     // AAHX opens with a single-column "Zwischen" block (the contracting parties
@@ -31019,8 +31010,8 @@ fn ubs_config_for(
     vars.insert("formrange_code".to_string(), form_code.to_string());
     vars.insert("formrange_entity".to_string(), "019".to_string());
     let ctx = crate::Context::new(master_language.to_string(), vars);
-    let mut config = crate::load_aem_config("ubs", &ctx)
-        .expect("build AemConfig via load_aem_config(\"ubs\")");
+    let mut config =
+        crate::load_aem_config("ubs", &ctx).expect("build AemConfig via load_aem_config(\"ubs\")");
     config.master_language = master_language.to_string();
     config.languages = languages.to_vec();
     config
@@ -31230,8 +31221,8 @@ fn lift_package(package: &crate::aem::ParsedAemPackage) -> crate::aem::AemNodeTr
 /// excluded by construction (it never enters the working tree).
 #[test]
 fn passthrough_load_save_load_is_a_fixpoint() {
-    use crate::aem::{generate_aem_xml_with_passthrough, parse_aem_zip};
     use crate::aem::xml_validation::{duplicate_attribute_elements, validate_aem_form_xml};
+    use crate::aem::{generate_aem_xml_with_passthrough, parse_aem_zip};
 
     // Real deployed packages: rich in unmodeled attributes (guideNodeClass, css,
     // textIsRich, dorFieldStyling, …), fd:rules/fd:scripts children, cq:responsive
@@ -31265,7 +31256,10 @@ fn passthrough_load_save_load_is_a_fixpoint() {
         // attribute keys (the parser-drops-typed / writer-drops-template-owned
         // subtractions must not collide).
         if let Err(violations) = validate_aem_form_xml(&regen) {
-            panic!("{fixture}: regenerated form XML is invalid:\n{}", violations.join("\n"));
+            panic!(
+                "{fixture}: regenerated form XML is invalid:\n{}",
+                violations.join("\n")
+            );
         }
         let dups = duplicate_attribute_elements(&regen);
         assert!(
@@ -31404,7 +31398,10 @@ fn passthrough_snapshot_back_compat_deserializes() {
     raw_attributes.insert("myCustomProp".to_string(), "x".to_string());
     let node = AemNodeTranslated::TextField {
         uuid: Uuid::from_u128(1),
-        passthrough: Passthrough { raw_attributes, raw_children: vec![] },
+        passthrough: Passthrough {
+            raw_attributes,
+            raw_children: vec![],
+        },
         name: "f1".into(),
         label: Default::default(),
         mandatory: false,
@@ -31430,15 +31427,20 @@ fn passthrough_snapshot_back_compat_deserializes() {
     }
     drop_passthrough(&mut value);
     assert!(
-        !serde_json::to_string(&value).unwrap().contains("passthrough"),
+        !serde_json::to_string(&value)
+            .unwrap()
+            .contains("passthrough"),
         "test setup: passthrough key must be gone from the legacy snapshot"
     );
 
-    let restored: AemNodeTranslated =
-        serde_json::from_value(value).expect("legacy snapshot without passthrough must deserialize");
+    let restored: AemNodeTranslated = serde_json::from_value(value)
+        .expect("legacy snapshot without passthrough must deserialize");
     match restored {
         AemNodeTranslated::TextField { passthrough, .. } => {
-            assert!(passthrough.is_empty(), "missing passthrough must default to empty");
+            assert!(
+                passthrough.is_empty(),
+                "missing passthrough must default to empty"
+            );
         }
         _ => panic!("expected a TextField"),
     }
@@ -31448,8 +31450,8 @@ fn passthrough_snapshot_back_compat_deserializes() {
 /// and is surfaced by `passthrough_map`, without leaking into unrelated nodes.
 #[test]
 fn passthrough_survives_serde_snapshot_round_trip() {
-    use crate::aem::translated::AemNodeTranslated;
     use crate::aem::Passthrough;
+    use crate::aem::translated::AemNodeTranslated;
     use std::collections::BTreeMap;
     use uuid::Uuid;
 
@@ -31926,8 +31928,7 @@ fn redacto_lists_use_ol_and_ul_without_inline_styles() {
     assert_eq!(contents[0], "<ol><li>one</li><li>two</li></ol>");
     assert_eq!(contents[1], "<ul><li>a</li></ul>");
     assert_eq!(
-        contents[2],
-        "<ul><li>outer<ol><li>inner</li></ol></li></ul>",
+        contents[2], "<ul><li>outer<ol><li>inner</li></ol></li></ul>",
         "a sublist belongs inside its parent <li>"
     );
     for content in &contents {
@@ -31950,7 +31951,10 @@ fn redacto_footnotes_are_linked_and_collected_into_a_panel() {
     ]);
     let nodes = vec![
         body,
-        footnote("1", "1 All personal designations apply equally to all genders."),
+        footnote(
+            "1",
+            "1 All personal designations apply equally to all genders.",
+        ),
     ];
 
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
@@ -32009,7 +32013,11 @@ fn redacto_grid_layout_with_unsupported_column_count_warns() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(dump.warnings.len(), 1, "{:?}", dump.warnings);
-    assert!(dump.warnings[0].contains("3 columns"), "{:?}", dump.warnings);
+    assert!(
+        dump.warnings[0].contains("3 columns"),
+        "{:?}",
+        dump.warnings
+    );
 }
 
 #[test]
@@ -32063,7 +32071,11 @@ fn redacto_column_flow_group_becomes_a_layout_split_panel() {
 
     let nodes = vec![
         heading(1, "Title"),
-        column_section(vec![heading(2, "Background"), paragraph("a"), paragraph("b")]),
+        column_section(vec![
+            heading(2, "Background"),
+            paragraph("a"),
+            paragraph("b"),
+        ]),
     ];
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
@@ -32162,7 +32174,11 @@ fn redacto_row_counts_and_foreign_keys_are_consistent() {
     assert_eq!(dump.asset_versions.len(), 6, "3 assets x 2 languages");
     assert_eq!(dump.documents.len(), 1);
     assert_eq!(dump.document_versions.len(), 2);
-    assert_eq!(dump.ownerships.len(), 4, "1 document owner + 3 asset origins");
+    assert_eq!(
+        dump.ownerships.len(),
+        4,
+        "1 document owner + 3 asset origins"
+    );
     assert_eq!(dump.relations.len(), 3);
 
     let asset_pks: std::collections::HashSet<&str> =
@@ -32249,13 +32265,19 @@ fn redacto_configuration_json_round_trips() {
     use redacto_fixtures::{grid, paragraph};
 
     let dump = crate::generate_redacto_dump(
-        &[paragraph("text"), grid(2, vec![paragraph("l"), paragraph("r")])],
+        &[
+            paragraph("text"),
+            grid(2, vec![paragraph("l"), paragraph("r")]),
+        ],
         &helpers::test_redacto_config(&["en"]),
     );
     let cfg = helpers::redacto_configuration(&dump);
 
     let json = serde_json::to_string(cfg).expect("serialize configuration");
-    assert!(json.contains("\"$schema\":\"redacto-document/v1\""), "{json}");
+    assert!(
+        json.contains("\"$schema\":\"redacto-document/v1\""),
+        "{json}"
+    );
     assert!(json.contains("\"type\":\"assetContainer\""), "{json}");
     assert!(json.contains("\"type\":\"styledPanel\""), "{json}");
 
@@ -32352,7 +32374,10 @@ fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
         ("Footer_Line_txtlanguage".to_string(), "EN".to_string()),
         ("Footer_Line_txtvversion".to_string(), "V0".to_string()),
         ("Footer_Line_MANCode".to_string(), "019".to_string()),
-        ("Footer_Line_txtversiondate".to_string(), "31.10.2019".to_string()),
+        (
+            "Footer_Line_txtversiondate".to_string(),
+            "31.10.2019".to_string(),
+        ),
         ("Footer_Line_txtjversion".to_string(), "N1".to_string()),
     ]);
     let ctx = crate::Context::new("en".into(), variables);
@@ -32378,7 +32403,11 @@ fn redacto_ubs_profile_footer_is_resilient_to_missing_variables() {
     let config = helpers::load_ubs_redacto_config(&ctx);
 
     // Only the always-present form code survives; the rest collapse to blanks.
-    assert!(config.footer.contains("AAEV"), "footer: {:?}", config.footer);
+    assert!(
+        config.footer.contains("AAEV"),
+        "footer: {:?}",
+        config.footer
+    );
 }
 
 #[test]
@@ -32421,11 +32450,8 @@ fn header_text_is_recovered_from_the_master_page() {
     // The top-of-page legal-entity draw is dropped from the structured content
     // (it is a Header group) but must survive on the context so the Redacto
     // header box can reinstate it.
-    let envelope = crate::run_exhaustive_to_envelope(
-        helpers::input_path("AAEV_019_EN.pdf"),
-        "en",
-    )
-    .expect("convert AAEV_019_EN.pdf");
+    let envelope = crate::run_exhaustive_to_envelope(helpers::input_path("AAEV_019_EN.pdf"), "en")
+        .expect("convert AAEV_019_EN.pdf");
 
     // Both header lines are recovered, de-duplicated (the entity is drawn once
     // per page master) and stacked in reading order.
@@ -32595,8 +32621,14 @@ fn redacto_multilingual_content_emits_one_asset_version_per_language() {
             .map(|v| &v.language)
             .collect::<Vec<_>>()
     );
-    assert_eq!(helpers::redacto_contents_for(&dump, "de")[0], "<p>Hallo</p>");
-    assert_eq!(helpers::redacto_contents_for(&dump, "en")[0], "<p>Hello</p>");
+    assert_eq!(
+        helpers::redacto_contents_for(&dump, "de")[0],
+        "<p>Hallo</p>"
+    );
+    assert_eq!(
+        helpers::redacto_contents_for(&dump, "en")[0],
+        "<p>Hello</p>"
+    );
     assert_eq!(helpers::redacto_contents_for(&dump, "sp")[0], "<p>Hola</p>");
     assert!(crate::validate_dump(&dump, &config).is_ok());
 }
@@ -32691,8 +32723,7 @@ fn redacto_validation_counts_expose_a_flattened_layout() {
         &[column_section(vec![paragraph("Left"), paragraph("Right")])],
         &config,
     );
-    let flattened =
-        crate::generate_redacto_dump(&[paragraph("Left"), paragraph("Right")], &config);
+    let flattened = crate::generate_redacto_dump(&[paragraph("Left"), paragraph("Right")], &config);
 
     let kept = crate::validate_dump(&with_columns, &config).counts;
     let lost = crate::validate_dump(&flattened, &config).counts;
@@ -32853,6 +32884,85 @@ mod aem_xsd_fixtures {
         Some(rest[..end].to_string())
     }
 
+    /// The two downloads must differ in exactly one way: bindRefs and the bundled
+    /// schema. Without binding the package must carry neither, and its DAM
+    /// metadata must not advertise a schema it does not contain.
+    #[test]
+    fn binding_to_the_schema_is_opt_in_per_package() {
+        use crate::aem::{AemConfig, convert_to_aem};
+
+        let (content, _, base) = helpers::build_aem_test_output_bound(&[("AAAI_019_EN.pdf", "en")]);
+
+        let build = |bind: bool| -> (String, String, bool) {
+            let mut config: AemConfig = base.clone();
+            config.bind_to_xsd = bind;
+            config.xsd_path = Some(format!(
+                "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{}.xsd",
+                config.form_code
+            ));
+            let root = convert_to_aem(&content, &config);
+            let pkg = crate::aem::generate_aem_package(&root, &config, &content);
+
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(pkg)).expect("valid zip");
+            let mut form = String::new();
+            let mut dam = String::new();
+            let mut has_xsd = false;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).expect("zip entry");
+                let name = file.name().to_string();
+                if name.ends_with(".xsd") {
+                    has_xsd = true;
+                    continue;
+                }
+                if !name.ends_with(".content.xml") {
+                    continue;
+                }
+                let mut body = String::new();
+                use std::io::Read;
+                if file.read_to_string(&mut body).is_err() {
+                    continue;
+                }
+                if name.contains("content/forms/af/") {
+                    form = body;
+                } else if name.contains("content/dam/formsanddocuments")
+                    && body.contains("dam:Asset")
+                {
+                    dam = body;
+                }
+            }
+            (form, dam, has_xsd)
+        };
+
+        let (plain_form, plain_dam, plain_has_xsd) = build(false);
+        let (bound_form, bound_dam, bound_has_xsd) = build(true);
+
+        // The plain package still carries a bindRef on each *fragment* — that is
+        // the fragment's own data binding, not a schema binding, and stripping it
+        // would break the fragment. What it must not have is a bindRef on every
+        // field, which is what binding to the schema adds.
+        let plain_refs = plain_form.matches("bindRef=").count();
+        let bound_refs = bound_form.matches("bindRef=").count();
+        assert!(
+            bound_refs > plain_refs,
+            "binding should add bindRefs beyond the fragments': plain {plain_refs}, bound {bound_refs}"
+        );
+        assert!(!plain_has_xsd, "the plain package must bundle no schema");
+        assert!(
+            !plain_dam.contains("xsdRef="),
+            "the plain package must not advertise a schema:\n{plain_dam}"
+        );
+
+        assert!(
+            bound_form.contains("bindRef="),
+            "the bound package must carry bindRefs"
+        );
+        assert!(bound_has_xsd, "the bound package must bundle the schema");
+        assert!(
+            bound_dam.contains("xsdRef="),
+            "the bound package must advertise the schema:\n{bound_dam}"
+        );
+    }
+
     /// AF_BBEO is an *old-model* form: its fragments live in
     /// `afforms_ch_fragmentlib`, and its reference is the output of UBS's own
     /// tool rather than a hand-curated schema. We reproduce its element names,
@@ -32881,7 +32991,9 @@ mod aem_xsd_fixtures {
         let ours = normalise(&crate::xsd::generate_xsd_string_from_aem(
             &root, &config, &fragments,
         ));
-        let theirs = normalise(&helpers::read_fixture("aem_xsd/AF_BBEO/reference.schema.xsd"));
+        let theirs = normalise(&helpers::read_fixture(
+            "aem_xsd/AF_BBEO/reference.schema.xsd",
+        ));
 
         assert_eq!(
             ours, theirs,
@@ -32899,8 +33011,9 @@ mod aem_xsd_fixtures {
             let mut config = helpers::load_ubs_xsd_config();
             config.form_code = Some(code.trim_start_matches("AF_").to_string());
             let fragments = helpers::load_ubs_fragments();
-            let ours =
-                xsd_shape(&crate::xsd::generate_xsd_string_from_aem(&root, &config, &fragments));
+            let ours = xsd_shape(&crate::xsd::generate_xsd_string_from_aem(
+                &root, &config, &fragments,
+            ));
             let theirs = xsd_shape(&helpers::read_fixture(&format!(
                 "aem_xsd/{code}/reference.schema.xsd"
             )));
@@ -33079,7 +33192,11 @@ mod aem_xsd_fixtures {
             if line.starts_with("<xs:element") {
                 let min = attr(line, "minOccurs").unwrap_or_else(|| "-".into());
                 let max = attr(line, "maxOccurs").unwrap_or_else(|| "-".into());
-                let kind = if line.ends_with("/>") { "leaf" } else { "group" };
+                let kind = if line.ends_with("/>") {
+                    "leaf"
+                } else {
+                    "group"
+                };
                 out.push(format!("{depth} {kind} min={min} max={max}"));
                 if !line.ends_with("/>") {
                     depth += 1;
@@ -33150,7 +33267,11 @@ mod aem_xsd_fixtures {
                         .is_some_and(|leaf| leaf.ends_with(|c: char| c.is_ascii_digit()))
                 })
                 .collect();
-            let depth_max = paths.iter().map(|p| p.matches('/').count()).max().unwrap_or(0);
+            let depth_max = paths
+                .iter()
+                .map(|p| p.matches('/').count())
+                .max()
+                .unwrap_or(0);
             println!(
                 "{pdf}: {} bound, max depth {depth_max}, {} counter-suffixed: {:?}",
                 paths.len(),
@@ -33171,8 +33292,7 @@ mod aem_xsd_fixtures {
         ] {
             let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
             let xsd_config = config.xsd_config.as_ref().unwrap();
-            let result =
-                crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
             let mut counts: std::collections::HashMap<&str, usize> =
                 std::collections::HashMap::new();
             for path in result.bind_refs.values() {
@@ -33228,7 +33348,10 @@ mod aem_xsd_fixtures {
             ("AACB_033_IT.pdf", "it"),
         ] {
             let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
-            let xsd_config = config.xsd_config.as_ref().expect("bound config has an XSD config");
+            let xsd_config = config
+                .xsd_config
+                .as_ref()
+                .expect("bound config has an XSD config");
             let schema =
                 crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments).schema;
 
@@ -33286,7 +33409,6 @@ mod aem_xsd_fixtures {
         }
     }
 }
-
 
 // ============================================================================
 // AEM → XSD naming and classification rules
@@ -33630,7 +33752,10 @@ mod ubs_xsd_naming {
             "<xs:enumeration",
             "<xs:pattern",
         ] {
-            assert!(!xml.contains(forbidden), "{forbidden} must never be emitted. got:\n{xml}");
+            assert!(
+                !xml.contains(forbidden),
+                "{forbidden} must never be emitted. got:\n{xml}"
+            );
         }
     }
 
@@ -33644,7 +33769,6 @@ mod ubs_xsd_naming {
             Some("../AFSimpleTypeElements/AFSimpleElements.xsd")
         );
     }
-
 
     /// `[elements]` normalises a label to a canonical English name and supplies
     /// the type, so the same concept gets the same element across language
@@ -33709,7 +33833,10 @@ mod ubs_xsd_naming {
     #[test]
     fn the_partner_class_radio_is_resolved_by_the_following_fragment() {
         let cases = [
-            ("affrg_ContractualPartnerGeneric1", "AccountHolderPartnerClass"),
+            (
+                "affrg_ContractualPartnerGeneric1",
+                "AccountHolderPartnerClass",
+            ),
             ("affrg_BeneficialOwnerGeneric1", "BOPartnerClass"),
             ("affrg_PowerofAttorneyGeneric1", "POAPartnerClass"),
             ("affrg_PartnertoPartnerGeneric1", "PToPPartnerClass"),
@@ -33740,7 +33867,11 @@ mod ubs_xsd_naming {
     /// element rather than dropping out of the schema.
     #[test]
     fn the_partner_class_radio_falls_back_without_a_following_fragment() {
-        let xml = xml_for(vec![radio("RB_CPType", "", &["Individual", "Company/Entity"])]);
+        let xml = xml_for(vec![radio(
+            "RB_CPType",
+            "",
+            &["Individual", "Company/Entity"],
+        )]);
         assert!(
             xml.contains(r#"<xs:element ref="AccountHolderPartnerClass""#),
             "got:\n{xml}"
@@ -33812,15 +33943,13 @@ mod ubs_xsd_naming {
                 };
                 let single_child = matches!(
                     children.as_slice(),
-                    [
-                        crate::aem::AemNode::Fragment { .. }
-                            | crate::aem::AemNode::TextField { .. }
-                            | crate::aem::AemNode::NumberField { .. }
-                            | crate::aem::AemNode::DatePicker { .. }
-                            | crate::aem::AemNode::Dropdown { .. }
-                            | crate::aem::AemNode::Checkbox { .. }
-                            | crate::aem::AemNode::RadioButton { .. }
-                    ]
+                    [crate::aem::AemNode::Fragment { .. }
+                        | crate::aem::AemNode::TextField { .. }
+                        | crate::aem::AemNode::NumberField { .. }
+                        | crate::aem::AemNode::DatePicker { .. }
+                        | crate::aem::AemNode::Dropdown { .. }
+                        | crate::aem::AemNode::Checkbox { .. }
+                        | crate::aem::AemNode::RadioButton { .. }]
                 );
                 if !single_child {
                     return;

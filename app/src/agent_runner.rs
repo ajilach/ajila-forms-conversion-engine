@@ -321,6 +321,7 @@ async fn drive(
         state.target = target;
         state.xsd_schema = outcome.xsd_schema;
         state.aem_package = outcome.aem_package;
+        state.aem_package_bound = outcome.aem_package_bound;
         state.redacto_sql = outcome.redacto_sql;
         state.form_code = outcome.form_code;
         state.aem_uploaded = outcome.aem_uploaded;

@@ -884,6 +884,7 @@ fn ResultActions(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Artifact {
     Package,
+    PackageBound,
     RedactoSql,
     Xsd,
     AgentLog,
@@ -892,11 +893,18 @@ enum Artifact {
 impl Artifact {
     /// Every artefact, in the order the result row offers them. Which of these
     /// actually appear is [`Artifact::is_offered`]'s call.
-    const ALL: &'static [Self] = &[Self::Package, Self::RedactoSql, Self::Xsd, Self::AgentLog];
+    const ALL: &'static [Self] = &[
+        Self::Package,
+        Self::PackageBound,
+        Self::RedactoSql,
+        Self::Xsd,
+        Self::AgentLog,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Self::Package => "⬇ Download CRX package",
+            Self::PackageBound => "⬇ Download CRX package with bindRefs",
             Self::RedactoSql => "Redacto SQL",
             Self::Xsd => "XSD schema",
             Self::AgentLog => "Agent log",
@@ -905,7 +913,12 @@ impl Artifact {
 
     fn title(self) -> &'static str {
         match self {
-            Self::Package => "Download the AEM content package (CRX) as a ZIP",
+            Self::Package => {
+                "Download the AEM content package (CRX) as a ZIP, without schema bindings"
+            }
+            Self::PackageBound => {
+                "The same package with a bindRef on every field and the matching XSD bundled"
+            }
             Self::RedactoSql => {
                 "The Redacto PostgreSQL dump (document, components and text assets)"
             }
@@ -919,6 +932,7 @@ impl Artifact {
     fn naming(self) -> (&'static str, &'static str) {
         match self {
             Self::Package => ("forms-package", "zip"),
+            Self::PackageBound => ("forms-package-bindrefs", "zip"),
             Self::RedactoSql => ("redacto", "sql"),
             Self::Xsd => ("schema", "xsd"),
             Self::AgentLog => ("agent-log", "md"),
@@ -932,7 +946,9 @@ impl Artifact {
     /// The log belongs to every run.
     fn belongs_to(self, target: blueprint::OutputTarget) -> bool {
         match self {
-            Self::Package | Self::Xsd => target == blueprint::OutputTarget::Aem,
+            Self::Package | Self::PackageBound | Self::Xsd => {
+                target == blueprint::OutputTarget::Aem
+            }
             Self::RedactoSql => target == blueprint::OutputTarget::Redacto,
             Self::AgentLog => true,
         }
@@ -942,6 +958,7 @@ impl Artifact {
     fn bytes(self, state: &ProcessingState) -> Option<Vec<u8>> {
         match self {
             Self::Package => state.aem_package.clone(),
+            Self::PackageBound => state.aem_package_bound.clone(),
             Self::RedactoSql => state.redacto_sql.as_ref().map(|s| s.clone().into_bytes()),
             Self::Xsd => state.xsd_schema.as_ref().map(|s| s.clone().into_bytes()),
             Self::AgentLog => (!state.agent_steps.is_empty())
@@ -956,6 +973,7 @@ impl Artifact {
         }
         match self {
             Self::Package => state.aem_package.is_some(),
+            Self::PackageBound => state.aem_package_bound.is_some(),
             Self::RedactoSql => state.redacto_sql.is_some(),
             Self::Xsd => state.xsd_schema.is_some(),
             Self::AgentLog => !state.agent_steps.is_empty(),

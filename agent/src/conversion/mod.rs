@@ -402,6 +402,12 @@ struct AemState {
     /// `(AemNode, translations)` at build/review time.
     tree: Option<AemNodeTranslated>,
     package: Option<Vec<u8>>,
+    /// The same form, built with `bind_to_xsd` on: every field carries a
+    /// `bindRef` and the schema those paths belong to is bundled.
+    ///
+    /// Kept alongside the plain package rather than replacing it, because the two
+    /// are for different deployments — the plain one is what UBS installs today.
+    package_bound: Option<Vec<u8>>,
     /// The derived `#aem` edit-history session id, once anything is snapshotted.
     session: Option<String>,
     /// Set once the package has been uploaded + installed on AEM.
@@ -732,6 +738,11 @@ impl ConversionAgent {
         self.target.aem().and_then(|s| s.package.clone())
     }
 
+    /// The package built with `bind_to_xsd` on, if one was built.
+    pub fn package_bound(&self) -> Option<Vec<u8>> {
+        self.target.aem().and_then(|s| s.package_bound.clone())
+    }
+
     /// The resolved form code, if the AEM config has been loaded.
     pub fn form_code(&self) -> Option<String> {
         self.target
@@ -991,6 +1002,12 @@ impl ConversionAgent {
     /// the master-text-keyed translation dictionary the package writer consumes.
     fn lower_aem_translated(&mut self) -> Result<(AemNode, I18nDict), String> {
         let cfg = self.config()?;
+        self.lower_aem_translated_with(&cfg)
+    }
+
+    /// Lower the working tree against `cfg` rather than the run's own config, so
+    /// a bound build derives bound `bindRef`s from the same tree.
+    fn lower_aem_translated_with(&self, cfg: &AemConfig) -> Result<(AemNode, I18nDict), String> {
         let tree = self.aem_tree().ok_or(NO_AEM_TREE)?;
         let (mut node, dict) = tree.lower(&cfg.master_language, &cfg.languages);
 
