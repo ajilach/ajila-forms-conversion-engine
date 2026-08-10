@@ -707,10 +707,41 @@ type = "BankType"
 
 # The Individual / Company-Entity radio selects which partner shape follows.
 # AccountHolderPartnerClass is global in AFSimpleElements, hence `ref=`.
+# The radio itself does not say which kind of partner it classifies — the
+# fragment that follows it does. Ported from UBS's PARTNER_CLASS_BY_FRAGMENT.
+# Every target is a global element in AFSimpleElements.xsd, so each is emitted
+# as `ref=`. `element` is the fallback when nothing recognisable follows.
+#
+# Longer keys first: `affrg_AccountHolder1` must not shadow
+# `affrg_AccountHolderDepot1`, and `affrg_BeneficialOwnerGeneric1` must be tried
+# before `affrg_BeneficialOwner1`.
 [[aemElements]]
 kind = "radiobutton"
 options = ["Individual", "Company/Entity"]
 element = "AccountHolderPartnerClass"
+nextFragment = [
+    # New data model
+    { fragRef = "affrg_ContractualPartnerGenericBasic1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_ContractualPartnerGeneric1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_BeneficialOwnerGenericBasic1", element = "BOPartnerClass" },
+    { fragRef = "affrg_BeneficialOwnerGeneric1", element = "BOPartnerClass" },
+    { fragRef = "affrg_PowerofAttorneyGenericBasic1", element = "POAPartnerClass" },
+    { fragRef = "affrg_PowerofAttorneyGeneric1", element = "POAPartnerClass" },
+    { fragRef = "affrg_PartnertoPartnerGenericBasic1", element = "PToPPartnerClass" },
+    { fragRef = "affrg_PartnertoPartnerGeneric1", element = "PToPPartnerClass" },
+    # Old model
+    { fragRef = "affrg_AccountHolderDepot1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_AccountHolder1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_Client1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_ContractingPartner1", element = "ContractingPartnerClass" },
+    { fragRef = "affrg_IndividualBasic1", element = "PartnerClass" },
+    { fragRef = "affrg_Recipient1", element = "RecipientPartnerClass" },
+    { fragRef = "affrg_Payee1", element = "PayeePartnerClass" },
+    { fragRef = "affrg_BeneficialOwner2", element = "BOPartnerClass" },
+    { fragRef = "affrg_BeneficialOwner1", element = "BOPartnerClass" },
+    { fragRef = "affrg_Attorney1", element = "POAPartnerClass" },
+    { fragRef = "affrg_FIM2", element = "FIMPartnerClass" },
+]
 
 # --- Repeating panels --------------------------------------------------------
 

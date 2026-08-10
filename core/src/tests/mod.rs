@@ -33702,6 +33702,51 @@ mod ubs_xsd_naming {
         }
     }
 
+    /// The Individual / Company-Entity radio classifies whichever partner
+    /// follows it, so the fragment after it picks the element. Without the
+    /// lookahead every form got `AccountHolderPartnerClass`, which is right only
+    /// for an account-holder form.
+    #[test]
+    fn the_partner_class_radio_is_resolved_by_the_following_fragment() {
+        let cases = [
+            ("affrg_ContractualPartnerGeneric1", "AccountHolderPartnerClass"),
+            ("affrg_BeneficialOwnerGeneric1", "BOPartnerClass"),
+            ("affrg_PowerofAttorneyGeneric1", "POAPartnerClass"),
+            ("affrg_PartnertoPartnerGeneric1", "PToPPartnerClass"),
+            // Old model
+            ("affrg_Attorney1", "POAPartnerClass"),
+            ("affrg_Payee1", "PayeePartnerClass"),
+            ("affrg_FIM2", "FIMPartnerClass"),
+            // A longer key must not be shadowed by its prefix.
+            ("affrg_AccountHolderDepot1", "AccountHolderPartnerClass"),
+        ];
+        for (fragment, expected) in cases {
+            let xml = xml_for(vec![
+                radio("RB_CPType", "", &["Individual", "Company/Entity"]),
+                frag(
+                    "PN_Partner",
+                    "",
+                    &format!("/content/dam/formsanddocuments/afforms_ch_fragmentlib/{fragment}"),
+                ),
+            ]);
+            assert!(
+                xml.contains(&format!(r#"<xs:element ref="{expected}""#)),
+                "a radio followed by {fragment} should classify as {expected}. got:\n{xml}"
+            );
+        }
+    }
+
+    /// With nothing recognisable after it, the radio falls back to the rule's own
+    /// element rather than dropping out of the schema.
+    #[test]
+    fn the_partner_class_radio_falls_back_without_a_following_fragment() {
+        let xml = xml_for(vec![radio("RB_CPType", "", &["Individual", "Company/Entity"])]);
+        assert!(
+            xml.contains(r#"<xs:element ref="AccountHolderPartnerClass""#),
+            "got:\n{xml}"
+        );
+    }
+
     /// Two schemas declare a global `AccountHolder`: `ContractualPartner.xsd`
     /// types it `AccountHolderType`, `ContractualPartnerGeneric.xsd` types it
     /// `ContractualPartnerGenericType`. Resolving the include by element name

@@ -416,6 +416,15 @@ pub struct AemElementRule {
     #[serde(default)]
     pub visible: Option<bool>,
 
+    /// Choose the element by looking at the **next** sibling's `fragRef`.
+    ///
+    /// A partner-class radio ("Individual" / "Company/Entity") does not say
+    /// which kind of partner follows it — the fragment after it does. The first
+    /// entry whose `fragRef` the next sibling contains wins; when none matches,
+    /// the rule's own `element` applies.
+    #[serde(default)]
+    pub next_fragment: Vec<NextFragmentRule>,
+
     // --- actions ---
     /// Drop the node (and, for a container, its whole subtree).
     #[serde(default)]
@@ -432,6 +441,16 @@ pub struct AemElementRule {
     pub occurs: Option<OccursSpec>,
 }
 
+/// One `fragRef` → element pair for [`AemElementRule::next_fragment`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NextFragmentRule {
+    /// Substring matched against the next sibling's `fragRef`.
+    pub frag_ref: String,
+    /// The element to emit when it matches.
+    pub element: String,
+}
+
 /// The node facts an [`AemElementRule`] is matched against.
 pub struct AemRuleSubject<'a> {
     pub kind: &'a str,
@@ -440,6 +459,8 @@ pub struct AemRuleSubject<'a> {
     pub frag_ref: Option<&'a str>,
     pub options: Option<Vec<&'a str>>,
     pub visible: bool,
+    /// `fragRef` of the next non-presentational sibling, if it has one.
+    pub next_frag_ref: Option<&'a str>,
 }
 
 /// Normalise an option label for set comparison: strip a leading `N=` value
@@ -496,6 +517,21 @@ impl XsdProfile {
 }
 
 impl AemElementRule {
+    /// The element this rule names for `subject`, if it names one.
+    ///
+    /// A `next_fragment` entry matching the following sibling wins over the
+    /// rule's own `element`.
+    pub fn element_for(&self, subject: &AemRuleSubject<'_>) -> Option<String> {
+        if let Some(next) = subject.next_frag_ref {
+            for candidate in &self.next_fragment {
+                if next.contains(candidate.frag_ref.as_str()) {
+                    return Some(candidate.element.clone());
+                }
+            }
+        }
+        self.element.clone()
+    }
+
     fn matches(&self, subject: &AemRuleSubject<'_>) -> bool {
         if let Some(kind) = &self.kind {
             let ok = kind == subject.kind

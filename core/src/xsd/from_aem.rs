@@ -256,8 +256,12 @@ fn walk(
     st: &mut BuildState,
     ctx: &Ctx,
 ) {
-    for node in nodes {
-        match classify(node, ctx) {
+    for (index, node) in nodes.iter().enumerate() {
+        // The next sibling that could carry data; presentational nodes are
+        // skipped so a stray text draw does not hide the fragment behind it.
+        let next = nodes[index + 1..].iter().find(|n| !is_presentational(n));
+
+        match classify(node, next, ctx) {
             Emit::Skip => {}
             Emit::Transparent => {
                 if let Some(children) = child_nodes(node) {
@@ -386,7 +390,11 @@ fn walk(
 fn single_element_child<'a>(node: &'a AemNode, ctx: &Ctx) -> Option<&'a AemNode> {
     let children = child_nodes(node)?;
     let [only] = children else { return None };
-    matches!(classify(only, ctx), Emit::Ref { .. } | Emit::Leaf { .. }).then_some(only)
+    matches!(
+        classify(only, None, ctx),
+        Emit::Ref { .. } | Emit::Leaf { .. }
+    )
+    .then_some(only)
 }
 
 /// Overwrite an element's occurrence attributes.
@@ -458,6 +466,19 @@ fn node_uuid(node: &AemNode) -> Option<Uuid> {
         | AemNode::Appendix { uuid, .. }
         | AemNode::FootnotePlaceholder { uuid, .. } => Some(*uuid),
     }
+}
+
+/// Whether a node exists only for presentation and so cannot be a lookahead
+/// target.
+fn is_presentational(node: &AemNode) -> bool {
+    matches!(
+        node,
+        AemNode::TextDraw { .. }
+            | AemNode::TitleDraw { .. }
+            | AemNode::Preface { .. }
+            | AemNode::Appendix { .. }
+            | AemNode::FootnotePlaceholder { .. }
+    )
 }
 
 fn child_nodes(node: &AemNode) -> Option<&[AemNode]> {
@@ -590,16 +611,22 @@ fn node_repeats(node: &AemNode) -> bool {
     matches!(node, AemNode::Repeatable { .. })
 }
 
-fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
+/// What `node` contributes to the schema.
+///
+/// `next` is the following non-presentational sibling, needed only by rules with
+/// a `nextFragment` lookahead.
+fn classify(node: &AemNode, next: Option<&AemNode>, ctx: &Ctx) -> Emit {
     let profile = &ctx.config.profile;
-    let rule = profile.match_aem_rule(&AemRuleSubject {
+    let subject = AemRuleSubject {
         kind: node_kind(node),
         name: node_name(node),
         title: node_title(node),
         frag_ref: node_frag_ref(node),
         options: node_options(node),
         visible: node_visible(node),
-    });
+        next_frag_ref: next.and_then(node_frag_ref),
+    };
+    let rule = profile.match_aem_rule(&subject);
 
     if rule.is_some_and(|r| r.ignore) {
         return Emit::Skip;
@@ -628,6 +655,10 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
         _ => {}
     }
 
+    // Resolved once: `element_for` may pick a different element based on the
+    // following sibling.
+    let rule_element = rule.and_then(|r| r.element_for(&subject));
+
     let occurs = |default: Occurs| -> Occurs {
         rule.and_then(|r| r.occurs.as_ref())
             .map(|spec| spec.to_occurs(profile.max_occurs_value))
@@ -641,14 +672,14 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
         } else {
             Occurs::optional()
         };
-        return fragment_emit(frag_ref, rule, occurs(default), ctx);
+        return fragment_emit(frag_ref, rule, rule_element, occurs(default), ctx);
     }
 
     match node {
         // A repeating panel becomes a grouping element with maxOccurs.
         AemNode::Repeatable { .. } => {
-            let name = rule
-                .and_then(|r| r.element.clone())
+            let name = rule_element
+                .clone()
                 .unwrap_or_else(|| to_xsd_element_name(node_title(node)));
             Emit::Group {
                 name,
@@ -697,8 +728,8 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
             // matching is unusable here.
             let synonym = super::resolve_element_whole_label(node_title(node), profile);
 
-            let name = rule
-                .and_then(|r| r.element.clone())
+            let name = rule_element
+                .clone()
                 .or_else(|| synonym.as_ref().map(|res| res.name.clone()))
                 .unwrap_or_else(|| to_xsd_element_name(node_title(node)));
 
@@ -736,11 +767,16 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
 /// The element name comes from the config rule when there is one — the same
 /// `fragRef` can appear twice in a form under different titles — and otherwise
 /// from the global element declared for the fragment's `fragmentModelRoot` type.
-fn fragment_emit(frag_ref: &str, rule: Option<&AemElementRule>, occurs: Occurs, ctx: &Ctx) -> Emit {
+fn fragment_emit(
+    frag_ref: &str,
+    rule: Option<&AemElementRule>,
+    rule_element: Option<String>,
+    occurs: Occurs,
+    ctx: &Ctx,
+) -> Emit {
     let type_name = ctx.frag_types.get(frag_ref).copied();
 
-    let name = rule
-        .and_then(|r| r.element.clone())
+    let name = rule_element
         .or_else(|| type_name.and_then(|t| ctx.config.type_to_element_name.get(t).cloned()));
 
     let Some(name) = name else {
