@@ -25064,10 +25064,16 @@ fn test_fragment_bind_refs_use_configured_prefix() {
         !fragment_refs.is_empty(),
         "Expected at least one fragment node"
     );
+    // A fragment inside a *collapsed* repeatable is deliberately unbound: the
+    // repeatable and its single child are one XSD element, and the repeat panel
+    // owns the path because that is the node AEM instantiates per row. Every
+    // other fragment carries the form-specific root.
+    let mut bound_fragments = 0;
     for (frag_ref, bind_ref) in &fragment_refs {
-        let br = bind_ref
-            .as_deref()
-            .unwrap_or_else(|| panic!("Fragment '{}' should have a bind_ref", frag_ref));
+        let Some(br) = bind_ref.as_deref() else {
+            continue;
+        };
+        bound_fragments += 1;
         assert!(
             br.starts_with("/UBSAF_AAAI/"),
             "Fragment '{}' bindRef should start with the form root '/UBSAF_AAAI/', got: {}",
@@ -25075,6 +25081,10 @@ fn test_fragment_bind_refs_use_configured_prefix() {
             br
         );
     }
+    assert!(
+        bound_fragments > 0,
+        "Expected at least one fragment bound under the form root"
+    );
 
     // Every other bound node uses the same form root. Note that a *non-repeating*
     // grouping panel is deliberately left unbound: it is a schema convenience
@@ -33466,12 +33476,14 @@ mod ubs_xsd_naming {
         let grouped = crate::xsd::generate_xsd_from_aem(&tree, &config(), &[]);
         let mut grouped_paths = helpers::xsd_element_paths_in_order(&grouped.schema);
         grouped_paths.sort();
+        // "Authorized representative" is named by a `[sections]` pattern, which
+        // is why it is `AuthRep` rather than the title verbatim.
         assert_eq!(
             grouped_paths,
             vec![
                 "/UBSAF_TEST".to_string(),
-                "/UBSAF_TEST/AuthorizedRepresentative".to_string(),
-                "/UBSAF_TEST/AuthorizedRepresentative/LastName".to_string(),
+                "/UBSAF_TEST/AuthRep".to_string(),
+                "/UBSAF_TEST/AuthRep/LastName".to_string(),
                 "/UBSAF_TEST/Client".to_string(),
                 "/UBSAF_TEST/Client/LastName".to_string(),
             ]
@@ -33512,17 +33524,19 @@ mod ubs_xsd_naming {
     #[test]
     fn repeated_sibling_names_are_disambiguated() {
         let result = crate::xsd::generate_xsd_from_aem(
-            &root(vec![textbox("a", "No"), textbox("b", "No")]),
+            // A label the `[elements]` table does not know, so this exercises
+            // disambiguation and nothing else.
+            &root(vec![textbox("a", "Widget"), textbox("b", "Widget")]),
             &config(),
             &[],
         );
         let xml = result.schema.to_xml();
-        assert!(xml.contains(r#"name="No""#), "got:\n{xml}");
-        assert!(xml.contains(r#"name="No2""#), "got:\n{xml}");
+        assert!(xml.contains(r#"name="Widget""#), "got:\n{xml}");
+        assert!(xml.contains(r#"name="Widget2""#), "got:\n{xml}");
 
         let mut paths: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
         paths.sort_unstable();
-        assert_eq!(paths, vec!["/UBSAF_TEST/No", "/UBSAF_TEST/No2"]);
+        assert_eq!(paths, vec!["/UBSAF_TEST/Widget", "/UBSAF_TEST/Widget2"]);
     }
 
     /// The generated schema never contains the constructs the UBS format does
@@ -33555,5 +33569,120 @@ mod ubs_xsd_naming {
             schema.includes.first().map(String::as_str),
             Some("../AFSimpleTypeElements/AFSimpleElements.xsd")
         );
+    }
+
+
+    /// `[elements]` normalises a label to a canonical English name and supplies
+    /// the type, so the same concept gets the same element across language
+    /// variants of a form.
+    #[test]
+    fn elements_table_normalises_a_foreign_label_and_its_type() {
+        let cases = [
+            ("Straße", "Street", "xs:string"),
+            ("Cognome", "LastName", "xs:string"),
+            ("PLZ", "PostalCode", "xs:string"),
+            ("Data", "Date", "xs:date"),
+        ];
+        for (label, element, type_ref) in cases {
+            let xml = xml_for(vec![textbox("TXT_x", label)]);
+            assert!(
+                xml.contains(&format!(
+                    r#"<xs:element name="{element}" type="{type_ref}" minOccurs="0"/>"#
+                )),
+                "{label:?} should resolve to {element}/{type_ref}. got:\n{xml}"
+            );
+        }
+    }
+
+    /// Matching is on the whole label. The table holds two-letter synonyms, so
+    /// substring matching turned sentence-length labels — which these forms use
+    /// freely — into nonsense: "UNKNOWN" contains "No" and resolved to
+    /// StreetNumber, "…istanza di fallimento in data ;" resolved to Date.
+    #[test]
+    fn elements_table_does_not_fire_on_sentence_labels() {
+        for label in [
+            "Nota: Barrare una sola casella salvo indicazione diversa.",
+            "UNKNOWN",
+            "– ha presentato un piano di liquidazione, di ristrutturazione in data ;",
+        ] {
+            let xml = xml_for(vec![textbox("TXT_x", label)]);
+            for wrong in ["StreetNumber", r#"type="xs:date""#] {
+                assert!(
+                    !xml.contains(wrong),
+                    "the table must not fire on {label:?} (matched {wrong}). got:\n{xml}"
+                );
+            }
+        }
+    }
+
+    /// `[sections]` regex patterns name a section across languages before the
+    /// title is used verbatim.
+    #[test]
+    fn sections_table_names_a_page_panel_across_languages() {
+        for title in ["Signature of company", "Unterschrift der Firma"] {
+            let xml = xml_for(vec![page(title, vec![textbox("TXT_a", "Place")])]);
+            assert!(
+                xml.contains(r#"<xs:element name="CompanySignature""#),
+                "{title:?} should resolve to CompanySignature. got:\n{xml}"
+            );
+        }
+    }
+
+    /// A repeatable wrapping one element collapses into it, so no generated
+    /// `RCP_…` name reaches the schema and the shape matches UBS's, which spells
+    /// a repeating fragment as a single element with `maxOccurs`.
+    #[test]
+    fn a_repeatable_wrapping_one_element_collapses_into_it() {
+        for (pdf, lang) in [("AAAI_019_EN.pdf", "en"), ("AACB_033_IT.pdf", "it")] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().unwrap();
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+
+            // A repeatable that wraps a single fragment or field must have
+            // collapsed, so its own generated name never reaches the schema.
+            // One that wraps several elements still needs a group, and has no
+            // name to give it — that case is left to an [[aemElements]] rule.
+            helpers::walk_aem_nodes(&root, &mut |node| {
+                let crate::aem::AemNode::Repeatable {
+                    uuid,
+                    name,
+                    children,
+                    ..
+                } = node
+                else {
+                    return;
+                };
+                let single_child = matches!(
+                    children.as_slice(),
+                    [
+                        crate::aem::AemNode::Fragment { .. }
+                            | crate::aem::AemNode::TextField { .. }
+                            | crate::aem::AemNode::NumberField { .. }
+                            | crate::aem::AemNode::DatePicker { .. }
+                            | crate::aem::AemNode::Dropdown { .. }
+                            | crate::aem::AemNode::Checkbox { .. }
+                            | crate::aem::AemNode::RadioButton { .. }
+                    ]
+                );
+                if !single_child {
+                    return;
+                }
+                let path = result
+                    .bind_refs
+                    .get(uuid)
+                    .unwrap_or_else(|| panic!("{pdf}: repeatable {name} is unbound"));
+                assert!(
+                    !path.split('/').any(|seg| seg.starts_with("RCP")),
+                    "{pdf}: {name} wraps one element but did not collapse: {path}"
+                );
+            });
+
+            // The repeating element keeps its cardinality.
+            let xml = result.schema.to_xml();
+            assert!(
+                xml.contains(r#"maxOccurs="50""#),
+                "{pdf}: the collapsed element must still repeat:\n{xml}"
+            );
+        }
     }
 }

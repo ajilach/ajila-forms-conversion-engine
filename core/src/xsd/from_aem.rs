@@ -270,6 +270,47 @@ fn walk(
                     content: None,
                 });
             }
+            // A repeatable wrapping exactly one element *is* that element,
+            // repeated: the repeatable contributes cardinality, the child
+            // contributes identity. UBS authors this as a single panel carrying
+            // both `fragRef` and `maxOccur`, which is why their schema has
+            //
+            //     <xs:element name="AuthRepSignature" type="SignatureType" maxOccurs="50"/>
+            //
+            // where an uncollapsed walk would emit a nameless group around it.
+            // Restricted to a child that resolves to exactly one element, so the
+            // walk below cannot bind anything at the wrong path.
+            Emit::Group { name, occurs }
+                if matches!(node, AemNode::Repeatable { .. })
+                    && single_element_child(node, ctx).is_some() =>
+            {
+                let child = single_element_child(node, ctx).expect("guarded above");
+                let mut inner = Vec::new();
+                walk(
+                    std::slice::from_ref(child),
+                    parent_path,
+                    &mut inner,
+                    used,
+                    st,
+                    ctx,
+                );
+                debug_assert_eq!(inner.len(), 1, "a Ref/Leaf child emits one element");
+                let Some(mut element) = inner.pop() else {
+                    continue;
+                };
+                set_occurs(&mut element, occurs);
+
+                // The repeating panel owns the bind path — that is the node AEM
+                // instantiates per row — so move it off the child.
+                if let (Some(child_uuid), Some(uuid)) = (node_uuid(child), node_uuid(node)) {
+                    if let Some(path) = st.bind_refs.remove(&child_uuid) {
+                        st.bind_refs.insert(uuid, path);
+                    }
+                }
+                let _ = name;
+                out.push(element);
+            }
+
             Emit::Group { name, occurs } => {
                 let name = unique_name(name, used);
                 let path = format!("{parent_path}/{name}");
@@ -311,6 +352,36 @@ fn walk(
                 });
             }
         }
+    }
+}
+
+/// The single child of `node` that resolves to exactly one XSD element.
+///
+/// Only a `Ref` or `Leaf` child qualifies: a transparent panel may expand to any
+/// number of elements, and collapsing then would be wrong.
+fn single_element_child<'a>(node: &'a AemNode, ctx: &Ctx) -> Option<&'a AemNode> {
+    let children = child_nodes(node)?;
+    let [only] = children else { return None };
+    matches!(classify(only, ctx), Emit::Ref { .. } | Emit::Leaf { .. }).then_some(only)
+}
+
+/// Overwrite an element's occurrence attributes.
+fn set_occurs(node: &mut XsdNode, occurs: Occurs) {
+    match node {
+        XsdNode::Element {
+            min_occurs,
+            max_occurs,
+            ..
+        }
+        | XsdNode::Ref {
+            min_occurs,
+            max_occurs,
+            ..
+        } => {
+            *min_occurs = occurs.min;
+            *max_occurs = occurs.max;
+        }
+        XsdNode::ComplexType { .. } => {}
     }
 }
 
@@ -579,8 +650,15 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
                 occurs: occurs(Occurs::optional()),
             },
             None if profile.group_page_panels && *is_page && !title.trim().is_empty() => {
+                // `[sections]` patterns name a section across languages —
+                // "Unterschrift der Firma" and "signature of company" both
+                // resolve to CompanySignature. The panel title *is* the heading,
+                // so pass it as one: a heading match takes priority over a
+                // body-text match.
+                let name = super::resolve_section_name_with_heading(title, Some(title), profile)
+                    .unwrap_or_else(|| to_xsd_element_name(title));
                 Emit::Group {
-                    name: to_xsd_element_name(title),
+                    name,
                     occurs: occurs(Occurs::optional()),
                 }
             }
@@ -589,8 +667,15 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
 
         // Everything else is a data leaf.
         _ => {
+            // `[elements]` normalises a label across languages and supplies the
+            // type: `Straße`/`Via` → `Street`, `Data` → `Date`/`xs:date`. Whole
+            // labels only — see `resolve_element_whole_label` for why substring
+            // matching is unusable here.
+            let synonym = super::resolve_element_whole_label(node_title(node), profile);
+
             let name = rule
                 .and_then(|r| r.element.clone())
+                .or_else(|| synonym.as_ref().map(|res| res.name.clone()))
                 .unwrap_or_else(|| to_xsd_element_name(node_title(node)));
 
             if name.is_empty() || name == "Unknown" {
@@ -606,6 +691,7 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
 
             let type_ref = rule
                 .and_then(|r| r.type_ref.clone())
+                .or_else(|| synonym.map(|res| res.type_ref))
                 .unwrap_or_else(|| profile.default_type_for(node_kind(node)));
 
             Emit::Leaf {

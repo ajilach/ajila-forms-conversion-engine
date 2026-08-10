@@ -1,20 +1,42 @@
 # XSD Output Profile Configuration
 #
-# This file configures how structured form content maps to XSD schema elements.
+# The schema is derived from the AEM node tree, and each node's bindRef is
+# assigned during the same walk, so a form and its schema agree by construction.
+# See the "AEM -> XSD walk" section at the end of this file for the shape rules.
 #
-# [elements.<name>]       — field → xs:element mappings
-#   synonyms              — list of strings to match (case-insensitive substring)
-#   type                  — XSD type (e.g. "xs:string", "xs:decimal", or predefined)
+# Element names come from three places, in order of precedence:
+#
+#   1. [[aemElements]]      — an explicit rule (see that section)
+#   2. [elements.<name>]    — a field label equal to one of `synonyms`
+#      [sections.<name>]    — a page-panel title matching one of `patterns`
+#   3. the label or title itself, PascalCased
+#
+# [elements.<name>]       — field → xs:element name + type
+#   synonyms              — the WHOLE label must equal one of these
+#                           (case-insensitive, trimmed)
+#   type                  — XSD type (e.g. "xs:string", "xs:decimal", "xs:date")
+#
+#   Matching is on the whole label deliberately. These forms use sentences as
+#   labels and the table holds two-letter synonyms, so substring matching turned
+#   "UNKNOWN" into StreetNumber (it contains "No") and any label mentioning a
+#   date into xs:date. Whole-label matching keeps the real wins — Straße/Via ->
+#   Street, Cognome -> LastName, Data -> Date/xs:date — and misfires on nothing.
+#   A near-miss such as "Telefon Mobil" is fixed by adding that exact string.
+#
+#   NOTE: compute_bind_refs, which feeds fragment matching, still matches these
+#   synonyms as substrings. Those paths never reach the emitted schema.
+#
+# [sections.<name>]       — page-panel title → xs:element name
+#   patterns              — regexes, matched case-insensitively
 #
 # All *.xsd files in the types/ subdirectory are automatically indexed.
 # An <xs:include> directive is emitted for every indexed file that declares a
-# type actually referenced by the generated schema.
+# type actually referenced by the generated schema. Those same files decide
+# `ref=` versus `name=`/`type=`: a name declared as a global element there is
+# referenced, never re-declared.
 #
-# Complex types are auto-matched: xs:complexType definitions from the types/
-# directory are parsed (including xs:extension inheritance and xs:element ref
-# resolution). During generation, a heading's resolved children are compared
-# against the registry — if all children (name + type) form a subset of a
-# registered type's elements, the best-matching type is used.
+# Complex types are also parsed into a registry (resolving xs:extension
+# inheritance and xs:element ref) which fragment matching uses.
 #
 # schemaLocationPrefix — prefix prepended to the relative path of each types/
 #   file when constructing the schemaLocation attribute (default: "../")

@@ -1516,12 +1516,47 @@ pub struct ResolvedElement {
 /// Finds the best match by picking the longest matching synonym
 /// (most specific). Matching is case-insensitive substring.
 pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElement> {
-    let label_lower = label.to_lowercase();
+    resolve_element_matching(label, profile, SynonymMatch::Substring)
+}
+
+/// Resolve a field label against `[elements]`, requiring the **whole** label to
+/// equal a synonym (case-insensitive, trimmed).
+///
+/// This is what names elements in the generated schema. Substring matching is
+/// unusable there: labels in these forms are often whole sentences, and the
+/// table holds two-letter synonyms, so `"UNKNOWN"` matches `"No"` →
+/// `StreetNumber` and `"…istanza di fallimento in data ;"` matches `"Data"` →
+/// `Date`. Whole-label matching keeps the real wins — `Straße` → `Street`,
+/// `Cognome` → `LastName`, `Data` → `Date`/`xs:date` — and fires on no sentence.
+pub fn resolve_element_whole_label(label: &str, profile: &XsdProfile) -> Option<ResolvedElement> {
+    resolve_element_matching(label, profile, SynonymMatch::WholeLabel)
+}
+
+/// How a synonym is compared against a label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SynonymMatch {
+    /// The synonym appears anywhere in the label. Kept for
+    /// [`compute_bind_refs`], whose leaf names feed fragment matching.
+    Substring,
+    /// The trimmed label equals the synonym.
+    WholeLabel,
+}
+
+fn resolve_element_matching(
+    label: &str,
+    profile: &XsdProfile,
+    mode: SynonymMatch,
+) -> Option<ResolvedElement> {
+    let label_lower = label.trim().to_lowercase();
     let mut best: Option<(usize, ResolvedElement)> = None;
     for (name, mapping) in &profile.elements {
         for synonym in &mapping.synonyms {
-            let syn_lower = synonym.to_lowercase();
-            if label_lower.contains(&syn_lower) {
+            let syn_lower = synonym.trim().to_lowercase();
+            let hit = match mode {
+                SynonymMatch::Substring => label_lower.contains(&syn_lower),
+                SynonymMatch::WholeLabel => label_lower == syn_lower,
+            };
+            if hit {
                 let len = syn_lower.len();
                 if best.as_ref().is_none_or(|(best_len, _)| len > *best_len) {
                     best = Some((
