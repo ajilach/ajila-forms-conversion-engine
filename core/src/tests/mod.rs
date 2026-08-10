@@ -33042,6 +33042,41 @@ mod aem_xsd_fixtures {
     }
 
     /// Measure how the flat-panel rule behaves on our own generated forms.
+    /// Compare the two candidate rules for layout panels: group titled pages, or
+    /// flatten everything and let the sibling counter disambiguate.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn compare_page_grouping_against_counter_suffixes() {
+        for (pdf, lang) in [
+            ("AAAI_019_EN.pdf", "en"),
+            ("AAFM_019_EN.pdf", "en"),
+            ("AACB_033_IT.pdf", "it"),
+            ("AAGZ_019_DE.pdf", "de"),
+        ] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().unwrap();
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            let mut paths: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+            paths.sort_unstable();
+            let suffixed: Vec<&&str> = paths
+                .iter()
+                .filter(|p| {
+                    p.rsplit('/')
+                        .next()
+                        .is_some_and(|leaf| leaf.ends_with(|c: char| c.is_ascii_digit()))
+                })
+                .collect();
+            let depth_max = paths.iter().map(|p| p.matches('/').count()).max().unwrap_or(0);
+            println!(
+                "{pdf}: {} bound, max depth {depth_max}, {} counter-suffixed: {:?}",
+                paths.len(),
+                suffixed.len(),
+                suffixed
+            );
+            println!("   sample: {:?}", &paths[..paths.len().min(6)]);
+        }
+    }
+
     #[test]
     #[ignore = "diagnostic"]
     fn measure_bind_ref_collisions_on_real_forms() {
@@ -33401,6 +33436,55 @@ mod ubs_xsd_naming {
             ],
             "got:\n{xml}"
         );
+    }
+
+    /// `groupPagePanels = false` follows UBS's rule exactly: even a titled page
+    /// is transparent, and colliding names fall back to ordinal suffixes.
+    #[test]
+    fn group_page_panels_false_flattens_and_falls_back_to_suffixes() {
+        let mut cfg = config();
+        cfg.profile.group_page_panels = false;
+
+        let tree = root(vec![
+            page("Client", vec![textbox("a", "Last name")]),
+            page("Authorized representative", vec![textbox("b", "Last name")]),
+        ]);
+        let flat = crate::xsd::generate_xsd_from_aem(&tree, &cfg, &[]);
+        let mut paths = helpers::xsd_element_paths_in_order(&flat.schema);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                "/UBSAF_TEST".to_string(),
+                "/UBSAF_TEST/LastName".to_string(),
+                "/UBSAF_TEST/LastName2".to_string(),
+            ],
+            "with grouping off the sections vanish and the counter disambiguates"
+        );
+
+        // With grouping on, the same tree keeps both names meaningful.
+        let grouped = crate::xsd::generate_xsd_from_aem(&tree, &config(), &[]);
+        let mut grouped_paths = helpers::xsd_element_paths_in_order(&grouped.schema);
+        grouped_paths.sort();
+        assert_eq!(
+            grouped_paths,
+            vec![
+                "/UBSAF_TEST".to_string(),
+                "/UBSAF_TEST/AuthorizedRepresentative".to_string(),
+                "/UBSAF_TEST/AuthorizedRepresentative/LastName".to_string(),
+                "/UBSAF_TEST/Client".to_string(),
+                "/UBSAF_TEST/Client/LastName".to_string(),
+            ]
+        );
+
+        // Either way the schema is valid and nothing is bound twice.
+        for result in [&flat, &grouped] {
+            let mut bound: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+            let before = bound.len();
+            bound.sort_unstable();
+            bound.dedup();
+            assert_eq!(before, bound.len(), "a path was bound twice");
+        }
     }
 
     /// A titleless, non-page panel: pure layout, no XSD level and no binding.

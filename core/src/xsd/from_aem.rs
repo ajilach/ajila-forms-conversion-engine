@@ -13,6 +13,11 @@
 //!    its children bubble up to the nearest enclosing element. Only a panel that
 //!    repeats or that came from a fragment produces one. This is what collapses
 //!    a deeply nested AEM layout into a flat schema.
+//!
+//!    One addition to UBS's rule, controlled by `groupPagePanels`: a titled
+//!    *page* panel also produces a level. Our forms are field-dense enough that
+//!    flattening them makes many names collide into ordinal suffixes — see the
+//!    field's docs for the measured cost.
 //! 2. **`ref=` versus `name=`/`type=` is a lookup, not a convention.** If the
 //!    resolved element name is declared as a global element in the profile's
 //!    type library, `<xs:element ref="…"/>` is emitted; otherwise
@@ -573,10 +578,12 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
                 name,
                 occurs: occurs(Occurs::optional()),
             },
-            None if *is_page && !title.trim().is_empty() => Emit::Group {
-                name: to_xsd_element_name(title),
-                occurs: occurs(Occurs::optional()),
-            },
+            None if profile.group_page_panels && *is_page && !title.trim().is_empty() => {
+                Emit::Group {
+                    name: to_xsd_element_name(title),
+                    occurs: occurs(Occurs::optional()),
+                }
+            }
             None => Emit::Transparent,
         },
 

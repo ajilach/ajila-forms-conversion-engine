@@ -40,6 +40,22 @@ maxOccursValue = 50
 # The simple-element library is always included, referenced or not.
 alwaysInclude = ["../AFSimpleTypeElements/AFSimpleElements.xsd"]
 
+# Whether a titled page panel (an H2 section) produces its own XSD level.
+#
+# UBS's own rule is that a panel contributes a level only if it repeats or came
+# from a fragment, which makes their schemas flat. Set `false` to follow that
+# exactly. It is `true` here because our generated forms are far denser: on
+# AAGZ_019, flattening pushes 63 of 89 elements onto ordinal suffixes instead of
+# 34 — including AccountHolderSignature2 through AccountHolderSignature21 — and
+# makes every name depend on document order, so inserting a field near the top
+# renames elements far below it.
+#
+# Neither setting avoids suffixes entirely; forms with repeated section titles
+# still collide. The real fix for a specific form is an [[aemElements]] rule
+# giving the section or repeatable a semantic name, which is how UBS's own
+# reference schemas end up with no suffixes at all.
+groupPagePanels = true
+
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
 # --- Name fields ---

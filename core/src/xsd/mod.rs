@@ -342,6 +342,22 @@ pub struct XsdProfile {
     #[serde(default = "default_max_occurs_value")]
     pub max_occurs_value: u32,
 
+    /// Whether a titled page panel produces its own XSD level.
+    ///
+    /// UBS's own schemas are flat: their rule is that a panel contributes a level
+    /// only if it repeats or came from a fragment. Our generated forms are much
+    /// more field-dense, and flattening them makes many element names collide, so
+    /// they fall back to ordinal suffixes — on AAGZ, 63 of 89 elements instead of
+    /// 34, including twenty-one indistinguishable `AccountHolderSignature*`.
+    /// Grouping by section keeps those names meaningful and confines the ordinals
+    /// to one section, at the cost of a level UBS would not emit.
+    ///
+    /// Set `false` for output that follows UBS's rule exactly. Note that a
+    /// *parsed* form's wizard steps are not marked as pages, so a schema derived
+    /// from an existing package is flat either way.
+    #[serde(default = "default_group_page_panels")]
+    pub group_page_panels: bool,
+
     /// Include paths emitted first, before anything the walk discovers.
     ///
     /// UBS always includes the simple-element library, whether or not a type
@@ -359,6 +375,10 @@ pub struct XsdProfile {
 
 fn default_max_occurs_value() -> u32 {
     50
+}
+
+fn default_group_page_panels() -> bool {
+    true
 }
 
 /// One ordered rule for the AEM → XSD walk.
@@ -556,6 +576,7 @@ impl Default for XsdProfile {
             fragment_bind_ref_prefix: None,
             aem_elements: Vec::new(),
             max_occurs_value: default_max_occurs_value(),
+            group_page_panels: default_group_page_panels(),
             always_include: Vec::new(),
             default_types: HashMap::new(),
         }
