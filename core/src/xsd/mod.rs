@@ -447,6 +447,24 @@ pub struct AemRuleSubject<'a> {
 ///
 /// Mirrors the UBS tool's `normalizeOptions`, so an option set written in the
 /// config matches however AEM happens to have serialised it.
+/// Remove HTML tags, keeping the text between them.
+pub fn strip_markup(text: &str) -> String {
+    if !text.contains('<') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut in_tag = false;
+    for ch in text.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if in_tag => {}
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 pub fn normalize_option_label(label: &str) -> String {
     let without_prefix = match label.find('=') {
         Some(idx) if label[..idx].chars().all(|c| c.is_ascii_digit()) && idx > 0 => {
@@ -455,18 +473,8 @@ pub fn normalize_option_label(label: &str) -> String {
         _ => label,
     };
 
-    let mut out = String::with_capacity(without_prefix.len());
-    let mut in_tag = false;
-    for ch in without_prefix.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if in_tag => {}
-            _ => out.push(ch),
-        }
-    }
-
-    out.split_whitespace()
+    strip_markup(without_prefix)
+        .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
@@ -671,6 +679,16 @@ pub struct XsdConfig {
     /// Built from global element declarations in the parsed XSD files.
     pub type_to_element_name: HashMap<String, String>,
 
+    /// Every fragment in the profile's library: `fragRef` → the XSD type it
+    /// binds to (its `fragmentModelRoot`).
+    ///
+    /// Deliberately independent of the AEM profile's `fragment_paths`. That
+    /// setting scopes which fragments the converter may *substitute* while
+    /// building a form; resolving a `fragRef` that a form already references is a
+    /// different question, and a legacy form referencing, say,
+    /// `afforms_ch_fragmentlib` must still get its elements.
+    pub fragment_types: HashMap<String, String>,
+
     /// Every global element declaration: element name → type name.
     ///
     /// E.g. `"BankingRelationship" → "BankingRelationshipType"`. Membership in
@@ -707,6 +725,7 @@ impl XsdConfig {
             type_to_file,
             registered_types,
             type_to_element_name,
+            fragment_types: HashMap::new(),
             global_elements: HashMap::new(),
             master_language,
             form_code: None,
@@ -721,10 +740,17 @@ impl XsdConfig {
             type_to_file: HashMap::new(),
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
+            fragment_types: HashMap::new(),
             global_elements: HashMap::new(),
             master_language,
             form_code: None,
         }
+    }
+
+    /// Set the fragment library index (`fragRef` → XSD type).
+    pub fn with_fragment_types(mut self, fragment_types: HashMap<String, String>) -> Self {
+        self.fragment_types = fragment_types;
+        self
     }
 
     /// Set the global element declarations (element name → type name).
@@ -1112,18 +1138,30 @@ pub fn build_registered_types(
 
     // Build reverse map: type name → element name (e.g. "AddressType" → "Address").
     //
-    // Several global elements may share one type — `AFFragments/Signature.xsd`
-    // declares four elements of `SignatureType`. Iterating a `HashMap` would
-    // pick an arbitrary winner that varies between runs, so sort by element
-    // name and let the first one win. Callers that need to distinguish them
-    // must match on the element name via `global_elements`, not on the type.
+    // Several global elements may share one type: `AFFragments/Signature.xsd`
+    // declares `Signature`, `CardHolderSignature`, `CardHolderPartnerSignature`
+    // and `CardLegalRepSignature`, all of `SignatureType`. Which one a given
+    // fragment should become is a per-usage decision the type library cannot
+    // answer — that is what an `[[aemElements]]` rule is for — so this map only
+    // provides a neutral default:
+    //
+    //   1. the type name minus its `Type` suffix, when that is itself a global
+    //      element (`SignatureType` → `Signature`)
+    //   2. otherwise the alphabetically first, so the result never depends on
+    //      `HashMap` iteration order
     let mut by_name: Vec<(&String, &String)> = all_global_elements.iter().collect();
     by_name.sort_unstable();
     let mut type_to_element_name: HashMap<String, String> = HashMap::new();
-    for (elem_name, type_name) in by_name {
+    for (elem_name, type_name) in &by_name {
         type_to_element_name
-            .entry(type_name.clone())
-            .or_insert_with(|| elem_name.clone());
+            .entry((*type_name).clone())
+            .or_insert_with(|| (*elem_name).clone());
+    }
+    for (_, type_name) in &by_name {
+        let canonical = type_name.trim_end_matches("Type");
+        if !canonical.is_empty() && all_global_elements.contains_key(canonical) {
+            type_to_element_name.insert((*type_name).clone(), canonical.to_string());
+        }
     }
 
     (resolved, type_to_element_name, all_global_elements)
@@ -1271,12 +1309,14 @@ mod tests {
     /// depend on `HashMap` iteration order, or the generated schema changes
     /// between runs.
     #[test]
-    fn type_to_element_name_is_deterministic_when_several_elements_share_a_type() {
+    fn type_to_element_name_prefers_the_canonical_element_deterministically() {
         let schema = r#"<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
     <xs:element name="Signature" type="SignatureType"/>
     <xs:element name="CardHolderSignature" type="SignatureType"/>
     <xs:element name="CardLegalRepSignature" type="SignatureType"/>
+    <xs:element name="AccountHolder" type="ContractualPartnerType"/>
+    <xs:element name="Lessee" type="ContractualPartnerType"/>
     <xs:complexType name="SignatureType">
         <xs:sequence>
             <xs:element name="Place" type="xs:string"/>
@@ -1290,16 +1330,27 @@ mod tests {
         )];
         let (_, type_to_element_name, global_elements) = build_registered_types(&parsed);
 
-        // Alphabetically first of the three, on every run.
+        // `SignatureType` → `Signature`, not the alphabetically first
+        // `CardHolderSignature`: defaulting every signature fragment to a
+        // card-specific element would be plausible and wrong.
         assert_eq!(
             type_to_element_name
                 .get("SignatureType")
                 .map(String::as_str),
-            Some("CardHolderSignature")
+            Some("Signature")
+        );
+
+        // With no element named after the type, the alphabetically first wins —
+        // arbitrary, but never dependent on `HashMap` iteration order.
+        assert_eq!(
+            type_to_element_name
+                .get("ContractualPartnerType")
+                .map(String::as_str),
+            Some("AccountHolder")
         );
 
         // The forward map keeps all of them, which is what `ref=` resolution needs.
-        assert_eq!(global_elements.len(), 3);
+        assert_eq!(global_elements.len(), 5);
         assert_eq!(
             global_elements.get("Signature").map(String::as_str),
             Some("SignatureType")
@@ -1714,7 +1765,10 @@ pub fn to_snake_case(label: &str) -> String {
 ///
 /// Example: `"Email address"` → `"EmailAddress"`, `"IBAN"` → `"IBAN"`.
 pub fn to_xsd_element_name(label: &str) -> String {
-    let replaced = label.replace('/', " Or ");
+    // AEM labels are rich text, so a label can carry markup. Left in, the tag
+    // names become part of the element name: `<b>South Korea</b>/<b>…` yields
+    // `BSouthKoreaOrBInstitutional…`, with a stray `B` per tag.
+    let replaced = strip_markup(label).replace('/', " Or ");
     let segments: Vec<&str> = replaced
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())

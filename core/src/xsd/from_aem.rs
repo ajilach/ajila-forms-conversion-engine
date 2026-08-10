@@ -55,10 +55,18 @@ pub fn generate_xsd_from_aem(
     config: &XsdConfig,
     fragments: &[ParsedFragment],
 ) -> AemXsdResult {
-    let frag_types: HashMap<&str, &str> = fragments
+    // The profile's full library first, then whatever the caller passed, so an
+    // explicitly supplied fragment wins over the indexed one.
+    let mut frag_types: HashMap<&str, &str> = config
+        .fragment_types
         .iter()
-        .map(|f| (f.frag_ref.as_str(), f.xsd_type_name.as_str()))
+        .map(|(frag_ref, ty)| (frag_ref.as_str(), ty.as_str()))
         .collect();
+    frag_types.extend(
+        fragments
+            .iter()
+            .map(|f| (f.frag_ref.as_str(), f.xsd_type_name.as_str())),
+    );
 
     let root_name = config.root_element_name();
     let root_path = format!("/{root_name}");
@@ -211,7 +219,19 @@ enum Emit {
     /// Contributes no element of its own; children bubble up.
     Transparent,
     /// `<xs:element ref="…"/>` — a global element in the type library.
-    Ref { name: String, occurs: Occurs },
+    Ref {
+        name: String,
+        occurs: Occurs,
+        /// The type whose declaring file must be included, when known.
+        ///
+        /// Two schemas can declare the same global element name with different
+        /// types — `AccountHolder` is `AccountHolderType` in
+        /// `ContractualPartner.xsd` and `ContractualPartnerGenericType` in
+        /// `ContractualPartnerGeneric.xsd` — so resolving the include by element
+        /// name alone can pull in the wrong file, leaving a `ref=` pointing at an
+        /// element of the wrong type.
+        include_hint: Option<String>,
+    },
     /// `<xs:element name="…" type="…"/>` — a typed leaf.
     Leaf {
         name: String,
@@ -244,10 +264,14 @@ fn walk(
                     walk(children, parent_path, out, used, st, ctx);
                 }
             }
-            Emit::Ref { name, occurs } => {
+            Emit::Ref {
+                name,
+                occurs,
+                include_hint,
+            } => {
                 let name = unique_name(name, used);
                 bind(node, parent_path, &name, st);
-                note_include_for(&name, st, ctx);
+                note_include_for(include_hint.as_deref().unwrap_or(&name), st, ctx);
                 out.push(XsdNode::Ref {
                     ref_name: name,
                     min_occurs: occurs.min,
@@ -686,7 +710,11 @@ fn classify(node: &AemNode, ctx: &Ctx) -> Emit {
 
             // A global element is referenced, never re-declared.
             if ctx.config.is_global_element(&name) && rule.is_none_or(|r| r.type_ref.is_none()) {
-                return Emit::Ref { name, occurs };
+                return Emit::Ref {
+                    name,
+                    occurs,
+                    include_hint: None,
+                };
             }
 
             let type_ref = rule
@@ -733,7 +761,11 @@ fn fragment_emit(frag_ref: &str, rule: Option<&AemElementRule>, occurs: Occurs, 
     }
 
     if ctx.config.is_global_element(&name) {
-        return Emit::Ref { name, occurs };
+        return Emit::Ref {
+            name,
+            occurs,
+            include_hint: type_name.map(str::to_string),
+        };
     }
 
     match type_name {

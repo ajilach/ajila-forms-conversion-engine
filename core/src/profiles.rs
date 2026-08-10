@@ -312,7 +312,24 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
         type_sources.sort_by(|a, b| a.0.cmp(&b.0));
     }
 
-    Ok(build_xsd_config_from_type_sources(profile, &type_sources))
+    let mut config = build_xsd_config_from_type_sources(profile, &type_sources);
+
+    // Index every fragment library in the profile, not just the ones the AEM
+    // profile lets the converter substitute: a form may already reference a
+    // fragment from any of them, and without its `fragmentModelRoot` the schema
+    // would silently omit that element.
+    let prefix = load_aem_profile(name)
+        .ok()
+        .and_then(|(p, _, _)| p.fragment_ref_prefix.clone())
+        .unwrap_or_else(|| "/content/dam/formsanddocuments/".to_string());
+    if let Ok(fragments) = load_aem_fragments(name, &prefix, &[]) {
+        config.fragment_types = fragments
+            .into_iter()
+            .map(|f| (f.frag_ref, f.xsd_type_name))
+            .collect();
+    }
+
+    Ok(config)
 }
 
 /// Load parsed AEM fragments from `{profile}/aem/fragments`.

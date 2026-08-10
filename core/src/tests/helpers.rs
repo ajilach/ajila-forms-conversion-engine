@@ -763,8 +763,20 @@ pub(super) fn build_aem_test_output(
 pub fn load_ubs_xsd_config() -> crate::xsd::XsdConfig {
     let dir_path = profiles_path("ubs/xsd");
     let dir = std::path::Path::new(&dir_path);
-    crate::xsd::load_xsd_config_from_dir(dir)
-        .unwrap_or_else(|e| panic!("Failed to load UBS XSD config: {e}"))
+    let config = crate::xsd::load_xsd_config_from_dir(dir)
+        .unwrap_or_else(|e| panic!("Failed to load UBS XSD config: {e}"));
+    // Mirror `profiles::load_xsd_config`, which indexes every fragment library
+    // so a `fragRef` from any of them resolves to its type.
+    let fragment_types =
+        crate::profiles::load_aem_fragments("ubs", "/content/dam/formsanddocuments/", &[])
+            .map(|frags| {
+                frags
+                    .into_iter()
+                    .map(|f| (f.frag_ref, f.xsd_type_name))
+                    .collect()
+            })
+            .unwrap_or_default();
+    config.with_fragment_types(fragment_types)
 }
 
 /// Recursively walk an AemNode tree, calling `callback` on every node.

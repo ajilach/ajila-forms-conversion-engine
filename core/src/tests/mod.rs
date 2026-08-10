@@ -32853,6 +32853,80 @@ mod aem_xsd_fixtures {
         Some(rest[..end].to_string())
     }
 
+    /// AF_BBEO is an *old-model* form: its fragments live in
+    /// `afforms_ch_fragmentlib`, and its reference is the output of UBS's own
+    /// tool rather than a hand-curated schema. We reproduce its element names,
+    /// types and includes exactly.
+    ///
+    /// Two differences are artefacts of that reference and are normalised away:
+    /// it predates `minOccurs="0"` (the curated AF_ABFA reference has it), and it
+    /// was generated with an empty form code so its root is a bare `UBSAF`.
+    #[test]
+    fn bbeo_matches_the_ubs_tool_modulo_known_artefacts() {
+        let root = helpers::parse_fixture_form("AF_BBEO");
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("BBEO".to_string());
+        let fragments = helpers::load_ubs_fragments();
+
+        let normalise = |xsd: &str| -> Vec<String> {
+            xsd_shape(xsd)
+                .into_iter()
+                .map(|line| {
+                    line.replace(" minOccurs=0", "")
+                        .replace("name=UBSAF_BBEO", "name=UBSAF")
+                })
+                .collect()
+        };
+
+        let ours = normalise(&crate::xsd::generate_xsd_string_from_aem(
+            &root, &config, &fragments,
+        ));
+        let theirs = normalise(&helpers::read_fixture("aem_xsd/AF_BBEO/reference.schema.xsd"));
+
+        assert_eq!(
+            ours, theirs,
+            "our AF_BBEO schema no longer matches UBS's.\nours:   {ours:#?}\ntheirs: {theirs:#?}"
+        );
+    }
+
+    /// Diff our schema against every UBS fixture that has a source/reference
+    /// pair, so the gap to their tool is measured rather than assumed.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn diff_every_ubs_fixture() {
+        for code in ["AF_ABFA", "AF_BBRR", "AF_ABSD", "AF_BBEO"] {
+            let root = helpers::parse_fixture_form(code);
+            let mut config = helpers::load_ubs_xsd_config();
+            config.form_code = Some(code.trim_start_matches("AF_").to_string());
+            let fragments = helpers::load_ubs_fragments();
+            let ours =
+                xsd_shape(&crate::xsd::generate_xsd_string_from_aem(&root, &config, &fragments));
+            let theirs = xsd_shape(&helpers::read_fixture(&format!(
+                "aem_xsd/{code}/reference.schema.xsd"
+            )));
+
+            let ours_set: std::collections::BTreeSet<&String> = ours.iter().collect();
+            let theirs_set: std::collections::BTreeSet<&String> = theirs.iter().collect();
+            let only_theirs: Vec<&&String> = theirs_set.difference(&ours_set).collect();
+            let only_ours: Vec<&&String> = ours_set.difference(&theirs_set).collect();
+
+            println!(
+                "\n=== {code}: ours {} lines, theirs {} lines, {} missing, {} extra{}",
+                ours.len(),
+                theirs.len(),
+                only_theirs.len(),
+                only_ours.len(),
+                if ours == theirs { "  [IDENTICAL]" } else { "" }
+            );
+            for l in only_theirs.iter().take(14) {
+                println!("   - only UBS: {l}");
+            }
+            for l in only_ours.iter().take(14) {
+                println!("   + only us : {l}");
+            }
+        }
+    }
+
     /// Load the fixture form and generate its schema through the real UBS
     /// profile, exactly as production would.
     fn abfa_generated_xsd() -> String {
@@ -33624,6 +33698,45 @@ mod ubs_xsd_naming {
             assert!(
                 xml.contains(r#"<xs:element name="CompanySignature""#),
                 "{title:?} should resolve to CompanySignature. got:\n{xml}"
+            );
+        }
+    }
+
+    /// Two schemas declare a global `AccountHolder`: `ContractualPartner.xsd`
+    /// types it `AccountHolderType`, `ContractualPartnerGeneric.xsd` types it
+    /// `ContractualPartnerGenericType`. Resolving the include by element name
+    /// alone picks whichever the index happened to keep, leaving a `ref=` that
+    /// points at an element of the wrong type — so the fragment's own model root
+    /// decides which file is included.
+    #[test]
+    fn the_include_for_a_ref_is_resolved_by_type_not_element_name() {
+        let cases = [
+            // old model: AccountHolderType, in the CH library
+            (
+                "afforms_ch_fragmentlib/affrg_Client1",
+                "../AFFragments/ContractualPartner.xsd",
+            ),
+            // new model: ContractualPartnerGenericType, in the UBS library
+            (
+                "afforms_ubs_fragmentlib/affrg_ContractualPartnerGeneric1",
+                "../AFFragments/ContractualPartnerGeneric.xsd",
+            ),
+        ];
+        for (fragment, expected_include) in cases {
+            let schema = schema_for(vec![frag(
+                "PN_AH",
+                "",
+                &format!("/content/dam/formsanddocuments/{fragment}"),
+            )]);
+            let xml = schema.to_xml();
+            assert!(
+                xml.contains(r#"<xs:element ref="AccountHolder""#),
+                "{fragment} should reference AccountHolder. got:\n{xml}"
+            );
+            assert!(
+                schema.includes.iter().any(|i| i == expected_include),
+                "{fragment} must include {expected_include}, got {:?}",
+                schema.includes
             );
         }
     }

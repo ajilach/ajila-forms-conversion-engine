@@ -486,11 +486,222 @@ titles = [
 element = "AuthRepSignature"
 type = "SignatureType"
 
+
+# --- UBS fragment element table -------------------------------------------
+#
+# Ported from `fragmentElementNames.js` in UBS's af-xsd-automation. A fragment
+# carries only its `fragmentModelRoot` (a *type*), and several global elements
+# can share one type, so which element a fragment becomes is a per-usage
+# decision the type library cannot answer. UBS keeps this table; we keep the
+# same knowledge as rules.
+#
+# `type` is given only where the element is NOT declared globally under
+# types/ — supplying it forces `name=`/`type=`, and a global element must be
+# emitted as `ref=`. Where it is omitted the fragment's own model root
+# supplies the type.
+#
+# Two of UBS's 37 entries are deliberately absent: affrg_cc_IndividualAddress1
+# and affrg_cc_SignatureGeneric1 map to a slash-separated *list* of candidate
+# elements (CardMailingAddress/CardInvoiceAddress/...), i.e. the choice depends
+# on context that the table cannot express. UBS's own generator emits the
+# literal list as one name; add a `title`-qualified rule instead when a form
+# needs them.
+
 [[aemElements]]
 kind = "fragment"
-fragRef = "affrg_SignatureGeneric1"
+fragRef = "afforms_ubs_fragmentlib/affrg_CustodyAccount1"
+element = "CustodyAccount"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolder1"
+element = "AccountHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolderDepot1"
+element = "AccountHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Client1"
+element = "AccountHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolderBasic1"
+element = "AccountHolderBasic"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolderBasic2"
+element = "AccountHolderBasic"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_FIM2"
+element = "FIM"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_CustodyAccountHolderBasic2"
+element = "CustodyAccountHolderBasic2"
+type = "AccountHolderType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
 element = "AccountHolderSignature"
 type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_ARSignature1"
+element = "AuthRepSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AHSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AHSignatureDepot1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_ClientSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_PensionHSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_PrincipalSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_EndClientSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AttySignature1"
+element = "AttorneySignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_CASignature1"
+element = "CASignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_DeskHeadSignature1"
+element = "DeskHeadSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_SupervisorSignature1"
+element = "SupervisorSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_FIMSignature1"
+element = "FIMSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_RelevantPSignature1"
+element = "RelevantPersonSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_BRSignature1"
+element = "BorrowerSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_BOSignature1"
+element = "BeneficialOwnerSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_ContractingPartnerSignature1"
+element = "ContractingPartnerSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_CAHSignature1"
+element = "CAHSignature1"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_CardHolder1"
+element = "CardHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_AdditionalServices1"
+element = "CardAdditionalService"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_Employment1"
+element = "CardEmployment"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_Training1"
+element = "CardTraining"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_BankingDetails"
+element = "CardBank"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_LegalRepresentative1"
+element = "CardLegalRep"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Recipient1"
+element = "InvoiceRecipient"
+type = "RecipientType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Payee1"
+element = "Payee"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Bank1"
+element = "PayeeBank"
+type = "BankType"
 
 # --- Partner class -----------------------------------------------------------
 
