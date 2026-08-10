@@ -1827,6 +1827,45 @@ pub fn to_xsd_element_name(label: &str) -> String {
         .join("")
 }
 
+/// Derive an element name from an AEM component `name`, for a field whose label
+/// cannot supply one.
+///
+/// Names this engine generates look like `CB_Erbschaft_f20c853f` — a prefix, the
+/// camel-cased source text, and eight hex characters of the node uuid. When that
+/// shape is recognised the scaffolding is stripped, leaving `Erbschaft`.
+/// Otherwise the name came from somewhere else (a hand-authored form uses
+/// `BG_SELECTION`, `emailCheckbox1`) and is used whole.
+///
+/// Returns `None` when nothing usable remains.
+pub fn element_name_from_component_name(name: &str) -> Option<String> {
+    let is_short_uuid = |s: &str| {
+        s.len() == 8
+            && s.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+    };
+
+    let segments: Vec<&str> = name.split('_').filter(|s| !s.is_empty()).collect();
+    let generated = segments.len() >= 2 && segments.last().is_some_and(|s| is_short_uuid(s));
+
+    let mut kept: Vec<&str> = if generated {
+        // Drop the uuid tail and the component-kind prefix.
+        segments[1..segments.len() - 1].to_vec()
+    } else {
+        segments.clone()
+    };
+
+    // A field with no label, no options and no name text — `TXT_c008f79a` —
+    // leaves nothing after stripping. It still carries data, so name it after the
+    // whole component rather than dropping it from the schema; the uuid is
+    // deterministic, so the name is stable.
+    if kept.is_empty() {
+        kept = segments;
+    }
+
+    let derived = to_xsd_element_name(&kept.join(" "));
+    (!derived.is_empty() && derived != "Unknown").then_some(derived)
+}
+
 /// Convert a label string to a PascalCase identifier suitable for XSD names.
 ///
 /// - Strips non-alphanumeric characters

@@ -33399,7 +33399,32 @@ mod aem_xsd_fixtures {
                 }
             }
 
-            // (4) Element names are unique within each sequence, or the schema
+            // (4) Every data field is bound. An unbound field is not merely
+            //     missing a bindRef — it has no element in the schema at all, so
+            //     its data is undescribed. Label-less checkboxes and radios used
+            //     to fall out here in bulk (30 of 62 fields on AAFM), which the
+            //     option-label and component-name fallbacks now cover.
+            //
+            //     `Custom` is exempt: it stands in for a hand-written template
+            //     whose fields live in the template, not the model.
+            helpers::walk_aem_nodes(&root, &mut |node| {
+                use crate::aem::AemNode;
+                let name = match node {
+                    AemNode::TextField { name, .. }
+                    | AemNode::NumberField { name, .. }
+                    | AemNode::DatePicker { name, .. }
+                    | AemNode::Dropdown { name, .. }
+                    | AemNode::Checkbox { name, .. }
+                    | AemNode::RadioButton { name, .. } => name,
+                    _ => return,
+                };
+                assert!(
+                    helpers::node_bind_ref(node).is_some(),
+                    "{pdf}: field {name} is unbound, so it has no element in the schema"
+                );
+            });
+
+            // (5) Element names are unique within each sequence, or the schema
             //     would not validate.
             let dupes = duplicate_sibling_names(&schema.to_xml());
             assert!(

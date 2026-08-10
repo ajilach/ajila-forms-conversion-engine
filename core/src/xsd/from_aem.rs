@@ -606,6 +606,19 @@ fn node_frag_ref(node: &AemNode) -> Option<&str> {
     }
 }
 
+/// The lone option's label, when a field has exactly one.
+///
+/// A single-option checkbox *is* its statement — "Erbschaft", "Real estate
+/// (Sale/income)" — so when the field carries no label of its own, the option
+/// names it. With several options they are answers, not the question, and say
+/// nothing about what the field holds.
+fn sole_option_label(node: &AemNode) -> Option<&str> {
+    match node_options(node)?.as_slice() {
+        [only] if !only.trim().is_empty() => Some(only),
+        _ => None,
+    }
+}
+
 /// Whether the node repeats, and hence needs `maxOccurs`.
 fn node_repeats(node: &AemNode) -> bool {
     matches!(node, AemNode::Repeatable { .. })
@@ -728,14 +741,22 @@ fn classify(node: &AemNode, next: Option<&AemNode>, ctx: &Ctx) -> Emit {
             // matching is unusable here.
             let synonym = super::resolve_element_whole_label(node_title(node), profile);
 
-            let name = rule_element
+            // Every step is a fallback for the one before. Without the last two,
+            // a label-less checkbox or radio — common in these forms, where the
+            // text sits in the options or in a neighbouring text block — would
+            // resolve to nothing and drop out of the schema entirely, taking its
+            // data with it.
+            let usable = |name: String| (!name.is_empty() && name != "Unknown").then_some(name);
+            let Some(name) = rule_element
                 .clone()
                 .or_else(|| synonym.as_ref().map(|res| res.name.clone()))
-                .unwrap_or_else(|| to_xsd_element_name(node_title(node)));
-
-            if name.is_empty() || name == "Unknown" {
+                .or_else(|| usable(to_xsd_element_name(node_title(node))))
+                .or_else(|| sole_option_label(node).map(to_xsd_element_name))
+                .and_then(usable)
+                .or_else(|| super::element_name_from_component_name(node_name(node)))
+            else {
                 return Emit::Skip;
-            }
+            };
 
             let occurs = occurs(Occurs::optional());
 
