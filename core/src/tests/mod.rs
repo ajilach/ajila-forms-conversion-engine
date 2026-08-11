@@ -32254,6 +32254,73 @@ fn column_section_groups_are_flagged_as_column_flow() {
     );
 }
 
+/// One synthetic single-language envelope for the column-flow merge tests.
+fn column_flow_envelope(
+    lang: &str,
+    nodes: Vec<crate::structured::StructuredNode>,
+) -> crate::structured::DocumentEnvelope {
+    crate::structured::DocumentEnvelope {
+        context: crate::Context::with_language(lang),
+        content: nodes,
+        state_count: 1,
+    }
+}
+
+/// A paragraph carrying a source name, so groups get an anchor key.
+fn named_paragraph(source_name: &str, lang: &str, text: &str) -> crate::structured::StructuredNode {
+    use crate::structured::{ParagraphNode, StructuredNode, TranslatedText};
+    StructuredNode::Paragraph(ParagraphNode {
+        content: TranslatedText::plain_with_lang(lang, text),
+        som_path: None,
+        source_name: Some(source_name.to_string()),
+    })
+}
+
+/// Every `column_flow` group in a tree, as its child count.
+fn column_flow_groups(nodes: &[crate::structured::StructuredNode]) -> Vec<usize> {
+    let mut found = Vec::new();
+    helpers::walk_structured_nodes(nodes, &mut |node| {
+        if let crate::structured::StructuredNode::Group(g) = node
+            && g.column_flow
+        {
+            found.push(g.children.len());
+        }
+    });
+    found
+}
+
+#[test]
+fn column_flow_survives_a_cross_language_merge() {
+    // The flag drives the Redacto `layout-split` panel. Merging two languages
+    // rebuilds every matched group, and dropping the flag there flattened the
+    // columns of every multilingual document (AACE, AACG) while a
+    // single-language run of the same form kept them.
+    use crate::structured::{GroupNode, StructuredNode};
+
+    let de = column_flow_envelope(
+        "de",
+        vec![StructuredNode::Group(GroupNode::columns(vec![
+            named_paragraph("T_Left", "de", "Links"),
+            named_paragraph("T_Right", "de", "Rechts"),
+        ]))],
+    );
+    let en = column_flow_envelope(
+        "en",
+        vec![StructuredNode::Group(GroupNode::columns(vec![
+            named_paragraph("T_Left", "en", "Left"),
+            named_paragraph("T_Right", "en", "Right"),
+        ]))],
+    );
+
+    let merged = crate::structured::merge_translations(vec![de, en], None).expect("merge de/en");
+
+    assert_eq!(
+        column_flow_groups(&merged.content),
+        [2],
+        "the merged tree must still carry the column flow"
+    );
+}
+
 #[test]
 fn redacto_field_is_skipped_with_a_warning() {
     use crate::structured::{FieldId, FieldNode, FieldType, StructuredNode, TranslatedText};

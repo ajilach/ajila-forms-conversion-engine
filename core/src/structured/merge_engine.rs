@@ -1935,7 +1935,13 @@ fn merge_node(
         }
         (StructuredNode::Group(a), StructuredNode::Group(b)) => {
             let children = merge_node_lists(&a.children, base_lang, &b.children, other_lang);
-            StructuredNode::Group(GroupNode { children, column_flow: false })
+            // Both languages render the same layout, so a column flow detected
+            // in either one holds for the merged group. Losing it here would
+            // flatten the columns of every multilingual document.
+            StructuredNode::Group(GroupNode {
+                children,
+                column_flow: a.column_flow || b.column_flow,
+            })
         }
         (StructuredNode::Conditional(a), StructuredNode::Conditional(b)) => {
             StructuredNode::Conditional(ConditionalNode {
