@@ -303,9 +303,9 @@ pub struct RedactoDocumentMeta {
     /// Stylesheet file name resolved from the Redacto bundle, e.g.
     /// `ubs-default.css`.
     pub style: String,
-    /// Page header text (`${meta:header}`).
+    /// Page header text (`${meta:header}`), plain text on a single line.
     pub header: String,
-    /// Page footer text (`${meta:footer}`).
+    /// Page footer text (`${meta:footer}`), plain text on a single line.
     pub footer: String,
 }
 

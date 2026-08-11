@@ -21,12 +21,16 @@ title = "{{ xfa.formrange_code }}_{{ xfa.formrange_entity }}"
 style = "ubs-default.css"
 
 # Page header and footer, exposed to the stylesheet as ${meta:header} /
-# ${meta:footer}. Both keep their literal spacing (white-space: pre-wrap).
+# ${meta:footer}. Both are drawn as literal plain text on a single line: HTML
+# is not parsed and a line break is not honoured, so the engine strips markup
+# and folds the value onto one line. Runs of spaces are kept (white-space:
+# pre-wrap), which is what lets the footer align its fields.
 #
 # The header is the text drawn top-of-page on the master page — the validity
-# line and legal entity, stacked (e.g. "Gültig ab 02.01.2018\nUBS Europe SE").
-# It is not an XFA variable, so the analysis recovers it from the document's
-# header region and exposes it as `page.header`.
+# line and legal entity (e.g. "Gültig ab 02.01.2018 UBS Europe SE"). It is not
+# an XFA variable, so the analysis recovers it from the document's header
+# region and exposes it as `page.header`, stacked; the stacking is flattened
+# into the single header line.
 #
 # The footer line is composed from the XFA `Footer_Line_*` variables the UBS
 # master page uses, in source order:

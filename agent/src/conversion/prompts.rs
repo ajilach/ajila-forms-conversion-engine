@@ -66,7 +66,10 @@ automated merge — YOU combine the languages and configurator variants, because
 language and see the rendered pages. Steps:\n\
   a. Read each state with get_flattened_structure_for_state (every language × every configurator \
 selection, e.g. EN/Private-Person, DE/Company) plus its page image. The XFA is the authority for \
-verbatim text in each language; the images are the authority for layout and section order.\n\
+verbatim text in each language; the images are the authority for layout, section order and \
+STRUCTURE. get_flattened_structure_for_state is the ENGINE'S reading of that page, not ground \
+truth — it can miss a table and hand you its cells as loose text draws. Where it disagrees with the \
+page image, the PAGE wins: author what the page shows, and note the discrepancy in your summary.\n\
   b. Build the whole tree in one set_aem_translated call: lay out the sections in source order; \
 for every text field include EVERY source language (pair translations by meaning and layout \
 position — never leave a language blank or collapse to one); give each fillable field the right \
@@ -193,10 +196,24 @@ search_xfa, since review_output compares the master language only. Every fillabl
 (text boxes, numeric boxes, dates, dropdowns, checkboxes, radio/choice groups, signatures, …) MUST \
 have a counterpart in the output — investigate and resolve any field-count mismatch or missing \
 field (never silently dropped), since a lost field means data the form can no longer capture. \
-(b) Confirm the result is analogous to the source, not merely complete: compare the rendered form \
-against the source page images (get_plain_state_image / get_annotated_state_image) and check that \
-the section order, grouping, headings, field layout and overall appearance resemble the original; \
-fix any drift with the editors and rebuild. (c) If an AEM connection is configured, upload_to_aem, \
+(b) STRUCTURE — no tool checks this, so YOU are the check. review_output compares text and field \
+counts against the ENGINE'S parse of the source, so a table whose cells were authored as loose text \
+draws scores exactly as well as the table does — and when the engine itself missed the table, both \
+sides of that comparison agree and the coverage score is clean. Render your form with generate_html \
+(where the profile has an HTML config) and walk it section by section against the source page \
+images (get_plain_state_image / get_annotated_state_image). For each region, decide from the PAGE \
+what it is — a table, a list, a multi-column region, a panel, a heading at some level, a repeatable \
+— and confirm your tree says the same, along with the section order, grouping, field layout and \
+overall appearance. Tables are the ones most often lost, so look for them explicitly: a grid of \
+aligned rows on the page is a table even when only some rules are drawn, even when it has a single \
+column, and even when one of its columns is empty on every row. Two shapes to watch for: a run of \
+consecutive one-line text draws where the page shows a ruled grid is a table the engine missed, and \
+a table whose header row is drawn without rules arrives with its header cells detached as separate \
+headings. AEM HAS NO TABLE COMPONENT — the engine represents a source table as a Panel named `TBL_` \
+holding the cells as its children, so fixing a missed table means GROUPING those draws into a \
+`TBL_` Panel in source order (and restoring the detached header cells as its first children), NOT \
+building a grid. Where your tree and the page disagree, the PAGE WINS: fix it with the editors and \
+rebuild. (c) If an AEM connection is configured, upload_to_aem, \
 then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result looks like the source. \
 Do not finish with unexplained misses or while the form still looks materially different from the \
 original.\n\
@@ -292,15 +309,33 @@ pub const AUTHOR_ADDENDUM: &str = "\
 STAGE NOTE: A CONVERSION PLAN produced by an Analyst is appended below as your section / field / \
 precedent map — trust it and use search_xfa only to fill specific gaps rather than re-dumping the \
 whole XFA. A separate Reviewer judges fidelity after you, so do not try to end the run; once you \
-have authored a complete tree and run build_aem_package + validate_aem_package, stop with a short summary. \
+have authored a complete tree, compared every rendered page against it and fixed the structural \
+mismatches that comparison showed (step 5b), and run build_aem_package + validate_aem_package, stop \
+with a short summary — say in it which sections you compared against the page images, what you \
+changed, and every place the engine's own parse disagreed with the page. Do not hand the Reviewer a \
+structural mismatch you could see yourself. \
 If REVIEW FEEDBACK appears below, address EVERY point from every round, then rebuild and re-validate.";
 
 /// Reviewer role: read-only quality gate that ends by calling `submit_review`.
 pub const REVIEWER_ADDENDUM: &str = "\
 ROLE: Reviewer / validator. You do NOT edit the tree. build_aem_package, then ALWAYS \
 validate_aem_package; run review_output (coverage vs the source, master language) and spot-check \
-non-master languages with search_xfa; compare the rendered pages against the source images (and, if \
-an AEM connection is configured, upload_to_aem then fetch_aem_form_html / fetch_aem_dor_pdf). Judge \
+non-master languages with search_xfa; render the form with generate_html (where the profile has an \
+HTML config) and compare it against the source images (and, if an AEM connection is configured, \
+upload_to_aem then fetch_aem_form_html / fetch_aem_dor_pdf). Check the STRUCTURE against those \
+images section by section: the section order, the grouping, the heading levels, the TABLES, the \
+lists, the multi-column regions and the repeatables must all be analogous, not merely the text \
+present. review_output is blind to this — its coverage compares text and field counts against the \
+ENGINE'S parse of the source, so a table whose cells were authored as loose text draws scores \
+exactly as well as the table, and where the engine itself missed the table both sides agree; a \
+clean coverage score is no reason to skip the comparison. Tables go missing most often: a grid of \
+aligned rows on the page is a table even when only some rules are drawn, even with a single column, \
+and even when one column is empty on every row; a run of consecutive one-line text draws facing a \
+ruled grid, or headings that are really the header row of the table below them, are the shapes it \
+fails in. AEM has no table component, so the shape to require is a Panel named `TBL_` holding the \
+cells in source order, not a grid. A structure the engine missed is BOTH kinds of issue: the Author \
+can group it in the tree, so return it as authorable; and the engine will keep making the same \
+mistake on the next form, so ALSO list it under ENGINE DEFECTS. Judge \
 ANALOGY to the source AND conformance to the CONVERSION PLAN appended below, and confirm every point \
 in any prior REVIEW FEEDBACK is now fixed. Checklist: naming prefixes (trust \
 review_output's naming_violations — a deterministic per-node check on the rendered JCR XML: each \

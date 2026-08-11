@@ -54,11 +54,13 @@ pub struct RedactoProfile {
     #[serde(default)]
     pub style: Option<String>,
 
-    /// Tera template for the page header (`${meta:header}`).
+    /// Tera template for the page header (`${meta:header}`). The rendered value
+    /// is reduced to plain text on one line — see [`plain_single_line`].
     #[serde(default)]
     pub header: Option<String>,
 
-    /// Tera template for the page footer (`${meta:footer}`).
+    /// Tera template for the page footer (`${meta:footer}`). The rendered value
+    /// is reduced to plain text on one line — see [`plain_single_line`].
     #[serde(default)]
     pub footer: Option<String>,
 
@@ -99,6 +101,98 @@ pub struct RedactoProfile {
     pub variables: HashMap<String, String>,
 }
 
+/// Reduce a rendered header/footer to what Redacto can show: plain text on a
+/// single line.
+///
+/// `${meta:header}` and `${meta:footer}` are drawn literally — markup is not
+/// parsed and a line break is not honoured — so a value carrying HTML (the
+/// recovered master-page header may, and a profile template is free to emit
+/// it) would otherwise leak tags into the page furniture. Tags are dropped,
+/// break-like tags become a space, and character references are decoded.
+/// Any whitespace run holding a newline or tab collapses to one space; runs of
+/// plain spaces survive, because the UBS footer uses four of them as column
+/// separators.
+fn plain_single_line(s: &str) -> String {
+    /// Tags that separate their neighbours on the page, so dropping them must
+    /// leave a space behind rather than glue two words together.
+    const BREAKING: &[&str] = &[
+        "br",
+        "p",
+        "div",
+        "li",
+        "ul",
+        "ol",
+        "tr",
+        "td",
+        "th",
+        "table",
+        "hr",
+        "blockquote",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+    ];
+
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(lt) = rest.find('<') {
+        let after = &rest[lt + 1..];
+        // A bare `<` (as in "a < b") is text, not the start of a tag.
+        let is_tag =
+            after.starts_with(['/', '!']) || after.starts_with(|c: char| c.is_ascii_alphabetic());
+        let Some(gt) = after.find('>').filter(|_| is_tag) else {
+            out.push_str(&rest[..lt + 1]);
+            rest = after;
+            continue;
+        };
+        out.push_str(&rest[..lt]);
+        let name: String = after[..gt]
+            .trim_start_matches(['/', '!'])
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if BREAKING.contains(&name.as_str()) {
+            out.push(' ');
+        }
+        rest = &after[gt + 1..];
+    }
+    out.push_str(rest);
+
+    let out = out
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        // Last: an escaped `&amp;lt;` must not become a `<`.
+        .replace("&amp;", "&");
+
+    // Collapse only the whitespace runs that would have broken the line.
+    let mut single = String::with_capacity(out.len());
+    let mut run = String::new();
+    for c in out.chars() {
+        if c.is_whitespace() {
+            run.push(c);
+            continue;
+        }
+        if !run.is_empty() {
+            if run.chars().all(|w| w == ' ') {
+                single.push_str(&run);
+            } else {
+                single.push(' ');
+            }
+            run.clear();
+        }
+        single.push(c);
+    }
+    single.trim().to_string()
+}
+
 /// A fully resolved Redacto configuration: every Tera template rendered and
 /// every default applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,9 +205,9 @@ pub struct RedactoConfig {
     pub form_path: String,
     /// Stylesheet file name.
     pub style: String,
-    /// Page header text.
+    /// Page header text, plain and single-line.
     pub header: String,
-    /// Page footer text.
+    /// Page footer text, plain and single-line.
     pub footer: String,
     /// Owner recorded in the mandatory `(USER, OWNER, DOCUMENT)` row.
     pub owner_id: String,
@@ -201,8 +295,8 @@ impl RedactoConfig {
                 .style
                 .clone()
                 .unwrap_or_else(|| DEFAULT_STYLE.into()),
-            header: render_opt("header", &profile.header)?,
-            footer: render_opt("footer", &profile.footer)?,
+            header: plain_single_line(&render_opt("header", &profile.header)?),
+            footer: plain_single_line(&render_opt("footer", &profile.footer)?),
             owner_id: profile
                 .owner_id
                 .clone()

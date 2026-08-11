@@ -32619,6 +32619,42 @@ fn redacto_ubs_profile_reads_header_from_recovered_page_header() {
 }
 
 #[test]
+fn redacto_header_is_flattened_to_a_single_plain_line() {
+    // `${meta:header}` is drawn literally: markup would leak into the page
+    // furniture and the stacked lines of the recovered header would not break.
+    let mut ctx = crate::Context::new(
+        "en".into(),
+        std::collections::HashMap::from([
+            ("formrange_code".to_string(), "AAEV".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]),
+    );
+    ctx.header = Some("<b>G\u{fc}ltig ab 02.01.2018</b><br/>UBS &amp; Co. SE".into());
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.header, "G\u{fc}ltig ab 02.01.2018 UBS & Co. SE");
+}
+
+#[test]
+fn redacto_header_keeps_column_spacing_while_collapsing_newlines() {
+    // Only whitespace runs that would have broken the line collapse; runs of
+    // plain spaces are load-bearing (the footer separates its fields with four).
+    let mut ctx = crate::Context::new(
+        "en".into(),
+        std::collections::HashMap::from([
+            ("formrange_code".to_string(), "AAEV".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]),
+    );
+    ctx.header = Some("  left    right \n second \t line  ".into());
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.header, "left    right second line");
+}
+
+#[test]
 fn redacto_header_recovered_from_master_page_is_empty_when_absent() {
     // No recovered header (a plain text PDF) leaves the header blank rather
     // than failing to resolve the profile.
