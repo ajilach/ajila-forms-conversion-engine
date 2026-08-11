@@ -178,7 +178,55 @@ impl<'a> DumpBuilder<'a> {
         }
 
         flush_run(&mut run, &mut components);
-        components
+        self.join_adjacent_column_panels(components)
+    }
+
+    /// Fuse column panels that ended up next to each other into one panel.
+    ///
+    /// Nothing separates two adjacent column panels, so they are one continuous
+    /// multi-column flow in the source and the break between them is an
+    /// artefact of how the section happened to be grouped. Joining them lets
+    /// the CSS balance the whole flow across the columns instead of restarting
+    /// the balance halfway through.
+    fn join_adjacent_column_panels(
+        &self,
+        components: Vec<RedactoComponent>,
+    ) -> Vec<RedactoComponent> {
+        let mut out: Vec<RedactoComponent> = Vec::with_capacity(components.len());
+
+        for component in components {
+            match component {
+                RedactoComponent::StyledPanel {
+                    id,
+                    style,
+                    components: nested,
+                } if style == self.config.column_panel_style => match out.pop() {
+                    Some(RedactoComponent::StyledPanel {
+                        id: open_id,
+                        style: open_style,
+                        components: mut open,
+                    }) if open_style == style => {
+                        open.extend(nested);
+                        out.push(RedactoComponent::StyledPanel {
+                            id: open_id,
+                            style,
+                            components: join_adjacent_runs(open),
+                        });
+                    }
+                    previous => {
+                        out.extend(previous);
+                        out.push(RedactoComponent::StyledPanel {
+                            id,
+                            style,
+                            components: nested,
+                        });
+                    }
+                },
+                other => out.push(other),
+            }
+        }
+
+        out
     }
 
     /// Create the `assets` row and one `asset_version` per language for a
@@ -321,6 +369,40 @@ fn flush_run(run: &mut Vec<String>, components: &mut Vec<RedactoComponent>) {
         id: new_id(),
         assets: std::mem::take(run),
     });
+}
+
+/// Collapse consecutive `assetContainer` components into a single one.
+///
+/// Used when two panels are joined: each contributed its own run, and the two
+/// runs meeting at the seam are one ordered run. The first container keeps its
+/// identifier.
+fn join_adjacent_runs(components: Vec<RedactoComponent>) -> Vec<RedactoComponent> {
+    let mut out: Vec<RedactoComponent> = Vec::with_capacity(components.len());
+    let mut run: Vec<String> = Vec::new();
+    let mut run_id: Option<String> = None;
+
+    for component in components {
+        match component {
+            RedactoComponent::AssetContainer { id, assets } => {
+                run_id.get_or_insert(id);
+                run.extend(assets);
+            }
+            panel => {
+                if let Some(id) = run_id.take() {
+                    out.push(RedactoComponent::AssetContainer {
+                        id,
+                        assets: std::mem::take(&mut run),
+                    });
+                }
+                out.push(panel);
+            }
+        }
+    }
+    if let Some(id) = run_id {
+        out.push(RedactoComponent::AssetContainer { id, assets: run });
+    }
+
+    out
 }
 
 /// Splice the components of an inlined wrapper into the surrounding run.

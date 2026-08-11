@@ -32094,6 +32094,129 @@ fn redacto_column_flow_group_becomes_a_layout_split_panel() {
 }
 
 #[test]
+fn redacto_adjacent_column_flow_panels_are_merged_into_one() {
+    // AAEV split its two-column body into two column sections that follow each
+    // other with nothing in between. That break is an artefact of the grouping,
+    // so the export must show one panel carrying one ordered run - otherwise
+    // the CSS restarts the column balance halfway down the page.
+    use redacto_fixtures::{column_section, heading, paragraph};
+
+    let nodes = vec![
+        heading(1, "Title"),
+        column_section(vec![paragraph("a"), paragraph("b")]),
+        column_section(vec![paragraph("c"), paragraph("d")]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "assetContainer(1)".to_string(),
+            "styledPanel(layout-split)".to_string(),
+            "assetContainer(4)".to_string(),
+        ],
+        "adjacent column panels are one flow"
+    );
+    assert_eq!(
+        helpers::redacto_referenced_assets(helpers::redacto_configuration(&dump)).len(),
+        dump.assets.len(),
+        "merging must not drop an asset reference"
+    );
+}
+
+#[test]
+fn redacto_three_adjacent_column_flow_panels_are_merged_into_one() {
+    // The AAAR pattern: three column sections in a row.
+    use redacto_fixtures::{column_section, paragraph};
+
+    let nodes = vec![
+        column_section(vec![paragraph("a")]),
+        column_section(vec![paragraph("b")]),
+        column_section(vec![paragraph("c")]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "styledPanel(layout-split)".to_string(),
+            "assetContainer(3)".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn redacto_column_flow_panels_merge_across_a_plain_group() {
+    // A structural wrapper is inlined, so the panel it contains still ends up
+    // adjacent to the next one and must merge with it.
+    use redacto_fixtures::{column_section, group, paragraph};
+
+    let nodes = vec![
+        group(vec![column_section(vec![paragraph("a")])]),
+        column_section(vec![paragraph("b")]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "styledPanel(layout-split)".to_string(),
+            "assetContainer(2)".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn redacto_column_flow_panels_separated_by_content_stay_apart() {
+    // Only an unbroken sequence merges: a full-width block between two column
+    // sections genuinely ends the first flow.
+    use redacto_fixtures::{column_section, paragraph};
+
+    let nodes = vec![
+        column_section(vec![paragraph("a")]),
+        paragraph("full width"),
+        column_section(vec![paragraph("b")]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "styledPanel(layout-split)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+            "styledPanel(layout-split)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn redacto_adjacent_grid_panels_stay_apart() {
+    // Grid panels are positional, not a text flow: two adjacent grids stay two
+    // panels.
+    use redacto_fixtures::{grid, paragraph};
+
+    let nodes = vec![
+        grid(2, vec![paragraph("a"), paragraph("b")]),
+        grid(2, vec![paragraph("c"), paragraph("d")]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "styledPanel(layout-split-block)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+            "styledPanel(layout-split-block)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+    );
+}
+
+#[test]
 fn redacto_plain_group_does_not_become_a_panel() {
     use redacto_fixtures::{group, paragraph};
 
