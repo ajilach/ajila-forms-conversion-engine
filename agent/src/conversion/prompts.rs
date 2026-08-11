@@ -395,11 +395,13 @@ get_schema('structured') for the exact shape, and always write the map with EVER
 including the one already there. Pair by meaning and layout position (use the page images), never by \
 guesswork. Never leave a language blank, and never collapse a multilingual text onto a single \
 entry.\n\
-   The seeded structure is not yours to re-create: the groups, their `columnFlow` flag, the heading \
-levels and the list nesting came from the engine's reading of the rendered page and are almost \
-certainly right. Adding a translation NEVER requires changing them. If you find yourself about to \
+   The seeded structure is not yours to re-create WHILE YOU TRANSLATE: the groups, their \
+`columnFlow` flag, the heading levels and the list nesting came from the engine's reading of the \
+rendered page, and adding a translation NEVER requires changing them. If you find yourself about to \
 emit a large number of nodes, you are rebuilding rather than translating — go back to \
-set_structured_fields.\n\
+set_structured_fields. The seed is a starting point, not an authority: where it disagrees with the \
+rendered page the seed is wrong and you fix it — but deliberately, in step 6, not in passing \
+here.\n\
 4. Fix what the outline flags. `⚠ text?` / `⚠ label?` mark missing or placeholder text; \
 `⚠ unsupported` marks a node the Redacto output cannot represent (a field, image, conditional or \
 repeatable) — those are dropped from the dump, so remove them deliberately or restructure them into \
@@ -413,12 +415,24 @@ shippable — no text assets at all, or a language missing its variants — and 
 `styled_panels` too: a document whose source has multi-column sections must show `layout-split` \
 panels, and one with footnotes a `footnote` panel. Zero panels where the source has columns means \
 the layout was flattened — the row counts look identical, so this is the only place it shows.\n\
-6. Review end to end: review_redacto_output compares the source against the text that actually \
-reaches the generated dump and lists anything missing, with a coverage score. For EVERY miss, fix \
-it and rebuild, or satisfy yourself it was an intentional drop; it compares the master language \
-only, so spot-check the others with search_xfa. Then confirm the result is analogous, not merely \
-complete: compare against the source page images (get_plain_state_image) and check that the section \
-order, heading levels, lists and column layout resemble the original.\n\n\
+6. Review end to end. TWO separate checks, both required — one for text, one for structure.\n\
+   TEXT: review_redacto_output compares the source against the text that actually reaches the \
+generated dump and lists anything missing, with a coverage score. For EVERY miss, fix it and \
+rebuild, or satisfy yourself it was an intentional drop; it compares the master language only, so \
+spot-check the others with search_xfa.\n\
+   STRUCTURE: no tool checks this — the coverage score is computed on text alone, so a table whose \
+cells ship as one paragraph each scores exactly as well as the table does. YOU are the check. \
+Render every page with get_plain_state_image and walk the pages against get_structured_outline, \
+section by section. For each region, decide from the PAGE what it is — a table, a list, a \
+multi-column region, a heading at some level, or plain paragraphs — and confirm the tree says the \
+same. Tables are the ones most often lost, so look for them explicitly: a grid of aligned rows is a \
+table even when only some rules are drawn, even when it has a single column, and even when one of \
+its columns is empty on every row. Two failures to watch for: a run of consecutive one-line \
+paragraphs where the page shows a ruled grid is a table the engine missed; and a table whose header \
+row is drawn without rules arrives with its header cells detached as separate headings. Where the \
+tree and the page disagree, the PAGE WINS: fix it with replace_structured_node / \
+insert_structured_node / remove_structured_node, then rebuild and re-check. Never leave a \
+structural mismatch for a later stage to report — you are the stage that can fix it.\n\n\
 Never invent text content: take all headings, body text and footnotes verbatim from the source, and \
 never write copy of your own. The final document must contain EVERY language present in the source \
 (get_source_info lists them) and ONLY those: never drop a language the source contains, and never \
@@ -451,9 +465,11 @@ STAGE NOTE: A CONVERSION PLAN produced by an Analyst is appended below as your s
 map — trust it and use search_xfa only to fill specific gaps rather than re-dumping the whole \
 source. A separate Reviewer judges fidelity after you, so do not try to end the run; once you \
 have seeded \
-the tree, layered in every language and run build_redacto_dump with no problems reported, stop with \
-a short summary. If REVIEW FEEDBACK appears below, address EVERY point from every round, then \
-rebuild and re-validate.";
+the tree, layered in every language, compared every rendered page against the tree and fixed the \
+structural mismatches it showed (step 6), and run build_redacto_dump with no problems reported, \
+stop with a short summary — say in it which sections you compared against the page images and what \
+you changed. Do not hand the Reviewer a structural mismatch you could see yourself. If REVIEW \
+FEEDBACK appears below, address EVERY point from every round, then rebuild and re-validate.";
 
 /// Redacto Reviewer role: independent fidelity judgement.
 pub const REDACTO_REVIEWER_ADDENDUM: &str = "\
@@ -462,9 +478,16 @@ independently: run build_redacto_dump (every `problem` is disqualifying; every `
 content was dropped) and review_redacto_output (investigate every missing text and the coverage \
 score). Read the document with get_structured_outline and resolve every `⚠` flag: `⚠ unsupported` \
 means content will be dropped from the dump, and a text present in only one language when the \
-source has several is an untranslated stub. Compare against the source page images \
-(get_plain_state_image) to confirm the section order, heading levels, lists and multi-column \
-layout are analogous — not merely that the text is present. Spot-check non-master languages with \
+source has several is an untranslated stub. Then check the STRUCTURE against the source page images \
+(get_plain_state_image), section by section: the section order, the heading levels, the TABLES, the \
+lists and the multi-column layout must all be analogous, not merely the text present. The coverage \
+score is blind to this — a table whose cells shipped as one paragraph each scores exactly as well \
+as the table — so this comparison is the only check that catches it, and a clean coverage score is \
+no reason to skip it. Tables go missing most often: a grid of aligned rows on the page is a table \
+even when only some rules are drawn, even with a single column, and even when one column is empty \
+on every row; a run of consecutive one-line paragraphs facing a ruled grid, or headings that are \
+really the header row of the table below them, are the shapes it fails in. Spot-check non-master \
+languages with \
 search_xfa, since review_redacto_output compares the master language only. End by calling \
 submit_review with approved=true ONLY if the dump has no problems and every remaining issue is \
 resolved; otherwise approved=false and report = a detailed, actionable message listing every issue \
