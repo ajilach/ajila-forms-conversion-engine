@@ -1,7 +1,8 @@
 [package]
 name = "blueprint-cli"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "blueprint"
@@ -9,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 blueprint = { path = "../core", features = ["semantic-matching"] }
-clap = { version = "4.5", features = ["derive"] }
-env_logger = "0.11"
-log = "0.4"
-serde_json = "1.0"
+clap = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }

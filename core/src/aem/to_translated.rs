@@ -114,6 +114,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             colspan,
             dor_colspan,
             bind_ref,
+            frag_ref,
         } => AemNodeTranslated::Panel {
             uuid: *uuid,
             passthrough: ctx.passthrough(uuid),
@@ -128,6 +129,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             colspan: *colspan,
             dor_colspan: *dor_colspan,
             bind_ref: bind_ref.clone(),
+            frag_ref: frag_ref.clone(),
         },
         AemNode::TextField {
             uuid,
@@ -311,6 +313,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             min_occur,
             max_occur,
             bind_ref,
+            frag_ref,
         } => AemNodeTranslated::Repeatable {
             uuid: *uuid,
             passthrough: ctx.passthrough(uuid),
@@ -320,16 +323,19 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             min_occur: *min_occur,
             max_occur: *max_occur,
             bind_ref: bind_ref.clone(),
+            frag_ref: frag_ref.clone(),
         },
         AemNode::Fragment {
             uuid,
             name,
+            title,
             frag_ref,
             bind_ref,
         } => AemNodeTranslated::Fragment {
             uuid: *uuid,
             passthrough: ctx.passthrough(uuid),
             name: name.clone(),
+            title: ctx.text(title, name, "jcr:title"),
             frag_ref: frag_ref.clone(),
             bind_ref: bind_ref.clone(),
         },

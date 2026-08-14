@@ -1,0 +1,60 @@
+# =============================================================================
+# UBS Redacto Output Profile
+# =============================================================================
+#
+# Emits a PostgreSQL dump for the Ajila Redacto platform (schema app_redacto).
+# Use with:  blueprint --profile ubs --redacto input/<text-only>.pdf
+#
+# Template syntax: Tera (Jinja2-style)
+#   Namespaces:
+#     xfa.*        — raw XFA <variables><text> from the PDF
+#     variables.*  — user-defined intermediate values (below)
+
+# Business identifier of the document, e.g. "aaad_001".
+# Written to documents.document_id and configuration.document.id (varchar(50)).
+document_id = "{{ xfa.formrange_code | lower }}_{{ xfa.formrange_entity }}"
+
+# Human-readable title, rendered into the HTML <title>.
+title = "{{ xfa.formrange_code }}_{{ xfa.formrange_entity }}"
+
+# Stylesheet resolved from the Redacto bundle (styles/<name>).
+style = "ubs-default.css"
+
+# Page header and footer, exposed to the stylesheet as ${meta:header} /
+# ${meta:footer}. Both keep their literal spacing (white-space: pre-wrap).
+#
+# The header is the text drawn top-of-page on the master page — the validity
+# line and legal entity, stacked (e.g. "Gültig ab 02.01.2018\nUBS Europe SE").
+# It is not an XFA variable, so the analysis recovers it from the document's
+# header region and exposes it as `page.header`.
+#
+# The footer line is composed from the XFA `Footer_Line_*` variables the UBS
+# master page uses, in source order:
+#   <form id> <language> <version> <MAN code> <form code> <release date> <j-version>
+#   e.g. "66300 EN V0 019 AAEV 31.10.2019 N1"
+header = "{{ page.header | default(value='') }}"
+footer = "{{ variables.footer_code }}"
+
+# Authoring user recorded as the document owner. Redacto rejects authoring
+# writes against a document that has no (USER, OWNER, DOCUMENT) ownership row.
+owner_id = "admin"
+
+master_language = "en"
+
+# Lifecycle status of the generated variants: DRAFT keeps them editable.
+status = "DRAFT"
+
+# styledPanel classes defined in ubs-default.css.
+grid_panel_style = "layout-split-block"
+footnote_panel_style = "footnote"
+# Applied to a section the source laid out as a multi-column text flow.
+# `layout-split` sets column-count: 2 with column-fill: balance, so the
+# renderer reflows the section across two balanced columns.
+column_panel_style = "layout-split"
+
+[variables]
+# Left-hand footer code, assembled from the master-page footer fields. Each
+# lookup defaults to empty so the template still resolves on documents that
+# lack the footer variables (e.g. a plain, non-UBS text PDF). Fields are
+# separated by four spaces, preserved by the stylesheet's white-space: pre-wrap.
+footer_code = "{{ xfa.Footer_Line_txtformid | default(value='') }}    {{ xfa.Footer_Line_txtlanguage | default(value='') }}    {{ xfa.Footer_Line_txtvversion | default(value='') }}    {{ xfa.Footer_Line_MANCode | default(value='') }}    {{ xfa.formrange_code | default(value='') }}    {{ xfa.Footer_Line_txtversiondate | default(value='') }}    {{ xfa.Footer_Line_txtjversion | default(value='') }}"

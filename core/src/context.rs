@@ -22,8 +22,20 @@ pub struct Context {
     language: String,
 
     /// All `<variables><text>` values from the XFA template, keyed by name.
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    ///
+    /// `default` pairs with `skip_serializing_if`: a context with no variables
+    /// omits the field entirely, so without it every such document — anything
+    /// not built from an XFA template — failed to deserialize.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub variables: HashMap<String, String>,
+
+    /// Plain text of the document's master-page header region, if the analysis
+    /// recovered one (e.g. a legal-entity name drawn top-of-page). This is
+    /// document furniture that is otherwise dropped from the structured
+    /// content; output targets with a page-header slot (e.g. the Redacto
+    /// `${meta:header}` box) can reinstate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
 }
 
 impl Context {
@@ -32,6 +44,7 @@ impl Context {
         Self {
             language,
             variables,
+            header: None,
         }
     }
 
@@ -43,6 +56,7 @@ impl Context {
         Self {
             language: language.into(),
             variables: HashMap::new(),
+            header: None,
         }
     }
 
@@ -104,5 +118,20 @@ mod tests {
         let ctx = Context::with_language("en");
         let json = serde_json::to_string(&ctx).unwrap();
         assert!(!json.contains("\"variables\""));
+    }
+
+    /// The omitted-when-empty fields must also be optional on the way back in.
+    /// Edit-history snapshots are stored as serialized envelopes, so a context
+    /// that fails to deserialize makes a whole recorded session unloadable.
+    #[test]
+    fn context_without_variables_round_trips() {
+        let ctx = Context::with_language("en");
+        let json = serde_json::to_string(&ctx).unwrap();
+
+        let back: Context = serde_json::from_str(&json)
+            .expect("a context with no XFA variables must deserialize again");
+        assert_eq!(back.language(), "en");
+        assert!(back.variables.is_empty());
+        assert!(back.header.is_none());
     }
 }

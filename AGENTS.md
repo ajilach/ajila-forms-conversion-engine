@@ -16,7 +16,26 @@
 ## Project-specific
 
 - When running tests, use `cargo test --release` such that they are faster. Also make sure to save the entire output to a log file to avoid needing to re-run the tests if output information is required. Do NOT run tests if you only modified the app/cli wrappers.
-- Before implementing XFA functionality, always consult the [XFA specs](./specs/XFA-3_3.md).
+- Before implementing XFA functionality, always consult the [XFA specs](./specs/XFA-3_3.txt) (text extraction of `specs/XFA-3_3.pdf`).
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.
 - Tests should never work with the ouput files. Instead they should analyze the intermediate structures (StrucuredNode, FlattenedNode, Document, ...) directly.
 - AEM output should be moved as much as possible to the templating engine.
+- The XSD is generated from the **AemNode** tree (`core/src/xsd/from_aem.rs`), and each node's `bindRef` is assigned during that same walk, so a form's bindRefs are by construction exact element paths in its schema. Do not add a second XSD source. Customer-specific element names, ignore rules and occurrence overrides belong in `profiles/<name>/xsd/config.toml` under `[[aemElements]]`, never in Rust.
+
+## Layout
+
+| Crate | What belongs there |
+|---|---|
+| `core` (`blueprint`) | The engine: parsing, analysis, and every renderer. No UI, no network, no LLM. |
+| `agent` | The headless conversion agent: the tool catalog and executor, the edit-history store, the reference store, the AEM HTTP client. No UI and no LLM. |
+| `pipeline` | The conversion controller: Analyst → Author → Reviewer sequencing, retry recovery, the stuck watchdog. Reaches the outside world only through `TurnProvider` (the model) and `RunObserver` (progress), so it needs neither a UI framework nor a network to test. |
+| `app` | The Dioxus desktop app: the Anthropic transport, the two seam implementations, and all UI state. |
+| `mcp` | A stdio MCP server exposing `agent`'s tools to an external LLM client. |
+| `cli` | Thin arg-parse and dispatch over `core`. |
+| `judge` | Offline eval harness scoring translation quality to CSV. |
+
+- A run produces one **output target** (`OutputTarget::Aem` or `Redacto`). Targets are configured per profile under `profiles/<name>/<target>/`.
+- Tools are scoped **once**, in `SCOPING` in `agent/src/conversion/catalog.rs`: each tool declares which targets may execute it and which pipeline stages are offered it. Do not add a second allow-list anywhere — add a row there.
+- The tool catalog is pinned by `agent/tests/catalog.json`. After an intended change, regenerate with `UPDATE_SNAPSHOTS=1 cargo test -p agent` and review the diff: tool descriptions are prompt surface, so a wording change is a behaviour change.
+- Tool descriptions and role prompts may only name tools that exist; `prose_only_names_tools_that_exist` enforces it. Prompt text lives in `agent/src/conversion/prompts.rs`.
+- Controller behaviour (stage order, retry, abort) belongs in `pipeline` and gets a test there — a scripted `TurnProvider` plus a recording `RunObserver` drive the real `run` with no network. Do not add sequencing logic to the app.

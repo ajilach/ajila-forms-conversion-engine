@@ -1,13 +1,13 @@
-//! Embedded profile loading for AEM / HTML / XSD outputs.
+//! Embedded profile loading for AEM / HTML / XSD / Redacto outputs.
 //!
 //! The entire `profiles/` directory is baked into the core crate at compile
 //! time. Consumers (CLI, app, server) should load profile data through this
 //! module instead of duplicating profile I/O logic.
 
 use crate::{
-    AemConfig, AemProfile, Context, HtmlCustomStyles, HtmlProfile, ResolvedFontFamily,
-    ResolvedFontVariant, XsdConfig, XsdProfile, build_xsd_config_from_type_sources,
-    parse_fragment_content,
+    AemConfig, AemProfile, Context, HtmlCustomStyles, HtmlProfile, RedactoConfig, RedactoProfile,
+    ResolvedFontFamily, ResolvedFontVariant, XsdConfig, XsdProfile,
+    build_xsd_config_from_type_sources, parse_fragment_content,
 };
 use include_dir::{Dir, include_dir};
 use serde::de::DeserializeOwned;
@@ -42,6 +42,43 @@ pub fn has_html_config(name: &str) -> bool {
 /// Return whether `{profile}/xsd/config.toml` exists.
 pub fn has_xsd_config(name: &str) -> bool {
     has_profile_config(name, "xsd")
+}
+
+/// Return whether `{profile}/redacto/config.toml` exists.
+pub fn has_redacto_config(name: &str) -> bool {
+    has_profile_config(name, "redacto")
+}
+
+/// The output targets `name` is configured for, in the order they should be
+/// offered.
+///
+/// A profile carries one section per output, so this is simply which of them
+/// exist. Empty when the profile has neither — such a profile can still produce
+/// the JSON/HTML previews, but nothing a conversion run aims at.
+pub fn profile_targets(name: &str) -> Vec<crate::OutputTarget> {
+    crate::OutputTarget::ALL
+        .into_iter()
+        .filter(|t| has_profile_config(name, t.profile_section()))
+        .collect()
+}
+
+/// The Redacto profile's master language, without resolving the rest of the
+/// configuration.
+///
+/// [`load_redacto_config`] needs a document context, but choosing *which*
+/// document context to resolve against needs the master language first — a
+/// multilingual source offers one context per language variant, each with its
+/// own master-page header and footer variables. This breaks that cycle.
+pub fn redacto_master_language(name: &str) -> Option<String> {
+    let profile: RedactoProfile = read_profile_config_toml(name, "redacto").ok()?;
+    Some(profile.master_language.unwrap_or_else(|| "en".to_string()))
+}
+
+/// Load and resolve `{profile}/redacto/config.toml` against a document context.
+pub fn load_redacto_config(name: &str, ctx: &Context) -> Result<RedactoConfig, String> {
+    let profile: RedactoProfile = read_profile_config_toml(name, "redacto")?;
+    RedactoConfig::from_profile(&profile, ctx)
+        .map_err(|e| format!("Failed to build Redacto config: {e}"))
 }
 
 /// Load and parse `{profile}/aem/config.toml` and all top-level `*.xml`
@@ -275,7 +312,24 @@ pub fn load_xsd_config(name: &str) -> Result<XsdConfig, String> {
         type_sources.sort_by(|a, b| a.0.cmp(&b.0));
     }
 
-    Ok(build_xsd_config_from_type_sources(profile, &type_sources))
+    let mut config = build_xsd_config_from_type_sources(profile, &type_sources);
+
+    // Index every fragment library in the profile, not just the ones the AEM
+    // profile lets the converter substitute: a form may already reference a
+    // fragment from any of them, and without its `fragmentModelRoot` the schema
+    // would silently omit that element.
+    let prefix = load_aem_profile(name)
+        .ok()
+        .and_then(|(p, _, _)| p.fragment_ref_prefix.clone())
+        .unwrap_or_else(|| "/content/dam/formsanddocuments/".to_string());
+    if let Ok(fragments) = load_aem_fragments(name, &prefix, &[]) {
+        config.fragment_types = fragments
+            .into_iter()
+            .map(|f| (f.frag_ref, f.xsd_type_name))
+            .collect();
+    }
+
+    Ok(config)
 }
 
 /// Load parsed AEM fragments from `{profile}/aem/fragments`.
@@ -649,9 +703,11 @@ mod tests {
         assert!(has_aem_config("ubs"));
         assert!(has_html_config("ubs"));
         assert!(has_xsd_config("ubs"));
+        assert!(has_redacto_config("ubs"));
         assert!(!has_aem_config("missing-profile"));
         assert!(!has_html_config("missing-profile"));
         assert!(!has_xsd_config("missing-profile"));
+        assert!(!has_redacto_config("missing-profile"));
     }
 
     #[test]

@@ -29,8 +29,14 @@ master_language = "en"
 # username = "admin"
 # password_env = "AEM_PASSWORD"   # or: password = "admin"
 
-# XSD path can be disabled as we currently dont want the schema included in the package.
-# xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{{ variables.form_code }}.xsd"
+# Where the schema lives when a package binds to one. Always set, because it is
+# what lets a bound package be built on demand; the DAM metadata only advertises
+# it when `bind_to_xsd` is on, so the default package is unaffected.
+xsd_path = "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{{ variables.form_code }}.xsd"
+
+# Off by default: the plain "AEM package" download carries no bindRefs and no
+# schema. The "AEM package with bindRefs" download flips this on, which bundles
+# the XSD and binds every field to it.
 bind_to_xsd = false
 
 use_fragments = true

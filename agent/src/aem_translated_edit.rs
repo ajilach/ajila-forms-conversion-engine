@@ -12,35 +12,7 @@
 
 use blueprint::{AemI18nText, AemNodeTranslated};
 
-/// Where to insert a node into a child list.
-pub enum InsertPos {
-    First,
-    Last,
-    Before(usize),
-    After(usize),
-}
-
-/// Parse the `position` argument: `"first"`, `"last"`, `{"before":<i>}` or `{"after":<i>}`.
-pub fn parse_insert_pos(v: &serde_json::Value) -> Result<InsertPos, String> {
-    if let Some(s) = v.as_str() {
-        return match s {
-            "first" => Ok(InsertPos::First),
-            "last" => Ok(InsertPos::Last),
-            other => Err(format!(
-                "invalid position '{other}'; expected \"first\", \"last\", {{\"before\":<i>}} or {{\"after\":<i>}}"
-            )),
-        };
-    }
-    if let Some(obj) = v.as_object() {
-        if let Some(i) = obj.get("before").and_then(|x| x.as_u64()) {
-            return Ok(InsertPos::Before(i as usize));
-        }
-        if let Some(i) = obj.get("after").and_then(|x| x.as_u64()) {
-            return Ok(InsertPos::After(i as usize));
-        }
-    }
-    Err("invalid position; expected \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>}".into())
-}
+pub use crate::tree_edit::{InsertPos, parse_insert_pos};
 
 fn node_type(node: &AemNodeTranslated) -> &'static str {
     use AemNodeTranslated::*;
@@ -149,15 +121,8 @@ pub fn set_field(
         );
     }
     let node = resolve_mut(root, path)?;
-    let mut obj = serde_json::to_value(&*node).map_err(|e| e.to_string())?;
-    let map = obj
-        .as_object_mut()
-        .ok_or_else(|| "node does not serialize to an object".to_string())?;
-    map.insert(field.to_string(), value);
-    let new_node: AemNodeTranslated = serde_json::from_value(obj)
-        .map_err(|e| format!("setting `{field}` would make the node invalid: {e}"))?;
-    let ty = node_type(&new_node);
-    *node = new_node;
+    crate::tree_edit::set_field_by_roundtrip(node, field, value)?;
+    let ty = node_type(node);
     Ok(format!("OK — set `{field}` on {} ({ty}).", show(path)))
 }
 
@@ -210,12 +175,7 @@ pub fn insert_node(
     let pty = node_type(parent);
     let kids = children_mut(parent)
         .ok_or_else(|| format!("a {pty} node cannot hold children; insert into a Panel/Repeatable/Root"))?;
-    let at = match pos {
-        InsertPos::First => 0,
-        InsertPos::Last => kids.len(),
-        InsertPos::Before(i) => i.min(kids.len()),
-        InsertPos::After(i) => (i + 1).min(kids.len()),
-    };
+    let at = crate::tree_edit::insert_index(&pos, kids.len());
     kids.insert(at, new_node);
     Ok(format!("OK — inserted a {ty} node into '{}' at index {at}.", show(parent_path)))
 }
@@ -242,7 +202,7 @@ fn walk(node: &AemNodeTranslated, path: &str, out: &mut String) {
             .0
             .values()
             .find(|s| !s.is_empty())
-            .map(|s| excerpt(s))
+            .map(|s| crate::tree_edit::excerpt(s))
             .unwrap_or_default();
         if !excerpt.is_empty() {
             out.push_str(&format!(" \"{excerpt}\""));
@@ -275,14 +235,6 @@ fn show(path: &str) -> String {
     }
 }
 
-fn excerpt(s: &str) -> String {
-    let s = s.trim().replace('\n', " ");
-    if s.chars().count() > 50 {
-        format!("{}…", s.chars().take(50).collect::<String>())
-    } else {
-        s
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -368,12 +320,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node_type(resolve_mut(&mut tree, "0/0").unwrap()), "Preface");
-    }
-
-    #[test]
-    fn insert_pos_parses() {
-        assert!(matches!(parse_insert_pos(&json!("first")), Ok(InsertPos::First)));
-        assert!(matches!(parse_insert_pos(&json!({"after": 1})), Ok(InsertPos::After(1))));
-        assert!(parse_insert_pos(&json!("nope")).is_err());
     }
 }

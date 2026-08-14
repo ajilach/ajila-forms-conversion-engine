@@ -76,11 +76,14 @@ pub mod html;
 pub mod pdf_parser;
 pub mod pipeline;
 pub mod profiles;
+pub mod redacto;
 pub mod reference_db;
 pub mod review;
 #[cfg(feature = "semantic-matching")]
 pub mod semantic;
 pub mod structured;
+pub mod target;
+pub mod template;
 pub mod util;
 pub mod xfa;
 pub mod xsd;
@@ -97,9 +100,10 @@ pub use context::Context;
 
 // Embedded profile loading
 pub use profiles::{
-    AemConnection, has_aem_config, has_html_config, has_xsd_config, list_profiles,
-    load_aem_config, load_aem_connection, load_aem_fragments, load_aem_profile,
-    load_html_custom_styles, load_profile_fonts, load_xsd_config,
+    AemConnection, has_aem_config, has_html_config, has_redacto_config, has_xsd_config,
+    list_profiles, load_aem_config, load_aem_connection, load_aem_fragments, load_aem_profile,
+    load_html_custom_styles, load_profile_fonts, load_redacto_config, load_xsd_config,
+    profile_targets, redacto_master_language,
 };
 
 // Flattened layer
@@ -158,19 +162,9 @@ pub fn structured_schema() -> serde_json::Value {
         .expect("StructuredNode schema serializes")
 }
 
-/// JSON Schema for a single AEM node tree (`AemNode`).
-///
-/// Generated from the AEM intermediate model via `schemars`. Intended to be
-/// embedded as text in LLM prompts (Smart AEM Edit) so the model knows the
-/// exact shape to emit — like [`structured_schema`], it is not used as a
-/// structured-output constraint.
-pub fn aem_schema() -> serde_json::Value {
-    serde_json::to_value(schemars::schema_for!(AemNode)).expect("AemNode schema serializes")
-}
-
 /// JSON Schema for the multilingual AEM node tree (`AemNodeTranslated`).
 ///
-/// Like [`aem_schema`] but for the translations-in-place type the agent authors
+/// Like [`structured_schema`] but for the translations-in-place AEM type the agent authors
 /// directly. Embedded as text in the agent prompt so the model knows the exact
 /// shape to emit (text fields are per-language maps).
 pub fn aem_translated_schema() -> serde_json::Value {
@@ -189,14 +183,12 @@ pub use aem::{
     generate_aem_package_from_node_with_passthrough,
     generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
     generate_aem_xml, parse_aem_zip,
-    parse_fragment_content, scan_fragments, validate_aem_dam_xml, validate_aem_form_xml,
-    validate_xml_wellformed,
-    InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
-    remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,
+    parse_fragment_content, scan_fragments, translation_data_from_master_dict,
+    validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
 };
 
 // Post-conversion fidelity review
-pub use review::{LabelIssue, NamingViolation, ReviewReport, review_output};
+pub use review::{LabelIssue, NamingViolation, ReviewReport, review_output, review_redacto};
 
 // GraphViz decision-flow output
 pub use graphviz::{
@@ -213,12 +205,25 @@ pub use html::{
 // XSD generation
 pub use xsd::{
     BindRefMaps, ElementMapping, RegisteredComplexType, SectionMapping, TypeChildElement,
-    XsdConfig, XsdNode, XsdProfile, XsdRestriction, XsdSchema, build_registered_types,
+    XsdConfig, XsdNode, XsdProfile, XsdSchema, build_registered_types,
+    apply_bind_refs, generate_xsd_from_aem, generate_xsd_string_from_aem,
     build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
-    extract_declared_names, find_matching_types, generate_xsd, generate_xsd_schema,
+    extract_declared_names, find_matching_types,
     load_xsd_config_from_dir, parse_schema, resolve_section_name,
     resolve_section_name_with_heading,
 };
+
+// Redacto generation
+pub use redacto::{
+    AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, INITIAL_VERSION,
+    ObjectType, OwnerType, OwnershipRow, OwnershipType, RedactoComponent, RedactoConfig,
+    RedactoConfiguration, RedactoDocumentMeta, RedactoDump, RedactoProfile, RelationRow,
+    RedactoCounts, RedactoValidation, Status as RedactoStatus, asset_ref, generate_redacto_dump,
+    generate_redacto_sql, render_block_html, sql_string, validate_dump,
+};
+
+// The output target a run aims at
+pub use target::OutputTarget;
 
 // XFA layer
 pub use xfa::scripting::{SomPath, XfaForm};
@@ -283,6 +288,9 @@ pub enum Error {
     /// AEM configuration could not be constructed (missing XFA variables).
     #[error("AEM config error: {0}")]
     AemConfig(String),
+    /// A profile template string could not be rendered.
+    #[error("Template error: {0}")]
+    Template(String),
     /// Profile loading failed (fonts, config, etc.).
     #[error("Profile error: {0}")]
     Profile(String),
@@ -812,8 +820,9 @@ impl Blueprint {
 
         let form_states = self.states()?;
         let state_count = form_states.len();
-        let context = self.context();
-        let merged = merge_form_states(&form_states, context.clone());
+        let mut context = self.context();
+        let (merged, header) = merge_form_states(&form_states, context.clone());
+        context.header = header;
 
         Ok(DocumentEnvelope {
             context,
@@ -987,9 +996,16 @@ impl<'a> ExactSizeIterator for FormStatesIter<'a> {
 ///
 /// This is the shared implementation behind [`Blueprint::merged_structured()`]
 /// and [`run_exhaustive_to_merged()`].
-fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<StructuredNode> {
+/// Merge the per-state structured outputs into one tree, and surface the
+/// master-page header text recovered during conversion (document furniture that
+/// is dropped from the content itself; the same across states, so the first
+/// non-empty value is used).
+fn merge_form_states(
+    form_states: &FormStates,
+    context: Context,
+) -> (Vec<StructuredNode>, Option<String>) {
     #[cfg(not(target_arch = "wasm32"))]
-    let structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = {
+    let per_state: Vec<(Vec<Selection>, Vec<StructuredNode>, Option<String>)> = {
         use rayon::prelude::*;
         form_states
             .collected
@@ -1002,21 +1018,26 @@ fn merge_form_states(form_states: &FormStates, context: Context) -> Vec<Structur
                     global_ctx: Arc::clone(&form_states.global_ctx),
                 };
                 let envelope = state.structured(context.clone());
-                (state.selections, envelope.content)
+                (state.selections, envelope.content, envelope.context.header)
             })
             .collect()
     };
 
     #[cfg(target_arch = "wasm32")]
-    let structured_outputs: Vec<(Vec<Selection>, Vec<StructuredNode>)> = form_states
+    let per_state: Vec<(Vec<Selection>, Vec<StructuredNode>, Option<String>)> = form_states
         .iter()
         .map(|state| {
             let envelope = state.structured(context.clone());
-            (state.selections, envelope.content)
+            (state.selections, envelope.content, envelope.context.header)
         })
         .collect();
 
-    merge_structured_outputs(structured_outputs)
+    let header = per_state.iter().find_map(|(_, _, h)| h.clone());
+    let structured_outputs = per_state
+        .into_iter()
+        .map(|(selections, content, _)| (selections, content))
+        .collect();
+    (merge_structured_outputs(structured_outputs), header)
 }
 
 /// Merge per-state structured outputs into a single tree.
@@ -1245,9 +1266,53 @@ pub fn to_aem(content: &[StructuredNode], config: &AemConfig) -> String {
     generate_aem_xml(&root, &config)
 }
 
-/// Generate an XSD schema from structured nodes.
-pub fn to_xsd(content: &[StructuredNode], config: &XsdConfig) -> String {
-    generate_xsd(content, config)
+/// Generate the XSD schema for the form `content` produces.
+///
+/// The schema is derived from the AEM tree, not from `content` directly, so a
+/// standalone XSD is byte-identical to the one bundled in the package and its
+/// element paths are exactly the `bindRef`s that form carries.
+pub fn to_xsd(
+    content: &[StructuredNode],
+    aem_config: &AemConfig,
+    xsd_config: &XsdConfig,
+) -> String {
+    let aem_config = resolve_aem_languages(content, aem_config);
+    let root = convert_to_aem(content, &aem_config);
+    crate::xsd::generate_xsd_string_from_aem(&root, xsd_config, &aem_config.fragments)
+}
+
+/// Generate a PostgreSQL dump for the Redacto platform from structured nodes.
+///
+/// Intended for documents without input fields; any field encountered is
+/// skipped and reported in [`RedactoDump::warnings`].
+pub fn to_redacto_sql(content: &[StructuredNode], config: &RedactoConfig) -> String {
+    let config = resolve_redacto_languages(content, config);
+    generate_redacto_sql(content, &config)
+}
+
+/// Build the Redacto dump for `content` under `profile`, resolving the profile's
+/// configuration against `ctx` and the languages against the content.
+///
+/// The one place that performs the whole `load_redacto_config` ->
+/// `resolve_redacto_languages` -> generate sequence, so callers cannot get the
+/// order wrong or skip the language resolution. Returns the resolved config
+/// alongside the dump because validation and reporting need both.
+///
+/// Fails when the profile has no Redacto section, or when its identity
+/// templates cannot be rendered — typically a document lacking the XFA
+/// variables the profile derives `document_id` from.
+pub fn to_redacto_dump_for_profile(
+    profile: &str,
+    ctx: &Context,
+    content: &[StructuredNode],
+) -> Result<(RedactoDump, RedactoConfig), String> {
+    if !has_redacto_config(profile) {
+        return Err(format!("Profile '{profile}' has no redacto/config.toml."));
+    }
+    let config = load_redacto_config(profile, ctx)?;
+    let config = resolve_redacto_languages(content, &config);
+    let dump = generate_redacto_dump(content, &config);
+    Ok((dump, config))
 }
 
 /// Convert structured nodes to a complete AEM FileVault content package (ZIP).
@@ -1329,6 +1394,20 @@ pub fn resolve_aem_languages(content: &[StructuredNode], config: &AemConfig) -> 
     config
 }
 
+/// Fill [`RedactoConfig::languages`] from the languages present in `content`,
+/// keeping the configured languages when the content carries none.
+pub fn resolve_redacto_languages(
+    content: &[StructuredNode],
+    config: &RedactoConfig,
+) -> RedactoConfig {
+    let detected_langs = collect_languages(content);
+    let mut config = config.clone();
+    if !detected_langs.is_empty() {
+        config.languages = detected_langs.into_iter().collect();
+    }
+    config
+}
+
 /// Run exhaustive exploration on a PDF file and return the merged structured tree.
 ///
 /// This helper reads the PDF from disk, explores all states, and merges them
@@ -1354,7 +1433,7 @@ fn run_exhaustive_to_merged_inner(pdf_path: &Path) -> Result<Vec<StructuredNode>
         let mut bp = Blueprint::from_pdf(pdf_path)?;
         let form_states = bp.states()?;
         let context = bp.context();
-        Ok(merge_form_states(&form_states, context))
+        Ok(merge_form_states(&form_states, context).0)
     }
 }
 
@@ -1388,7 +1467,8 @@ fn run_exhaustive_to_envelope_inner(
         let state_count = form_states.len();
         let mut context = bp.context();
         context.set_language(language.to_string());
-        let content = merge_form_states(&form_states, context.clone());
+        let (content, header) = merge_form_states(&form_states, context.clone());
+        context.header = header;
         Ok(DocumentEnvelope {
             context,
             content,
@@ -1518,7 +1598,8 @@ mod test_cache {
             let state_count = form_data.states.len();
             let mut context = form_data.context.clone();
             context.set_language(lang.clone());
-            let content = merge_form_states(&form_data.states, context.clone());
+            let (content, header) = merge_form_states(&form_data.states, context.clone());
+            context.header = header;
             DocumentEnvelope {
                 context,
                 content,

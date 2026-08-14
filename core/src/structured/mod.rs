@@ -1,4 +1,5 @@
 pub mod element_merge;
+pub mod inline_html;
 mod merge_engine;
 mod merger;
 mod structured_converter;
@@ -6,6 +7,10 @@ mod translation_merger;
 
 pub use element_merge::{
     MergeError as ElementMergeError, can_merge, can_merge_all, merge_nodes, merge_two,
+};
+pub use inline_html::{
+    AEM_TAGS, InlineHtmlTags, QUILL_TAGS, inline_nodes_to_html_with, inline_text_to_html_with,
+    strip_footnote_marker,
 };
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
@@ -242,6 +247,35 @@ pub struct ImageNode {
 #[serde(rename_all = "camelCase")]
 pub struct GroupNode {
     pub children: Vec<StructuredNode>,
+
+    /// `true` when the source laid this group out as a multi-column text flow
+    /// (detected as `GroupKind::ColumnSection`).
+    ///
+    /// The children are stored in reading order — left column top-to-bottom,
+    /// then right column — so consumers that ignore this flag still render the
+    /// document correctly, just in a single column. Output targets that can
+    /// express a column flow (e.g. the Redacto `layout-split` panel) use it to
+    /// restore the original two-column appearance.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub column_flow: bool,
+}
+
+impl GroupNode {
+    /// A plain group of children, with no column flow.
+    pub fn new(children: Vec<StructuredNode>) -> Self {
+        GroupNode {
+            children,
+            column_flow: false,
+        }
+    }
+
+    /// A group whose children were laid out as a multi-column text flow.
+    pub fn columns(children: Vec<StructuredNode>) -> Self {
+        GroupNode {
+            children,
+            column_flow: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1382,4 +1416,33 @@ pub struct DocumentEnvelope {
 
 fn default_state_count() -> usize {
     1
+}
+
+// ============================================================================
+// Footnote collection
+// ============================================================================
+
+/// Recursively collect all footnote nodes from a structured tree, in document
+/// order.
+///
+/// Descends into `Group` and `Conditional` wrappers, which are the only
+/// containers footnotes are ever nested in.
+pub fn collect_footnote_nodes(nodes: &[StructuredNode]) -> Vec<&FootnoteNode> {
+    let mut out = Vec::new();
+    collect_footnote_nodes_into(nodes, &mut out);
+    out
+}
+
+/// Append the footnote nodes found in `nodes` to `out`.
+pub fn collect_footnote_nodes_into<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
+    for node in nodes {
+        match node {
+            StructuredNode::Footnote(f) => out.push(f),
+            StructuredNode::Group(g) => collect_footnote_nodes_into(&g.children, out),
+            StructuredNode::Conditional(c) => {
+                collect_footnote_nodes_into(std::slice::from_ref(c.content.as_ref()), out);
+            }
+            _ => {}
+        }
+    }
 }

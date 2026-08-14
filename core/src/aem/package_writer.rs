@@ -38,17 +38,26 @@ pub fn generate_aem_package(
     // Form-content translations come from the structured source tree.
     let translations = extract_translations(content, &config.master_language);
 
-    // XSD schema is only emitted when binding is enabled and configured.
-    let xsd_content = if config.bind_to_xsd && config.xsd_path.is_some() {
-        config
-            .xsd_config
-            .as_ref()
-            .map(|xsd_config| crate::xsd::generate_xsd(content, xsd_config))
-    } else {
-        None
-    };
+    assemble_package(root, config, translations, xsd_for_tree(root, config), None)
+}
 
-    assemble_package(root, config, translations, xsd_content, None)
+/// The XSD for a finished AEM tree, or `None` when the profile does not bind to
+/// one.
+///
+/// Derived from the node tree rather than from the structured source, so every
+/// entry point below — including the ones the agent uses, which have no
+/// structured tree at all — can ship a schema, and so the schema always matches
+/// the `bindRef`s the same walk assigned in `convert_to_aem`.
+fn xsd_for_tree(root: &AemNode, config: &AemConfig) -> Option<String> {
+    if !config.bind_to_xsd || config.xsd_path.is_none() {
+        return None;
+    }
+    let xsd_config = config.xsd_config.as_ref()?;
+    Some(crate::xsd::generate_xsd_string_from_aem(
+        root,
+        xsd_config,
+        &config.fragments,
+    ))
 }
 
 /// Generate a package directly from an edited [`AemNode`] tree, without an
@@ -57,9 +66,10 @@ pub fn generate_aem_package(
 /// Used by the AEM editor, where the `AemNode` tree is the source of truth.
 /// Because the node tree only carries master-language strings, no form-content
 /// translation dictionary is derived here (only the profile's
-/// `default_translations` are emitted); XSD generation is skipped.
+/// `default_translations` are emitted).
 pub fn generate_aem_package_from_node(root: &AemNode, config: &AemConfig) -> Vec<u8> {
-    assemble_package(root, config, I18nDictionary::new(), None, None)
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, I18nDictionary::new(), xsd, None)
 }
 
 /// Like [`generate_aem_package_from_node`] but with an explicit form-content
@@ -70,7 +80,8 @@ pub fn generate_aem_package_from_node_with_translations(
     config: &AemConfig,
     translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 ) -> Vec<u8> {
-    assemble_package(root, config, translations, None, None)
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, translations, xsd, None)
 }
 
 /// Like [`generate_aem_package_from_node_with_translations`] but uses a
@@ -86,7 +97,8 @@ pub fn generate_aem_package_from_node_with_xml(
     translations: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     form_xml: String,
 ) -> Vec<u8> {
-    assemble_package(root, config, translations, None, Some(form_xml))
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, translations, xsd, Some(form_xml))
 }
 
 /// Like [`generate_aem_package_from_node_with_translations`] but re-emits each
@@ -102,7 +114,8 @@ pub fn generate_aem_package_from_node_with_passthrough(
 ) -> Vec<u8> {
     let form_xml =
         crate::aem::xml_writer::generate_aem_xml_with_passthrough(root, config, passthrough);
-    assemble_package(root, config, translations, None, Some(form_xml))
+    let xsd = xsd_for_tree(root, config);
+    assemble_package(root, config, translations, xsd, Some(form_xml))
 }
 
 /// Extract the form-content translation dictionary from structured nodes.
@@ -420,7 +433,15 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
         ctx.insert("bind_to_xsd", &config.bind_to_xsd);
-        let xsd_ref = config.xsd_ref().unwrap_or_default();
+        // Advertise the schema only when the package actually binds to one.
+        // `xsd_path` names where the schema *would* live, which is needed to
+        // build a bound package on demand; a package built without binding must
+        // not claim `formmodel="xsd"` and point at a file it does not contain.
+        let xsd_ref = config
+            .bind_to_xsd
+            .then(|| config.xsd_ref())
+            .flatten()
+            .unwrap_or_default();
         ctx.insert("xsd_ref", &xsd_ref);
 
         match template::render_string(dam_template, &ctx) {
@@ -569,7 +590,7 @@ fn generate_filter_xml(roots: &[String]) -> String {
 }
 
 fn generate_properties_xml(package_name: &str, author: &str) -> String {
-    let now = iso_now();
+    let now = crate::util::iso_now();
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
@@ -594,7 +615,7 @@ fn generate_properties_xml(package_name: &str, author: &str) -> String {
 }
 
 fn generate_definition_xml(package_name: &str, author: &str, roots: &[String]) -> String {
-    let now = iso_now();
+    let now = crate::util::iso_now();
     let mut buf = Cursor::new(Vec::new());
     {
         let mut w = Writer::new_with_indent(&mut buf, b' ', 4);
@@ -641,54 +662,6 @@ fn generate_definition_xml(package_name: &str, author: &str, roots: &[String]) -
     }
     let raw = String::from_utf8(buf.into_inner()).expect("UTF-8 definition xml");
     reformat_attributes(&raw)
-}
-
-/// Produce an ISO 8601 timestamp like `2026-02-16T12:00:00.000+00:00`.
-fn iso_now() -> String {
-    #[cfg(not(target_arch = "wasm32"))]
-    let (secs, millis) = {
-        use std::time::SystemTime;
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default();
-        (now.as_secs(), now.subsec_millis())
-    };
-    #[cfg(target_arch = "wasm32")]
-    let (secs, millis) = {
-        let ms = js_sys::Date::now() as u64;
-        (ms / 1000, (ms % 1000) as u32)
-    };
-
-    // Simple UTC timestamp (no chrono dependency)
-    let days = secs / 86400;
-    let day_secs = secs % 86400;
-    let hours = day_secs / 3600;
-    let minutes = (day_secs % 3600) / 60;
-    let seconds = day_secs % 60;
-
-    // Calculate date from days since epoch (1970-01-01)
-    let (year, month, day) = days_to_ymd(days);
-
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}+00:00",
-        year, month, day, hours, minutes, seconds, millis
-    )
-}
-
-/// Convert days since 1970-01-01 to (year, month, day).
-fn days_to_ymd(days: u64) -> (u64, u64, u64) {
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
 }
 
 // ============================================================================

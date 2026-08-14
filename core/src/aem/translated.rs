@@ -24,6 +24,23 @@ use crate::structured::FieldId;
 /// master-language text → { language code → translated text }.
 pub type I18nDict = HashMap<String, HashMap<String, String>>;
 
+/// Re-key a lowered [`I18nDict`] into the [`TranslationData`] form the lift back
+/// up reads translations from.
+///
+/// [`AemNodeTranslated::lower`] keys its dictionary by master text, while both
+/// [`crate::aem_to_translated`] and [`crate::aem_to_structured`] resolve a text
+/// through the Sling dictionary — whose fragment-dictionary fallback key is
+/// `fd_<master text>`. Converting between the two is what makes
+/// lower → edit → lift round trip without losing translations.
+pub fn translation_data_from_master_dict(dict: I18nDict) -> super::parser::TranslationData {
+    super::parser::TranslationData {
+        entries: dict
+            .into_iter()
+            .map(|(text, langs)| (format!("fd_{text}"), langs))
+            .collect(),
+    }
+}
+
 /// A user-visible AEM text value in every available language (lang code → HTML
 /// string). Serialized transparently as a plain `{ "de": "…", "en": "…" }` map.
 #[derive(
@@ -114,6 +131,10 @@ pub enum AemNodeTranslated {
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
+        /// `fragRef` this panel was expanded from, when the parser inlined a
+        /// fragment's children into it.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
     TextField {
         uuid: Uuid,
@@ -240,6 +261,10 @@ pub enum AemNodeTranslated {
         min_occur: u32,
         max_occur: u32,
         bind_ref: Option<String>,
+        /// `fragRef` this repeatable wraps, when a repeating panel carried a
+        /// `fragRef` and its content was inlined.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
     Fragment {
         uuid: Uuid,
@@ -247,6 +272,10 @@ pub enum AemNodeTranslated {
         #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
         passthrough: Passthrough,
         name: String,
+        /// `jcr:title` of the panel this fragment replaced. Distinguishes two
+        /// fragments that share a `frag_ref` when resolving XSD element names.
+        #[serde(default)]
+        title: AemI18nText,
         frag_ref: String,
         bind_ref: Option<String>,
     },
@@ -457,6 +486,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                frag_ref,
                 ..
             } => AemNode::Panel {
                 uuid: *uuid,
@@ -471,6 +501,7 @@ impl AemNodeTranslated {
                 colspan: *colspan,
                 dor_colspan: *dor_colspan,
                 bind_ref: bind_ref.clone(),
+                frag_ref: frag_ref.clone(),
             },
             AemNodeTranslated::TextField {
                 uuid,
@@ -654,6 +685,7 @@ impl AemNodeTranslated {
                 min_occur,
                 max_occur,
                 bind_ref,
+                frag_ref,
                 ..
             } => AemNode::Repeatable {
                 uuid: *uuid,
@@ -663,16 +695,19 @@ impl AemNodeTranslated {
                 min_occur: *min_occur,
                 max_occur: *max_occur,
                 bind_ref: bind_ref.clone(),
+                frag_ref: frag_ref.clone(),
             },
             AemNodeTranslated::Fragment {
                 uuid,
                 name,
+                title,
                 frag_ref,
                 bind_ref,
                 ..
             } => AemNode::Fragment {
                 uuid: *uuid,
                 name: name.clone(),
+                title: text!(title),
                 frag_ref: frag_ref.clone(),
                 bind_ref: bind_ref.clone(),
             },
@@ -782,6 +817,7 @@ mod tests {
                     colspan: 12,
                     dor_colspan: None,
                     bind_ref: None,
+                    frag_ref: None,
                 },
             ],
         }
@@ -847,6 +883,97 @@ mod tests {
         let mut conflicts = Vec::new();
         emit_translations(&AemI18nText::default(), "de", &langs(), &mut dict, &mut conflicts);
         assert!(dict.is_empty());
+    }
+
+    /// The AEM editor edits a *lowered* tree and records the lift back up, so a
+    /// lower → lift round trip must preserve every translation. Without the
+    /// `fd_`-keyed re-keying the lift finds no dictionary entry and every
+    /// non-master language is silently dropped.
+    #[test]
+    fn lower_then_lift_round_trips_translations() {
+        let tree = AemNodeTranslated::Root {
+            title: t(&[("de", "Formular"), ("en", "Form")]),
+            children: vec![AemNodeTranslated::TextField {
+                uuid: Uuid::from_u128(7),
+                passthrough: Default::default(),
+                name: "f1".into(),
+                label: t(&[("de", "Nachname"), ("en", "Last name")]),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+            }],
+        };
+
+        let (node, dict) = tree.lower("de", &langs());
+        let translations = translation_data_from_master_dict(dict);
+        let lifted = crate::aem::aem_to_translated(
+            &node,
+            &translations,
+            &langs(),
+            "de",
+            &std::collections::HashMap::new(),
+        );
+
+        match &lifted {
+            AemNodeTranslated::Root { children, .. } => match &children[0] {
+                AemNodeTranslated::TextField { label, .. } => {
+                    assert_eq!(label.get("de"), Some("Nachname"));
+                    assert_eq!(
+                        label.get("en"),
+                        Some("Last name"),
+                        "the non-master label must survive the round trip"
+                    );
+                }
+                other => panic!("expected a text field, got {other:?}"),
+            },
+            other => panic!("expected a root, got {other:?}"),
+        }
+    }
+
+    /// Fidelity passthrough lives outside `AemNode`, so a round trip has to
+    /// re-attach it explicitly or editing an agent-authored tree strips it.
+    #[test]
+    fn lift_reattaches_passthrough_by_uuid() {
+        let uuid = Uuid::from_u128(9);
+        let mut raw_attributes = BTreeMap::new();
+        raw_attributes.insert("myProp".to_string(), "{Boolean}true".to_string());
+        let passthrough = Passthrough {
+            raw_attributes,
+            raw_children: vec![],
+        };
+        let tree = AemNodeTranslated::Root {
+            title: t(&[("de", "Formular")]),
+            children: vec![AemNodeTranslated::TextField {
+                uuid,
+                passthrough: passthrough.clone(),
+                name: "f1".into(),
+                label: t(&[("de", "Nachname")]),
+                mandatory: false,
+                visible: true,
+                max_chars: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+            }],
+        };
+
+        let (node, dict) = tree.lower("de", &langs());
+        let lifted = crate::aem::aem_to_translated(
+            &node,
+            &translation_data_from_master_dict(dict),
+            &langs(),
+            "de",
+            &tree.passthrough_map(),
+        );
+
+        assert_eq!(
+            lifted.passthrough_map().get(&uuid),
+            Some(&passthrough),
+            "passthrough must be restored from the map, not lost with the lowering"
+        );
     }
 
     #[test]

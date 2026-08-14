@@ -342,6 +342,7 @@ fn build_node_context(
             colspan,
             dor_colspan,
             bind_ref,
+            frag_ref: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -581,12 +582,20 @@ fn build_node_context(
             min_occur,
             max_occur,
             bind_ref,
+            frag_ref: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
             ctx.insert("title", &xml_escape(title));
             ctx.insert("min_occur", min_occur);
-            ctx.insert("max_occur", max_occur);
+            // AEM spells an unbounded repeat `maxOccur="-1"`; the model carries
+            // that as `UNBOUNDED_OCCUR`, so map it back on the way out.
+            let max_occur_attr = if *max_occur == AemNode::UNBOUNDED_OCCUR {
+                "-1".to_string()
+            } else {
+                max_occur.to_string()
+            };
+            ctx.insert("max_occur", &max_occur_attr);
             ctx.insert("children", &render_children(children, config, vis, pass));
             ctx.insert("bind_ref", bind_ref);
 
@@ -600,11 +609,13 @@ fn build_node_context(
         AemNode::Fragment {
             uuid,
             name,
+            title,
             frag_ref,
             bind_ref,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
+            ctx.insert("title", title);
             ctx.insert("frag_ref", frag_ref);
             ctx.insert("bind_ref", bind_ref);
         }
@@ -1136,6 +1147,7 @@ mod tests {
                 min_occur: 1,
                 max_occur: 10,
                 bind_ref: None,
+                frag_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1193,6 +1205,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                frag_ref: None,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1224,6 +1237,7 @@ mod tests {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         }
     }
 
@@ -1538,6 +1552,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                frag_ref: None,
                 children: vec![
                     AemNode::TextField {
                         uuid: fixed_uuid(),
@@ -1853,6 +1868,7 @@ mod tests {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
@@ -1917,6 +1933,7 @@ mod tests {
             min_occur: 1,
             max_occur: 5,
             bind_ref: None,
+            frag_ref: None,
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
@@ -1962,6 +1979,7 @@ mod tests {
             min_occur: 1,
             max_occur: 5,
             bind_ref: None,
+            frag_ref: None,
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
@@ -2016,6 +2034,7 @@ mod tests {
             min_occur: 1,
             max_occur: 5,
             bind_ref: None,
+            frag_ref: None,
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 
@@ -2070,6 +2089,7 @@ mod tests {
             min_occur: 1,
             max_occur: 5,
             bind_ref: None,
+            frag_ref: None,
         };
         let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
 

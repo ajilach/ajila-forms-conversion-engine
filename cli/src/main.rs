@@ -54,6 +54,13 @@ struct Args {
     #[arg(long)]
     xsd: bool,
 
+    /// Export the form as a PostgreSQL dump for the Redacto platform.
+    ///
+    /// Intended for documents without input fields; any field encountered is
+    /// skipped and reported as a warning.
+    #[arg(long)]
+    redacto: bool,
+
     /// Name of an embedded profile containing per-output configs.
     #[arg(long)]
     profile: Option<String>,
@@ -258,10 +265,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Extract form code from merged name (e.g. "AAAI_019" → "AAAI")
         let form_code = merged_name.split('_').next().unwrap_or(&merged_name);
         xsd_config.form_code = Some(form_code.to_string());
-        let xsd = blueprint::to_xsd(&output.merged.content, &xsd_config);
+        let aem_config = blueprint::load_aem_config(profile_name, &output.merged.context)
+            .map_err(|e| format!("Failed to load AEM profile for XSD generation: {e}"))?;
+        let xsd = blueprint::to_xsd(&output.merged.content, &aem_config, &xsd_config);
         let xsd_path = PathBuf::from(format!("{}_{}.xsd", merged_name, suffix));
         std::fs::write(&xsd_path, xsd).map_err(|e| format!("Failed to write XSD: {}", e))?;
         info!("XSD: {}", xsd_path.display());
+    }
+
+    // Redacto PostgreSQL dump
+    if args.redacto {
+        let profile_name = require_profile_name(args.profile.as_deref())?;
+        let (dump, resolved) = blueprint::to_redacto_dump_for_profile(
+            profile_name,
+            &output.merged.context,
+            &output.merged.content,
+        )?;
+        for warning in &dump.warnings {
+            eprintln!("Warning: {}", warning);
+        }
+        // A contentless dump is still valid SQL, so say so rather than letting
+        // an empty document look like a successful conversion.
+        let validation = blueprint::validate_dump(&dump, &resolved);
+        for problem in &validation.problems {
+            eprintln!("Problem: {}", problem);
+        }
+        let sql_path = PathBuf::from(format!("{}_{}.sql", merged_name, suffix));
+        std::fs::write(&sql_path, dump.to_sql())
+            .map_err(|e| format!("Failed to write Redacto SQL: {}", e))?;
+        info!("Redacto SQL: {}", sql_path.display());
     }
 
     Ok(())

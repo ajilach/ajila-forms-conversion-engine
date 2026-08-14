@@ -1,18 +1,44 @@
 # Blueprint App
 
-This is the app for the [Blueprint](https://github.com/ajilach/blueprint) project, which decodes PDFs and extracts structured data for automated forms conversion.
+The desktop app for the [Blueprint](https://github.com/ajilach/ajila-forms-conversion-engine) project: drop
+in the PDF forms, and an autonomous agent converts them into an AEM Adaptive Forms
+package or a Redacto document, showing its work as it goes.
 
-The app is built for Windows, Linux, MacOS, as well as for the web using WASM. The latest Release can be downloaded in the [releases](https://github.com/ajilach/blueprint-app/releases).
+Built with [Dioxus](https://dioxuslabs.com/) for macOS, Windows and Linux. The latest
+release can be downloaded from the [releases page](https://github.com/ajilach/ajila-forms-conversion-engine/releases).
 
-## Running the Web App
-
-The web app is published as a Docker image on GitHub Container Registry with every release.
+## Running
 
 ```sh
-echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
-docker pull ghcr.io/ajilach/blueprint-app:latest
-docker run -p 8080:8080 ghcr.io/ajilach/blueprint-app:latest
+# From the repository root
+cargo run --release -p blueprint-app
+
+# Or with hot reloading, from this directory
+dx serve --platform desktop
 ```
 
-Then open http://localhost:8080 in your browser.
+An Anthropic API key has to be configured in Settings before a conversion can be
+started. Settings are stored in `<config_dir>/blueprint/history.db`, alongside the
+edit history and the reference-form store.
 
+## Bundling
+
+```sh
+dx bundle --platform desktop
+```
+
+The bundle embeds the standalone `mcp` stdio server as a sidecar so the app can
+register Blueprint's conversion tools with Claude Desktop (see `src/mcp_install.rs`).
+The release workflow stages that binary at `sidecar/mcp-<target-triple>` before
+bundling — see `Dioxus.toml`.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/main.rs` | App state and the three full-page views. |
+| `src/components/` | The agent flow, settings and reference-form manager. |
+| `src/agent_runner.rs` | Sequences the Analyst → Author → Reviewer stages over one agent. |
+| `src/llm.rs` | Anthropic Messages-API client: streaming, prompt caching, context budget. |
+| `src/files.rs` | Saving artefacts to Downloads and showing them to the user. |
+| `design/` | Static HTML mockups. Not part of the build. |

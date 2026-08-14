@@ -1,20 +1,6 @@
 pub mod helpers;
 
 #[test]
-fn aem_schema_is_object_with_defs() {
-    let schema = crate::aem_schema();
-    let obj = schema.as_object().expect("schema is a JSON object");
-    let defs = obj
-        .get("$defs")
-        .and_then(|d| d.as_object())
-        .expect("schema has $defs");
-    assert!(
-        defs.contains_key("AemOption"),
-        "$defs should contain nested AemOption type"
-    );
-}
-
-#[test]
 fn aem_node_json_round_trips() {
     use crate::{AemNode, AemOption, OptionAlignment};
     use uuid::Uuid;
@@ -63,6 +49,7 @@ fn aem_node_json_round_trips() {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         }],
     };
 
@@ -90,7 +77,10 @@ fn structured_schema_is_object_with_defs() {
         .get("$defs")
         .and_then(|d| d.as_object())
         .expect("schema has $defs");
-    assert!(defs.contains_key("StructuredNode"), "$defs has StructuredNode");
+    assert!(
+        defs.contains_key("StructuredNode"),
+        "$defs has StructuredNode"
+    );
 
     // FieldId is annotated `#[schemars(with = "String")]`, so the FieldNode
     // `name` property must be a plain string schema (not an object/ref).
@@ -7037,7 +7027,7 @@ fn test_aaei_repeatable_buttons_have_scripts() {
         Blueprint::from_pdf(input_path("AAEI_019_DE.pdf")).expect("Failed to load AAEI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = load_ubs_profile();
     let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -11545,9 +11535,17 @@ fn test_aaab_aem_config_form_path_title_code() {
         "form_dir() should be 'AF_AAAB'"
     );
 
+    // `xsd_path` names where the schema *would* live, so a bound package can be
+    // built on demand. Binding is opt-in and off by default, which is what keeps
+    // the schema out of the plain package.
     assert_eq!(
-        config.xsd_path, None,
-        "xsd_path should be None when not configured in the profile"
+        config.xsd_path.as_deref(),
+        Some("/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_AAAB.xsd"),
+        "xsd_path should be rendered from the profile with the form code"
+    );
+    assert!(
+        !config.bind_to_xsd,
+        "binding to the schema must stay opt-in"
     );
 }
 
@@ -14998,7 +14996,7 @@ fn test_ubs_profile_aem_output_matches_legacy() {
         Blueprint::from_pdf(input_path("AAAI_019_DE.pdf")).expect("Failed to load AAAI PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = load_ubs_profile();
     let profile_config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -16886,7 +16884,7 @@ fn test_aaki_fragment_count() {
         Blueprint::from_pdf(input_path("AAKI_019_SP.pdf")).expect("Failed to load AAKI_019_SP.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -16965,7 +16963,7 @@ fn test_aaai_has_exactly_two_signature_fragments() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -17217,895 +17215,6 @@ fn test_bage_aem_has_expected_fields() {
 // ============================================================================
 
 #[test]
-fn test_xsd_basic_field_generation() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-
-    // Build a simple structured tree with one field
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.phone"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Phone Number")),
-        input_type: FieldType::Text {
-            regex: None,
-            max_length: None,
-            min_length: None,
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    // Config with a matching synonym
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::from_profile(profile);
-
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Verify the output contains the expected element
-    assert!(
-        xsd.contains("<xs:element name=\"phone\" type=\"xs:string\"/>"),
-        "XSD should contain phone element. Got:\n{}",
-        xsd
-    );
-    assert!(xsd.contains("<xs:schema"), "Should have schema root");
-    assert!(xsd.contains("</xs:schema>"), "Should close schema root");
-}
-
-#[test]
-fn test_xsd_unmatched_field_uses_snake_case() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.dob"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Date of Birth")),
-        input_type: FieldType::Text {
-            regex: None,
-            max_length: None,
-            min_length: None,
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Unmatched field should use PascalCase name and xs:string type
-    assert!(
-        xsd.contains("<xs:element name=\"DateOfBirth\" type=\"xs:string\"/>"),
-        "Unmatched field should use PascalCase name. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_heading_creates_complex_type() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account Details"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.iban"),
-            som_path: None,
-            label: Some(TranslatedText::plain("IBAN")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "IBAN".to_string(),
-        ElementMapping {
-            synonyms: vec!["IBAN".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that contains IBAN as a child
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement {
-                    name: "IBAN".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Currency".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-            ],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should match AccountType (IBAN is a subset) and use type ref
-    assert!(
-        xsd.contains("<xs:element name=\"AccountDetails\" type=\"AccountType\"/>"),
-        "Should create element with matched type. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_heading_with_type_ref() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account Details"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.num"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Account Number")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "AccountNumber".to_string(),
-        ElementMapping {
-            synonyms: vec!["Account".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that contains AccountNumber
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![TypeChildElement {
-                name: "AccountNumber".to_string(),
-                type_ref: "xs:string".to_string(),
-            }],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let mut type_to_file = std::collections::HashMap::new();
-    type_to_file.insert(
-        "AccountType".to_string(),
-        "../AFFragments/Account.xsd".to_string(),
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should reference the registered type and emit include
-    assert!(
-        xsd.contains("<xs:element name=\"AccountDetails\" type=\"AccountType\"/>"),
-        "Should reference registered type. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:include schemaLocation=\"../AFFragments/Account.xsd\"/>"),
-        "Should include the file for AccountType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_child_validation_required_present() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.iban"),
-            som_path: None,
-            label: Some(TranslatedText::plain("IBAN")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Phone")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "IBAN".to_string(),
-        ElementMapping {
-            synonyms: vec!["IBAN".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    elements.insert(
-        "Phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that includes both IBAN and Phone
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement {
-                    name: "IBAN".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Phone".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Currency".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-            ],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Both children are a subset of AccountType → match
-    assert!(
-        xsd.contains("<xs:element name=\"Account\" type=\"AccountType\"/>"),
-        "Should use type ref when children are subset. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_child_validation_required_missing() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    // Only "Phone" field; registered type requires IBAN which has a different type
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Phone")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "Phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type that only has IBAN (not Phone) → no match
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![TypeChildElement {
-                name: "IBAN".to_string(),
-                type_ref: "xs:string".to_string(),
-            }],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Phone is not in AccountType's elements → no match → fallback
-    assert!(
-        !xsd.contains("AccountType"),
-        "Should NOT use type ref when child not in registered type. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:element name=\"Account\">"),
-        "Should fall back to inline complexType. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:complexType>"),
-        "Should generate inline complexType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_child_validation_extra_child() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{
-        ElementMapping, RegisteredComplexType, TypeChildElement, XsdConfig, XsdProfile,
-    };
-
-    // Has "IBAN", "Phone", and "Email" — but registered type only has IBAN and Phone
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Account"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.iban"),
-            som_path: None,
-            label: Some(TranslatedText::plain("IBAN")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.phone"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Phone")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.email"),
-            som_path: None,
-            label: Some(TranslatedText::plain("E-Mail")),
-            input_type: FieldType::Email,
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut elements = std::collections::HashMap::new();
-    elements.insert(
-        "IBAN".to_string(),
-        ElementMapping {
-            synonyms: vec!["IBAN".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    elements.insert(
-        "Phone".to_string(),
-        ElementMapping {
-            synonyms: vec!["Phone".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-    elements.insert(
-        "Email".to_string(),
-        ElementMapping {
-            synonyms: vec!["E-Mail".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    // Register a type with only IBAN and Phone (not Email)
-    let mut registered_types = std::collections::HashMap::new();
-    registered_types.insert(
-        "AccountType".to_string(),
-        RegisteredComplexType {
-            name: "AccountType".to_string(),
-            elements: vec![
-                TypeChildElement {
-                    name: "IBAN".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-                TypeChildElement {
-                    name: "Phone".to_string(),
-                    type_ref: "xs:string".to_string(),
-                },
-            ],
-            file: "../AFFragments/Account.xsd".to_string(),
-        },
-    );
-
-    let profile = XsdProfile {
-        elements,
-        ..Default::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        std::collections::HashMap::new(),
-        registered_types,
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Email is not in AccountType → not a subset → fallback
-    assert!(
-        !xsd.contains("AccountType"),
-        "Should NOT use type ref when extra child not in registered type. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:element name=\"Account\">"),
-        "Should fall back to inline complexType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_conditional_creates_choice() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let field_id = FieldId::from("test.selector");
-
-    let nodes = vec![
-        StructuredNode::Conditional(ConditionalNode {
-            condition: FieldCondition {
-                field_name: field_id.clone(),
-                value: InputValue::Text("option1".to_string()),
-            },
-            content: Box::new(StructuredNode::Field(FieldNode {
-                name: FieldId::from("test.field_a"),
-                som_path: None,
-                label: Some(TranslatedText::plain("Field A")),
-                input_type: FieldType::Text {
-                    regex: None,
-                    max_length: None,
-                    min_length: None,
-                },
-                value: None,
-                placeholder: None,
-                required: false,
-            })),
-        }),
-        StructuredNode::Conditional(ConditionalNode {
-            condition: FieldCondition {
-                field_name: field_id.clone(),
-                value: InputValue::Text("option2".to_string()),
-            },
-            content: Box::new(StructuredNode::Field(FieldNode {
-                name: FieldId::from("test.field_b"),
-                som_path: None,
-                label: Some(TranslatedText::plain("Field B")),
-                input_type: FieldType::Text {
-                    regex: None,
-                    max_length: None,
-                    min_length: None,
-                },
-                value: None,
-                placeholder: None,
-                required: false,
-            })),
-        }),
-    ];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should produce xs:choice with two xs:sequence branches
-    assert!(
-        xsd.contains("<xs:choice>"),
-        "Should contain xs:choice. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("</xs:choice>"),
-        "Should close xs:choice. Got:\n{}",
-        xsd
-    );
-
-    let sequence_count = xsd.matches("<xs:sequence>").count();
-    // The root sequence + 2 branches = at least 3
-    assert!(
-        sequence_count >= 3,
-        "Should have at least 3 xs:sequence elements (root + 2 branches). Found: {}. Got:\n{}",
-        sequence_count,
-        xsd
-    );
-
-    assert!(
-        xsd.contains("FieldA"),
-        "Should contain FieldA. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("FieldB"),
-        "Should contain FieldB. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_repeatable_min_max_occurs() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Repeatable(RepeatableNode {
-        item: Box::new(StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.item"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Item")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        })),
-        min_occurrences: 0,
-        max_occurrences: None, // unbounded
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Should have minOccurs and maxOccurs attributes
-    assert!(
-        xsd.contains("minOccurs=\"0\""),
-        "Should have minOccurs=0. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("maxOccurs=\"unbounded\""),
-        "Should have maxOccurs=unbounded. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_field_with_restrictions() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.name"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Full Name")),
-        input_type: FieldType::Text {
-            regex: Some("[A-Za-z ]+".to_string()),
-            max_length: Some(100),
-            min_length: Some(1),
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    assert!(
-        xsd.contains("<xs:restriction base=\"xs:string\">"),
-        "Should have restriction. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:pattern value=\"[A-Za-z ]+\"/>"),
-        "Should have pattern. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:minLength value=\"1\"/>"),
-        "Should have minLength. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:maxLength value=\"100\"/>"),
-        "Should have maxLength. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_radio_creates_enumeration() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.color"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Color")),
-        input_type: FieldType::Radio {
-            options: vec![
-                NameValue {
-                    name: TranslatableString::Plain("Red".to_string()),
-                    value: InputValue::Text("red".to_string()),
-                },
-                NameValue {
-                    name: TranslatableString::Plain("Blue".to_string()),
-                    value: InputValue::Text("blue".to_string()),
-                },
-                NameValue {
-                    name: TranslatableString::Plain("Green".to_string()),
-                    value: InputValue::Text("green".to_string()),
-                },
-            ],
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    assert!(
-        xsd.contains("<xs:enumeration value=\"red\"/>"),
-        "Should have red enumeration. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:enumeration value=\"blue\"/>"),
-        "Should have blue enumeration. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("<xs:enumeration value=\"green\"/>"),
-        "Should have green enumeration. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_predefined_types_included() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // Map CurrencyType to an external file. A field that references it should
-    // cause an <xs:include> to be emitted.
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("CurrencyType".to_string(), "currency-types.xsd".to_string());
-
-    let mut elements = HashMap::new();
-    elements.insert(
-        "currency".to_string(),
-        ElementMapping {
-            synonyms: vec!["Currency".to_string()],
-            type_ref: "CurrencyType".to_string(),
-        },
-    );
-
-    let nodes = vec![StructuredNode::Field(FieldNode {
-        name: FieldId::from("test.currency"),
-        som_path: None,
-        label: Some(TranslatedText::plain("Currency")),
-        input_type: FieldType::Text {
-            regex: None,
-            max_length: None,
-            min_length: None,
-        },
-        value: None,
-        placeholder: None,
-        required: false,
-    })];
-
-    let profile = XsdProfile {
-        elements,
-        ..XsdProfile::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    assert!(
-        xsd.contains("<xs:include schemaLocation=\"currency-types.xsd\"/>"),
-        "Should include the file that declares CurrencyType. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_nested_heading_levels() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H1,
-            content: TranslatedText::plain("Top Section"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Sub Section"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.field"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Inner Field")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&nodes, &config);
-
-    // H1 should create outer complexType, H2 should create inner complexType
-    assert!(
-        xsd.contains("TopSection"),
-        "Should contain TopSection. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("SubSection"),
-        "Should contain SubSection. Got:\n{}",
-        xsd
-    );
-    assert!(
-        xsd.contains("InnerField"),
-        "Should contain InnerField. Got:\n{}",
-        xsd
-    );
-
-    // Count complexType occurrences — at least 3 (root form + outer heading + inner heading)
-    let ct_count = xsd.matches("<xs:complexType>").count();
-    assert!(
-        ct_count >= 3,
-        "Should have at least 3 complexTypes (form root + 2 headings). Found: {}. Got:\n{}",
-        ct_count,
-        xsd
-    );
-}
-
-#[test]
 fn test_xsd_snake_case_conversion() {
     use crate::xsd::to_snake_case;
 
@@ -18167,550 +17276,6 @@ fn test_xsd_extract_declared_names() {
         "Should find at least 3 declarations. Got: {:?}",
         names
     );
-}
-
-#[test]
-fn test_xsd_includes_only_emitted_when_type_is_used() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // Two types indexed, but only AddressType will be referenced
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("AddressType".to_string(), "address.xsd".to_string());
-    type_to_file.insert("PersonType".to_string(), "person.xsd".to_string());
-
-    // Only "address" element uses AddressType; "name" uses xs:string (no include needed)
-    let mut elements = HashMap::new();
-    elements.insert(
-        "address".to_string(),
-        ElementMapping {
-            synonyms: vec!["Address".to_string()],
-            type_ref: "AddressType".to_string(),
-        },
-    );
-    elements.insert(
-        "name".to_string(),
-        ElementMapping {
-            synonyms: vec!["Name".to_string()],
-            type_ref: "xs:string".to_string(),
-        },
-    );
-
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.address"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Address")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.name"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Name")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let profile = XsdProfile {
-        elements,
-        ..XsdProfile::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // AddressType is used → address.xsd should be included
-    assert!(
-        xsd.contains("<xs:include schemaLocation=\"address.xsd\"/>"),
-        "Used type include should appear. Got:\n{}",
-        xsd
-    );
-
-    // PersonType is NOT used → person.xsd should NOT be included
-    assert!(
-        !xsd.contains("person.xsd"),
-        "Unused type include should not appear. Got:\n{}",
-        xsd
-    );
-
-    // Include should appear before the root form element
-    let include_pos = xsd.find("<xs:include").unwrap();
-    let form_pos = xsd.find("<xs:element name=\"form\">").unwrap();
-    assert!(
-        include_pos < form_pos,
-        "Includes should appear before the root element. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_includes_deduplicated_by_path() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{ElementMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // Two different logical type names → same physical file
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("TypeA".to_string(), "shared.xsd".to_string());
-    type_to_file.insert("TypeB".to_string(), "shared.xsd".to_string());
-
-    let mut elements = HashMap::new();
-    elements.insert(
-        "field_a".to_string(),
-        ElementMapping {
-            synonyms: vec!["Field A".to_string()],
-            type_ref: "TypeA".to_string(),
-        },
-    );
-    elements.insert(
-        "field_b".to_string(),
-        ElementMapping {
-            synonyms: vec!["Field B".to_string()],
-            type_ref: "TypeB".to_string(),
-        },
-    );
-
-    let nodes = vec![
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.a"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Field A")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.b"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Field B")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let profile = XsdProfile {
-        elements,
-        ..XsdProfile::default()
-    };
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    let xsd = generate_xsd(&nodes, &config);
-
-    // Both types used, but same path → only one xs:include
-    let count = xsd
-        .matches("<xs:include schemaLocation=\"shared.xsd\"/>")
-        .count();
-    assert_eq!(
-        count, 1,
-        "Duplicate include path should appear only once, found {}. Got:\n{}",
-        count, xsd
-    );
-}
-
-#[test]
-fn test_xsd_unused_includes_not_emitted() {
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    let mut type_to_file = HashMap::new();
-    type_to_file.insert("SomeType".to_string(), "some-types.xsd".to_string());
-
-    let config = XsdConfig::new(
-        XsdProfile::default(),
-        type_to_file,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    // No nodes at all → SomeType is never referenced
-    let xsd = generate_xsd(&[], &config);
-
-    assert!(
-        !xsd.contains("<xs:include"),
-        "No includes should appear when no types are used. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_no_includes_no_extra_whitespace() {
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{XsdConfig, XsdProfile};
-
-    let config = XsdConfig::from_profile(XsdProfile::default());
-    let xsd = generate_xsd(&[], &config);
-
-    // With no includes, there should be no xs:include directives
-    assert!(
-        !xsd.contains("<xs:include"),
-        "Should not contain xs:include when none configured. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_aaai_en_xsd_signature_type_matching() {
-    // Test that the "Client" and "UBS Europe SE" signature sections
-    // in AAAI EN are matched to "SignatureType" because they each
-    // contain the child elements Place, Name, and Date which are a
-    // subset of SignatureType's children.
-    use crate::run_exhaustive_to_merged;
-    use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
-    };
-    use std::collections::HashMap;
-    use std::path::Path;
-
-    // 1) Load the PDF and get structured nodes
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI_019_EN");
-
-    // 2) Load the UBS XSD profile (same logic as CLI's load_xsd_config)
-    let profile_dir_str = helpers::profiles_path("ubs/xsd");
-    let profile_dir = Path::new(&profile_dir_str);
-    let config_path = profile_dir.join("config.toml");
-    let profile: XsdProfile = {
-        let toml_str =
-            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
-        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
-    };
-
-    let types_dir = profile_dir.join("types");
-    let mut type_to_file = HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk_xsd(&path, out);
-                } else if path.extension().is_some_and(|e| e == "xsd") {
-                    out.push(path);
-                }
-            }
-        }
-    }
-    let mut xsd_files = Vec::new();
-    walk_xsd(&types_dir, &mut xsd_files);
-    xsd_files.sort();
-    for xsd_path in &xsd_files {
-        let rel = xsd_path
-            .strip_prefix(&types_dir)
-            .unwrap_or(xsd_path)
-            .to_string_lossy();
-        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-        let content = std::fs::read_to_string(xsd_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
-        for name in extract_declared_names(&content) {
-            type_to_file.insert(name, schema_location.clone());
-        }
-        parsed_schemas.push((parse_schema(&content), schema_location));
-    }
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    );
-
-    // 3) Generate intermediate XSD schema
-    let schema = generate_xsd_schema(&nodes, &config);
-
-    // 4) Walk the XsdNode tree to find elements by name
-    fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
-        match node {
-            XsdNode::Element {
-                name: n, content, ..
-            } => {
-                if n == name {
-                    results.push(node);
-                }
-                if let Some(child) = content {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                if ref_name == name {
-                    results.push(node);
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        find_elements_by_name(child, name, results);
-                    }
-                }
-            }
-        }
-    }
-
-    // 5) Assert "Client" (under Signature(s)) has type SignatureType
-    //    There are two "Client" elements in the tree (one under the
-    //    main H2 and one under "Signature(s)"). The one under signatures
-    //    is the second occurrence (depth-first).
-    let mut client_matches = Vec::new();
-    find_elements_by_name(&schema.root, "Client", &mut client_matches);
-    assert!(
-        client_matches.len() >= 2,
-        "Should find at least 2 elements named 'Client' (one main, one signature). Found: {}",
-        client_matches.len()
-    );
-    // The second "Client" is the one under Signature(s)
-    if let XsdNode::Element { type_ref, .. } = client_matches[1] {
-        assert_eq!(
-            type_ref.as_deref(),
-            Some("SignatureType"),
-            "Signature 'Client' element should be matched to SignatureType"
-        );
-    }
-
-    // 6) Assert "UBSEuropeSE" has type SignatureType
-    let mut ubs_matches = Vec::new();
-    find_elements_by_name(&schema.root, "UBSEuropeSE", &mut ubs_matches);
-    assert!(
-        !ubs_matches.is_empty(),
-        "Should find an element named 'UBSEuropeSE' in the XSD tree"
-    );
-    if let XsdNode::Element { type_ref, .. } = ubs_matches[0] {
-        assert_eq!(
-            type_ref.as_deref(),
-            Some("SignatureType"),
-            "Element 'UBSEuropeSE' should be matched to SignatureType"
-        );
-    }
-
-    // 7) Assert the AuthRep section is matched to multiple types
-    //    (IndividualBasicType + AddressType), so it contains typed child elements.
-    let mut auth_rep_matches = Vec::new();
-    find_elements_by_name(&schema.root, "AuthRep", &mut auth_rep_matches);
-    assert!(
-        !auth_rep_matches.is_empty(),
-        "Should find 'AuthRep' element"
-    );
-    if let XsdNode::Element {
-        content, type_ref, ..
-    } = auth_rep_matches[0]
-    {
-        assert!(
-            type_ref.is_none(),
-            "AuthRep should have inline content (multi-type match)"
-        );
-        let content = content.as_ref().expect("Should have inline content");
-        if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
-            let child_type_refs: Vec<&str> = sequence
-                .iter()
-                .filter_map(|node| {
-                    if let XsdNode::Element { type_ref, .. } = node {
-                        type_ref.as_deref()
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            assert!(
-                child_type_refs.contains(&"IndividualBasicType"),
-                "Should contain IndividualBasicType. Got: {:?}",
-                child_type_refs
-            );
-            assert!(
-                child_type_refs.contains(&"AddressType"),
-                "Should contain AddressType. Got: {:?}",
-                child_type_refs
-            );
-        } else {
-            panic!("Expected ComplexType content for AuthRep");
-        }
-    }
-}
-
-#[test]
-fn test_aaai_en_xsd_authorized_rep_type_pair() {
-    // Test that "authorized_representative_s" is matched to a pair of disjoint
-    // types: IndividualBasicType (for LastName/FirstName) and AddressType
-    // (for Street/StreetNumber/PostalCode/City/Country), because its child
-    // elements span both types but neither alone covers all children.
-    // LetterAddressType is rejected because it contains a LetterAddress child
-    // of type AddressType, making them non-disjoint at the leaf level.
-    use crate::run_exhaustive_to_merged;
-    use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, extract_declared_names,
-        generate_xsd_schema, parse_schema,
-    };
-    use std::collections::HashMap;
-    use std::path::Path;
-
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI_019_EN");
-
-    let profile_dir_str = helpers::profiles_path("ubs/xsd");
-    let profile_dir = Path::new(&profile_dir_str);
-    let config_path = profile_dir.join("config.toml");
-    let profile: XsdProfile = {
-        let toml_str =
-            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
-        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
-    };
-
-    let types_dir = profile_dir.join("types");
-    let mut type_to_file = HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk_xsd(&path, out);
-                } else if path.extension().is_some_and(|e| e == "xsd") {
-                    out.push(path);
-                }
-            }
-        }
-    }
-    let mut xsd_files = Vec::new();
-    walk_xsd(&types_dir, &mut xsd_files);
-    xsd_files.sort();
-    for xsd_path in &xsd_files {
-        let rel = xsd_path
-            .strip_prefix(&types_dir)
-            .unwrap_or(xsd_path)
-            .to_string_lossy();
-        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-        let content = std::fs::read_to_string(xsd_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
-        for name in extract_declared_names(&content) {
-            type_to_file.insert(name, schema_location.clone());
-        }
-        parsed_schemas.push((parse_schema(&content), schema_location));
-    }
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    );
-
-    let schema = generate_xsd_schema(&nodes, &config);
-
-    // Walk the tree to find \"authorized_representative_s\"
-    fn find_elements_by_name<'a>(node: &'a XsdNode, name: &str, results: &mut Vec<&'a XsdNode>) {
-        match node {
-            XsdNode::Element {
-                name: n, content, ..
-            } => {
-                if n == name {
-                    results.push(node);
-                }
-                if let Some(child) = content {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                if ref_name == name {
-                    results.push(node);
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    find_elements_by_name(child, name, results);
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        find_elements_by_name(child, name, results);
-                    }
-                }
-            }
-        }
-    }
-
-    let mut matches = Vec::new();
-    find_elements_by_name(&schema.root, "AuthRep", &mut matches);
-    assert!(!matches.is_empty(), "Should find 'AuthRep' element");
-
-    // It should be an inline complexType containing two typed child elements
-    if let XsdNode::Element {
-        content, type_ref, ..
-    } = matches[0]
-    {
-        assert!(
-            type_ref.is_none(),
-            "AuthRep should NOT have a single type_ref"
-        );
-        let content = content.as_ref().expect("Should have inline content");
-        if let XsdNode::ComplexType { sequence, .. } = content.as_ref() {
-            // Collect child element type_refs
-            let child_types: Vec<Option<&str>> = sequence
-                .iter()
-                .filter_map(|node| {
-                    if let XsdNode::Element { type_ref, .. } = node {
-                        Some(type_ref.as_deref())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            assert!(
-                child_types.contains(&Some("IndividualBasicType")),
-                "Should contain IndividualBasicType child. Got types: {:?}",
-                child_types
-            );
-            assert!(
-                child_types.contains(&Some("AddressType")),
-                "Should contain AddressType child. Got types: {:?}",
-                child_types
-            );
-        } else {
-            panic!("Expected ComplexType content");
-        }
-    }
 }
 
 // ============================================================================
@@ -19081,185 +17646,16 @@ fn test_bind_refs_preamble_fields() {
 }
 
 #[test]
-fn test_aaai_en_bind_refs_match_xsd_structure() {
-    // Integration test: verify that compute_bind_refs produces paths that are
-    // structurally consistent with generate_xsd_schema for the AAAI EN form.
-    // Specifically, for multi-type matched sections the wrapper element names
-    // must appear in the bindRef field paths.
-    use crate::run_exhaustive_to_merged;
-    use crate::xsd::{
-        XsdConfig, XsdNode, XsdProfile, build_registered_types, compute_bind_refs,
-        extract_declared_names, generate_xsd_schema, parse_schema,
-    };
-    use std::collections::HashMap;
-    use std::path::Path;
-
-    // 1) Load the PDF and get structured nodes
-    let nodes = run_exhaustive_to_merged(input_path("AAAI_019_EN.pdf"))
-        .expect("Failed to process AAAI_019_EN");
-
-    // 2) Load the UBS XSD profile
-    let profile_dir_str = helpers::profiles_path("ubs/xsd");
-    let profile_dir = Path::new(&profile_dir_str);
-    let config_path = profile_dir.join("config.toml");
-    let profile: XsdProfile = {
-        let toml_str =
-            std::fs::read_to_string(&config_path).expect("Failed to read ubs xsd/config.toml");
-        toml::from_str(&toml_str).expect("Failed to parse ubs xsd/config.toml")
-    };
-
-    let types_dir = profile_dir.join("types");
-    let mut type_to_file = HashMap::new();
-    let mut parsed_schemas = Vec::new();
-    fn walk_xsd(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk_xsd(&path, out);
-                } else if path.extension().is_some_and(|e| e == "xsd") {
-                    out.push(path);
-                }
-            }
-        }
-    }
-    let mut xsd_files = Vec::new();
-    walk_xsd(&types_dir, &mut xsd_files);
-    xsd_files.sort();
-    for xsd_path in &xsd_files {
-        let rel = xsd_path
-            .strip_prefix(&types_dir)
-            .unwrap_or(xsd_path)
-            .to_string_lossy();
-        let schema_location = format!("{}{}", profile.schema_location_prefix, rel);
-        let content = std::fs::read_to_string(xsd_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", xsd_path.display(), e));
-        for name in extract_declared_names(&content) {
-            type_to_file.insert(name, schema_location.clone());
-        }
-        parsed_schemas.push((parse_schema(&content), schema_location));
-    }
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
-    let config = XsdConfig::new(
-        profile,
-        type_to_file,
-        registered_types,
-        type_to_element_name,
-    );
-
-    // 3) Generate XSD schema and compute bind refs
-    let schema = generate_xsd_schema(&nodes, &config);
-    let maps = compute_bind_refs(&nodes, &config);
-
-    // 4) Collect all element paths from the XSD tree, expanding typed elements
-    //    by recursively resolving registered types' child elements.
-    fn collect_xsd_paths(
-        node: &XsdNode,
-        parent: &str,
-        paths: &mut HashSet<String>,
-        registered_types: &HashMap<String, crate::RegisteredComplexType>,
-    ) {
-        match node {
-            XsdNode::Element {
-                name,
-                type_ref,
-                content,
-                ..
-            } => {
-                let path = format!("{}/{}", parent, name);
-                paths.insert(path.clone());
-                if let Some(child) = content {
-                    collect_xsd_paths(child, &path, paths, registered_types);
-                }
-                // Expand external type references: add child element paths
-                // that would exist in the data instance.
-                if let Some(tr) = type_ref {
-                    if let Some(rt) = registered_types.get(tr.as_str()) {
-                        for elem in &rt.elements {
-                            paths.insert(format!("{}/{}", path, elem.name));
-                        }
-                    }
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    collect_xsd_paths(child, parent, paths, registered_types);
-                }
-            }
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        collect_xsd_paths(child, parent, paths, registered_types);
-                    }
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Ref { ref_name, .. } => {
-                let path = format!("{}/{}", parent, ref_name);
-                paths.insert(path.clone());
-                // Expand ref: find the registered type matching this global
-                // element and add its children as sub-paths.
-                for rt in registered_types.values() {
-                    for elem in &rt.elements {
-                        paths.insert(format!("{}/{}", path, elem.name));
-                    }
-                }
-            }
-        }
-    }
-    use std::collections::HashSet;
-    let mut xsd_paths = HashSet::new();
-    collect_xsd_paths(&schema.root, "", &mut xsd_paths, &config.registered_types);
-
-    // 5) Every field bindRef path should exist as an element in the XSD tree
-    for (field_id, bind_path) in &maps.fields {
-        assert!(
-            xsd_paths.contains(bind_path),
-            "Field {} has bindRef {} but no matching element in the XSD tree. \
-             Available XSD element paths (sample): {:?}",
-            field_id,
-            bind_path,
-            xsd_paths.iter().take(20).collect::<Vec<_>>()
-        );
-    }
-
-    // 6) Verify specific multi-type section: authorized_representative_s
-    //    Fields in this section should have wrapper paths (e.g. IndividualBasic/LastName).
-    let auth_rep_fields: Vec<_> = maps
-        .fields
-        .iter()
-        .filter(|(_, path)| path.contains("/AuthRep/"))
-        .collect();
-    assert!(
-        !auth_rep_fields.is_empty(),
-        "Should have fields under AuthRep section"
-    );
-    // At least some fields should go through wrapper elements (IndividualBasic or Address),
-    // not be directly under AuthRep.
-    let has_wrapper_paths = auth_rep_fields.iter().any(|(_, path)| {
-        // Find the part after "AuthRep/"
-        let after = path.split("/AuthRep/").last().unwrap_or("");
-        after.contains('/') // has another segment before the field name (= wrapper)
-    });
-    assert!(
-        has_wrapper_paths,
-        "Multi-type section AuthRep should have wrapper paths. Got: {:?}",
-        auth_rep_fields
-    );
-}
-
-#[test]
 fn test_created_form_aem_bind_refs_match_xsd() {
-    // End-to-end check: build a form, generate both the AEM XML and the XSD,
-    // then verify every `bindRef` emitted into the AEM points at an element
-    // path that actually exists in the generated XSD schema.
+    // The core contract of deriving the schema from the AEM tree: because the
+    // walk emits an element and records its bind path in the same step, every
+    // `bindRef` that reaches the rendered XML is an exact element path in the
+    // schema generated from the same tree.
     use crate::Context;
     use crate::aem::{AemConfig, convert_to_aem, generate_aem_xml};
     use crate::structured::*;
-    use crate::xsd::{XsdConfig, XsdNode, XsdProfile, generate_xsd, generate_xsd_schema};
-    use std::collections::HashSet;
+    use crate::xsd::{XsdConfig, XsdProfile};
 
-    // 1) Create a form: two sections, each with a couple of fields.
     let nodes = vec![
         StructuredNode::Heading(make_heading(2, "Personal Data")),
         StructuredNode::Field(make_field("f.first", "First Name")),
@@ -19269,13 +17665,8 @@ fn test_created_form_aem_bind_refs_match_xsd() {
         StructuredNode::Field(make_field("f.city", "City")),
     ];
 
-    // 2) XSD configuration (default profile: root element "form", no
-    //    externally registered types, so every field becomes an inline
-    //    nested element).
     let xsd_config = XsdConfig::from_profile(XsdProfile::default());
 
-    // 3) Build an AEM config from the real UBS profile (so the templates
-    //    actually emit `bindRef` attributes), with XSD binding enabled.
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut vars = std::collections::HashMap::new();
     vars.insert("formrange_code".to_string(), "TEST".to_string());
@@ -19284,167 +17675,36 @@ fn test_created_form_aem_bind_refs_match_xsd() {
     let mut aem_config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
         .expect("Failed to build AEM config");
     aem_config.bind_to_xsd = true;
-    // Disable fragment replacement so that all bindRefs are derived from the
-    // generated XSD (fragment bindRefs point into separate fragment types).
     aem_config.use_fragments = false;
     aem_config.xsd_config = Some(xsd_config.clone());
 
-    // 4) Generate the AEM XML and the XSD from the same form.
     let root = convert_to_aem(&nodes, &aem_config);
     let aem_xml = generate_aem_xml(&root, &aem_config);
-    let xsd_string = generate_xsd(&nodes, &xsd_config);
-    let schema = generate_xsd_schema(&nodes, &xsd_config);
+    let schema = crate::xsd::generate_xsd_from_aem(&root, &xsd_config, &[]).schema;
 
-    // Sanity: the XSD really contains the expected section/field elements.
-    assert!(xsd_string.contains("name=\"PersonalData\""));
-    assert!(xsd_string.contains("name=\"FirstName\""));
-
-    // 5) Collect every element path that exists in the XSD tree.
-    fn collect_xsd_paths(node: &XsdNode, parent: &str, paths: &mut HashSet<String>) {
-        match node {
-            XsdNode::Element { name, content, .. } => {
-                let path = format!("{}/{}", parent, name);
-                paths.insert(path.clone());
-                if let Some(child) = content {
-                    collect_xsd_paths(child, &path, paths);
-                }
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    collect_xsd_paths(child, parent, paths);
-                }
-            }
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        collect_xsd_paths(child, parent, paths);
-                    }
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                paths.insert(format!("{}/{}", parent, ref_name));
-            }
-            XsdNode::SimpleType { .. } => {}
-        }
-    }
-    let mut xsd_paths = HashSet::new();
-    collect_xsd_paths(&schema.root, "", &mut xsd_paths);
-
-    // 6) Extract every `bindRef="..."` value emitted into the AEM XML.
-    let mut bind_refs = Vec::new();
-    let needle = "bindRef=\"";
-    let mut cursor = aem_xml.as_str();
-    while let Some(pos) = cursor.find(needle) {
-        let after = &cursor[pos + needle.len()..];
-        if let Some(end) = after.find('"') {
-            bind_refs.push(after[..end].to_string());
-            cursor = &after[end + 1..];
-        } else {
-            break;
-        }
-    }
+    let xsd_paths = helpers::xsd_element_paths_in_order(&schema);
+    let bind_refs = helpers::scrape_bind_refs(&aem_xml);
 
     assert!(
         !bind_refs.is_empty(),
         "Generated AEM XML should contain bindRef attributes when bind_to_xsd=true"
     );
 
-    // 7) Every bindRef must resolve to an element present in the XSD.
-    let mut sorted_xsd: Vec<_> = xsd_paths.iter().cloned().collect();
-    sorted_xsd.sort();
+    // Sections still nest, so the two same-named fields stay distinct.
+    assert!(
+        xsd_paths
+            .iter()
+            .any(|p| p == "/form/PersonalData/FirstName")
+    );
+    assert!(xsd_paths.iter().any(|p| p == "/form/Address/Street"));
+
     for bind_ref in &bind_refs {
         assert!(
-            xsd_paths.contains(bind_ref),
-            "AEM bindRef {} has no matching element in the generated XSD.\nXSD element paths: {:?}",
-            bind_ref,
-            sorted_xsd
+            xsd_paths.iter().any(|p| p == bind_ref),
+            "AEM bindRef {bind_ref} has no matching element in the generated XSD.\n\
+             XSD element paths: {xsd_paths:?}"
         );
     }
-}
-
-#[test]
-fn test_aaai_merged_xsd_uses_master_language_for_element_names() {
-    // When merging DE + EN PDFs and generating an XSD, element names
-    // derived from headings and field labels should use the master
-    // language ("en") rather than whichever translation happens to be
-    // first in the map.
-    //
-    // Before the fix, `as_plain_text()` was used, which picks the first
-    // available translation (often "de" due to HashMap ordering), so
-    // headings like "Kunde" appeared instead of "client".
-    use crate::run_exhaustive_to_envelope;
-    use crate::structured;
-    use crate::xsd::{XsdNode, generate_xsd_schema};
-
-    // 1) Merge DE + EN (DE first so it appears first in maps)
-    let de_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_DE.pdf"), "de")
-        .expect("Failed to process AAAI DE");
-    let en_envelope = run_exhaustive_to_envelope(input_path("AAAI_019_EN.pdf"), "en")
-        .expect("Failed to process AAAI EN");
-    let merged = structured::merge_translations(vec![de_envelope, en_envelope], None)
-        .expect("Failed to merge translations");
-
-    // 2) Load XSD config with master_language = "en"
-    let config = helpers::load_ubs_xsd_config().with_master_language("en");
-
-    // 3) Generate XSD schema from merged content
-    let schema = generate_xsd_schema(&merged.content, &config);
-
-    // 4) Collect all element names from the XSD tree
-    fn collect_element_names(node: &XsdNode, out: &mut Vec<String>) {
-        match node {
-            XsdNode::Element { name, content, .. } => {
-                out.push(name.clone());
-                if let Some(child) = content {
-                    collect_element_names(child, out);
-                }
-            }
-            XsdNode::Ref { ref_name, .. } => {
-                out.push(ref_name.clone());
-            }
-            XsdNode::ComplexType { sequence, .. } => {
-                for child in sequence {
-                    collect_element_names(child, out);
-                }
-            }
-            XsdNode::SimpleType { .. } => {}
-            XsdNode::Choice { options } => {
-                for branch in options {
-                    for child in branch {
-                        collect_element_names(child, out);
-                    }
-                }
-            }
-        }
-    }
-    let mut names = Vec::new();
-    collect_element_names(&schema.root, &mut names);
-
-    // 5) The heading "Kunde" (DE) / "Client" (EN) should produce "Client",
-    //    not "Kunde", when the master language is "en".
-    assert!(
-        names.contains(&"Client".to_string()),
-        "XSD should contain element 'Client' (English), not 'Kunde' (German). Got: {:?}",
-        names
-    );
-    assert!(
-        !names.contains(&"Kunde".to_string()),
-        "XSD should NOT contain element 'Kunde' (German) when master language is 'en'. Got: {:?}",
-        names
-    );
-
-    // 6) Similarly, "Unterschrift(en)" / "Signature(s)" should produce
-    //    "Signature" (from config pattern) not "UnterschriftEn".
-    assert!(
-        names.contains(&"Signature".to_string()),
-        "XSD should contain element 'Signature' (from config pattern). Got: {:?}",
-        names
-    );
-    assert!(
-        !names.contains(&"UnterschriftEn".to_string()),
-        "XSD should NOT contain element 'UnterschriftEn' (German). Got: {:?}",
-        names
-    );
 }
 
 #[test]
@@ -19470,120 +17730,6 @@ fn test_xsd_profile_master_language_defaults_to_none() {
     let config = XsdConfig::from_profile(profile);
 
     assert_eq!(config.master_language.as_deref(), None);
-}
-
-#[test]
-fn test_xsd_section_name_override_via_pattern() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{SectionMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // A section with heading "Step 4" but body content mentioning "signature"
-    // and "client" should be renamed to "AccountHolderSignature" by pattern.
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Step 4"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.sig_name"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Signature of client")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut sections = HashMap::new();
-    sections.insert(
-        "AccountHolderSignature".to_string(),
-        SectionMapping {
-            patterns: vec!["(?:signature|unterschrift).*(?:client|kunde)".to_string()],
-        },
-    );
-
-    let profile = XsdProfile {
-        sections,
-        ..Default::default()
-    };
-    let config = XsdConfig::from_profile(profile);
-
-    let xsd = generate_xsd(&nodes, &config);
-
-    // The section should use the configured name, not PascalCase of "Step 4"
-    assert!(
-        xsd.contains("name=\"AccountHolderSignature\""),
-        "XSD section should use configured name 'AccountHolderSignature'. Got:\n{}",
-        xsd
-    );
-    assert!(
-        !xsd.contains("name=\"Step4\""),
-        "XSD section should NOT use heading-derived name 'Step4'. Got:\n{}",
-        xsd
-    );
-}
-
-#[test]
-fn test_xsd_section_name_override_no_match_falls_back() {
-    use crate::structured::*;
-    use crate::xsd::generate_xsd;
-    use crate::xsd::{SectionMapping, XsdConfig, XsdProfile};
-    use std::collections::HashMap;
-
-    // A section that does NOT match any pattern should use the default name
-    let nodes = vec![
-        StructuredNode::Heading(HeadingNode {
-            level: HeadingLevel::H2,
-            content: TranslatedText::plain("Personal Data"),
-            som_path: None,
-            source_name: None,
-        }),
-        StructuredNode::Field(FieldNode {
-            name: FieldId::from("test.name"),
-            som_path: None,
-            label: Some(TranslatedText::plain("Full Name")),
-            input_type: FieldType::Text {
-                regex: None,
-                max_length: None,
-                min_length: None,
-            },
-            value: None,
-            placeholder: None,
-            required: false,
-        }),
-    ];
-
-    let mut sections = HashMap::new();
-    sections.insert(
-        "AccountHolderSignature".to_string(),
-        SectionMapping {
-            patterns: vec!["(?:signature|unterschrift).*(?:client|kunde)".to_string()],
-        },
-    );
-
-    let profile = XsdProfile {
-        sections,
-        ..Default::default()
-    };
-    let config = XsdConfig::from_profile(profile);
-
-    let xsd = generate_xsd(&nodes, &config);
-
-    // The section should use the default PascalCase name since no pattern matched
-    assert!(
-        xsd.contains("name=\"PersonalData\""),
-        "XSD section should fall back to PascalCase 'PersonalData'. Got:\n{}",
-        xsd
-    );
 }
 
 #[test]
@@ -19646,7 +17792,7 @@ fn test_aaai_has_address_and_individual_fragments() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -19686,12 +17832,18 @@ fn test_aaai_has_address_and_individual_fragments() {
         fragment_refs
     );
 
-    // The IndividualBasic fragment bind_ref should contain "AuthRep/IndividualBasic"
+    // The IndividualBasic fragment is bound under its enclosing section.
+    //
+    // The schema is derived from the AEM tree, where only page panels nest —
+    // an H3 sub-heading such as "Authorized representative" becomes a sibling
+    // TitleDraw, not a container — so the path names the page ("Client"), not
+    // the sub-heading. The bind path and the XSD element still agree, which is
+    // what `aem_bind_refs_are_exact_xsd_paths` enforces.
     for (_, bind_ref) in &individual_frags {
         let br = bind_ref.as_deref().unwrap_or("");
         assert!(
-            br.contains("/AuthRep/IndividualBasic"),
-            "IndividualBasic fragment bind_ref should include AuthRep/IndividualBasic. Got: {}",
+            br.ends_with("/IndividualBasic") && br.matches('/').count() >= 3,
+            "IndividualBasic fragment should be bound under its section. Got: {}",
             br
         );
     }
@@ -19723,7 +17875,7 @@ fn test_fragments_work_without_bind_to_xsd() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -19947,7 +18099,7 @@ fn test_aagx_en_repeatable_not_replaced_by_fragment() {
         Blueprint::from_pdf(input_path("AAGX_019_EN.pdf")).expect("Failed to load AAGX_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -20027,7 +18179,7 @@ fn test_aaed_de_has_two_repeatables_not_replaced_by_fragments_in_aem() {
         Blueprint::from_pdf(input_path("AAED_019_DE.pdf")).expect("Failed to load AAED_019_DE.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -23994,7 +22146,7 @@ fn test_aem_form_xml_has_utf8_declaration() {
         Blueprint::from_pdf(input_path("AAIS_019_DE.pdf")).expect("Failed to load AAIS PDF");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to explore states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = load_ubs_profile();
     let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -24103,9 +22255,9 @@ fn test_aari_has_list_with_expected_items() {
         texts
     );
     assert!(
-        texts
-            .iter()
-            .any(|t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi")),
+        texts.iter().any(
+            |t| t.contains("cessione, a titolo oneroso ovvero chiusura di rapporti produttivi")
+        ),
         "List should contain the d) item about 'chiusura di rapporti produttivi'.\nItems: {:?}",
         texts
     );
@@ -26874,7 +25026,7 @@ fn test_fragment_bind_refs_use_configured_prefix() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -26904,10 +25056,16 @@ fn test_fragment_bind_refs_use_configured_prefix() {
         !fragment_refs.is_empty(),
         "Expected at least one fragment node"
     );
+    // A fragment inside a *collapsed* repeatable is deliberately unbound: the
+    // repeatable and its single child are one XSD element, and the repeat panel
+    // owns the path because that is the node AEM instantiates per row. Every
+    // other fragment carries the form-specific root.
+    let mut bound_fragments = 0;
     for (frag_ref, bind_ref) in &fragment_refs {
-        let br = bind_ref
-            .as_deref()
-            .unwrap_or_else(|| panic!("Fragment '{}' should have a bind_ref", frag_ref));
+        let Some(br) = bind_ref.as_deref() else {
+            continue;
+        };
+        bound_fragments += 1;
         assert!(
             br.starts_with("/UBSAF_AAAI/"),
             "Fragment '{}' bindRef should start with the form root '/UBSAF_AAAI/', got: {}",
@@ -26915,22 +25073,27 @@ fn test_fragment_bind_refs_use_configured_prefix() {
             br
         );
     }
+    assert!(
+        bound_fragments > 0,
+        "Expected at least one fragment bound under the form root"
+    );
 
-    // Non-fragment panels with bind_to_xsd=true should also use the form root.
+    // Every other bound node uses the same form root. Note that a *non-repeating*
+    // grouping panel is deliberately left unbound: it is a schema convenience
+    // with no data of its own, which is how UBS's own forms are bound.
     let mut found_form_root = false;
     helpers::walk_aem_nodes(&root, &mut |node| {
-        if let crate::aem::AemNode::Panel {
-            bind_ref: Some(br), ..
-        } = node
-        {
-            if br.starts_with("/UBSAF_AAAI/") {
-                found_form_root = true;
-            }
+        if let Some(br) = helpers::node_bind_ref(node) {
+            assert!(
+                br.starts_with("/UBSAF_AAAI/"),
+                "bindRef {br} should start with the form root '/UBSAF_AAAI/'"
+            );
+            found_form_root = true;
         }
     });
     assert!(
         found_form_root,
-        "Expected at least one panel with form-specific root '/UBSAF_AAAI/'"
+        "Expected at least one node bound under '/UBSAF_AAAI/'"
     );
 }
 
@@ -26945,7 +25108,7 @@ fn test_repeatable_panels_have_bind_ref() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -27002,7 +25165,7 @@ fn test_repeatable_bind_ref_stripped_when_bind_to_xsd_disabled() {
         Blueprint::from_pdf(input_path("AAAI_019_EN.pdf")).expect("Failed to load AAAI_019_EN.pdf");
     let ctx = bp.context();
     let form_states = bp.states().expect("Failed to get form states");
-    let content = crate::merge_form_states(&form_states, ctx.clone());
+    let content = crate::merge_form_states(&form_states, ctx.clone()).0;
 
     let (profile, templates, custom_templates) = helpers::load_ubs_profile();
     let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
@@ -32526,7 +30689,6 @@ fn test_aael_tabular_radio_buttons() {
     );
 }
 
-
 #[test]
 fn test_aahx_zwischen_section_precedes_vereinbarung_with_party_fields() {
     // AAHX opens with a single-column "Zwischen" block (the contracting parties
@@ -32848,8 +31010,8 @@ fn ubs_config_for(
     vars.insert("formrange_code".to_string(), form_code.to_string());
     vars.insert("formrange_entity".to_string(), "019".to_string());
     let ctx = crate::Context::new(master_language.to_string(), vars);
-    let mut config = crate::load_aem_config("ubs", &ctx)
-        .expect("build AemConfig via load_aem_config(\"ubs\")");
+    let mut config =
+        crate::load_aem_config("ubs", &ctx).expect("build AemConfig via load_aem_config(\"ubs\")");
     config.master_language = master_language.to_string();
     config.languages = languages.to_vec();
     config
@@ -33059,8 +31221,8 @@ fn lift_package(package: &crate::aem::ParsedAemPackage) -> crate::aem::AemNodeTr
 /// excluded by construction (it never enters the working tree).
 #[test]
 fn passthrough_load_save_load_is_a_fixpoint() {
-    use crate::aem::{generate_aem_xml_with_passthrough, parse_aem_zip};
     use crate::aem::xml_validation::{duplicate_attribute_elements, validate_aem_form_xml};
+    use crate::aem::{generate_aem_xml_with_passthrough, parse_aem_zip};
 
     // Real deployed packages: rich in unmodeled attributes (guideNodeClass, css,
     // textIsRich, dorFieldStyling, …), fd:rules/fd:scripts children, cq:responsive
@@ -33094,7 +31256,10 @@ fn passthrough_load_save_load_is_a_fixpoint() {
         // attribute keys (the parser-drops-typed / writer-drops-template-owned
         // subtractions must not collide).
         if let Err(violations) = validate_aem_form_xml(&regen) {
-            panic!("{fixture}: regenerated form XML is invalid:\n{}", violations.join("\n"));
+            panic!(
+                "{fixture}: regenerated form XML is invalid:\n{}",
+                violations.join("\n")
+            );
         }
         let dups = duplicate_attribute_elements(&regen);
         assert!(
@@ -33233,7 +31398,10 @@ fn passthrough_snapshot_back_compat_deserializes() {
     raw_attributes.insert("myCustomProp".to_string(), "x".to_string());
     let node = AemNodeTranslated::TextField {
         uuid: Uuid::from_u128(1),
-        passthrough: Passthrough { raw_attributes, raw_children: vec![] },
+        passthrough: Passthrough {
+            raw_attributes,
+            raw_children: vec![],
+        },
         name: "f1".into(),
         label: Default::default(),
         mandatory: false,
@@ -33259,15 +31427,20 @@ fn passthrough_snapshot_back_compat_deserializes() {
     }
     drop_passthrough(&mut value);
     assert!(
-        !serde_json::to_string(&value).unwrap().contains("passthrough"),
+        !serde_json::to_string(&value)
+            .unwrap()
+            .contains("passthrough"),
         "test setup: passthrough key must be gone from the legacy snapshot"
     );
 
-    let restored: AemNodeTranslated =
-        serde_json::from_value(value).expect("legacy snapshot without passthrough must deserialize");
+    let restored: AemNodeTranslated = serde_json::from_value(value)
+        .expect("legacy snapshot without passthrough must deserialize");
     match restored {
         AemNodeTranslated::TextField { passthrough, .. } => {
-            assert!(passthrough.is_empty(), "missing passthrough must default to empty");
+            assert!(
+                passthrough.is_empty(),
+                "missing passthrough must default to empty"
+            );
         }
         _ => panic!("expected a TextField"),
     }
@@ -33277,8 +31450,8 @@ fn passthrough_snapshot_back_compat_deserializes() {
 /// and is surfaced by `passthrough_map`, without leaking into unrelated nodes.
 #[test]
 fn passthrough_survives_serde_snapshot_round_trip() {
-    use crate::aem::translated::AemNodeTranslated;
     use crate::aem::Passthrough;
+    use crate::aem::translated::AemNodeTranslated;
     use std::collections::BTreeMap;
     use uuid::Uuid;
 
@@ -33319,12 +31492,12 @@ fn passthrough_survives_serde_snapshot_round_trip() {
 }
 
 // ============================================================================
-// Conversion-feedback registry invariants (profiles/ubs/aem/root.xml)
+// Conversion-feedback registry invariants (profiles/ubs/aem/*.xml)
 // ============================================================================
 
-/// Render the real UBS root template around a single trivial child, so the
-/// assertions below run against exactly the XML production emits.
-fn ubs_root_xml() -> String {
+/// Render `children` through the real UBS profile templates, so the assertions
+/// below run against exactly the XML production emits.
+fn ubs_xml(children: Vec<crate::AemNode>) -> String {
     use crate::aem::{AemConfig, AemNode, generate_aem_xml};
 
     let mut vars = std::collections::HashMap::new();
@@ -33338,9 +31511,15 @@ fn ubs_root_xml() -> String {
 
     let root = AemNode::Root {
         title: "Test Form".into(),
-        children: vec![],
+        children,
     };
     generate_aem_xml(&root, &config)
+}
+
+/// Render the real UBS root template around no children at all, for the
+/// assertions that only concern the scaffolding root.xml emits.
+fn ubs_root_xml() -> String {
+    ubs_xml(vec![])
 }
 
 /// The wizard toolbar's Submit and Back buttons must run the UBS navigation
@@ -33397,4 +31576,2400 @@ fn root_panel_starts_with_formmetadata_fragment_step() {
         "FormMetadata must be the first step. Got:\n{}",
         xml
     );
+}
+
+/// A conditional panel carries its visibility condition on Initialize as well as
+/// on Visibility (feedback registry PROBLEM-visible-on-init, UBS directive
+/// 2026-08-06). A Visibility rule only fires when a value it depends on
+/// *changes*, so on a freshly opened form — or one reloaded from a draft —
+/// nothing has run yet and the panel keeps whatever state the node was left in.
+/// The Initialize copy must assign the result (`this.visible = …`), because an
+/// Initialize rule's evaluated result is discarded.
+#[test]
+fn conditional_panel_visibility_also_runs_on_initialize() {
+    use crate::structured::InputValue;
+    use crate::{AemNode, AemOption, ConditionRule, OptionAlignment};
+    use uuid::Uuid;
+
+    let xml = ubs_xml(vec![
+        AemNode::RadioButton {
+            uuid: Uuid::nil(),
+            name: "RB_Adressat".into(),
+            label: "Choose".into(),
+            options: vec![AemOption {
+                label: "Three".into(),
+                value: "3".into(),
+            }],
+            alignment: OptionAlignment::Vertical,
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            field_id: None,
+            conditions: vec![ConditionRule {
+                target_panel_name: "PN_Cond".into(),
+                value: InputValue::Text("3".into()),
+                show: true,
+            }],
+            bind_ref: None,
+        },
+        AemNode::Panel {
+            uuid: Uuid::nil(),
+            name: "PN_Cond".into(),
+            title: String::new(),
+            children: vec![],
+            is_page: false,
+            dor_exclude: true,
+            visible: false,
+            is_conditional: true,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        },
+    ]);
+
+    assert!(
+        xml.contains("fd:init="),
+        "the conditional panel must carry an Initialize rule. Got:\n{}",
+        xml
+    );
+    assert!(
+        xml.contains("&quot;event&quot;:&quot;Initialize&quot;"),
+        "the copied rule must be registered on the Initialize event. Got:\n{}",
+        xml
+    );
+    // The result becomes an assignment; a bare `true;`/`false;` would be a no-op
+    // on Initialize.
+    assert!(
+        xml.contains("this.visible = true;") && xml.contains("this.visible = false;"),
+        "the Initialize copy must assign this.visible in both branches. Got:\n{}",
+        xml
+    );
+    // Everything else in the script is copied unchanged, so the DoR follows
+    // visibility at init exactly as it does on change.
+    assert_eq!(
+        xml.matches("window.forms.ubs.showAFShowDor(this);").count(),
+        2,
+        "both the Visibility and the Initialize rule must show the DoR. Got:\n{}",
+        xml
+    );
+    assert_eq!(
+        xml.matches("window.forms.ubs.hideAFHideDor(this);").count(),
+        2,
+        "both the Visibility and the Initialize rule must hide the DoR. Got:\n{}",
+        xml
+    );
+    // The Visibility rule itself is untouched.
+    assert!(
+        xml.contains("&quot;event&quot;:&quot;Visibility&quot;"),
+        "the Visibility rule must survive. Got:\n{}",
+        xml
+    );
+}
+
+/// The same invariant for the hand-written custom-element templates, which ship
+/// their rules as literal XML rather than rendering them: a component carrying a
+/// `fd:visible` rule must also carry a `fd:init` one. The two live on sibling
+/// `fd:rules`/`fd:scripts` children of the component, so the check is per
+/// component, not per file — `account_holder.xml` also has `fd:init` nodes that
+/// belong to components with no visibility rule at all.
+#[test]
+fn custom_templates_pair_every_visibility_rule_with_an_initialize_rule() {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    /// One component, and which kinds of rule it has been seen to carry.
+    struct Frame {
+        name: String,
+        has_visible: bool,
+        has_init: bool,
+    }
+
+    let dir = helpers::profiles_path("ubs/aem/custom");
+    let mut files = 0;
+    let mut components = 0;
+
+    for entry in std::fs::read_dir(&dir).expect("failed to read profiles/ubs/aem/custom/") {
+        let path = entry.expect("bad dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("xml") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("failed to read custom template");
+        let file = path.file_name().unwrap().to_string_lossy().to_string();
+
+        let mut reader = Reader::from_str(&src);
+        // The templates are FileVault fragments: prefixed names, no declarations.
+        reader.config_mut().check_end_names = false;
+        let mut stack: Vec<Frame> = Vec::new();
+
+        // A rule node describes its *parent* — the component it hangs on.
+        let note_rules = |stack: &mut Vec<Frame>, e: &quick_xml::events::BytesStart| {
+            let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+            if name != "fd:rules" && name != "fd:scripts" {
+                return;
+            }
+            if let Some(top) = stack.last_mut() {
+                top.has_visible |= e.try_get_attribute("fd:visible").ok().flatten().is_some();
+                top.has_init |= e.try_get_attribute("fd:init").ok().flatten().is_some();
+            }
+        };
+
+        loop {
+            match reader.read_event() {
+                // Only Start opens a component; Empty has no End to pop it.
+                Ok(Event::Start(ref e)) => {
+                    note_rules(&mut stack, e);
+                    stack.push(Frame {
+                        name: String::from_utf8_lossy(e.name().as_ref()).to_string(),
+                        has_visible: false,
+                        has_init: false,
+                    });
+                }
+                Ok(Event::Empty(ref e)) => note_rules(&mut stack, e),
+                Ok(Event::End(_)) => {
+                    if let Some(f) = stack.pop() {
+                        if f.has_visible {
+                            components += 1;
+                            assert!(
+                                f.has_init,
+                                "{file}: component <{}> has a fd:visible rule but no fd:init one, \
+                                 so its visibility never runs on a freshly loaded form \
+                                 (PROBLEM-visible-on-init)",
+                                f.name
+                            );
+                        }
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(e) => panic!("{file} is not well-formed: {e}"),
+            }
+        }
+        files += 1;
+    }
+
+    assert!(files > 0, "no custom templates found in {dir}");
+    assert_eq!(
+        components, 14,
+        "expected the 14 known visibility rules in the custom templates; a change in \
+         that count means a rule was added or removed and needs reviewing"
+    );
+}
+
+// ============================================================================
+// Redacto output tests
+// ============================================================================
+
+/// Build the components used by most Redacto tests.
+mod redacto_fixtures {
+    use crate::structured::{
+        FootnoteNode, GridLayout, GridLayoutElement, GroupNode, HeadingLevel, HeadingNode,
+        InlineNode, InlineText, LinkNode, ListItem, ListNode, ParagraphNode, StructuredNode,
+        TranslatedText,
+    };
+
+    pub fn heading(level: u8, text: &str) -> StructuredNode {
+        StructuredNode::Heading(HeadingNode {
+            level: HeadingLevel::from_u8(level),
+            content: TranslatedText::plain(text),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn paragraph(text: &str) -> StructuredNode {
+        StructuredNode::Paragraph(ParagraphNode {
+            content: TranslatedText::plain(text),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn paragraph_inline(nodes: Vec<InlineNode>) -> StructuredNode {
+        StructuredNode::Paragraph(ParagraphNode {
+            content: TranslatedText::single("default", InlineText(nodes)),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn link(href: &str, text: &str) -> InlineNode {
+        InlineNode::Link(LinkNode {
+            href: href.into(),
+            content: InlineText(vec![InlineNode::Text(text.into())]),
+        })
+    }
+
+    pub fn list(style: crate::document::ListStyleType, items: &[&str]) -> StructuredNode {
+        StructuredNode::List(ListNode {
+            list_style: style,
+            items: items
+                .iter()
+                .map(|t| ListItem {
+                    content: TranslatedText::plain(*t),
+                    sublist: None,
+                })
+                .collect(),
+        })
+    }
+
+    pub fn footnote(marker: &str, text: &str) -> StructuredNode {
+        StructuredNode::Footnote(FootnoteNode {
+            content: TranslatedText::plain(text),
+            marker: Some(marker.into()),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
+    pub fn group(children: Vec<StructuredNode>) -> StructuredNode {
+        StructuredNode::Group(GroupNode::new(children))
+    }
+
+    pub fn column_section(children: Vec<StructuredNode>) -> StructuredNode {
+        StructuredNode::Group(GroupNode::columns(children))
+    }
+
+    pub fn grid(columns: usize, elements: Vec<StructuredNode>) -> StructuredNode {
+        StructuredNode::GridLayout(GridLayout {
+            columns,
+            elements: elements
+                .into_iter()
+                .map(|node| GridLayoutElement { span: 1, node })
+                .collect(),
+        })
+    }
+}
+
+#[test]
+fn redacto_heading_levels_are_emitted_verbatim() {
+    use redacto_fixtures::heading;
+
+    let nodes: Vec<_> = (1..=6).map(|level| heading(level, "Title")).collect();
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    let contents = helpers::redacto_contents_for(&dump, "en");
+    assert_eq!(contents.len(), 6);
+    for (index, level) in (1..=6).enumerate() {
+        assert_eq!(contents[index], format!("<h{level}>Title</h{level}>"));
+    }
+    assert!(
+        dump.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        dump.warnings
+    );
+}
+
+#[test]
+fn redacto_inline_formatting_uses_quill_tags() {
+    use crate::structured::InlineNode;
+    use redacto_fixtures::{link, paragraph_inline};
+
+    let nodes = vec![paragraph_inline(vec![
+        InlineNode::Strong(Box::new(InlineNode::Text("bold".into()))),
+        InlineNode::Emphasis(Box::new(InlineNode::Text("italic".into()))),
+        InlineNode::Superscript(Box::new(InlineNode::Text("sup".into()))),
+        link("https://example.com", "here"),
+    ])];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    let content = &helpers::redacto_contents_for(&dump, "en")[0];
+    assert_eq!(
+        content,
+        "<p><strong>bold</strong><em>italic</em><sup>sup</sup>\
+         <a href=\"https://example.com\">here</a></p>"
+    );
+    assert!(
+        !content.contains("<b>") && !content.contains("<i>"),
+        "AEM tag vocabulary leaked into Redacto content: {content}"
+    );
+}
+
+#[test]
+fn redacto_empty_paragraph_becomes_spacer() {
+    use redacto_fixtures::paragraph;
+
+    let nodes = vec![paragraph("   ")];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(helpers::redacto_contents_for(&dump, "en"), ["<p><br></p>"]);
+}
+
+#[test]
+fn redacto_lists_use_ol_and_ul_without_inline_styles() {
+    use crate::document::ListStyleType;
+    use crate::structured::{ListItem, ListNode, StructuredNode, TranslatedText};
+    use redacto_fixtures::list;
+
+    let ordered = list(ListStyleType::Decimal, &["one", "two"]);
+    let unordered = list(ListStyleType::Dash, &["a"]);
+    let nested = StructuredNode::List(ListNode {
+        list_style: ListStyleType::Disc,
+        items: vec![ListItem {
+            content: TranslatedText::plain("outer"),
+            sublist: Some(Box::new(ListNode {
+                list_style: ListStyleType::Decimal,
+                items: vec![ListItem {
+                    content: TranslatedText::plain("inner"),
+                    sublist: None,
+                }],
+            })),
+        }],
+    });
+
+    let dump = crate::generate_redacto_dump(
+        &[ordered, unordered, nested],
+        &helpers::test_redacto_config(&["en"]),
+    );
+    let contents = helpers::redacto_contents_for(&dump, "en");
+
+    assert_eq!(contents[0], "<ol><li>one</li><li>two</li></ol>");
+    assert_eq!(contents[1], "<ul><li>a</li></ul>");
+    assert_eq!(
+        contents[2], "<ul><li>outer<ol><li>inner</li></ol></li></ul>",
+        "a sublist belongs inside its parent <li>"
+    );
+    for content in &contents {
+        assert!(
+            !content.contains("list-style-type"),
+            "Quill lists carry no inline style: {content}"
+        );
+    }
+}
+
+#[test]
+fn redacto_footnotes_are_linked_and_collected_into_a_panel() {
+    use crate::structured::InlineNode;
+    use redacto_fixtures::{footnote, paragraph_inline};
+
+    let body = paragraph_inline(vec![
+        InlineNode::Text("Every client".into()),
+        InlineNode::Superscript(Box::new(InlineNode::Text("1".into()))),
+        InlineNode::Text(" is affected.".into()),
+    ]);
+    let nodes = vec![
+        body,
+        footnote(
+            "1",
+            "1 All personal designations apply equally to all genders.",
+        ),
+    ];
+
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let contents = helpers::redacto_contents_for(&dump, "en");
+
+    assert_eq!(
+        contents[0],
+        "<p>Every client<sup><a href=\"#footnote-1\">1</a></sup> is affected.</p>"
+    );
+    assert_eq!(
+        contents[1],
+        "<p id=\"footnote-1\"><sup>1</sup> All personal designations apply equally to all genders.</p>",
+        "the leading marker must be stripped from the body before re-adding it"
+    );
+
+    let cfg = helpers::redacto_configuration(&dump);
+    assert_eq!(
+        helpers::flatten_redacto_components(cfg),
+        [
+            "assetContainer(1)".to_string(),
+            "styledPanel(footnote)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+        "footnote assets belong in a trailing footnote panel"
+    );
+}
+
+#[test]
+fn redacto_grid_layout_becomes_a_styled_panel() {
+    use redacto_fixtures::{grid, paragraph};
+
+    let nodes = vec![grid(2, vec![paragraph("left"), paragraph("right")])];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let cfg = helpers::redacto_configuration(&dump);
+
+    assert_eq!(
+        helpers::flatten_redacto_components(cfg),
+        [
+            "styledPanel(layout-split-block)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+        "each grid element becomes its own container inside the panel"
+    );
+    assert!(dump.warnings.is_empty(), "{:?}", dump.warnings);
+}
+
+#[test]
+fn redacto_grid_layout_with_unsupported_column_count_warns() {
+    use redacto_fixtures::{grid, paragraph};
+
+    let nodes = vec![grid(
+        3,
+        vec![paragraph("a"), paragraph("b"), paragraph("c")],
+    )];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(dump.warnings.len(), 1, "{:?}", dump.warnings);
+    assert!(
+        dump.warnings[0].contains("3 columns"),
+        "{:?}",
+        dump.warnings
+    );
+}
+
+#[test]
+fn redacto_group_is_flattened_into_the_surrounding_container() {
+    use redacto_fixtures::{group, paragraph};
+
+    let nodes = vec![group(vec![
+        paragraph("one"),
+        paragraph("two"),
+        paragraph("three"),
+    ])];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let cfg = helpers::redacto_configuration(&dump);
+
+    assert_eq!(
+        helpers::flatten_redacto_components(cfg),
+        ["assetContainer(3)".to_string()],
+        "a group must not introduce a panel"
+    );
+    assert_eq!(dump.assets.len(), 3);
+}
+
+#[test]
+fn redacto_consecutive_blocks_share_one_asset_container() {
+    use redacto_fixtures::{grid, heading, paragraph};
+
+    let nodes = vec![
+        heading(1, "Title"),
+        paragraph("one"),
+        grid(2, vec![paragraph("left"), paragraph("right")]),
+        paragraph("after"),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            "assetContainer(2)".to_string(),
+            "styledPanel(layout-split-block)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+            "assetContainer(1)".to_string(),
+        ],
+        "a panel closes the open run; the following blocks start a new one"
+    );
+}
+
+#[test]
+fn redacto_column_flow_group_becomes_a_layout_split_panel() {
+    use redacto_fixtures::{column_section, heading, paragraph};
+
+    let nodes = vec![
+        heading(1, "Title"),
+        column_section(vec![
+            heading(2, "Background"),
+            paragraph("a"),
+            paragraph("b"),
+        ]),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        [
+            // The full-width title stays outside the columns.
+            "assetContainer(1)".to_string(),
+            "styledPanel(layout-split)".to_string(),
+            // One ordered run inside the panel: the CSS balances it across
+            // the two columns rather than us pinning content to a side.
+            "assetContainer(3)".to_string(),
+        ],
+    );
+    assert!(dump.warnings.is_empty(), "{:?}", dump.warnings);
+}
+
+#[test]
+fn redacto_plain_group_does_not_become_a_panel() {
+    use redacto_fixtures::{group, paragraph};
+
+    let dump = crate::generate_redacto_dump(
+        &[group(vec![paragraph("a"), paragraph("b")])],
+        &helpers::test_redacto_config(&["en"]),
+    );
+
+    assert_eq!(
+        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        ["assetContainer(2)".to_string()],
+        "only a column flow may introduce a layout panel"
+    );
+}
+
+#[test]
+fn column_section_groups_are_flagged_as_column_flow() {
+    // The two-column body of AAEV must survive conversion as a column flow,
+    // otherwise the Redacto export silently collapses it to a single column.
+    let content = crate::run_exhaustive_to_merged(helpers::input_path("AAEV_019_EN.pdf"))
+        .expect("convert AAEV_019_EN.pdf");
+
+    let mut column_groups = 0;
+    helpers::walk_structured_nodes(&content, &mut |node| {
+        if let crate::structured::StructuredNode::Group(g) = node
+            && g.column_flow
+        {
+            column_groups += 1;
+        }
+    });
+
+    assert!(
+        column_groups > 0,
+        "the two-column body should be flagged as a column flow"
+    );
+}
+
+#[test]
+fn redacto_field_is_skipped_with_a_warning() {
+    use crate::structured::{FieldId, FieldNode, FieldType, StructuredNode, TranslatedText};
+    use redacto_fixtures::paragraph;
+
+    let nodes = vec![
+        paragraph("text"),
+        StructuredNode::Field(FieldNode {
+            name: FieldId::random(),
+            som_path: None,
+            label: Some(TranslatedText::plain("Last name")),
+            input_type: FieldType::Text {
+                regex: None,
+                max_length: None,
+                min_length: None,
+            },
+            value: None,
+            placeholder: None,
+            required: false,
+        }),
+    ];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+
+    assert_eq!(dump.assets.len(), 1, "the field must not produce an asset");
+    assert_eq!(dump.warnings.len(), 1, "{:?}", dump.warnings);
+    assert!(
+        dump.warnings[0].contains("Last name") && dump.warnings[0].contains("text-only"),
+        "{:?}",
+        dump.warnings
+    );
+}
+
+#[test]
+fn redacto_row_counts_and_foreign_keys_are_consistent() {
+    use redacto_fixtures::{heading, paragraph};
+
+    let nodes = vec![heading(1, "Title"), paragraph("one"), paragraph("two")];
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["de", "en"]));
+
+    assert_eq!(dump.assets.len(), 3);
+    assert_eq!(dump.asset_versions.len(), 6, "3 assets x 2 languages");
+    assert_eq!(dump.documents.len(), 1);
+    assert_eq!(dump.document_versions.len(), 2);
+    assert_eq!(
+        dump.ownerships.len(),
+        4,
+        "1 document owner + 3 asset origins"
+    );
+    assert_eq!(dump.relations.len(), 3);
+
+    let asset_pks: std::collections::HashSet<&str> =
+        dump.assets.iter().map(|a| a.id.as_str()).collect();
+    for version in &dump.asset_versions {
+        assert!(
+            asset_pks.contains(version.asset_fk_id.as_str()),
+            "asset_version references an unknown asset"
+        );
+        assert_eq!(version.version, crate::INITIAL_VERSION);
+    }
+    for version in &dump.document_versions {
+        assert_eq!(version.document_fk_id, dump.documents[0].id);
+    }
+
+    // Every asset is referenced exactly once, by its `-ver-1` business id.
+    let expected: Vec<String> = dump
+        .assets
+        .iter()
+        .map(|a| crate::asset_ref(&a.asset_id, crate::INITIAL_VERSION))
+        .collect();
+    let referenced = helpers::redacto_referenced_assets(helpers::redacto_configuration(&dump));
+    assert_eq!(referenced, expected);
+    assert_eq!(
+        dump.relations
+            .iter()
+            .map(|r| r.object_id.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    // Technical primary keys are never leaked as business identifiers.
+    for asset in &dump.assets {
+        assert_ne!(asset.id, asset.asset_id);
+    }
+}
+
+#[test]
+fn redacto_empty_language_list_falls_back_to_the_master_language() {
+    use redacto_fixtures::paragraph;
+
+    let mut config = helpers::test_redacto_config(&["de"]);
+    config.languages.clear();
+
+    let dump = crate::generate_redacto_dump(&[paragraph("text")], &config);
+
+    assert_eq!(dump.assets.len(), 1);
+    assert_eq!(
+        dump.asset_versions.len(),
+        1,
+        "an asset without any version could never be resolved by Redacto"
+    );
+    assert_eq!(dump.asset_versions[0].language, "de");
+    assert_eq!(dump.document_versions.len(), 1);
+    assert_eq!(dump.document_versions[0].language, "de");
+}
+
+#[test]
+fn redacto_document_owner_ownership_is_present_exactly_once() {
+    use crate::redacto::{ObjectType, OwnerType, OwnershipType};
+    use redacto_fixtures::paragraph;
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[paragraph("text")], &config);
+
+    let owner_rows: Vec<_> = dump
+        .ownerships
+        .iter()
+        .filter(|o| o.owner_type == OwnerType::User)
+        .collect();
+    assert_eq!(owner_rows.len(), 1, "the document owner row is mandatory");
+    assert_eq!(dump.ownerships[0].owner_id, config.owner_id);
+    assert_eq!(dump.ownerships[0].ownership_type, OwnershipType::Owner);
+    assert_eq!(dump.ownerships[0].object_id, config.document_id);
+    assert_eq!(dump.ownerships[0].object_type, ObjectType::Document);
+
+    assert_eq!(dump.ownerships[1].owner_type, OwnerType::Document);
+    assert_eq!(dump.ownerships[1].ownership_type, OwnershipType::Origin);
+    assert_eq!(dump.ownerships[1].object_type, ObjectType::Text);
+}
+
+#[test]
+fn redacto_configuration_json_round_trips() {
+    use redacto_fixtures::{grid, paragraph};
+
+    let dump = crate::generate_redacto_dump(
+        &[
+            paragraph("text"),
+            grid(2, vec![paragraph("l"), paragraph("r")]),
+        ],
+        &helpers::test_redacto_config(&["en"]),
+    );
+    let cfg = helpers::redacto_configuration(&dump);
+
+    let json = serde_json::to_string(cfg).expect("serialize configuration");
+    assert!(
+        json.contains("\"$schema\":\"redacto-document/v1\""),
+        "{json}"
+    );
+    assert!(json.contains("\"type\":\"assetContainer\""), "{json}");
+    assert!(json.contains("\"type\":\"styledPanel\""), "{json}");
+
+    let parsed: crate::RedactoConfiguration =
+        serde_json::from_str(&json).expect("deserialize configuration");
+    assert_eq!(&parsed, cfg);
+}
+
+#[test]
+fn redacto_sql_string_escaping() {
+    use crate::redacto::sql_string;
+
+    assert_eq!(sql_string("plain"), "'plain'");
+    assert_eq!(sql_string("O'Brien"), "'O''Brien'");
+    assert_eq!(sql_string("a\tb"), "e'a\\tb'");
+    assert_eq!(sql_string("a\nb"), "e'a\\nb'");
+    assert_eq!(sql_string("back\\slash"), "e'back\\\\slash'");
+    assert_eq!(
+        sql_string("it's\ttabbed"),
+        "e'it''s\\ttabbed'",
+        "quote doubling still applies inside an escape-string literal"
+    );
+}
+
+#[test]
+fn redacto_sql_emits_tables_in_dependency_order() {
+    use redacto_fixtures::{footnote, paragraph};
+
+    let dump = crate::generate_redacto_dump(
+        &[paragraph("text"), footnote("1", "1 note")],
+        &helpers::test_redacto_config(&["de", "en"]),
+    );
+    let sql = dump.to_sql();
+
+    let position = |table: &str| {
+        sql.find(&format!("INSERT INTO app_redacto.{table} "))
+            .unwrap_or_else(|| panic!("no INSERT for {table}:\n{sql}"))
+    };
+    let order = [
+        position("assets"),
+        position("asset_version"),
+        position("documents"),
+        position("document_version"),
+        position("ownerships"),
+        position("relations"),
+    ];
+    assert!(
+        order.windows(2).all(|w| w[0] < w[1]),
+        "tables must be inserted in foreign-key order: {order:?}"
+    );
+
+    assert_eq!(
+        sql.matches("INSERT INTO ").count(),
+        dump.row_count(),
+        "every row must produce exactly one statement"
+    );
+    assert!(sql.starts_with("-- Generated by"));
+    assert!(sql.contains("BEGIN;") && sql.trim_end().ends_with("COMMIT;"));
+}
+
+#[test]
+fn redacto_ubs_profile_resolves_document_identity() {
+    let variables = std::collections::HashMap::from([
+        ("formrange_code".to_string(), "AAAD".to_string()),
+        ("formrange_entity".to_string(), "001".to_string()),
+    ]);
+    let ctx = crate::Context::new("en".into(), variables);
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.document_id, "aaad_001");
+    assert_eq!(config.title, "AAAD_001");
+    assert_eq!(
+        config.form_path,
+        "/content/forms/af/redacto-documents/aaad_001"
+    );
+    assert_eq!(config.style, "ubs-default.css");
+    assert_eq!(config.owner_id, "admin");
+    assert_eq!(config.status, crate::RedactoStatus::Draft);
+    assert_eq!(config.grid_panel_style, "layout-split-block");
+    assert_eq!(config.footnote_panel_style, "footnote");
+    assert_eq!(config.column_panel_style, "layout-split");
+}
+
+#[test]
+fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
+    // The footer is page furniture, not a text asset: it is assembled from the
+    // XFA `Footer_Line_*` variables into `document.footer`, which the Redacto
+    // stylesheet renders in the bottom-left margin box.
+    let variables = std::collections::HashMap::from([
+        ("formrange_code".to_string(), "AAEV".to_string()),
+        ("formrange_entity".to_string(), "019".to_string()),
+        ("Footer_Line_txtformid".to_string(), "66300".to_string()),
+        ("Footer_Line_txtlanguage".to_string(), "EN".to_string()),
+        ("Footer_Line_txtvversion".to_string(), "V0".to_string()),
+        ("Footer_Line_MANCode".to_string(), "019".to_string()),
+        (
+            "Footer_Line_txtversiondate".to_string(),
+            "31.10.2019".to_string(),
+        ),
+        ("Footer_Line_txtjversion".to_string(), "N1".to_string()),
+    ]);
+    let ctx = crate::Context::new("en".into(), variables);
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(
+        config.footer,
+        "66300    EN    V0    019    AAEV    31.10.2019    N1"
+    );
+}
+
+#[test]
+fn redacto_ubs_profile_footer_is_resilient_to_missing_variables() {
+    // A document without the footer variables must still resolve (the fields
+    // default to empty) rather than fail the whole conversion.
+    let variables = std::collections::HashMap::from([
+        ("formrange_code".to_string(), "AAEV".to_string()),
+        ("formrange_entity".to_string(), "019".to_string()),
+    ]);
+    let ctx = crate::Context::new("en".into(), variables);
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    // Only the always-present form code survives; the rest collapse to blanks.
+    assert!(
+        config.footer.contains("AAEV"),
+        "footer: {:?}",
+        config.footer
+    );
+}
+
+#[test]
+fn redacto_ubs_profile_reads_header_from_recovered_page_header() {
+    // The master-page header text is not an XFA variable; the analysis recovers
+    // it onto the context, and the profile surfaces it via `page.header`.
+    let mut ctx = crate::Context::new(
+        "en".into(),
+        std::collections::HashMap::from([
+            ("formrange_code".to_string(), "AAEV".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]),
+    );
+    ctx.header = Some("UBS Europe SE".into());
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.header, "UBS Europe SE");
+}
+
+#[test]
+fn redacto_header_recovered_from_master_page_is_empty_when_absent() {
+    // No recovered header (a plain text PDF) leaves the header blank rather
+    // than failing to resolve the profile.
+    let ctx = crate::Context::new(
+        "en".into(),
+        std::collections::HashMap::from([
+            ("formrange_code".to_string(), "AAEV".to_string()),
+            ("formrange_entity".to_string(), "019".to_string()),
+        ]),
+    );
+
+    let config = helpers::load_ubs_redacto_config(&ctx);
+
+    assert_eq!(config.header, "");
+}
+
+#[test]
+fn header_text_is_recovered_from_the_master_page() {
+    // The top-of-page legal-entity draw is dropped from the structured content
+    // (it is a Header group) but must survive on the context so the Redacto
+    // header box can reinstate it.
+    let envelope = crate::run_exhaustive_to_envelope(helpers::input_path("AAEV_019_EN.pdf"), "en")
+        .expect("convert AAEV_019_EN.pdf");
+
+    // Both header lines are recovered, de-duplicated (the entity is drawn once
+    // per page master) and stacked in reading order.
+    assert_eq!(
+        envelope.context.header.as_deref(),
+        Some("Gültig ab 02.01.2018\nUBS Europe SE")
+    );
+}
+
+#[test]
+fn redacto_text_only_pdf_produces_assets() {
+    let dump = helpers::build_redacto_test_dump(
+        &[("form_ev_da-1-druck_de.pdf", "de")],
+        &helpers::test_redacto_config(&["de"]),
+    );
+
+    assert!(
+        dump.assets.len() > 5,
+        "expected a text-heavy document, got {} assets",
+        dump.assets.len()
+    );
+    assert_eq!(dump.documents.len(), 1);
+    assert_eq!(
+        dump.asset_versions.len(),
+        dump.assets.len() * dump.document_versions.len(),
+        "every asset needs one version per document language"
+    );
+    assert_eq!(dump.relations.len(), dump.assets.len());
+    assert_eq!(dump.ownerships.len(), dump.assets.len() + 1);
+
+    let referenced = helpers::redacto_referenced_assets(helpers::redacto_configuration(&dump));
+    assert_eq!(
+        referenced.len(),
+        dump.assets.len(),
+        "the configuration must reference every generated asset"
+    );
+
+    let sql = dump.to_sql();
+    assert_eq!(sql.matches("INSERT INTO ").count(), dump.row_count());
+}
+
+// ============================================================================
+// Redacto dump validation
+//
+// Regression cover for the AAAR_019 failure: a run whose cross-language merge
+// collapsed produced a dump with a `documents` row and nothing else. That dump
+// is valid SQL and imports cleanly, so nothing downstream recognised it as a
+// failure and it reached the download button looking like a result.
+// ============================================================================
+
+#[test]
+fn redacto_validate_rejects_a_dump_with_no_content() {
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[], &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(!report.is_ok(), "an empty dump must not validate");
+    assert!(
+        report.problems.iter().any(|p| p.contains("no text assets")),
+        "the problem must name the empty document: {:?}",
+        report.problems
+    );
+    assert_eq!(report.counts.assets, 0);
+}
+
+#[test]
+fn redacto_validate_rejects_field_only_content() {
+    use crate::structured::{FieldNode, FieldType, StructuredNode, TranslatedText};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let nodes = vec![StructuredNode::Field(FieldNode {
+        name: "first_name".into(),
+        som_path: None,
+        label: Some(TranslatedText::plain("First name")),
+        input_type: FieldType::Text {
+            regex: None,
+            max_length: None,
+            min_length: None,
+        },
+        value: None,
+        placeholder: None,
+        required: false,
+    })];
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(
+        !report.is_ok(),
+        "a document of nothing but input fields produces no assets and must not validate"
+    );
+    assert!(
+        report.warnings.iter().any(|w| w.contains("skipped")),
+        "the skipped field must be carried over as a warning: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn redacto_validate_accepts_a_document_with_content() {
+    use redacto_fixtures::{heading, paragraph};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[heading(2, "Title"), paragraph("Body")], &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(report.is_ok(), "unexpected problems: {:?}", report.problems);
+    assert_eq!(report.counts.assets, 2);
+    assert_eq!(report.counts.asset_versions, 2);
+    assert_eq!(report.counts.rows, dump.row_count());
+}
+
+/// A variant in a language the configuration does not list is unreachable in
+/// Redacto. This is the shape content takes when it lost its per-language
+/// keying upstream and collapsed onto the `default` pseudo-language while the
+/// document is genuinely multilingual.
+#[test]
+fn redacto_validate_rejects_a_variant_in_an_unconfigured_language() {
+    use redacto_fixtures::paragraph;
+
+    let config = helpers::test_redacto_config(&["de", "en"]);
+    let mut dump = crate::generate_redacto_dump(&[paragraph("Body")], &config);
+    dump.asset_versions[0].language = "default".into();
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("unconfigured language 'default'")),
+        "an unreachable variant must be reported: {:?}",
+        report.problems
+    );
+}
+
+/// The Redacto model is one `asset_version` per asset per language. A merge or
+/// conversion step that collapses the languages shows up here first.
+#[test]
+fn redacto_multilingual_content_emits_one_asset_version_per_language() {
+    use crate::structured::{ParagraphNode, StructuredNode, TranslatedText};
+
+    let content = TranslatedText::new(
+        [("de", "Hallo"), ("en", "Hello"), ("sp", "Hola")]
+            .into_iter()
+            .map(|(lang, text)| (lang.to_string(), crate::structured::InlineText::plain(text)))
+            .collect(),
+    );
+    let nodes = vec![StructuredNode::Paragraph(ParagraphNode {
+        content,
+        som_path: None,
+        source_name: None,
+    })];
+
+    let config = helpers::test_redacto_config(&["de", "en", "sp"]);
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+
+    assert_eq!(dump.assets.len(), 1);
+    assert_eq!(
+        dump.asset_versions.len(),
+        3,
+        "one variant per language, got {:?}",
+        dump.asset_versions
+            .iter()
+            .map(|v| &v.language)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        helpers::redacto_contents_for(&dump, "de")[0],
+        "<p>Hallo</p>"
+    );
+    assert_eq!(
+        helpers::redacto_contents_for(&dump, "en")[0],
+        "<p>Hello</p>"
+    );
+    assert_eq!(helpers::redacto_contents_for(&dump, "sp")[0], "<p>Hola</p>");
+    assert!(crate::validate_dump(&dump, &config).is_ok());
+}
+
+// ============================================================================
+// Redacto fidelity review
+// ============================================================================
+
+#[test]
+fn review_redacto_reports_text_missing_from_the_dump() {
+    use redacto_fixtures::paragraph;
+
+    let input = vec![
+        paragraph("Kept in the document"),
+        paragraph("Dropped on the way out"),
+    ];
+    // The dump is built from only the first paragraph, so the second is missing
+    // from the artefact even though the input carries it.
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&input[..1], &config);
+
+    let report = crate::review_redacto(&input, &dump, "en");
+
+    assert!(report.coverage < 1.0, "coverage: {}", report.coverage);
+    assert_eq!(report.missing_text, vec!["Dropped on the way out"]);
+    assert!(report.naming_violations.is_empty());
+}
+
+#[test]
+fn review_redacto_reports_full_coverage_for_a_faithful_dump() {
+    use redacto_fixtures::{heading, list, paragraph};
+
+    let input = vec![
+        heading(2, "Section"),
+        paragraph("Body text"),
+        list(crate::document::ListStyleType::Disc, &["One", "Two"]),
+    ];
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&input, &config);
+
+    let report = crate::review_redacto(&input, &dump, "en");
+
+    assert_eq!(report.coverage, 1.0, "missing: {:?}", report.missing_text);
+    assert!(report.missing_text.is_empty());
+    assert_eq!(report.output_field_count, 0);
+}
+
+/// The review must describe the artefact that ships. An empty dump reviewed
+/// against a non-empty input is the AAAR shape, and it must not read as clean.
+#[test]
+fn review_redacto_does_not_pass_an_empty_dump() {
+    use redacto_fixtures::paragraph;
+
+    let input = vec![paragraph("Body text")];
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(&[], &config);
+
+    let report = crate::review_redacto(&input, &dump, "en");
+
+    assert_eq!(report.coverage, 0.0);
+    assert!(
+        report.notes.iter().any(|n| n.contains("no text assets")),
+        "notes must say the dump is empty: {:?}",
+        report.notes
+    );
+}
+
+// ============================================================================
+// Output targets
+// ============================================================================
+
+#[test]
+fn ubs_profile_supports_both_output_targets() {
+    use crate::OutputTarget;
+
+    assert_eq!(
+        crate::profiles::profile_targets("ubs"),
+        vec![OutputTarget::Aem, OutputTarget::Redacto],
+    );
+    assert!(crate::profiles::profile_targets("no-such-profile").is_empty());
+}
+
+/// Row counts cannot show a lost layout: a document whose multi-column sections
+/// were flattened has exactly the same assets and variants as one that kept
+/// them. Only the component counts differ, which is why they are reported.
+#[test]
+fn redacto_validation_counts_expose_a_flattened_layout() {
+    use redacto_fixtures::{column_section, paragraph};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let with_columns = crate::generate_redacto_dump(
+        &[column_section(vec![paragraph("Left"), paragraph("Right")])],
+        &config,
+    );
+    let flattened = crate::generate_redacto_dump(&[paragraph("Left"), paragraph("Right")], &config);
+
+    let kept = crate::validate_dump(&with_columns, &config).counts;
+    let lost = crate::validate_dump(&flattened, &config).counts;
+
+    assert_eq!(
+        kept.assets, lost.assets,
+        "the flattening is invisible in the row counts — that is the point"
+    );
+    assert_eq!(kept.asset_versions, lost.asset_versions);
+
+    assert_eq!(kept.styled_panels.get("layout-split"), Some(&1));
+    assert!(
+        lost.styled_panels.is_empty(),
+        "a flattened document has no panels: {:?}",
+        lost.styled_panels
+    );
+}
+
+/// The footnote panel is the other structure worth watching for.
+#[test]
+fn redacto_validation_counts_report_the_footnote_panel() {
+    use redacto_fixtures::{footnote, paragraph};
+
+    let config = helpers::test_redacto_config(&["en"]);
+    let dump = crate::generate_redacto_dump(
+        &[paragraph("Body<sup>1</sup>"), footnote("1", "A note")],
+        &config,
+    );
+
+    let counts = crate::validate_dump(&dump, &config).counts;
+
+    assert_eq!(counts.styled_panels.get("footnote"), Some(&1));
+    assert!(counts.asset_containers >= 1);
+}
+
+// ============================================================================
+// AEM → XSD fixture tests
+// ============================================================================
+
+/// Tests driven by the UBS `af-xsd-automation` reference fixtures under
+/// `core/fixtures/aem_xsd/`. See that directory's README for provenance and for
+/// which parts of the reference are derivable versus config-supplied.
+mod aem_xsd_fixtures {
+    use super::helpers;
+
+    /// The AEM → XSD walk needs each fragment panel's `fragRef` to pick the
+    /// right global element or complex type.
+    ///
+    /// `convert_fragment` inlines every fragment it can resolve — from the ZIP
+    /// or from `profiles/ubs/aem/fragments/` — into a plain `Panel`, so the
+    /// panel has to carry `frag_ref` for the reference to be reproducible at
+    /// all: four of AF_ABFA's fourteen XSD elements come from such fragments.
+    #[test]
+    fn parsed_abfa_retains_every_fragment_ref() {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let found = helpers::collect_frag_refs(&root);
+
+        // The three fragments that become top-level XSD elements. The form also
+        // nests `affrg_global_AccountHolder1` inside the ContractualPartnerGeneric
+        // panel, but resolving that panel replaces its children with the
+        // fragment library's own content — and the nested fragment is
+        // fragment-internal, so it never reaches the form schema anyway.
+        for expected in [
+            "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
+            "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_ContractualPartnerGeneric1",
+            "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1",
+        ] {
+            assert!(
+                found.iter().any(|f| f == expected),
+                "fragRef {expected} was lost during parse.\nFound: {found:#?}"
+            );
+        }
+
+        // Two panels share affrg_SignatureGeneric1; both must survive, because
+        // only their titles tell the client signature from the authorized
+        // representative's.
+        let signature_refs = found
+            .iter()
+            .filter(|f| f.ends_with("affrg_SignatureGeneric1"))
+            .count();
+        assert_eq!(
+            signature_refs, 2,
+            "expected both SignatureGeneric fragments, found {signature_refs}"
+        );
+    }
+
+    /// AF_ABFA's two repeating panels use `maxOccur="-1"` (unbounded). They must
+    /// survive as `Repeatable`, because they are what produce the
+    /// `EmailAddressInstruction` and `DomainInstruction` elements with
+    /// `maxOccurs="50"` — a plain `Panel` would emit no grouping element at all.
+    #[test]
+    fn parsed_abfa_recognises_unbounded_repeat_panels() {
+        use crate::aem::AemNode;
+
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let mut repeats = Vec::new();
+        helpers::walk_aem_nodes(&root, &mut |node| {
+            if let AemNode::Repeatable {
+                name,
+                title,
+                max_occur,
+                ..
+            } = node
+            {
+                repeats.push((name.clone(), title.clone(), *max_occur));
+            }
+        });
+
+        for expected in ["PN_RepeatEmailAddress", "PN_RepeatDomain"] {
+            let found = repeats.iter().find(|(n, _, _)| n == expected);
+            let (_, _, max_occur) = found.unwrap_or_else(|| {
+                panic!("{expected} was not parsed as a Repeatable.\nFound: {repeats:#?}")
+            });
+            assert_eq!(
+                *max_occur,
+                AemNode::UNBOUNDED_OCCUR,
+                "{expected} has maxOccur=\"-1\" and must round-trip as unbounded"
+            );
+        }
+    }
+
+    /// Compare a generated schema with the UBS reference **structurally**: the
+    /// element tree, names, `ref` versus `name`/`type`, occurrence attributes
+    /// and the ordered include list. Our formatting (2-space indent, no XMLSpy
+    /// header comment) deliberately differs from theirs, so a byte comparison
+    /// would test the wrong thing.
+    fn xsd_shape(xsd: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut depth = 0usize;
+        for raw in xsd.lines() {
+            let line = raw.trim();
+            if line.starts_with("<xs:include") {
+                let loc = attr(line, "schemaLocation").unwrap_or_default();
+                out.push(format!("include {loc}"));
+            } else if line.starts_with("<xs:element") {
+                let mut parts = vec![format!("{}element", "  ".repeat(depth))];
+                for key in ["name", "ref", "type", "minOccurs", "maxOccurs"] {
+                    if let Some(v) = attr(line, key) {
+                        parts.push(format!("{key}={v}"));
+                    }
+                }
+                out.push(parts.join(" "));
+                if !line.ends_with("/>") {
+                    depth += 1;
+                }
+            } else if line.starts_with("</xs:element") {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        out
+    }
+
+    fn attr(line: &str, key: &str) -> Option<String> {
+        let needle = format!("{key}=\"");
+        let start = line.find(&needle)? + needle.len();
+        let rest = &line[start..];
+        let end = rest.find('"')?;
+        Some(rest[..end].to_string())
+    }
+
+    /// The two downloads must differ in exactly one way: bindRefs and the bundled
+    /// schema. Without binding the package must carry neither, and its DAM
+    /// metadata must not advertise a schema it does not contain.
+    #[test]
+    fn binding_to_the_schema_is_opt_in_per_package() {
+        use crate::aem::{AemConfig, convert_to_aem};
+
+        let (content, _, base) = helpers::build_aem_test_output_bound(&[("AAAI_019_EN.pdf", "en")]);
+
+        let build = |bind: bool| -> (String, String, bool) {
+            let mut config: AemConfig = base.clone();
+            config.bind_to_xsd = bind;
+            config.xsd_path = Some(format!(
+                "/content/dam/formsanddocuments/afforms_xsd/AFForms/AF_{}.xsd",
+                config.form_code
+            ));
+            let root = convert_to_aem(&content, &config);
+            let pkg = crate::aem::generate_aem_package(&root, &config, &content);
+
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(pkg)).expect("valid zip");
+            let mut form = String::new();
+            let mut dam = String::new();
+            let mut has_xsd = false;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).expect("zip entry");
+                let name = file.name().to_string();
+                if name.ends_with(".xsd") {
+                    has_xsd = true;
+                    continue;
+                }
+                if !name.ends_with(".content.xml") {
+                    continue;
+                }
+                let mut body = String::new();
+                use std::io::Read;
+                if file.read_to_string(&mut body).is_err() {
+                    continue;
+                }
+                if name.contains("content/forms/af/") {
+                    form = body;
+                } else if name.contains("content/dam/formsanddocuments")
+                    && body.contains("dam:Asset")
+                {
+                    dam = body;
+                }
+            }
+            (form, dam, has_xsd)
+        };
+
+        let (plain_form, plain_dam, plain_has_xsd) = build(false);
+        let (bound_form, bound_dam, bound_has_xsd) = build(true);
+
+        // The plain package still carries a bindRef on each *fragment* — that is
+        // the fragment's own data binding, not a schema binding, and stripping it
+        // would break the fragment. What it must not have is a bindRef on every
+        // field, which is what binding to the schema adds.
+        let plain_refs = plain_form.matches("bindRef=").count();
+        let bound_refs = bound_form.matches("bindRef=").count();
+        assert!(
+            bound_refs > plain_refs,
+            "binding should add bindRefs beyond the fragments': plain {plain_refs}, bound {bound_refs}"
+        );
+        assert!(!plain_has_xsd, "the plain package must bundle no schema");
+        assert!(
+            !plain_dam.contains("xsdRef="),
+            "the plain package must not advertise a schema:\n{plain_dam}"
+        );
+
+        assert!(
+            bound_form.contains("bindRef="),
+            "the bound package must carry bindRefs"
+        );
+        assert!(bound_has_xsd, "the bound package must bundle the schema");
+        assert!(
+            bound_dam.contains("xsdRef="),
+            "the bound package must advertise the schema:\n{bound_dam}"
+        );
+    }
+
+    /// AF_BBEO is an *old-model* form: its fragments live in
+    /// `afforms_ch_fragmentlib`, and its reference is the output of UBS's own
+    /// tool rather than a hand-curated schema. We reproduce its element names,
+    /// types and includes exactly.
+    ///
+    /// Two differences are artefacts of that reference and are normalised away:
+    /// it predates `minOccurs="0"` (the curated AF_ABFA reference has it), and it
+    /// was generated with an empty form code so its root is a bare `UBSAF`.
+    #[test]
+    fn bbeo_matches_the_ubs_tool_modulo_known_artefacts() {
+        let root = helpers::parse_fixture_form("AF_BBEO");
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("BBEO".to_string());
+        let fragments = helpers::load_ubs_fragments();
+
+        let normalise = |xsd: &str| -> Vec<String> {
+            xsd_shape(xsd)
+                .into_iter()
+                .map(|line| {
+                    line.replace(" minOccurs=0", "")
+                        .replace("name=UBSAF_BBEO", "name=UBSAF")
+                })
+                .collect()
+        };
+
+        let ours = normalise(&crate::xsd::generate_xsd_string_from_aem(
+            &root, &config, &fragments,
+        ));
+        let theirs = normalise(&helpers::read_fixture(
+            "aem_xsd/AF_BBEO/reference.schema.xsd",
+        ));
+
+        assert_eq!(
+            ours, theirs,
+            "our AF_BBEO schema no longer matches UBS's.\nours:   {ours:#?}\ntheirs: {theirs:#?}"
+        );
+    }
+
+    /// Diff our schema against every UBS fixture that has a source/reference
+    /// pair, so the gap to their tool is measured rather than assumed.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn diff_every_ubs_fixture() {
+        for code in ["AF_ABFA", "AF_BBRR", "AF_ABSD", "AF_BBEO"] {
+            let root = helpers::parse_fixture_form(code);
+            let mut config = helpers::load_ubs_xsd_config();
+            config.form_code = Some(code.trim_start_matches("AF_").to_string());
+            let fragments = helpers::load_ubs_fragments();
+            let ours = xsd_shape(&crate::xsd::generate_xsd_string_from_aem(
+                &root, &config, &fragments,
+            ));
+            let theirs = xsd_shape(&helpers::read_fixture(&format!(
+                "aem_xsd/{code}/reference.schema.xsd"
+            )));
+
+            let ours_set: std::collections::BTreeSet<&String> = ours.iter().collect();
+            let theirs_set: std::collections::BTreeSet<&String> = theirs.iter().collect();
+            let only_theirs: Vec<&&String> = theirs_set.difference(&ours_set).collect();
+            let only_ours: Vec<&&String> = ours_set.difference(&theirs_set).collect();
+
+            println!(
+                "\n=== {code}: ours {} lines, theirs {} lines, {} missing, {} extra{}",
+                ours.len(),
+                theirs.len(),
+                only_theirs.len(),
+                only_ours.len(),
+                if ours == theirs { "  [IDENTICAL]" } else { "" }
+            );
+            for l in only_theirs.iter().take(14) {
+                println!("   - only UBS: {l}");
+            }
+            for l in only_ours.iter().take(14) {
+                println!("   + only us : {l}");
+            }
+        }
+    }
+
+    /// Load the fixture form and generate its schema through the real UBS
+    /// profile, exactly as production would.
+    fn abfa_generated_xsd() -> String {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("ABFA".to_string());
+        let fragments = helpers::load_ubs_fragments();
+        crate::xsd::generate_xsd_string_from_aem(&root, &config, &fragments)
+    }
+
+    /// The headline acceptance check: our AEM → XSD walk reproduces the schema
+    /// UBS derives for the same form.
+    #[test]
+    fn abfa_aem_to_xsd_matches_ubs_reference_shape() {
+        let actual = xsd_shape(&abfa_generated_xsd());
+        let expected = xsd_shape(&helpers::read_fixture(
+            "aem_xsd/AF_ABFA/reference.schema.xsd",
+        ));
+
+        if actual != expected {
+            let mut msg = String::from("generated schema differs from the UBS reference\n");
+            for (i, line) in expected.iter().enumerate() {
+                let got = actual.get(i).map(String::as_str).unwrap_or("<missing>");
+                let mark = if got == line { " " } else { "!" };
+                msg.push_str(&format!("{mark} want: {line}\n{mark}  got: {got}\n"));
+            }
+            for extra in actual.iter().skip(expected.len()) {
+                msg.push_str(&format!("! unexpected: {extra}\n"));
+            }
+            panic!("{msg}");
+        }
+    }
+
+    /// Print the generated schema for eyeballing.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn show_abfa_xsd() {
+        println!("{}", abfa_generated_xsd());
+    }
+
+    /// A profile custom element must not become a schema element.
+    ///
+    /// `apply_custom_elements` replaces a whole panel's contents with a single
+    /// `Custom` node whose label is the panel title. Classifying that as a data
+    /// leaf would emit one `xs:string` named after the section — `Kundendaten`,
+    /// `SignatureS` — and silently drop every field the section holds, which is
+    /// exactly the account-holder and signature blocks.
+    ///
+    /// The rest of the suite loads the UBS profile with `custom_elements`
+    /// cleared, so only a test that enables them can catch this.
+    #[test]
+    fn custom_elements_do_not_become_schema_elements() {
+        let root =
+            helpers::build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
+
+        let mut customs = Vec::new();
+        helpers::walk_aem_nodes(&root, &mut |node| {
+            if let crate::aem::AemNode::Custom { label, .. } = node {
+                customs.push(label.clone());
+            }
+        });
+        assert!(
+            !customs.is_empty(),
+            "this form should exercise the custom-element rules"
+        );
+
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("AAGZ".to_string());
+        let result =
+            crate::xsd::generate_xsd_from_aem(&root, &config, &helpers::load_ubs_fragments());
+        let xml = result.schema.to_xml();
+
+        for label in &customs {
+            let derived = crate::xsd::to_xsd_element_name(label);
+            assert!(
+                !xml.contains(&format!("name=\"{derived}\"")),
+                "the custom element {label:?} leaked into the schema as {derived:?}:\n{xml}"
+            );
+        }
+    }
+
+    /// Config may name nodes the AEM tree cannot name on its own; it must never
+    /// reorder or re-nest what the tree already determines.
+    ///
+    /// Regenerate AF_ABFA with every naming action (`element` / `type`) stripped
+    /// from the `[[aemElements]]` rules — keeping `ignore` and `occurs`, which
+    /// are shape rules by design — and assert the result is a strict
+    /// *subsequence* of the full schema's skeleton.
+    ///
+    /// Not equality: a node with nothing to derive a name from can only exist
+    /// because config names it. AF_ABFA has two — the partner-class radio, whose
+    /// `jcr:title` is empty, and the ContractualPartnerGeneric fragment, whose
+    /// identity is its element name in the type library. Everything else must
+    /// survive with its nesting and cardinality intact, so a generator
+    /// regression that drops or reorders an element cannot be papered over by
+    /// adding a config entry.
+    #[test]
+    fn abfa_shape_is_derivable_without_config_names() {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let fragments = helpers::load_ubs_fragments();
+
+        let mut with_names = helpers::load_ubs_xsd_config();
+        with_names.form_code = Some("ABFA".to_string());
+
+        let mut without_names = with_names.clone();
+        for rule in &mut without_names.profile.aem_elements {
+            if !rule.ignore {
+                rule.element = None;
+                rule.type_ref = None;
+            }
+        }
+
+        let full = skeleton(
+            &crate::xsd::generate_xsd_from_aem(&root, &with_names, &fragments)
+                .schema
+                .to_xml(),
+        );
+        let stripped = skeleton(
+            &crate::xsd::generate_xsd_from_aem(&root, &without_names, &fragments)
+                .schema
+                .to_xml(),
+        );
+
+        let mut next = 0usize;
+        for entry in &stripped {
+            match full[next..].iter().position(|e| e == entry) {
+                Some(offset) => next += offset + 1,
+                None => panic!(
+                    "stripping the naming rules changed the schema shape: {entry} is out of \
+                     order or missing.\nfull:     {full:#?}\nstripped: {stripped:#?}"
+                ),
+            }
+        }
+
+        // Config must be adding identity, not bulk: at most a couple of elements.
+        assert!(
+            full.len() - stripped.len() <= 2,
+            "config added {} elements; it should only name what the tree cannot",
+            full.len() - stripped.len()
+        );
+    }
+
+    /// The nesting depth and occurrence attributes of every element, with names,
+    /// refs and types blanked.
+    fn skeleton(xsd: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut depth = 0usize;
+        for raw in xsd.lines() {
+            let line = raw.trim();
+            if line.starts_with("<xs:element") {
+                let min = attr(line, "minOccurs").unwrap_or_else(|| "-".into());
+                let max = attr(line, "maxOccurs").unwrap_or_else(|| "-".into());
+                let kind = if line.ends_with("/>") {
+                    "leaf"
+                } else {
+                    "group"
+                };
+                out.push(format!("{depth} {kind} min={min} max={max}"));
+                if !line.ends_with("/>") {
+                    depth += 1;
+                }
+            } else if line.starts_with("</xs:element") {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        out
+    }
+
+    /// The bindRefs our walk assigns must be the ones UBS injected into
+    /// `reference.content.xml` — same paths, same order.
+    ///
+    /// Two of UBS's sixteen bindRefs are rooted at the generic `/UBSAF/` prefix
+    /// and address the *global fragment library's* schema, not this form's, so
+    /// they are excluded here (see the fixture README).
+    #[test]
+    fn abfa_bind_refs_match_the_ubs_reference_form() {
+        let root = helpers::parse_fixture_form("AF_ABFA");
+        let mut config = helpers::load_ubs_xsd_config();
+        config.form_code = Some("ABFA".to_string());
+        let fragments = helpers::load_ubs_fragments();
+
+        let result = crate::xsd::generate_xsd_from_aem(&root, &config, &fragments);
+        let mut ours: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+        ours.sort_unstable();
+
+        let reference = helpers::read_fixture("aem_xsd/AF_ABFA/reference.content.xml");
+        let mut theirs: Vec<&str> = reference
+            .match_indices("bindRef=\"")
+            .filter_map(|(i, m)| {
+                let rest = &reference[i + m.len()..];
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .filter(|b| b.starts_with("/UBSAF_ABFA/"))
+            .collect();
+        theirs.sort_unstable();
+
+        assert_eq!(
+            ours, theirs,
+            "our bindRefs differ from the ones UBS injected into the same form"
+        );
+    }
+
+    /// Measure how the flat-panel rule behaves on our own generated forms.
+    /// Compare the two candidate rules for layout panels: group titled pages, or
+    /// flatten everything and let the sibling counter disambiguate.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn compare_page_grouping_against_counter_suffixes() {
+        for (pdf, lang) in [
+            ("AAAI_019_EN.pdf", "en"),
+            ("AAFM_019_EN.pdf", "en"),
+            ("AACB_033_IT.pdf", "it"),
+            ("AAGZ_019_DE.pdf", "de"),
+        ] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().unwrap();
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            let mut paths: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+            paths.sort_unstable();
+            let suffixed: Vec<&&str> = paths
+                .iter()
+                .filter(|p| {
+                    p.rsplit('/')
+                        .next()
+                        .is_some_and(|leaf| leaf.ends_with(|c: char| c.is_ascii_digit()))
+                })
+                .collect();
+            let depth_max = paths
+                .iter()
+                .map(|p| p.matches('/').count())
+                .max()
+                .unwrap_or(0);
+            println!(
+                "{pdf}: {} bound, max depth {depth_max}, {} counter-suffixed: {:?}",
+                paths.len(),
+                suffixed.len(),
+                suffixed
+            );
+            println!("   sample: {:?}", &paths[..paths.len().min(6)]);
+        }
+    }
+
+    #[test]
+    #[ignore = "diagnostic"]
+    fn measure_bind_ref_collisions_on_real_forms() {
+        for (pdf, lang) in [
+            ("AAAI_019_EN.pdf", "en"),
+            ("AAFM_019_EN.pdf", "en"),
+            ("AACB_033_IT.pdf", "it"),
+        ] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().unwrap();
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            let mut counts: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
+            for path in result.bind_refs.values() {
+                *counts.entry(path.as_str()).or_default() += 1;
+            }
+            let xsd = result.schema.to_xml();
+            let dupes = duplicate_sibling_names(&xsd);
+            println!(
+                "{pdf}: {} bound nodes, {} distinct paths, duplicate sibling elements: {:?}",
+                result.bind_refs.len(),
+                counts.len(),
+                dupes
+            );
+        }
+    }
+
+    /// Element names that appear twice inside the same `xs:sequence`.
+    fn duplicate_sibling_names(xsd: &str) -> Vec<String> {
+        let mut stack: Vec<Vec<String>> = vec![Vec::new()];
+        let mut dupes = Vec::new();
+        for raw in xsd.lines() {
+            let line = raw.trim();
+            if line.starts_with("<xs:sequence") {
+                stack.push(Vec::new());
+            } else if line.starts_with("</xs:sequence") {
+                stack.pop();
+            } else if line.starts_with("<xs:element") {
+                let name = attr(line, "name").or_else(|| attr(line, "ref"));
+                if let (Some(name), Some(top)) = (name, stack.last_mut()) {
+                    if top.contains(&name) {
+                        dupes.push(name.clone());
+                    }
+                    top.push(name);
+                }
+            }
+        }
+        dupes
+    }
+
+    /// The structural contract, over real forms produced by the full pipeline.
+    ///
+    /// Because `convert_to_aem` derives the schema from the finished AEM tree
+    /// and writes each node's `bind_ref` during that same walk, these must hold
+    /// for every form — no fixture involved, so the test keeps its value as the
+    /// generator evolves.
+    #[test]
+    fn aem_bind_refs_are_exact_xsd_paths() {
+        use std::collections::{HashMap, HashSet};
+
+        for (pdf, lang) in [
+            ("AAAI_019_EN.pdf", "en"),
+            ("AAFM_019_EN.pdf", "en"),
+            ("AACB_033_IT.pdf", "it"),
+        ] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config
+                .xsd_config
+                .as_ref()
+                .expect("bound config has an XSD config");
+            let schema =
+                crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments).schema;
+
+            let xsd_paths = helpers::xsd_element_paths_in_order(&schema);
+            let known: HashSet<&str> = xsd_paths.iter().map(String::as_str).collect();
+
+            // Collect the bindRefs in document order, alongside the node that
+            // owns each, so failures name the culprit.
+            let mut bound: Vec<(String, String)> = Vec::new();
+            helpers::walk_aem_nodes(&root, &mut |node| {
+                if let Some(br) = helpers::node_bind_ref(node) {
+                    bound.push((node.element_name(), br.to_string()));
+                }
+            });
+
+            assert!(!bound.is_empty(), "{pdf}: no node was bound at all");
+
+            // (1) Every bindRef is an exact element path — never a prefix match.
+            for (owner, br) in &bound {
+                assert!(
+                    known.contains(br.as_str()),
+                    "{pdf}: {owner} is bound to {br}, which is not an element in the generated XSD"
+                );
+            }
+
+            // (2) No path is bound twice; two nodes sharing one path would write
+            //     to the same place in the submitted data.
+            let mut seen: HashMap<&str, &str> = HashMap::new();
+            for (owner, br) in &bound {
+                if let Some(prev) = seen.insert(br.as_str(), owner.as_str()) {
+                    panic!("{pdf}: {br} is bound by both {prev} and {owner}");
+                }
+            }
+
+            // (3) Document order of the bindRefs follows the schema's own order.
+            //     A subsequence, not equality: the schema also contains elements
+            //     nothing binds, such as a non-repeating grouping element.
+            let mut next = 0usize;
+            for (owner, br) in &bound {
+                match xsd_paths[next..].iter().position(|p| p == br) {
+                    Some(offset) => next += offset + 1,
+                    None => panic!(
+                        "{pdf}: {owner} bound to {br} appears out of order relative to the schema"
+                    ),
+                }
+            }
+
+            // (4) Element names are unique within each sequence, or the schema
+            //     would not validate.
+            let dupes = duplicate_sibling_names(&schema.to_xml());
+            assert!(
+                dupes.is_empty(),
+                "{pdf}: duplicate sibling element names in the generated XSD: {dupes:?}"
+            );
+        }
+    }
+}
+
+// ============================================================================
+// AEM → XSD naming and classification rules
+// ============================================================================
+
+/// Unit coverage for the rules that turn one AEM node into one XSD element,
+/// driven off the real `profiles/ubs/xsd/types/` registry rather than a
+/// hand-written table.
+mod ubs_xsd_naming {
+    use super::helpers;
+    use crate::aem::{AemNode, AemOption, OptionAlignment};
+    use crate::xsd::{XsdConfig, XsdSchema};
+    use uuid::Uuid;
+
+    fn config() -> XsdConfig {
+        let mut cfg = helpers::load_ubs_xsd_config();
+        cfg.form_code = Some("TEST".to_string());
+        cfg
+    }
+
+    fn page(title: &str, children: Vec<AemNode>) -> AemNode {
+        AemNode::Panel {
+            uuid: Uuid::nil(),
+            name: "PN_Page".into(),
+            title: title.into(),
+            children,
+            is_page: true,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }
+    }
+
+    fn layout(children: Vec<AemNode>) -> AemNode {
+        AemNode::Panel {
+            uuid: Uuid::new_v4(),
+            name: "PN_Layout".into(),
+            title: String::new(),
+            children,
+            is_page: false,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }
+    }
+
+    fn frag(name: &str, title: &str, frag_ref: &str) -> AemNode {
+        AemNode::Fragment {
+            uuid: Uuid::new_v4(),
+            name: name.into(),
+            title: title.into(),
+            frag_ref: frag_ref.into(),
+            bind_ref: None,
+        }
+    }
+
+    fn textbox(name: &str, label: &str) -> AemNode {
+        AemNode::TextField {
+            uuid: Uuid::new_v4(),
+            name: name.into(),
+            label: label.into(),
+            mandatory: false,
+            visible: true,
+            max_chars: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        }
+    }
+
+    fn radio(name: &str, label: &str, options: &[&str]) -> AemNode {
+        AemNode::RadioButton {
+            uuid: Uuid::new_v4(),
+            name: name.into(),
+            label: label.into(),
+            options: options
+                .iter()
+                .enumerate()
+                .map(|(i, l)| AemOption {
+                    label: (*l).to_string(),
+                    value: (i + 1).to_string(),
+                })
+                .collect(),
+            alignment: OptionAlignment::Vertical,
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            field_id: None,
+            conditions: vec![],
+            bind_ref: None,
+        }
+    }
+
+    fn root(children: Vec<AemNode>) -> AemNode {
+        AemNode::Root {
+            title: "Test".into(),
+            children,
+        }
+    }
+
+    fn schema_for(children: Vec<AemNode>) -> XsdSchema {
+        let fragments = helpers::load_ubs_fragments();
+        crate::xsd::generate_xsd_from_aem(&root(children), &config(), &fragments).schema
+    }
+
+    fn xml_for(children: Vec<AemNode>) -> String {
+        schema_for(children).to_xml()
+    }
+
+    const SIGNATURE: &str =
+        "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1";
+    const BANKING: &str =
+        "/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_BankingRelationship1";
+
+    #[test]
+    fn field_label_becomes_the_element_name() {
+        let xml = xml_for(vec![textbox("TXT_x", "Email address")]);
+        assert!(
+            xml.contains(r#"<xs:element name="EmailAddress" type="xs:string" minOccurs="0"/>"#),
+            "got:\n{xml}"
+        );
+    }
+
+    #[test]
+    fn field_type_comes_from_the_component_kind() {
+        let xml = xml_for(vec![AemNode::DatePicker {
+            uuid: Uuid::new_v4(),
+            name: "DATE_x".into(),
+            label: "Date of birth".into(),
+            mandatory: false,
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+        }]);
+        assert!(xml.contains(r#"type="xs:date""#), "got:\n{xml}");
+    }
+
+    /// A fragment whose type has a global element declaration is referenced,
+    /// never re-declared.
+    #[test]
+    fn fragment_with_a_global_element_is_emitted_as_a_ref() {
+        let xml = xml_for(vec![frag("PN_BR", "", BANKING)]);
+        assert!(
+            xml.contains(r#"<xs:element ref="BankingRelationship""#),
+            "got:\n{xml}"
+        );
+        assert!(
+            xml.contains(r#"schemaLocation="../AFFragments/BankingRelationship.xsd""#),
+            "the include for the referenced type must be emitted. got:\n{xml}"
+        );
+    }
+
+    /// One fragRef, two elements: only the panel title tells them apart.
+    #[test]
+    fn one_fragment_ref_yields_two_names_disambiguated_by_title() {
+        let xml = xml_for(vec![
+            frag("PN_A", "Client", SIGNATURE),
+            frag("PN_B", "Authorized representative", SIGNATURE),
+        ]);
+        assert!(
+            xml.contains(
+                r#"<xs:element name="AccountHolderSignature" type="SignatureType" minOccurs="0"/>"#
+            ),
+            "got:\n{xml}"
+        );
+        assert!(
+            xml.contains(r#"<xs:element name="AuthRepSignature" type="SignatureType""#),
+            "got:\n{xml}"
+        );
+    }
+
+    /// Option-set matching ignores order, case, numeric prefixes and markup.
+    #[test]
+    fn option_set_rule_selects_the_partner_class_ref() {
+        for options in [
+            vec!["Individual", "Company/Entity"],
+            vec!["Company/Entity", "Individual"],
+            vec!["individual", "COMPANY/ENTITY"],
+            vec!["<p>Individual</p>", "<b>Company/Entity</b>"],
+        ] {
+            let xml = xml_for(vec![radio("RB_CPType", "", &options)]);
+            assert!(
+                xml.contains(r#"<xs:element ref="AccountHolderPartnerClass""#),
+                "options {options:?} should match the partner-class rule. got:\n{xml}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_matching_option_set_falls_back_to_a_typed_element() {
+        let xml = xml_for(vec![radio("RB_x", "Delivery", &["Post", "Email"])]);
+        assert!(
+            xml.contains(r#"<xs:element name="Delivery" type="xs:string""#),
+            "got:\n{xml}"
+        );
+    }
+
+    /// A layout panel contributes no level; a titled page panel does, so that
+    /// two sections holding the same field cannot collide.
+    #[test]
+    fn layout_panels_are_transparent_but_titled_pages_group() {
+        // A titled page wrapping a layout panel: the page adds a level, the
+        // layout panel does not, so the field lands one level down — not two.
+        let xml = xml_for(vec![page(
+            "Personal Data",
+            vec![layout(vec![textbox("TXT_a", "Last name")])],
+        )]);
+
+        let paths = helpers::xsd_element_paths_in_order(&schema_for(vec![page(
+            "Personal Data",
+            vec![layout(vec![textbox("TXT_a", "Last name")])],
+        )]));
+        assert_eq!(
+            paths,
+            vec![
+                "/UBSAF_TEST".to_string(),
+                "/UBSAF_TEST/PersonalData".to_string(),
+                "/UBSAF_TEST/PersonalData/LastName".to_string(),
+            ],
+            "got:\n{xml}"
+        );
+    }
+
+    /// `groupPagePanels = false` follows UBS's rule exactly: even a titled page
+    /// is transparent, and colliding names fall back to ordinal suffixes.
+    #[test]
+    fn group_page_panels_false_flattens_and_falls_back_to_suffixes() {
+        let mut cfg = config();
+        cfg.profile.group_page_panels = false;
+
+        let tree = root(vec![
+            page("Client", vec![textbox("a", "Last name")]),
+            page("Authorized representative", vec![textbox("b", "Last name")]),
+        ]);
+        let flat = crate::xsd::generate_xsd_from_aem(&tree, &cfg, &[]);
+        let mut paths = helpers::xsd_element_paths_in_order(&flat.schema);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                "/UBSAF_TEST".to_string(),
+                "/UBSAF_TEST/LastName".to_string(),
+                "/UBSAF_TEST/LastName2".to_string(),
+            ],
+            "with grouping off the sections vanish and the counter disambiguates"
+        );
+
+        // With grouping on, the same tree keeps both names meaningful.
+        let grouped = crate::xsd::generate_xsd_from_aem(&tree, &config(), &[]);
+        let mut grouped_paths = helpers::xsd_element_paths_in_order(&grouped.schema);
+        grouped_paths.sort();
+        // "Authorized representative" is named by a `[sections]` pattern, which
+        // is why it is `AuthRep` rather than the title verbatim.
+        assert_eq!(
+            grouped_paths,
+            vec![
+                "/UBSAF_TEST".to_string(),
+                "/UBSAF_TEST/AuthRep".to_string(),
+                "/UBSAF_TEST/AuthRep/LastName".to_string(),
+                "/UBSAF_TEST/Client".to_string(),
+                "/UBSAF_TEST/Client/LastName".to_string(),
+            ]
+        );
+
+        // Either way the schema is valid and nothing is bound twice.
+        for result in [&flat, &grouped] {
+            let mut bound: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+            let before = bound.len();
+            bound.sort_unstable();
+            bound.dedup();
+            assert_eq!(before, bound.len(), "a path was bound twice");
+        }
+    }
+
+    /// A titleless, non-page panel: pure layout, no XSD level and no binding.
+    #[test]
+    fn an_untitled_layout_panel_adds_no_level_and_no_binding() {
+        let result = crate::xsd::generate_xsd_from_aem(
+            &root(vec![layout(vec![textbox("TXT_a", "Street")])]),
+            &config(),
+            &[],
+        );
+        let paths = helpers::xsd_element_paths_in_order(&result.schema);
+        assert_eq!(
+            paths,
+            vec!["/UBSAF_TEST".to_string(), "/UBSAF_TEST/Street".to_string()]
+        );
+        assert_eq!(
+            result.bind_refs.len(),
+            1,
+            "only the field is bound, not the layout panel"
+        );
+    }
+
+    /// Repeated sibling names would make the schema invalid and bind two nodes
+    /// to one path, so the second occurrence is suffixed.
+    #[test]
+    fn repeated_sibling_names_are_disambiguated() {
+        let result = crate::xsd::generate_xsd_from_aem(
+            // A label the `[elements]` table does not know, so this exercises
+            // disambiguation and nothing else.
+            &root(vec![textbox("a", "Widget"), textbox("b", "Widget")]),
+            &config(),
+            &[],
+        );
+        let xml = result.schema.to_xml();
+        assert!(xml.contains(r#"name="Widget""#), "got:\n{xml}");
+        assert!(xml.contains(r#"name="Widget2""#), "got:\n{xml}");
+
+        let mut paths: Vec<&str> = result.bind_refs.values().map(String::as_str).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, vec!["/UBSAF_TEST/Widget", "/UBSAF_TEST/Widget2"]);
+    }
+
+    /// The generated schema never contains the constructs the UBS format does
+    /// not use — they are not even representable any more.
+    #[test]
+    fn generated_schema_uses_only_the_ubs_vocabulary() {
+        let xml = xml_for(vec![
+            page("Section", vec![textbox("TXT_a", "Street")]),
+            frag("PN_BR", "", BANKING),
+        ]);
+        for forbidden in [
+            "<xs:choice",
+            "<xs:simpleType",
+            "<xs:restriction",
+            "<xs:annotation",
+            "<xs:import",
+            "<xs:enumeration",
+            "<xs:pattern",
+        ] {
+            assert!(
+                !xml.contains(forbidden),
+                "{forbidden} must never be emitted. got:\n{xml}"
+            );
+        }
+    }
+
+    /// The always-include entry is emitted first, ahead of anything the walk
+    /// discovers, and regardless of whether a type from it is used.
+    #[test]
+    fn simple_elements_include_is_always_first() {
+        let schema = schema_for(vec![frag("PN_BR", "", BANKING)]);
+        assert_eq!(
+            schema.includes.first().map(String::as_str),
+            Some("../AFSimpleTypeElements/AFSimpleElements.xsd")
+        );
+    }
+
+    /// `[elements]` normalises a label to a canonical English name and supplies
+    /// the type, so the same concept gets the same element across language
+    /// variants of a form.
+    #[test]
+    fn elements_table_normalises_a_foreign_label_and_its_type() {
+        let cases = [
+            ("Straße", "Street", "xs:string"),
+            ("Cognome", "LastName", "xs:string"),
+            ("PLZ", "PostalCode", "xs:string"),
+            ("Data", "Date", "xs:date"),
+        ];
+        for (label, element, type_ref) in cases {
+            let xml = xml_for(vec![textbox("TXT_x", label)]);
+            assert!(
+                xml.contains(&format!(
+                    r#"<xs:element name="{element}" type="{type_ref}" minOccurs="0"/>"#
+                )),
+                "{label:?} should resolve to {element}/{type_ref}. got:\n{xml}"
+            );
+        }
+    }
+
+    /// Matching is on the whole label. The table holds two-letter synonyms, so
+    /// substring matching turned sentence-length labels — which these forms use
+    /// freely — into nonsense: "UNKNOWN" contains "No" and resolved to
+    /// StreetNumber, "…istanza di fallimento in data ;" resolved to Date.
+    #[test]
+    fn elements_table_does_not_fire_on_sentence_labels() {
+        for label in [
+            "Nota: Barrare una sola casella salvo indicazione diversa.",
+            "UNKNOWN",
+            "– ha presentato un piano di liquidazione, di ristrutturazione in data ;",
+        ] {
+            let xml = xml_for(vec![textbox("TXT_x", label)]);
+            for wrong in ["StreetNumber", r#"type="xs:date""#] {
+                assert!(
+                    !xml.contains(wrong),
+                    "the table must not fire on {label:?} (matched {wrong}). got:\n{xml}"
+                );
+            }
+        }
+    }
+
+    /// `[sections]` regex patterns name a section across languages before the
+    /// title is used verbatim.
+    #[test]
+    fn sections_table_names_a_page_panel_across_languages() {
+        for title in ["Signature of company", "Unterschrift der Firma"] {
+            let xml = xml_for(vec![page(title, vec![textbox("TXT_a", "Place")])]);
+            assert!(
+                xml.contains(r#"<xs:element name="CompanySignature""#),
+                "{title:?} should resolve to CompanySignature. got:\n{xml}"
+            );
+        }
+    }
+
+    /// The Individual / Company-Entity radio classifies whichever partner
+    /// follows it, so the fragment after it picks the element. Without the
+    /// lookahead every form got `AccountHolderPartnerClass`, which is right only
+    /// for an account-holder form.
+    #[test]
+    fn the_partner_class_radio_is_resolved_by_the_following_fragment() {
+        let cases = [
+            (
+                "affrg_ContractualPartnerGeneric1",
+                "AccountHolderPartnerClass",
+            ),
+            ("affrg_BeneficialOwnerGeneric1", "BOPartnerClass"),
+            ("affrg_PowerofAttorneyGeneric1", "POAPartnerClass"),
+            ("affrg_PartnertoPartnerGeneric1", "PToPPartnerClass"),
+            // Old model
+            ("affrg_Attorney1", "POAPartnerClass"),
+            ("affrg_Payee1", "PayeePartnerClass"),
+            ("affrg_FIM2", "FIMPartnerClass"),
+            // A longer key must not be shadowed by its prefix.
+            ("affrg_AccountHolderDepot1", "AccountHolderPartnerClass"),
+        ];
+        for (fragment, expected) in cases {
+            let xml = xml_for(vec![
+                radio("RB_CPType", "", &["Individual", "Company/Entity"]),
+                frag(
+                    "PN_Partner",
+                    "",
+                    &format!("/content/dam/formsanddocuments/afforms_ch_fragmentlib/{fragment}"),
+                ),
+            ]);
+            assert!(
+                xml.contains(&format!(r#"<xs:element ref="{expected}""#)),
+                "a radio followed by {fragment} should classify as {expected}. got:\n{xml}"
+            );
+        }
+    }
+
+    /// With nothing recognisable after it, the radio falls back to the rule's own
+    /// element rather than dropping out of the schema.
+    #[test]
+    fn the_partner_class_radio_falls_back_without_a_following_fragment() {
+        let xml = xml_for(vec![radio(
+            "RB_CPType",
+            "",
+            &["Individual", "Company/Entity"],
+        )]);
+        assert!(
+            xml.contains(r#"<xs:element ref="AccountHolderPartnerClass""#),
+            "got:\n{xml}"
+        );
+    }
+
+    /// Two schemas declare a global `AccountHolder`: `ContractualPartner.xsd`
+    /// types it `AccountHolderType`, `ContractualPartnerGeneric.xsd` types it
+    /// `ContractualPartnerGenericType`. Resolving the include by element name
+    /// alone picks whichever the index happened to keep, leaving a `ref=` that
+    /// points at an element of the wrong type — so the fragment's own model root
+    /// decides which file is included.
+    #[test]
+    fn the_include_for_a_ref_is_resolved_by_type_not_element_name() {
+        let cases = [
+            // old model: AccountHolderType, in the CH library
+            (
+                "afforms_ch_fragmentlib/affrg_Client1",
+                "../AFFragments/ContractualPartner.xsd",
+            ),
+            // new model: ContractualPartnerGenericType, in the UBS library
+            (
+                "afforms_ubs_fragmentlib/affrg_ContractualPartnerGeneric1",
+                "../AFFragments/ContractualPartnerGeneric.xsd",
+            ),
+        ];
+        for (fragment, expected_include) in cases {
+            let schema = schema_for(vec![frag(
+                "PN_AH",
+                "",
+                &format!("/content/dam/formsanddocuments/{fragment}"),
+            )]);
+            let xml = schema.to_xml();
+            assert!(
+                xml.contains(r#"<xs:element ref="AccountHolder""#),
+                "{fragment} should reference AccountHolder. got:\n{xml}"
+            );
+            assert!(
+                schema.includes.iter().any(|i| i == expected_include),
+                "{fragment} must include {expected_include}, got {:?}",
+                schema.includes
+            );
+        }
+    }
+
+    /// A repeatable wrapping one element collapses into it, so no generated
+    /// `RCP_…` name reaches the schema and the shape matches UBS's, which spells
+    /// a repeating fragment as a single element with `maxOccurs`.
+    #[test]
+    fn a_repeatable_wrapping_one_element_collapses_into_it() {
+        for (pdf, lang) in [("AAAI_019_EN.pdf", "en"), ("AACB_033_IT.pdf", "it")] {
+            let (_, root, config) = helpers::build_aem_test_output_bound(&[(pdf, lang)]);
+            let xsd_config = config.xsd_config.as_ref().unwrap();
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+
+            // A repeatable that wraps a single fragment or field must have
+            // collapsed, so its own generated name never reaches the schema.
+            // One that wraps several elements still needs a group, and has no
+            // name to give it — that case is left to an [[aemElements]] rule.
+            helpers::walk_aem_nodes(&root, &mut |node| {
+                let crate::aem::AemNode::Repeatable {
+                    uuid,
+                    name,
+                    children,
+                    ..
+                } = node
+                else {
+                    return;
+                };
+                let single_child = matches!(
+                    children.as_slice(),
+                    [crate::aem::AemNode::Fragment { .. }
+                        | crate::aem::AemNode::TextField { .. }
+                        | crate::aem::AemNode::NumberField { .. }
+                        | crate::aem::AemNode::DatePicker { .. }
+                        | crate::aem::AemNode::Dropdown { .. }
+                        | crate::aem::AemNode::Checkbox { .. }
+                        | crate::aem::AemNode::RadioButton { .. }]
+                );
+                if !single_child {
+                    return;
+                }
+                let path = result
+                    .bind_refs
+                    .get(uuid)
+                    .unwrap_or_else(|| panic!("{pdf}: repeatable {name} is unbound"));
+                assert!(
+                    !path.split('/').any(|seg| seg.starts_with("RCP")),
+                    "{pdf}: {name} wraps one element but did not collapse: {path}"
+                );
+            });
+
+            // The repeating element keeps its cardinality.
+            let xml = result.schema.to_xml();
+            assert!(
+                xml.contains(r#"maxOccurs="50""#),
+                "{pdf}: the collapsed element must still repeat:\n{xml}"
+            );
+        }
+    }
 }

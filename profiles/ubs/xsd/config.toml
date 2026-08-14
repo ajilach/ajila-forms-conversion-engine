@@ -1,20 +1,42 @@
 # XSD Output Profile Configuration
 #
-# This file configures how structured form content maps to XSD schema elements.
+# The schema is derived from the AEM node tree, and each node's bindRef is
+# assigned during the same walk, so a form and its schema agree by construction.
+# See the "AEM -> XSD walk" section at the end of this file for the shape rules.
 #
-# [elements.<name>]       — field → xs:element mappings
-#   synonyms              — list of strings to match (case-insensitive substring)
-#   type                  — XSD type (e.g. "xs:string", "xs:decimal", or predefined)
+# Element names come from three places, in order of precedence:
+#
+#   1. [[aemElements]]      — an explicit rule (see that section)
+#   2. [elements.<name>]    — a field label equal to one of `synonyms`
+#      [sections.<name>]    — a page-panel title matching one of `patterns`
+#   3. the label or title itself, PascalCased
+#
+# [elements.<name>]       — field → xs:element name + type
+#   synonyms              — the WHOLE label must equal one of these
+#                           (case-insensitive, trimmed)
+#   type                  — XSD type (e.g. "xs:string", "xs:decimal", "xs:date")
+#
+#   Matching is on the whole label deliberately. These forms use sentences as
+#   labels and the table holds two-letter synonyms, so substring matching turned
+#   "UNKNOWN" into StreetNumber (it contains "No") and any label mentioning a
+#   date into xs:date. Whole-label matching keeps the real wins — Straße/Via ->
+#   Street, Cognome -> LastName, Data -> Date/xs:date — and misfires on nothing.
+#   A near-miss such as "Telefon Mobil" is fixed by adding that exact string.
+#
+#   NOTE: compute_bind_refs, which feeds fragment matching, still matches these
+#   synonyms as substrings. Those paths never reach the emitted schema.
+#
+# [sections.<name>]       — page-panel title → xs:element name
+#   patterns              — regexes, matched case-insensitively
 #
 # All *.xsd files in the types/ subdirectory are automatically indexed.
 # An <xs:include> directive is emitted for every indexed file that declares a
-# type actually referenced by the generated schema.
+# type actually referenced by the generated schema. Those same files decide
+# `ref=` versus `name=`/`type=`: a name declared as a global element there is
+# referenced, never re-declared.
 #
-# Complex types are auto-matched: xs:complexType definitions from the types/
-# directory are parsed (including xs:extension inheritance and xs:element ref
-# resolution). During generation, a heading's resolved children are compared
-# against the registry — if all children (name + type) form a subset of a
-# registered type's elements, the best-matching type is used.
+# Complex types are also parsed into a registry (resolving xs:extension
+# inheritance and xs:element ref) which fragment matching uses.
 #
 # schemaLocationPrefix — prefix prepended to the relative path of each types/
 #   file when constructing the schemaLocation attribute (default: "../")
@@ -32,6 +54,29 @@ rootElementName = "UBSAF_{{ form_code }}"
 fragmentBindRefPrefix = "UBSAF_{{ form_code }}"
 
 masterLanguage = "en"
+
+# `maxOccursValue` is emitted for every repeating element in the AEM -> XSD walk,
+# regardless of the AEM node's real `maxOccur`, matching UBS's own schemas.
+maxOccursValue = 50
+
+# The simple-element library is always included, referenced or not.
+alwaysInclude = ["../AFSimpleTypeElements/AFSimpleElements.xsd"]
+
+# Whether a titled page panel (an H2 section) produces its own XSD level.
+#
+# UBS's own rule is that a panel contributes a level only if it repeats or came
+# from a fragment, which makes their schemas flat. Set `false` to follow that
+# exactly. It is `true` here because our generated forms are far denser: on
+# AAGZ_019, flattening pushes 63 of 89 elements onto ordinal suffixes instead of
+# 34 — including AccountHolderSignature2 through AccountHolderSignature21 — and
+# makes every name depend on document order, so inserting a field near the top
+# renames elements far below it.
+#
+# Neither setting avoids suffixes entirely; forms with repeated section titles
+# still collide. The real fix for a specific form is an [[aemElements]] rule
+# giving the section or repeatable a semantic name, which is how UBS's own
+# reference schemas end up with no suffixes at all.
+groupPagePanels = true
 
 # ─── Elements ──────────────────────────────────────────────────────────────────
 
@@ -354,3 +399,375 @@ patterns = [
 patterns = [
     "signature.*client.*poa holder|signature.*client.*PoA|unterschrift.*kunde.*vollmacht",
 ]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AEM → XSD walk
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# The schema is derived from the AEM node tree, and each node's `bindRef` is
+# assigned during the same walk, so the two agree by construction.
+#
+# Two rules below need no configuration and do most of the work:
+#   • A plain layout panel adds no XSD level — its children bubble up. Only a
+#     panel that repeats or that came from a fragment produces an element.
+#   • `ref=` versus `name=`/`type=` is decided by looking the resolved element
+#     name up among the global elements declared under `types/`.
+#
+# `maxOccursValue` is emitted for every repeating element regardless of the AEM
+# node's real `maxOccur`, which is what UBS's own schemas do.
+
+# Default XSD type per AEM component kind, used when neither an [elements]
+# synonym nor an [[aemElements]] rule supplies one.
+[defaultTypes]
+textbox = "xs:string"
+radiobutton = "xs:string"
+checkbox = "xs:string"
+dropdownlist = "xs:string"
+numericbox = "xs:decimal"
+datepicker = "xs:date"
+
+# ─── Rules, in order — first match wins ───────────────────────────────────────
+#
+# Match keys (all optional, ANDed): kind, fragRef (substring), name / names,
+# title / titles (case-insensitive), options (set equality ignoring order, case,
+# numeric prefixes and markup), visible.
+# Actions: ignore, element, type, occurs ("none" | "optional" | "optionalRepeating").
+#
+# `element` is used verbatim, so an already-camel-cased name survives.
+
+# --- Nodes that carry no form data -------------------------------------------
+
+# Form metadata and the internal-bank-use block are presentation only.
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_global_fragmentlib/formmetadata"
+ignore = true
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_global_InternalBankUse"
+ignore = true
+
+# Hidden bookkeeping text boxes: counters, the form code, the DoR header slots.
+[[aemElements]]
+kind = "textbox"
+visible = false
+ignore = true
+
+# --- Fragments ---------------------------------------------------------------
+
+# BankingRelationship is declared globally, so it is referenced, and it is the
+# one element UBS emits with no occurrence attributes at all.
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_BankingRelationship1"
+element = "BankingRelationship"
+occurs = "none"
+
+# Two panels share affrg_SignatureGeneric1 and only the title tells them apart.
+# Neither name is a global element in Signature.xsd, so both are emitted as
+# name=/type=. The titled rules must precede the untitled fallback.
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_SignatureGeneric1"
+titles = ["Client", "Kunde", "Cliente", "Titular"]
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "affrg_SignatureGeneric1"
+titles = [
+    "Authorized representative",
+    "Authorised representative",
+    "Bevollmächtigter",
+    "Rappresentante autorizzato",
+]
+element = "AuthRepSignature"
+type = "SignatureType"
+
+
+# --- UBS fragment element table -------------------------------------------
+#
+# Ported from `fragmentElementNames.js` in UBS's af-xsd-automation. A fragment
+# carries only its `fragmentModelRoot` (a *type*), and several global elements
+# can share one type, so which element a fragment becomes is a per-usage
+# decision the type library cannot answer. UBS keeps this table; we keep the
+# same knowledge as rules.
+#
+# `type` is given only where the element is NOT declared globally under
+# types/ — supplying it forces `name=`/`type=`, and a global element must be
+# emitted as `ref=`. Where it is omitted the fragment's own model root
+# supplies the type.
+#
+# Two of UBS's 37 entries are deliberately absent: affrg_cc_IndividualAddress1
+# and affrg_cc_SignatureGeneric1 map to a slash-separated *list* of candidate
+# elements (CardMailingAddress/CardInvoiceAddress/...), i.e. the choice depends
+# on context that the table cannot express. UBS's own generator emits the
+# literal list as one name; add a `title`-qualified rule instead when a form
+# needs them.
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ubs_fragmentlib/affrg_CustodyAccount1"
+element = "CustodyAccount"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolder1"
+element = "AccountHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolderDepot1"
+element = "AccountHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Client1"
+element = "AccountHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolderBasic1"
+element = "AccountHolderBasic"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AccountHolderBasic2"
+element = "AccountHolderBasic"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_FIM2"
+element = "FIM"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_CustodyAccountHolderBasic2"
+element = "CustodyAccountHolderBasic2"
+type = "AccountHolderType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_ARSignature1"
+element = "AuthRepSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AHSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AHSignatureDepot1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_ClientSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_PensionHSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_PrincipalSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_EndClientSignature1"
+element = "AccountHolderSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_AttySignature1"
+element = "AttorneySignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_CASignature1"
+element = "CASignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_DeskHeadSignature1"
+element = "DeskHeadSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_SupervisorSignature1"
+element = "SupervisorSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_FIMSignature1"
+element = "FIMSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_RelevantPSignature1"
+element = "RelevantPersonSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_BRSignature1"
+element = "BorrowerSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_BOSignature1"
+element = "BeneficialOwnerSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_ContractingPartnerSignature1"
+element = "ContractingPartnerSignature"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_CAHSignature1"
+element = "CAHSignature1"
+type = "SignatureType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_CardHolder1"
+element = "CardHolder"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_AdditionalServices1"
+element = "CardAdditionalService"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_Employment1"
+element = "CardEmployment"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_Training1"
+element = "CardTraining"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_BankingDetails"
+element = "CardBank"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_cc_LegalRepresentative1"
+element = "CardLegalRep"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Recipient1"
+element = "InvoiceRecipient"
+type = "RecipientType"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Payee1"
+element = "Payee"
+
+[[aemElements]]
+kind = "fragment"
+fragRef = "afforms_ch_fragmentlib/affrg_Bank1"
+element = "PayeeBank"
+type = "BankType"
+
+# --- Partner class -----------------------------------------------------------
+
+# The Individual / Company-Entity radio selects which partner shape follows.
+# AccountHolderPartnerClass is global in AFSimpleElements, hence `ref=`.
+# The radio itself does not say which kind of partner it classifies — the
+# fragment that follows it does. Ported from UBS's PARTNER_CLASS_BY_FRAGMENT.
+# Every target is a global element in AFSimpleElements.xsd, so each is emitted
+# as `ref=`. `element` is the fallback when nothing recognisable follows.
+#
+# Longer keys first: `affrg_AccountHolder1` must not shadow
+# `affrg_AccountHolderDepot1`, and `affrg_BeneficialOwnerGeneric1` must be tried
+# before `affrg_BeneficialOwner1`.
+[[aemElements]]
+kind = "radiobutton"
+options = ["Individual", "Company/Entity"]
+element = "AccountHolderPartnerClass"
+nextFragment = [
+    # New data model
+    { fragRef = "affrg_ContractualPartnerGenericBasic1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_ContractualPartnerGeneric1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_BeneficialOwnerGenericBasic1", element = "BOPartnerClass" },
+    { fragRef = "affrg_BeneficialOwnerGeneric1", element = "BOPartnerClass" },
+    { fragRef = "affrg_PowerofAttorneyGenericBasic1", element = "POAPartnerClass" },
+    { fragRef = "affrg_PowerofAttorneyGeneric1", element = "POAPartnerClass" },
+    { fragRef = "affrg_PartnertoPartnerGenericBasic1", element = "PToPPartnerClass" },
+    { fragRef = "affrg_PartnertoPartnerGeneric1", element = "PToPPartnerClass" },
+    # Old model
+    { fragRef = "affrg_AccountHolderDepot1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_AccountHolder1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_Client1", element = "AccountHolderPartnerClass" },
+    { fragRef = "affrg_ContractingPartner1", element = "ContractingPartnerClass" },
+    { fragRef = "affrg_IndividualBasic1", element = "PartnerClass" },
+    { fragRef = "affrg_Recipient1", element = "RecipientPartnerClass" },
+    { fragRef = "affrg_Payee1", element = "PayeePartnerClass" },
+    { fragRef = "affrg_BeneficialOwner2", element = "BOPartnerClass" },
+    { fragRef = "affrg_BeneficialOwner1", element = "BOPartnerClass" },
+    { fragRef = "affrg_Attorney1", element = "POAPartnerClass" },
+    { fragRef = "affrg_FIM2", element = "FIMPartnerClass" },
+]
+
+# --- Repeating panels --------------------------------------------------------
+
+[[aemElements]]
+kind = "repeatable"
+titles = ["Email address instructions"]
+element = "EmailAddressInstruction"
+
+[[aemElements]]
+kind = "repeatable"
+titles = ["Domain name of the Client"]
+element = "DomainInstruction"
+
+# --- Field names that the label does not yield -------------------------------
+
+[[aemElements]]
+kind = "textbox"
+titles = ["Function in the company"]
+element = "Function"
+
+[[aemElements]]
+kind = "textbox"
+titles = ["Domain"]
+element = "DomainName"
+
+[[aemElements]]
+kind = "checkbox"
+titles = ["Communication Preferences"]
+element = "ExcludeAndExchangeInfo"

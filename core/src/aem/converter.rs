@@ -8,9 +8,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::structured::{
-    ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
-    HeadingLevel, HeadingNode, ImageNode, InlineNode, InputValue, ListNode, NameValue,
-    ParagraphNode, RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
+    AEM_TAGS, ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
+    HeadingLevel, HeadingNode, ImageNode, InputValue, ListNode, NameValue, ParagraphNode,
+    RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
+    collect_footnote_nodes, inline_text_to_html_with, strip_footnote_marker,
 };
 
 // ============================================================================
@@ -33,8 +34,7 @@ pub(crate) struct FootnoteEmbed {
 /// Collects all `FootnoteNode`s with a marker and generates a deterministic
 /// HTML ID for each.
 pub(crate) fn build_footnote_embeds(nodes: &[StructuredNode]) -> Vec<FootnoteEmbed> {
-    let mut footnotes: Vec<&FootnoteNode> = Vec::new();
-    collect_all_footnotes(nodes, &mut footnotes);
+    let footnotes: Vec<&FootnoteNode> = collect_footnote_nodes(nodes);
     footnotes
         .into_iter()
         .filter_map(|f| {
@@ -90,18 +90,6 @@ pub(crate) fn embed_footnotes_in_value(
         }
     }
     result
-}
-
-/// Strip the leading marker number and whitespace from footnote text.
-///
-/// E.g. `"1 Once opted up..."` → `"Once opted up..."`.
-fn strip_footnote_marker(html: &str, marker: &str) -> String {
-    let trimmed = html.trim_start();
-    if let Some(rest) = trimmed.strip_prefix(marker) {
-        rest.trim_start().to_string()
-    } else {
-        html.to_string()
-    }
 }
 
 use super::fragment_parser::ParsedFragment;
@@ -344,8 +332,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
     // Also collect all language variants of H2 titles for custom element matching.
     let mut sections: Vec<(Option<String>, Vec<&StructuredNode>)> = Vec::new();
     let mut section_all_titles: Vec<Vec<String>> = Vec::new();
-    let mut footnotes: Vec<&FootnoteNode> = Vec::new();
-    collect_all_footnotes(nodes, &mut footnotes);
+    let footnotes: Vec<&FootnoteNode> = collect_footnote_nodes(nodes);
 
     // Build footnote embeds for inline embedding in text node values.
     ctx.footnote_embeds = build_footnote_embeds(nodes);
@@ -429,6 +416,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 colspan: config.grid_columns,
                 dor_colspan: None,
                 bind_ref,
+                frag_ref: None,
             });
         } else {
             // Preamble (before first H2) → collect nodes, don't create page.
@@ -454,6 +442,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             colspan: config.grid_columns,
             dor_colspan: None,
             bind_ref: None,
+            frag_ref: None,
         });
     }
 
@@ -483,25 +472,43 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
         replace_with_fragments(&mut children, &config.fragments, xsd_config, &mut ctx);
     }
 
-    // --- Fourth pass: propagate bind_ref from section panels to repeatables ---
-    // In reference forms, the repeatable inner panel (with maxOccur) carries the
-    // bindRef, not the wrapping section panel.  Move the section panel's bind_ref
-    // to its child Repeatable when applicable.
-    propagate_bind_ref_to_repeatables(&mut children);
-
-    // When bind_to_xsd is disabled, strip bind_ref from all non-Fragment nodes
-    // (bind_refs were only needed internally for fragment matching).
-    if !config.bind_to_xsd {
-        strip_bind_refs(&mut children);
-    }
-
     // --- Final pass: remove empty non-page panels ---
+    // Done before the bind_ref pass so a panel that is about to disappear can
+    // never claim an XSD element.
     remove_empty_panels(&mut children);
 
-    AemNode::Root {
+    let mut root = AemNode::Root {
         title: form_display_title,
         children,
+    };
+
+    // --- Authoritative bind_ref pass ---
+    //
+    // Everything above used bind_refs derived from the structured tree, which
+    // exist only to drive fragment matching. Discard them and re-derive the
+    // schema from the finished AEM tree, writing each node's bind_ref during the
+    // same walk. That is what makes `bindRef` and the generated XSD agree by
+    // construction rather than by two code paths staying in step.
+    //
+    // Only when the profile actually binds to a schema. With `bind_to_xsd`
+    // off, `strip_bind_refs` would discard the result anyway except on
+    // fragments, which must keep the fragment-prefixed paths
+    // `to_fragment_bind_ref` gave them rather than form-schema paths.
+    if config.bind_to_xsd {
+        if let Some(xsd_config) = &config.xsd_config {
+            let result = crate::xsd::generate_xsd_from_aem(&root, xsd_config, &config.fragments);
+            crate::xsd::apply_bind_refs(&mut root, &result.bind_refs);
+        }
+    } else {
+        // bind_refs were only needed internally for fragment matching; strip
+        // them from everything except fragments, whose bindRef is their data
+        // bind path and is emitted regardless.
+        if let AemNode::Root { children, .. } = &mut root {
+            strip_bind_refs(children);
+        }
     }
+
+    root
 }
 
 fn inject_page_edge_templates(
@@ -985,20 +992,6 @@ fn resolve_page_index(page_target: i32, page_indices: &[usize]) -> Option<usize>
 // Footnote placement
 // ============================================================================
 
-/// Recursively collect all footnote nodes from the structured tree.
-fn collect_all_footnotes<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
-    for node in nodes {
-        match node {
-            StructuredNode::Footnote(f) => out.push(f),
-            StructuredNode::Group(g) => collect_all_footnotes(&g.children, out),
-            StructuredNode::Conditional(c) => {
-                collect_all_footnotes(std::slice::from_ref(c.content.as_ref()), out);
-            }
-            _ => {}
-        }
-    }
-}
-
 /// Place `FootnotePlaceholder` nodes at the end of page panels that contain
 /// embedded footnote references (detected by the presence of
 /// `data-af-footnote-id` in child node content).
@@ -1266,7 +1259,8 @@ fn list_nonempty_in(list: &ListNode, lang: &str) -> bool {
 pub(crate) fn rich_text_has_gap(node: &StructuredNode) -> bool {
     match node {
         StructuredNode::Paragraph(p) => {
-            p.content.languages().count() >= 2 && !p.content.missing_translation_languages().is_empty()
+            p.content.languages().count() >= 2
+                && !p.content.missing_translation_languages().is_empty()
         }
         StructuredNode::List(l) => list_has_gap(l),
         _ => false,
@@ -1510,6 +1504,7 @@ fn convert_table(
         colspan: config.grid_columns,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1746,6 +1741,7 @@ fn convert_repeatable(
         min_occur: r.min_occurrences,
         max_occur: r.max_occurrences.unwrap_or(config.repeatable_max_occur),
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1774,6 +1770,7 @@ fn convert_group(
         colspan,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1823,6 +1820,7 @@ fn convert_conditional(
         colspan,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -1858,6 +1856,7 @@ fn convert_grid_layout(
         colspan,
         dor_colspan,
         bind_ref: None,
+        frag_ref: None,
     }
 }
 
@@ -2215,6 +2214,7 @@ fn count_fragment_instances(fragment: &ParsedFragment, leaves: &[String]) -> usi
 fn make_fragment_nodes(
     n: usize,
     fragment: &ParsedFragment,
+    title: &str,
     bind_ref: Option<String>,
     ctx: &mut ConversionContext,
 ) -> Vec<AemNode> {
@@ -2225,6 +2225,7 @@ fn make_fragment_nodes(
             AemNode::Fragment {
                 uuid,
                 name,
+                title: title.to_string(),
                 frag_ref: fragment.frag_ref.clone(),
                 bind_ref: bind_ref.clone(),
             }
@@ -2249,10 +2250,14 @@ fn replace_with_fragments(
             children,
             bind_ref: Some(br),
             is_conditional,
+            title: panel_title,
             ..
         } = &nodes[i]
         {
             let is_conditional = *is_conditional;
+            // Carried onto every Fragment produced from this panel: it is the
+            // only thing that distinguishes two fragments sharing a `frag_ref`.
+            let panel_title = panel_title.clone();
             let full_paths = collect_child_bind_ref_full_paths(children);
             let br_prefix = format!("{}/", br);
 
@@ -2293,13 +2298,15 @@ fn replace_with_fragments(
                             nodes[i] = AemNode::Fragment {
                                 uuid,
                                 name,
+                                title: panel_title.clone(),
                                 frag_ref: fragment.frag_ref,
                                 bind_ref,
                             };
                         } else {
                             // Multiple instances: replace children with N
                             // Fragment nodes inside the panel.
-                            let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                            let frag_nodes =
+                                make_fragment_nodes(n, &fragment, &panel_title, bind_ref, ctx);
                             if let AemNode::Panel { children, .. } = &mut nodes[i] {
                                 *children = frag_nodes;
                             }
@@ -2342,6 +2349,7 @@ fn replace_with_fragments(
                             frag_nodes.push(AemNode::Fragment {
                                 uuid,
                                 name,
+                                title: panel_title.clone(),
                                 frag_ref: fragment.frag_ref.clone(),
                                 bind_ref: Some(to_fragment_bind_ref(&full_path, xsd_config)),
                             });
@@ -2463,9 +2471,11 @@ fn replace_with_fragments(
             children,
             bind_ref: None,
             is_conditional,
+            title: panel_title,
             ..
         } = &nodes[i]
         {
+            let panel_title = panel_title.clone();
             // For conditional panels: always try to match (they wrap visibility logic).
             // For non-conditional panels: only try if they have no sub-panel children
             // (to avoid over-matching higher-level structural panels).
@@ -2485,7 +2495,8 @@ fn replace_with_fragments(
                         let bind_ref = compute_common_bind_ref_prefix(&full_paths)
                             .map(|p| to_fragment_bind_ref(&p, xsd_config));
                         let n = count_fragment_instances(&fragment, &leaves);
-                        let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                        let frag_nodes =
+                            make_fragment_nodes(n, &fragment, &panel_title, bind_ref, ctx);
                         if let AemNode::Panel { children, .. } = &mut nodes[i] {
                             *children = frag_nodes;
                         }
@@ -2498,7 +2509,13 @@ fn replace_with_fragments(
         // fragment type, replace the children with Fragment nodes inside the
         // Repeatable (preserving the add/remove wrapper). This mirrors the
         // conditional panel handler above.
-        if let AemNode::Repeatable { children, .. } = &nodes[i] {
+        if let AemNode::Repeatable {
+            children,
+            title: repeat_title,
+            ..
+        } = &nodes[i]
+        {
+            let repeat_title = repeat_title.clone();
             let leaves = collect_child_bind_ref_leaves(children);
             if !leaves.is_empty() {
                 if let Some(fragment) = find_best_fragment(&leaves, fragments, xsd_config) {
@@ -2507,7 +2524,8 @@ fn replace_with_fragments(
                     let bind_ref = compute_common_bind_ref_prefix(&full_paths)
                         .map(|p| to_fragment_bind_ref(&p, xsd_config));
                     let n = count_fragment_instances(&fragment, &leaves);
-                    let frag_nodes = make_fragment_nodes(n, &fragment, bind_ref, ctx);
+                    let frag_nodes =
+                        make_fragment_nodes(n, &fragment, &repeat_title, bind_ref, ctx);
                     if let AemNode::Repeatable { children, .. } = &mut nodes[i] {
                         *children = frag_nodes;
                     }
@@ -2606,51 +2624,6 @@ fn compute_intermediate_matches(
     matched
 }
 
-/// Move `bind_ref` from section Panels to their child Repeatable nodes.
-///
-/// In reference AEM forms, the repeatable inner panel (with `maxOccur`)
-/// carries the `bindRef` — not the wrapping section panel.  This function
-/// walks the tree and, for any Panel that has a `bind_ref` and contains a
-/// `Repeatable` child, moves the bind_ref to the Repeatable.
-fn propagate_bind_ref_to_repeatables(nodes: &mut [AemNode]) {
-    for node in nodes.iter_mut() {
-        match node {
-            AemNode::Panel {
-                children, bind_ref, ..
-            } => {
-                // First recurse into children
-                propagate_bind_ref_to_repeatables(children);
-
-                // If this panel has a bind_ref and contains a Repeatable child,
-                // move the bind_ref to the Repeatable (the section panel itself
-                // should not emit bindRef — the repeatable inner panel owns it).
-                if bind_ref.is_some() {
-                    let has_repeatable = children
-                        .iter()
-                        .any(|c| matches!(c, AemNode::Repeatable { .. }));
-                    if has_repeatable {
-                        let br = bind_ref.take().unwrap();
-                        for child in children.iter_mut() {
-                            if let AemNode::Repeatable {
-                                bind_ref: rep_br, ..
-                            } = child
-                            {
-                                if rep_br.is_none() {
-                                    *rep_br = Some(br.clone());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            AemNode::Root { children, .. } | AemNode::Repeatable { children, .. } => {
-                propagate_bind_ref_to_repeatables(children);
-            }
-            _ => {}
-        }
-    }
-}
-
 /// Recursively clear `bind_ref` on all nodes except `Fragment` nodes.
 ///
 /// Used when `use_fragments` is enabled but `bind_to_xsd` is disabled:
@@ -2682,15 +2655,15 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             | AemNode::DatePicker { bind_ref, .. }
             | AemNode::Dropdown { bind_ref, .. }
             | AemNode::Checkbox { bind_ref, .. }
-            | AemNode::RadioButton { bind_ref, .. } => {
+            | AemNode::RadioButton { bind_ref, .. }
+            | AemNode::Custom { bind_ref, .. } => {
                 *bind_ref = None;
             }
             AemNode::TextDraw { .. }
             | AemNode::TitleDraw { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
-            | AemNode::FootnotePlaceholder { .. }
-            | AemNode::Custom { .. } => {}
+            | AemNode::FootnotePlaceholder { .. } => {}
         }
     }
 }
@@ -2720,51 +2693,9 @@ fn remove_empty_panels(nodes: &mut Vec<AemNode>) {
 // Helpers
 // ============================================================================
 
-/// Convert `InlineText` to a simple HTML string.
+/// Convert `InlineText` to a simple HTML string using the AEM tag vocabulary.
 pub(crate) fn inline_text_to_html(text: &TranslatedText, language: &str) -> String {
-    let inline = text.get(language).or_else(|| text.0.values().next());
-    match inline {
-        Some(t) => {
-            let mut out = String::new();
-            for node in &t.0 {
-                inline_node_to_html(node, &mut out);
-            }
-            out
-        }
-        None => String::new(),
-    }
-}
-
-fn inline_node_to_html(node: &InlineNode, out: &mut String) {
-    match node {
-        InlineNode::Text(s) => {
-            out.push_str(&escape_html(s));
-        }
-        InlineNode::Link(link) => {
-            out.push_str("<a href=\"");
-            out.push_str(&escape_html(&link.href));
-            out.push_str("\">");
-            for child in &link.content.0 {
-                inline_node_to_html(child, out);
-            }
-            out.push_str("</a>");
-        }
-        InlineNode::Strong(inner) => {
-            out.push_str("<b>");
-            inline_node_to_html(inner, out);
-            out.push_str("</b>");
-        }
-        InlineNode::Emphasis(inner) => {
-            out.push_str("<i>");
-            inline_node_to_html(inner, out);
-            out.push_str("</i>");
-        }
-        InlineNode::Superscript(inner) => {
-            out.push_str("<sup>");
-            inline_node_to_html(inner, out);
-            out.push_str("</sup>");
-        }
-    }
+    inline_text_to_html_with(text, language, AEM_TAGS)
 }
 
 use crate::util::{base64_encode, escape_html};
@@ -3105,7 +3036,11 @@ mod tests {
         ];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);
-        assert_eq!(children.len(), 1, "orphan should be merged into one element");
+        assert_eq!(
+            children.len(),
+            1,
+            "orphan should be merged into one element"
+        );
         match &children[0] {
             AemNode::TextDraw { content, name, .. } => {
                 // Master language is "en" → only the translated paragraph renders.
@@ -3121,7 +3056,7 @@ mod tests {
         // A translated paragraph followed by an orphan list (EN missing) merges
         // into a single element; the master (EN) render contains both blocks
         // only where EN has content.
-        let nodes = vec![
+        let nodes = [
             ml_para(&[("en", "Intro"), ("de", "Intro-de")]),
             ml_list(&[&[("en", "x"), ("de", "y")], &[("en", ""), ("de", "z")]]),
         ];
@@ -3151,7 +3086,7 @@ mod tests {
     fn merged_block_value_matches_shared_renderer() {
         // The TextDraw _value is exactly what the shared renderer produces for
         // the master language — the same fn the dictionary extraction uses.
-        let nodes = vec![
+        let nodes = [
             ml_para(&[("en", "A"), ("de", "A-de")]),
             ml_para(&[("en", ""), ("de", "B-de")]),
         ];
@@ -3561,6 +3496,7 @@ mod tests {
                     required: false,
                 }),
             ],
+            column_flow: false,
         })];
         let root = convert_to_aem(&nodes, &default_config());
         let children = unwrap_preamble(&root);

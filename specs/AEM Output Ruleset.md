@@ -41,8 +41,10 @@
   text becomes the step title. (`converter.rs`)
 - **R2.4** Remove empty non-page panels after all transformations (a final
   retain-if-children-non-empty pass). (`3ac2e61`)
-- **R2.5** Inside a repeatable panel the **content panel comes before the remove
-  button** (`BT_Remove`) in the items list, never after. (`66fc9ce`; `repeatable.xml`)
+- **R2.5** Inside a repeatable panel the **remove button** (`BT_Remove`) comes
+  **before the content panel** in the items list, never after — matching AF
+  Design Guidelines §6.2.3 (the "Buttons" panel is added to the Content section
+  ahead of the form components). (`repeatable.xml`)
 - **R2.6** The H2/section-title detector regex must stay **tolerant**
   (case-insensitive, flexible whitespace, optional parenthetical) so minor
   textual variation still matches a section. (`c0b233d`; `config.toml`)

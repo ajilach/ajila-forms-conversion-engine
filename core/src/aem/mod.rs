@@ -27,14 +27,13 @@ mod package_writer;
 pub mod parser;
 pub mod profile;
 pub mod script_engine;
-pub mod template;
 pub mod to_structured;
 pub mod to_translated;
 pub mod translated;
-pub mod xml_edit;
 mod xml_writer;
 pub mod xml_validation;
 
+pub use crate::template;
 pub use converter::convert_to_aem;
 pub use fragment_parser::{ParsedFragment, parse_fragment_content, scan_fragments};
 pub use package_writer::{
@@ -50,10 +49,9 @@ pub use profile::{AemConnectionProfile, AemProfile};
 pub use script_engine::AemScriptEngine;
 pub use to_structured::aem_to_structured;
 pub use to_translated::aem_to_translated;
-pub use translated::{AemI18nText, AemNodeTranslated, AemOptionTranslated, I18nDict, LowerConflict};
-pub use xml_edit::{
-    InsertPos, insert_aem_xml_node, outline_aem_xml, read_aem_xml_node, remove_aem_xml_attribute,
-    remove_aem_xml_node, replace_aem_xml_node, set_aem_xml_attribute,
+pub use translated::{
+    AemI18nText, AemNodeTranslated, AemOptionTranslated, I18nDict, LowerConflict,
+    translation_data_from_master_dict,
 };
 pub use xml_validation::{
     validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
@@ -529,6 +527,15 @@ pub enum AemNode {
         /// XSD path for `bindRef` attribute (e.g. `/form/personal_data`).
         /// `None` when `bind_to_xsd` is `false` or the panel has no corresponding XSD element.
         bind_ref: Option<String>,
+        /// `fragRef` of the fragment this panel was expanded from, when the
+        /// parser inlined a fragment's children into it.
+        ///
+        /// `None` for ordinary panels. Keeping it means a package that is loaded
+        /// and saved again still knows which panels came from a fragment, which
+        /// is what lets the XSD walk emit a fragment element rather than
+        /// descending into the inlined children.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
 
     /// Single-line text input (`guideTextBox`).
@@ -668,6 +675,15 @@ pub enum AemNode {
         max_occur: u32,
         /// XSD path for `bindRef` attribute on the repeatable inner panel.
         bind_ref: Option<String>,
+        /// `fragRef` of the fragment this repeatable wraps, when a repeating
+        /// panel carried a `fragRef` and its content was inlined.
+        ///
+        /// A repeating fragment (`maxOccur` on a `fragRef` panel) is the shape
+        /// behind an XSD element such as
+        /// `<xs:element name="AuthRepSignature" type="SignatureType" maxOccurs="50"/>`,
+        /// so the reference has to survive the unwrapping.
+        #[serde(default)]
+        frag_ref: Option<String>,
     },
 
     /// Fragment reference — replaces a panel whose XSD type matches a
@@ -676,6 +692,15 @@ pub enum AemNode {
     Fragment {
         uuid: Uuid,
         name: String,
+        /// `jcr:title` of the panel this fragment replaced.
+        ///
+        /// Several panels may share one `frag_ref` — a form can hold two
+        /// `affrg_SignatureGeneric1` fragments, one for the client and one for
+        /// the authorized representative — and the title is the only thing that
+        /// tells them apart when resolving the XSD element name. Empty when the
+        /// replaced panel had no title.
+        #[serde(default)]
+        title: String,
         /// JCR path to the fragment (e.g.
         /// `"/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_Address1"`).
         frag_ref: String,
@@ -730,6 +755,12 @@ pub enum AemNode {
 // ============================================================================
 
 impl AemNode {
+    /// `max_occur` value standing for "unbounded".
+    ///
+    /// AEM spells this `maxOccur="-1"`, which does not fit the `u32` the model
+    /// uses, so it is carried as this sentinel and written back out as `-1`.
+    pub const UNBOUNDED_OCCUR: u32 = u32::MAX;
+
     /// Get the element tag name used in JCR XML (e.g. `"panel_<uuid>"`).
     pub fn element_name(&self) -> String {
         match self {

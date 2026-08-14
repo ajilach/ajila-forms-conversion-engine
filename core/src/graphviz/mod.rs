@@ -617,6 +617,7 @@ mod tests {
                 radio_field("Form.Radio", "Top Radio", &[("A", "v1"), ("B", "v2")]),
                 checkbox_field("Form.Check", "My Checkbox"),
             ],
+            column_flow: false,
         })];
 
         let map = build_field_label_map(&nodes);

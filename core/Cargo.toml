@@ -1,7 +1,8 @@
 [package]
 name = "blueprint"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 path = "src/lib.rs"
@@ -20,20 +21,20 @@ ab_glyph = "0.2.32"
 thiserror = "1.0"
 boa_engine = "0.20"
 boa_gc = "0.20"
-image = "0.25.9"
+image = { workspace = true }
 imageproc = "0.26.0"
 lopdf = "0.34"
 quick-xml = "0.36"
 rust_decimal = "1.40.0"
-log = "0.4"
+log = { workspace = true }
 ttf-parser = "0.25"
-regex-lite = "0.1"
-uuid = { version = "1", features = ["v4", "v5", "serde", "js"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+regex-lite = { workspace = true }
+uuid = { workspace = true, features = ["v5", "serde", "js"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 schemars = { version = "1.0", features = ["uuid1"] }
-base64 = "0.22"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+base64 = { workspace = true }
+zip = { workspace = true }
 tera = "1"
 toml = "0.8"
 include_dir = "0.7"
@@ -44,7 +45,7 @@ candle-nn = { version = "0.9", optional = true }
 candle-transformers = { version = "0.9", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rayon = "1.10"
+rayon = { workspace = true }
 tokenizers = { version = "0.21", optional = true, default-features = false, features = ["onig"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

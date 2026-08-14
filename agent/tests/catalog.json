@@ -1,0 +1,752 @@
+[
+  {
+    "description": "Info about the source PDFs (name, language, state count).",
+    "input_schema": {
+      "properties": {
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_source_info"
+  },
+  {
+    "description": "List discovered form states (label, pdf, selection count).",
+    "input_schema": {
+      "properties": {
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "list_states"
+  },
+  {
+    "description": "Return the source's authoritative XFA XML (all PDFs concatenated).",
+    "input_schema": {
+      "properties": {
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_xfa"
+  },
+  {
+    "description": "Regex/substring search within the source's XFA; returns matching snippets.",
+    "input_schema": {
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "regex": {
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_xfa"
+  },
+  {
+    "description": "Render a state's page image (plain).",
+    "input_schema": {
+      "properties": {
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "state_label": {
+          "description": "A label from list_states.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_label"
+      ],
+      "type": "object"
+    },
+    "name": "get_plain_state_image"
+  },
+  {
+    "description": "Render a state's page image with field-name overlays.",
+    "input_schema": {
+      "properties": {
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "state_label": {
+          "description": "A label from list_states.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_label"
+      ],
+      "type": "object"
+    },
+    "name": "get_annotated_state_image"
+  },
+  {
+    "description": "The engine's clean structured tree for ONE state (one language × one configurator selection). Carries no merge artifacts — no duplicated sections, colliding field names or mispaired translations. This is the building block you assemble the working tree from: inspect each state, compare against its page image and XFA, then seed from one and layer in the rest.",
+    "input_schema": {
+      "properties": {
+        "source": {
+          "description": "Optional: which input to read. Omit for the uploaded form, or {\"reference\": \"<ref_id>\"} to run the engine on a reference's input.",
+          "properties": {
+            "reference": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "state_label": {
+          "description": "A label from list_states.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_label"
+      ],
+      "type": "object"
+    },
+    "name": "get_flattened_structure_for_state"
+  },
+  {
+    "description": "Load the engine's clean structured tree for ONE state as the working tree, replacing whatever is there. START HERE: the engine already got the block structure, the inline markup, the list nesting, the footnote markers and the multi-column sections right for that state — you only have to add the OTHER languages to each node. Far cheaper and far more faithful than emitting the tree yourself with set_structured. Pick the state in the master language, then layer in the rest with set_structured_field.",
+    "input_schema": {
+      "properties": {
+        "state_label": {
+          "description": "A label from list_states.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_label"
+      ],
+      "type": "object"
+    },
+    "name": "seed_structured_from_state"
+  },
+  {
+    "description": "Set the WHOLE working structured tree as a JSON array of StructuredNode (call get_schema('structured') for the exact shape). Rarely needed: prefer seed_structured_from_state followed by targeted edits, which cannot silently drop a node or a language.",
+    "input_schema": {
+      "properties": {
+        "nodes": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes"
+      ],
+      "type": "object"
+    },
+    "name": "set_structured"
+  },
+  {
+    "description": "Map the working structured tree: one line per node — `<path>  <type> <summary>  <flags>`. Flags: `⚠ text?` / `⚠ label?` (missing or placeholder text), `⚠ no-options` (empty choice list), `⚠ unsupported` (a node the Redacto output cannot represent: fields, images, conditionals, repeatables). Paths are `/`-separated walks from the top level, e.g. `0/children/2`, `5/rows/0/cells/1`.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_structured_outline"
+  },
+  {
+    "description": "Return the node (its whole subtree) at `path` as JSON. Inspect it before editing to see the exact field shapes — in particular that every text is a per-language map like {\"de\":[…],\"en\":[…]}.",
+    "input_schema": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "get_structured_node"
+  },
+  {
+    "description": "Set one field of the node at `path`. `field` is a node key such as `content`, `level`, `label`, `items`, `columnFlow`; `value` is the raw JSON for it (match the shape from get_structured_node). This is how you add a language: read the node, then write back its `content` map with every language present. Validated by round-trip; a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_structured_node).",
+    "input_schema": {
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "path",
+        "field",
+        "value"
+      ],
+      "type": "object"
+    },
+    "name": "set_structured_field"
+  },
+  {
+    "description": "Apply MANY set_structured_field edits in ONE call: `edits` is an array of {path, field, value}. This is how you add a language — read the outline, then write every node's `content` map back in a single call. All-or-nothing: if any edit is invalid none are applied, and the error names the offending one. Use this instead of re-emitting the whole tree, which would discard the grouping, multi-column sections and heading levels the seed carried.",
+    "input_schema": {
+      "properties": {
+        "edits": {
+          "items": {
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "value": {}
+            },
+            "required": [
+              "path",
+              "field",
+              "value"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "edits"
+      ],
+      "type": "object"
+    },
+    "name": "set_structured_fields"
+  },
+  {
+    "description": "Replace the whole node at `path` with `node`, a JSON object parseable as a StructuredNode (must include its `type`). Use to change a node's type or rebuild it.",
+    "input_schema": {
+      "properties": {
+        "node": {
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "node"
+      ],
+      "type": "object"
+    },
+    "name": "replace_structured_node"
+  },
+  {
+    "description": "Insert `node` (a StructuredNode JSON object) into a child list. `parent_path` is empty/\"root\" for the top level, or the path of a Group. `position` is \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>}.",
+    "input_schema": {
+      "properties": {
+        "node": {
+          "type": "object"
+        },
+        "parent_path": {
+          "type": "string"
+        },
+        "position": {
+          "type": [
+            "string",
+            "object"
+          ]
+        }
+      },
+      "required": [
+        "parent_path",
+        "node",
+        "position"
+      ],
+      "type": "object"
+    },
+    "name": "insert_structured_node"
+  },
+  {
+    "description": "Remove the node at `path` from its list (top-level nodes and Group children only).",
+    "input_schema": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "remove_structured_node"
+  },
+  {
+    "description": "Build the Redacto PostgreSQL dump from the working structured tree and report what it contains: languages, document id, per-table row counts, `problems` and `warnings`. Run it after every substantive change. A `problem` means the dump is not shippable (no text assets at all, a language missing its variants); a `warning` means content was dropped in translation to the Redacto model. Resolve every problem before you stop.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "build_redacto_dump"
+  },
+  {
+    "description": "Fidelity review: compare the engine's parse of the source against the text that actually reaches the generated dump, and report input text with no match, plus a coverage score. Compares the master language only. Reviews the DUMP, not the working tree — that is the artefact that ships.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "review_redacto_output"
+  },
+  {
+    "description": "Set the WHOLE working AEM tree as an AemNodeTranslated JSON object (call get_schema('aem_translated') for the exact shape). Use this for the initial authoring of the form; for small fixes afterwards use the targeted editors below. Text fields (title/label/content and option labels) are per-language maps like {\"de\":\"…\",\"en\":\"…\"}; include EVERY source language. Invalidates the package.",
+    "input_schema": {
+      "properties": {
+        "root": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "type": "object"
+    },
+    "name": "set_aem_translated"
+  },
+  {
+    "description": "Dump the WHOLE working AemNodeTranslated tree as JSON. Expensive on a real form — prefer get_aem_translated_outline to find the path, then get_aem_translated_node to read just that subtree.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_aem_translated"
+  },
+  {
+    "description": "Map the working AEM tree: one line per node — `<path>  <Type>  [langs] \"excerpt\"  <flags>`. Flags: `⚠ empty` (text-bearing node with no text), `⚠ 1 lang` (only one language present — likely a missing translation). Use it to find the path to fix, then call the set/replace/insert/remove tools. Paths are `/`-separated child indices from the root (e.g. 2/0/3); `root`/empty addresses the root node.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_aem_translated_outline"
+  },
+  {
+    "description": "Return just the node (its whole subtree) at `path` as JSON. Inspect it before editing to see the exact field shapes (e.g. how `label`/`options` are structured).",
+    "input_schema": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "get_aem_translated_node"
+  },
+  {
+    "description": "Set one field of the node at `path`. `field` is a node key such as `label`, `title`, `content`, `options`, `visible`, `mandatory`, `colspan`, `bind_ref`; `value` is the raw JSON for it (match the shape from get_aem_translated_node — text fields are per-language maps). Validated by round-trip; a bad value is rejected and the tree left unchanged. Cannot change a node's `type` (use replace_aem_translated_node). Invalidates the package.",
+    "input_schema": {
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "path",
+        "field",
+        "value"
+      ],
+      "type": "object"
+    },
+    "name": "set_aem_translated_field"
+  },
+  {
+    "description": "Replace the whole node at `path` with `node`, a JSON object parseable as an AemNodeTranslated (must include its `type`). Use to change a node's type or rebuild it. Invalidates the package.",
+    "input_schema": {
+      "properties": {
+        "node": {
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "node"
+      ],
+      "type": "object"
+    },
+    "name": "replace_aem_translated_node"
+  },
+  {
+    "description": "Insert `node` (an AemNodeTranslated JSON object) into a child list. `parent_path` is empty/\"root\" for the root, or the path of a Panel or Repeatable (only those hold children). `position` is \"first\", \"last\", {\"before\":<i>} or {\"after\":<i>} (i = child index). Invalidates the package.",
+    "input_schema": {
+      "properties": {
+        "node": {
+          "type": "object"
+        },
+        "parent_path": {
+          "type": "string"
+        },
+        "position": {
+          "type": [
+            "string",
+            "object"
+          ]
+        }
+      },
+      "required": [
+        "parent_path",
+        "node",
+        "position"
+      ],
+      "type": "object"
+    },
+    "name": "insert_aem_translated_node"
+  },
+  {
+    "description": "Remove the node at `path` from its parent's child list (the root cannot be removed). Invalidates the package.",
+    "input_schema": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "remove_aem_translated_node"
+  },
+  {
+    "description": "Build the AEM FileVault package (ZIP) from the current AEM tree. Requires an AEM tree (author it with set_aem_translated, or refine the pre-loaded one). Stores it for upload/export.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "build_aem_package"
+  },
+  {
+    "description": "Size and file list of the built package.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_package_info"
+  },
+  {
+    "description": "Read a file from the built package by path.",
+    "input_schema": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "read_package_file"
+  },
+  {
+    "description": "Validate the built package: checks the required FileVault structure (META-INF + jcr_root boilerplate) and validates the form and DAM .content.xml against the AEM contract (well-formedness, escaping, JCR/CQ/FD/Sling structure). Run after build_aem_package, before upload_to_aem.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "validate_aem_package"
+  },
+  {
+    "description": "Fidelity review: compare the input (the engine's merged structured parse) against the converted AEM tree and report input text/elements missing from the output, with a coverage score. Compares the master language only (spot-check other languages with search_xfa). Reads the AEM tree, so edits made only to the content XML are not reflected. Run once the tree is authored and before you report the stage done; investigate every miss (fix the tree, or confirm it was intentionally dropped) and re-run.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "review_output"
+  },
+  {
+    "description": "Generate the XSD schema for the form. Renders the working structured tree, or — on an AEM run, which has none — the working AEM tree lifted back to structured content.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "generate_xsd"
+  },
+  {
+    "description": "Generate an HTML preview of the form. Renders the working structured tree, or — on an AEM run, which has none — the working AEM tree lifted back to structured content.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "generate_html"
+  },
+  {
+    "description": "Upload and install the built package on the configured AEM instance.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "upload_to_aem"
+  },
+  {
+    "description": "Fetch the rendered Adaptive Form HTML from AEM (after upload) for verification.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "fetch_aem_form_html"
+  },
+  {
+    "description": "Fetch the Document-of-Record PDF from AEM and view its first page.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "fetch_aem_dor_pdf"
+  },
+  {
+    "description": "List the profile's reference forms (hand-built, known-good worked examples). Consult references BEFORE building: they show the expected JCR structure, dictionary setup and DoR conventions for this profile's forms.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "list_reference_forms"
+  },
+  {
+    "description": "Semantic search for precedent forms by MEANING, not by name. The query must be a natural-language DESCRIPTION of the input you are building — the form's (or the current section's) purpose, the kinds of fields it contains and how they are grouped — NOT a form name or a single keyword. References are matched by embedding this description against each reference's stored description (a literal substring fallback over descriptions + package XML is folded in). Run this first (before building), section by section; each hit carries a ref_id to pass to get_reference_package / read_reference_file. Optional top_k caps hits per signal (default 3).",
+    "input_schema": {
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "top_k": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_references"
+  },
+  {
+    "description": "Literal/regex substring search over reference descriptions + AEM package XML — the grep counterpart to search_references. Use it to find a specific string (a field name, label, or AEM resource type) verbatim; use search_references when looking for a form that resembles your input by meaning.",
+    "input_schema": {
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "regex": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "grep_references"
+  },
+  {
+    "description": "Read a reference's description ('description') or a package file by path (get the path from get_reference_package). Use it to study how a known-good form was built and mirror its structure.",
+    "input_schema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "ref_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref_id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "read_reference_file"
+  },
+  {
+    "description": "List the package files (known-good output) of a reference by its ref_id (from list_reference_forms / search_references), then read individual files with read_reference_file.",
+    "input_schema": {
+      "properties": {
+        "ref_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_reference_package"
+  },
+  {
+    "description": "List the profile's reference documentation (.md/.txt).",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "list_reference_docs"
+  },
+  {
+    "description": "Read a reference documentation doc by id.",
+    "input_schema": {
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "doc_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_reference_doc"
+  },
+  {
+    "description": "Regex/substring search over reference documentation.",
+    "input_schema": {
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "regex": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "grep_reference_docs"
+  },
+  {
+    "description": "Return the JSON schema for a working tree: 'aem_translated' (what set_aem_translated and the AEM editors take) or 'structured' (what set_structured and the structured editors take).",
+    "input_schema": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "aem_translated",
+            "structured"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "name": "get_schema"
+  },
+  {
+    "description": "Profile/AEM config: form_code, languages, JCR paths, binding flags.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "get_profile_info"
+  },
+  {
+    "description": "Terminal REVIEW step (Reviewer role) — call once, last, after building/validating/reviewing. approved=true means the form is fully correct and ends the run; approved=false returns your detailed issue list to the author for a fix round.",
+    "input_schema": {
+      "properties": {
+        "approved": {
+          "type": "boolean"
+        },
+        "report": {
+          "description": "When not approved: a detailed, actionable list of every issue, with node paths where possible.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approved"
+      ],
+      "type": "object"
+    },
+    "name": "submit_review"
+  }
+]

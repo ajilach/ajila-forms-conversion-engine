@@ -5,17 +5,34 @@ members = [
     "app",
     "agent",
     "mcp",
+    "pipeline",
     "judge",
-    "teacher",
 ]
 resolver = "3"
 
-[profile.wasm-dev]
-inherits = "dev"
-opt-level = 1
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# The floor CI pins and the version edition-2024 plus let-chains need.
+rust-version = "1.88"
+repository = "https://github.com/ajilach/ajila-forms-conversion-engine"
 
-[profile.server-dev]
-inherits = "dev"
-
-[profile.android-dev]
-inherits = "dev"
+# Versions for every dependency more than one crate uses, so they cannot drift
+# apart the way reqwest did (0.12 in one crate, 0.13 in two others, two HTTP and
+# TLS stacks in one lockfile). Crate-specific dependencies stay in their own
+# manifest.
+[workspace.dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock"] }
+clap = { version = "4.5", features = ["derive"] }
+dirs = "5.0"
+env_logger = "0.11"
+image = { version = "0.25", features = ["png", "jpeg"] }
+log = "0.4"
+rayon = "1.10"
+regex-lite = "0.1"
+reqwest = { version = "0.13", features = ["json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1", features = ["v4"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }

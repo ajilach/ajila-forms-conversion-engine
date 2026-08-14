@@ -1,38 +1,52 @@
 //! XSD (XML Schema Definition) Output Module
 //!
-//! Converts structured form nodes into an XSD schema that describes the form's
-//! data model. Headings create nested `xs:complexType` hierarchies, fields
-//! become `xs:element` declarations, conditional sections map to `xs:choice`,
-//! and repeatable sections use `minOccurs`/`maxOccurs`.
+//! Describes a form's data model as an XSD schema. The schema is derived from
+//! the **AEM node tree**, and every node's `bindRef` is assigned during the same
+//! walk, so a form and its schema agree by construction rather than because two
+//! code paths were kept in step.
 //!
 //! # Architecture
 //!
 //! ```text
-//! StructuredNode ──► generate_xsd() ──► XSD String
+//! StructuredNode ──► convert_to_aem() ──► AemNode ──► generate_xsd_from_aem()
+//!                                            │                    │
+//!                                            └── bindRef ◄─────────┘
 //! ```
+//!
+//! [`compute_bind_refs`] still derives *provisional* paths from the structured
+//! tree, but only as an input to fragment matching in the AEM converter; those
+//! paths never reach the emitted XML.
+//!
+//! The generated vocabulary is deliberately narrow — `xs:schema`, `xs:include`,
+//! `xs:element`, `xs:complexType`, `xs:sequence` — because that is what the UBS
+//! toolchain consumes. There is no `xs:choice`, no `xs:simpleType` and no
+//! restriction facet, and [`XsdNode`] cannot express them.
 //!
 //! # Profile configuration
 //!
-//! The module reads a TOML config from `profiles/{name}/xsd/config.toml` with:
-//! - `[elements.<name>]` — synonym mappings for fields → xs:element declarations
-//! - `schemaLocationPrefix`  — prefix prepended to auto-discovered include paths
-//!   (default: `"../"`)
+//! The module reads a TOML config from `profiles/{name}/xsd/config.toml`:
+//! - `[[aemElements]]` — ordered rules for the AEM → XSD walk (see
+//!   [`AemElementRule`]): which nodes to ignore, the element names a title
+//!   cannot yield, and occurrence overrides
+//! - `[defaultTypes]` — XSD type per AEM component kind
+//! - `[elements.<name>]` — synonym mappings used by [`compute_bind_refs`]
+//! - `rootElementName`, `maxOccursValue`, `alwaysInclude`, `schemaLocationPrefix`
 //!
 //! `xs:include` directives are generated automatically by indexing all `*.xsd`
-//! files in `profiles/{name}/xsd/types/`. An include is emitted only when a
-//! type declared in that file is actually referenced by the generated schema.
+//! files in `profiles/{name}/xsd/types/`. `alwaysInclude` entries come first;
+//! the rest are emitted in first-appearance order, and only for a type the
+//! schema actually references.
 //!
-//! Complex types are auto-matched: the `xs:complexType` definitions from the
-//! `types/` directory are parsed (including `xs:extension` inheritance and
-//! `xs:element ref` resolution) to build a registry of known types with their
-//! child elements (name + type pairs). During generation, a heading's resolved
-//! children are compared against this registry — if all children form a subset
-//! of a registered type's elements, the best-matching type (most element
-//! overlap) is used and the corresponding file is included via `xs:include`.
+//! Those same files also decide `ref=` versus `name=`/`type=`: an element name
+//! declared globally under `types/` is referenced, never re-declared.
 
 mod converter;
+pub mod from_aem;
 
-pub use converter::{BindRefMaps, compute_bind_refs, generate_xsd, generate_xsd_schema};
+pub use converter::{BindRefMaps, compute_bind_refs};
+pub use from_aem::{
+    AemXsdResult, apply_bind_refs, generate_xsd_from_aem, generate_xsd_string_from_aem,
+};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -40,22 +54,9 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::util::escape_html as xml_escape;
-
 // ============================================================================
 // XSD node types (intermediate representation)
 // ============================================================================
-
-/// An XSD restriction facet.
-#[derive(Debug, Clone, PartialEq)]
-pub enum XsdRestriction {
-    Pattern(String),
-    MinLength(usize),
-    MaxLength(usize),
-    MinInclusive(String),
-    MaxInclusive(String),
-    Enumeration(String),
-}
 
 /// An XSD node in the intermediate schema tree.
 #[derive(Debug, Clone, PartialEq)]
@@ -79,13 +80,6 @@ pub enum XsdNode {
         name: Option<String>,
         sequence: Vec<XsdNode>,
     },
-    /// `<xs:simpleType>` with restriction facets
-    SimpleType {
-        base: String,
-        restrictions: Vec<XsdRestriction>,
-    },
-    /// `<xs:choice>` — each option is one `<xs:sequence>` branch
-    Choice { options: Vec<Vec<XsdNode>> },
 }
 
 /// A complete XSD schema with includes and a root element.
@@ -176,60 +170,69 @@ impl XsdNode {
                 out.push_str(&format!("{}  </xs:sequence>\n", pad));
                 out.push_str(&format!("{}</xs:complexType>\n", pad));
             }
-            XsdNode::SimpleType { base, restrictions } => {
-                out.push_str(&format!("{}<xs:simpleType>\n", pad));
-                out.push_str(&format!("{}  <xs:restriction base=\"{}\">\n", pad, base));
-                for r in restrictions {
-                    r.write_xml(out, indent + 4);
-                }
-                out.push_str(&format!("{}  </xs:restriction>\n", pad));
-                out.push_str(&format!("{}</xs:simpleType>\n", pad));
-            }
-            XsdNode::Choice { options } => {
-                out.push_str(&format!("{}<xs:choice>\n", pad));
-                for option in options {
-                    out.push_str(&format!("{}  <xs:sequence>\n", pad));
-                    for child in option {
-                        child.write_xml(out, indent + 4);
-                    }
-                    out.push_str(&format!("{}  </xs:sequence>\n", pad));
-                }
-                out.push_str(&format!("{}</xs:choice>\n", pad));
-            }
         }
     }
 }
 
-impl XsdRestriction {
-    fn write_xml(&self, out: &mut String, indent: usize) {
-        let pad = " ".repeat(indent);
+/// The occurrence attributes an element carries.
+///
+/// `None`/`None` means no attributes at all — which is different from
+/// `minOccurs="1"`, even though the two validate identically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Occurs {
+    pub min: Option<u32>,
+    pub max: Option<Option<u32>>,
+}
+
+impl Occurs {
+    /// No occurrence attributes: the element is required and single.
+    pub fn required() -> Self {
+        Self {
+            min: None,
+            max: None,
+        }
+    }
+
+    /// `minOccurs="0"`.
+    pub fn optional() -> Self {
+        Self {
+            min: Some(0),
+            max: None,
+        }
+    }
+
+    /// `minOccurs="0" maxOccurs="{max}"`.
+    pub fn optional_repeating(max: u32) -> Self {
+        Self {
+            min: Some(0),
+            max: Some(Some(max)),
+        }
+    }
+
+    /// Whether this element may occur more than once.
+    pub fn repeats(&self) -> bool {
+        matches!(self.max, Some(None)) || matches!(self.max, Some(Some(n)) if n > 1)
+    }
+}
+
+/// How an [`AemElementRule`] spells its occurrence override.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OccursSpec {
+    /// No `minOccurs`/`maxOccurs` at all.
+    None,
+    /// `minOccurs="0"`.
+    Optional,
+    /// `minOccurs="0"` plus the profile's `maxOccursValue`.
+    OptionalRepeating,
+}
+
+impl OccursSpec {
+    fn to_occurs(&self, max_occurs_value: u32) -> Occurs {
         match self {
-            XsdRestriction::Pattern(v) => {
-                out.push_str(&format!(
-                    "{}<xs:pattern value=\"{}\"/>\n",
-                    pad,
-                    xml_escape(v)
-                ));
-            }
-            XsdRestriction::MinLength(v) => {
-                out.push_str(&format!("{}<xs:minLength value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::MaxLength(v) => {
-                out.push_str(&format!("{}<xs:maxLength value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::MinInclusive(v) => {
-                out.push_str(&format!("{}<xs:minInclusive value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::MaxInclusive(v) => {
-                out.push_str(&format!("{}<xs:maxInclusive value=\"{}\"/>\n", pad, v));
-            }
-            XsdRestriction::Enumeration(v) => {
-                out.push_str(&format!(
-                    "{}<xs:enumeration value=\"{}\"/>\n",
-                    pad,
-                    xml_escape(v)
-                ));
-            }
+            OccursSpec::None => Occurs::required(),
+            OccursSpec::Optional => Occurs::optional(),
+            OccursSpec::OptionalRepeating => Occurs::optional_repeating(max_occurs_value),
         }
     }
 }
@@ -323,6 +326,287 @@ pub struct XsdProfile {
     /// use the form-specific root unless overridden).
     #[serde(default)]
     pub fragment_bind_ref_prefix: Option<String>,
+
+    /// Ordered rules driving [`from_aem`] generation. First match wins.
+    ///
+    /// Written in TOML as repeated `[[aemElements]]` tables, which — unlike the
+    /// map-backed `[elements]` — preserve document order, and order is
+    /// significant here: a rule matching `fragRef` plus `title` must come before
+    /// the untitled fallback for the same `fragRef`.
+    #[serde(default, rename = "aemElements")]
+    pub aem_elements: Vec<AemElementRule>,
+
+    /// `maxOccurs` emitted for any repeating element.
+    ///
+    /// UBS uses a flat 50 regardless of the AEM node's real `maxOccur`.
+    #[serde(default = "default_max_occurs_value")]
+    pub max_occurs_value: u32,
+
+    /// Whether a titled page panel produces its own XSD level.
+    ///
+    /// UBS's own schemas are flat: their rule is that a panel contributes a level
+    /// only if it repeats or came from a fragment. Our generated forms are much
+    /// more field-dense, and flattening them makes many element names collide, so
+    /// they fall back to ordinal suffixes — on AAGZ, 63 of 89 elements instead of
+    /// 34, including twenty-one indistinguishable `AccountHolderSignature*`.
+    /// Grouping by section keeps those names meaningful and confines the ordinals
+    /// to one section, at the cost of a level UBS would not emit.
+    ///
+    /// Set `false` for output that follows UBS's rule exactly. Note that a
+    /// *parsed* form's wizard steps are not marked as pages, so a schema derived
+    /// from an existing package is flat either way.
+    #[serde(default = "default_group_page_panels")]
+    pub group_page_panels: bool,
+
+    /// Include paths emitted first, before anything the walk discovers.
+    ///
+    /// UBS always includes the simple-element library, whether or not a type
+    /// from it is referenced.
+    #[serde(default)]
+    pub always_include: Vec<String>,
+
+    /// Default XSD type per AEM component kind, e.g. `numericbox = "xs:decimal"`.
+    ///
+    /// Used for a data leaf that no `[elements]` synonym and no `[[aemElements]]`
+    /// rule types. Kinds are the ones listed on [`AemElementRule::kind`].
+    #[serde(default)]
+    pub default_types: HashMap<String, String>,
+}
+
+fn default_max_occurs_value() -> u32 {
+    50
+}
+
+fn default_group_page_panels() -> bool {
+    true
+}
+
+/// One ordered rule for the AEM → XSD walk.
+///
+/// Every match key is optional and they are ANDed. A rule with no match keys
+/// matches every node, which is only ever useful as a final fallback.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AemElementRule {
+    // --- match keys ---
+    /// Node kind: `panel`, `repeatable`, `fragment`, `textbox`, `numericbox`,
+    /// `datepicker`, `dropdownlist`, `checkbox`, `radiobutton`, `custom`, or
+    /// `field` for any data leaf.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Substring match against the node's `fragRef`.
+    #[serde(default)]
+    pub frag_ref: Option<String>,
+    /// Exact match against the node's AEM `name`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Exact match (case-insensitive, trimmed) against `jcr:title` / label.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Any of these names matches, as an alternative to a single `name`.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Any of these titles matches, as an alternative to a single `title`.
+    #[serde(default)]
+    pub titles: Vec<String>,
+    /// Option-set equality, ignoring order, case and markup.
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// Match only nodes with this visibility.
+    #[serde(default)]
+    pub visible: Option<bool>,
+
+    /// Choose the element by looking at the **next** sibling's `fragRef`.
+    ///
+    /// A partner-class radio ("Individual" / "Company/Entity") does not say
+    /// which kind of partner follows it — the fragment after it does. The first
+    /// entry whose `fragRef` the next sibling contains wins; when none matches,
+    /// the rule's own `element` applies.
+    #[serde(default)]
+    pub next_fragment: Vec<NextFragmentRule>,
+
+    // --- actions ---
+    /// Drop the node (and, for a container, its whole subtree).
+    #[serde(default)]
+    pub ignore: bool,
+    /// The XSD element name. Used verbatim — `to_pascal_case` would mangle an
+    /// already-camel-cased name such as `IsNonResidentOfTaxHaven`.
+    #[serde(default)]
+    pub element: Option<String>,
+    /// Force `name=`/`type=` with this type rather than resolving `ref=`.
+    #[serde(default, rename = "type")]
+    pub type_ref: Option<String>,
+    /// Override the occurrence attributes.
+    #[serde(default)]
+    pub occurs: Option<OccursSpec>,
+}
+
+/// One `fragRef` → element pair for [`AemElementRule::next_fragment`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NextFragmentRule {
+    /// Substring matched against the next sibling's `fragRef`.
+    pub frag_ref: String,
+    /// The element to emit when it matches.
+    pub element: String,
+}
+
+/// The node facts an [`AemElementRule`] is matched against.
+pub struct AemRuleSubject<'a> {
+    pub kind: &'a str,
+    pub name: &'a str,
+    pub title: &'a str,
+    pub frag_ref: Option<&'a str>,
+    pub options: Option<Vec<&'a str>>,
+    pub visible: bool,
+    /// `fragRef` of the next non-presentational sibling, if it has one.
+    pub next_frag_ref: Option<&'a str>,
+}
+
+/// Normalise an option label for set comparison: strip a leading `N=` value
+/// prefix and any HTML markup, collapse whitespace, lower-case.
+///
+/// Mirrors the UBS tool's `normalizeOptions`, so an option set written in the
+/// config matches however AEM happens to have serialised it.
+/// Remove HTML tags, keeping the text between them.
+pub fn strip_markup(text: &str) -> String {
+    if !text.contains('<') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut in_tag = false;
+    for ch in text.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if in_tag => {}
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+pub fn normalize_option_label(label: &str) -> String {
+    let without_prefix = match label.find('=') {
+        Some(idx) if label[..idx].chars().all(|c| c.is_ascii_digit()) && idx > 0 => {
+            &label[idx + 1..]
+        }
+        _ => label,
+    };
+
+    strip_markup(without_prefix)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+impl XsdProfile {
+    /// The first `[[aemElements]]` rule matching `subject`, if any.
+    pub fn match_aem_rule(&self, subject: &AemRuleSubject<'_>) -> Option<&AemElementRule> {
+        self.aem_elements.iter().find(|rule| rule.matches(subject))
+    }
+
+    /// The default XSD type for an AEM component kind.
+    pub fn default_type_for(&self, kind: &str) -> String {
+        self.default_types
+            .get(kind)
+            .cloned()
+            .unwrap_or_else(|| "xs:string".to_string())
+    }
+}
+
+impl AemElementRule {
+    /// The element this rule names for `subject`, if it names one.
+    ///
+    /// A `next_fragment` entry matching the following sibling wins over the
+    /// rule's own `element`.
+    pub fn element_for(&self, subject: &AemRuleSubject<'_>) -> Option<String> {
+        if let Some(next) = subject.next_frag_ref {
+            for candidate in &self.next_fragment {
+                if next.contains(candidate.frag_ref.as_str()) {
+                    return Some(candidate.element.clone());
+                }
+            }
+        }
+        self.element.clone()
+    }
+
+    fn matches(&self, subject: &AemRuleSubject<'_>) -> bool {
+        if let Some(kind) = &self.kind {
+            let ok = kind == subject.kind
+                || (kind == "field"
+                    && matches!(
+                        subject.kind,
+                        "textbox"
+                            | "numericbox"
+                            | "datepicker"
+                            | "dropdownlist"
+                            | "checkbox"
+                            | "radiobutton"
+                            | "custom"
+                    ));
+            if !ok {
+                return false;
+            }
+        }
+
+        if let Some(needle) = &self.frag_ref {
+            match subject.frag_ref {
+                Some(fr) if fr.contains(needle.as_str()) => {}
+                _ => return false,
+            }
+        }
+
+        if !self.name_matches(subject.name) {
+            return false;
+        }
+        if !self.title_matches(subject.title) {
+            return false;
+        }
+
+        if !self.options.is_empty() {
+            let Some(actual) = &subject.options else {
+                return false;
+            };
+            let expected: HashSet<String> = self
+                .options
+                .iter()
+                .map(|o| normalize_option_label(o))
+                .collect();
+            let found: HashSet<String> = actual.iter().map(|o| normalize_option_label(o)).collect();
+            if expected != found {
+                return false;
+            }
+        }
+
+        if let Some(want) = self.visible {
+            if want != subject.visible {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn name_matches(&self, actual: &str) -> bool {
+        match (&self.name, self.names.is_empty()) {
+            (None, true) => true,
+            (Some(n), true) => n == actual,
+            (None, false) => self.names.iter().any(|n| n == actual),
+            (Some(n), false) => n == actual || self.names.iter().any(|x| x == actual),
+        }
+    }
+
+    fn title_matches(&self, actual: &str) -> bool {
+        let eq = |want: &String| want.trim().eq_ignore_ascii_case(actual.trim());
+        match (&self.title, self.titles.is_empty()) {
+            (None, true) => true,
+            (Some(t), true) => eq(t),
+            (None, false) => self.titles.iter().any(eq),
+            (Some(t), false) => eq(t) || self.titles.iter().any(eq),
+        }
+    }
 }
 
 impl Default for XsdProfile {
@@ -334,6 +618,11 @@ impl Default for XsdProfile {
             master_language: None,
             root_element_name: default_root_element_name(),
             fragment_bind_ref_prefix: None,
+            aem_elements: Vec::new(),
+            max_occurs_value: default_max_occurs_value(),
+            group_page_panels: default_group_page_panels(),
+            always_include: Vec::new(),
+            default_types: HashMap::new(),
         }
     }
 }
@@ -426,6 +715,24 @@ pub struct XsdConfig {
     /// Built from global element declarations in the parsed XSD files.
     pub type_to_element_name: HashMap<String, String>,
 
+    /// Every fragment in the profile's library: `fragRef` → the XSD type it
+    /// binds to (its `fragmentModelRoot`).
+    ///
+    /// Deliberately independent of the AEM profile's `fragment_paths`. That
+    /// setting scopes which fragments the converter may *substitute* while
+    /// building a form; resolving a `fragRef` that a form already references is a
+    /// different question, and a legacy form referencing, say,
+    /// `afforms_ch_fragmentlib` must still get its elements.
+    pub fragment_types: HashMap<String, String>,
+
+    /// Every global element declaration: element name → type name.
+    ///
+    /// E.g. `"BankingRelationship" → "BankingRelationshipType"`. Membership in
+    /// this map is what decides whether an element is emitted as
+    /// `<xs:element ref="X"/>` (declared globally) or as
+    /// `<xs:element name="X" type="T"/>` (not declared globally).
+    pub global_elements: HashMap<String, String>,
+
     /// Optional master language code (e.g. `"en"`).
     ///
     /// When set, element names derived from headings and field labels will
@@ -454,6 +761,8 @@ impl XsdConfig {
             type_to_file,
             registered_types,
             type_to_element_name,
+            fragment_types: HashMap::new(),
+            global_elements: HashMap::new(),
             master_language,
             form_code: None,
         }
@@ -467,9 +776,31 @@ impl XsdConfig {
             type_to_file: HashMap::new(),
             registered_types: HashMap::new(),
             type_to_element_name: HashMap::new(),
+            fragment_types: HashMap::new(),
+            global_elements: HashMap::new(),
             master_language,
             form_code: None,
         }
+    }
+
+    /// Set the fragment library index (`fragRef` → XSD type).
+    pub fn with_fragment_types(mut self, fragment_types: HashMap<String, String>) -> Self {
+        self.fragment_types = fragment_types;
+        self
+    }
+
+    /// Set the global element declarations (element name → type name).
+    pub fn with_global_elements(mut self, global_elements: HashMap<String, String>) -> Self {
+        self.global_elements = global_elements;
+        self
+    }
+
+    /// Whether `name` is declared as a global element in the type library.
+    ///
+    /// Global elements are referenced with `<xs:element ref="..."/>`; everything
+    /// else is declared inline with `name=`/`type=`.
+    pub fn is_global_element(&self, name: &str) -> bool {
+        self.global_elements.contains_key(name)
     }
 
     /// Set the master language for element name resolution.
@@ -719,12 +1050,18 @@ fn get_attr(e: &quick_xml::events::BytesStart, attr_name: &[u8]) -> Option<Strin
 /// 3. Resolves `xs:extension base="Y"` inheritance by prepending base type elements.
 /// 4. Associates each type with its `schemaLocation` path.
 ///
-/// Returns `(registered_types, type_to_element_name)` where `type_to_element_name`
-/// maps complex type names to their global element names (e.g. `"AddressType" → "Address"`).
+/// Returns `(registered_types, type_to_element_name, global_elements)`:
+/// - `type_to_element_name` maps complex type names to a global element name
+///   (e.g. `"AddressType" → "Address"`); when several elements share a type the
+///   alphabetically first one wins, so the result is deterministic.
+/// - `global_elements` maps every global element name to its type. This is the
+///   forward direction and is what decides `xs:element ref=` versus
+///   `xs:element name=`/`type=`.
 pub fn build_registered_types(
     parsed_schemas: &[(ParsedSchema, String)], // (schema, schemaLocation)
 ) -> (
     HashMap<String, RegisteredComplexType>,
+    HashMap<String, String>,
     HashMap<String, String>,
 ) {
     // Collect all global elements across all files (for ref resolution)
@@ -835,13 +1172,35 @@ pub fn build_registered_types(
         }
     }
 
-    // Build reverse map: type name → element name (e.g. "AddressType" → "Address")
+    // Build reverse map: type name → element name (e.g. "AddressType" → "Address").
+    //
+    // Several global elements may share one type: `AFFragments/Signature.xsd`
+    // declares `Signature`, `CardHolderSignature`, `CardHolderPartnerSignature`
+    // and `CardLegalRepSignature`, all of `SignatureType`. Which one a given
+    // fragment should become is a per-usage decision the type library cannot
+    // answer — that is what an `[[aemElements]]` rule is for — so this map only
+    // provides a neutral default:
+    //
+    //   1. the type name minus its `Type` suffix, when that is itself a global
+    //      element (`SignatureType` → `Signature`)
+    //   2. otherwise the alphabetically first, so the result never depends on
+    //      `HashMap` iteration order
+    let mut by_name: Vec<(&String, &String)> = all_global_elements.iter().collect();
+    by_name.sort_unstable();
     let mut type_to_element_name: HashMap<String, String> = HashMap::new();
-    for (elem_name, type_name) in &all_global_elements {
-        type_to_element_name.insert(type_name.clone(), elem_name.clone());
+    for (elem_name, type_name) in &by_name {
+        type_to_element_name
+            .entry((*type_name).clone())
+            .or_insert_with(|| (*elem_name).clone());
+    }
+    for (_, type_name) in &by_name {
+        let canonical = type_name.trim_end_matches("Type");
+        if !canonical.is_empty() && all_global_elements.contains_key(canonical) {
+            type_to_element_name.insert((*type_name).clone(), canonical.to_string());
+        }
     }
 
-    (resolved, type_to_element_name)
+    (resolved, type_to_element_name, all_global_elements)
 }
 
 /// Build a full [`XsdConfig`] from pre-discovered type source files.
@@ -863,13 +1222,15 @@ pub fn build_xsd_config_from_type_sources(
         parsed_schemas.push((parse_schema(content), schema_location));
     }
 
-    let (registered_types, type_to_element_name) = build_registered_types(&parsed_schemas);
+    let (registered_types, type_to_element_name, global_elements) =
+        build_registered_types(&parsed_schemas);
     XsdConfig::new(
         profile,
         type_to_file,
         registered_types,
         type_to_element_name,
     )
+    .with_global_elements(global_elements)
 }
 
 /// Collect all `*.xsd` files recursively from `types_dir` and return
@@ -947,6 +1308,90 @@ fn path_to_forward_slash_string(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::path_to_forward_slash_string;
+    use super::{build_registered_types, parse_schema, to_pascal_case, to_xsd_element_name};
+
+    #[test]
+    fn to_xsd_element_name_joins_words_without_separators() {
+        assert_eq!(to_xsd_element_name("Email address"), "EmailAddress");
+        assert_eq!(to_xsd_element_name("Domain name"), "DomainName");
+        assert_eq!(to_xsd_element_name("IBAN"), "IBAN");
+    }
+
+    #[test]
+    fn to_xsd_element_name_maps_slash_to_or() {
+        assert_eq!(to_xsd_element_name("Company/Entity"), "CompanyOrEntity");
+    }
+
+    /// The reason this helper exists at all: `to_pascal_case` lower-cases the
+    /// tail of every word, which mangles an already-camel-cased name.
+    #[test]
+    fn to_xsd_element_name_preserves_inner_capitals_unlike_to_pascal_case() {
+        assert_eq!(
+            to_xsd_element_name("IsNonResidentOfTaxHaven"),
+            "IsNonResidentOfTaxHaven"
+        );
+        assert_eq!(
+            to_pascal_case("IsNonResidentOfTaxHaven"),
+            "Isnonresidentoftaxhaven"
+        );
+    }
+
+    #[test]
+    fn to_xsd_element_name_falls_back_for_empty_input() {
+        assert_eq!(to_xsd_element_name("   "), "Unknown");
+    }
+
+    /// Several global elements may share one complex type. The winner must not
+    /// depend on `HashMap` iteration order, or the generated schema changes
+    /// between runs.
+    #[test]
+    fn type_to_element_name_prefers_the_canonical_element_deterministically() {
+        let schema = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="Signature" type="SignatureType"/>
+    <xs:element name="CardHolderSignature" type="SignatureType"/>
+    <xs:element name="CardLegalRepSignature" type="SignatureType"/>
+    <xs:element name="AccountHolder" type="ContractualPartnerType"/>
+    <xs:element name="Lessee" type="ContractualPartnerType"/>
+    <xs:complexType name="SignatureType">
+        <xs:sequence>
+            <xs:element name="Place" type="xs:string"/>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>"#;
+
+        let parsed = vec![(
+            parse_schema(schema),
+            "../AFFragments/Signature.xsd".to_string(),
+        )];
+        let (_, type_to_element_name, global_elements) = build_registered_types(&parsed);
+
+        // `SignatureType` → `Signature`, not the alphabetically first
+        // `CardHolderSignature`: defaulting every signature fragment to a
+        // card-specific element would be plausible and wrong.
+        assert_eq!(
+            type_to_element_name
+                .get("SignatureType")
+                .map(String::as_str),
+            Some("Signature")
+        );
+
+        // With no element named after the type, the alphabetically first wins —
+        // arbitrary, but never dependent on `HashMap` iteration order.
+        assert_eq!(
+            type_to_element_name
+                .get("ContractualPartnerType")
+                .map(String::as_str),
+            Some("AccountHolder")
+        );
+
+        // The forward map keeps all of them, which is what `ref=` resolution needs.
+        assert_eq!(global_elements.len(), 5);
+        assert_eq!(
+            global_elements.get("Signature").map(String::as_str),
+            Some("SignatureType")
+        );
+    }
 
     #[test]
     fn path_to_forward_slash_string_uses_forward_slashes() {
@@ -1158,12 +1603,47 @@ pub struct ResolvedElement {
 /// Finds the best match by picking the longest matching synonym
 /// (most specific). Matching is case-insensitive substring.
 pub fn resolve_element(label: &str, profile: &XsdProfile) -> Option<ResolvedElement> {
-    let label_lower = label.to_lowercase();
+    resolve_element_matching(label, profile, SynonymMatch::Substring)
+}
+
+/// Resolve a field label against `[elements]`, requiring the **whole** label to
+/// equal a synonym (case-insensitive, trimmed).
+///
+/// This is what names elements in the generated schema. Substring matching is
+/// unusable there: labels in these forms are often whole sentences, and the
+/// table holds two-letter synonyms, so `"UNKNOWN"` matches `"No"` →
+/// `StreetNumber` and `"…istanza di fallimento in data ;"` matches `"Data"` →
+/// `Date`. Whole-label matching keeps the real wins — `Straße` → `Street`,
+/// `Cognome` → `LastName`, `Data` → `Date`/`xs:date` — and fires on no sentence.
+pub fn resolve_element_whole_label(label: &str, profile: &XsdProfile) -> Option<ResolvedElement> {
+    resolve_element_matching(label, profile, SynonymMatch::WholeLabel)
+}
+
+/// How a synonym is compared against a label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SynonymMatch {
+    /// The synonym appears anywhere in the label. Kept for
+    /// [`compute_bind_refs`], whose leaf names feed fragment matching.
+    Substring,
+    /// The trimmed label equals the synonym.
+    WholeLabel,
+}
+
+fn resolve_element_matching(
+    label: &str,
+    profile: &XsdProfile,
+    mode: SynonymMatch,
+) -> Option<ResolvedElement> {
+    let label_lower = label.trim().to_lowercase();
     let mut best: Option<(usize, ResolvedElement)> = None;
     for (name, mapping) in &profile.elements {
         for synonym in &mapping.synonyms {
-            let syn_lower = synonym.to_lowercase();
-            if label_lower.contains(&syn_lower) {
+            let syn_lower = synonym.trim().to_lowercase();
+            let hit = match mode {
+                SynonymMatch::Substring => label_lower.contains(&syn_lower),
+                SynonymMatch::WholeLabel => label_lower == syn_lower,
+            };
+            if hit {
                 let len = syn_lower.len();
                 if best.as_ref().is_none_or(|(best_len, _)| len > *best_len) {
                     best = Some((
@@ -1306,6 +1786,45 @@ pub fn to_snake_case(label: &str) -> String {
         .map(|w| w.to_lowercase())
         .collect::<Vec<_>>()
         .join("_")
+}
+
+/// Derive an XSD element name from a label, using UBS normalisation rules.
+///
+/// Unlike [`to_pascal_case`], the tail of each word is preserved verbatim, so
+/// an already-camel-cased label survives the round trip:
+/// `to_pascal_case("IsNonResidentOfTaxHaven")` yields `Isnonresidentoftaxhaven`,
+/// which is why config-supplied names must never go through it.
+///
+/// - `/` becomes ` Or `, so `"Company/Entity"` → `"CompanyOrEntity"`
+/// - the label is split on non-alphanumeric characters
+/// - each segment's first character is upper-cased; the rest is left alone
+///
+/// Example: `"Email address"` → `"EmailAddress"`, `"IBAN"` → `"IBAN"`.
+pub fn to_xsd_element_name(label: &str) -> String {
+    // AEM labels are rich text, so a label can carry markup. Left in, the tag
+    // names become part of the element name: `<b>South Korea</b>/<b>…` yields
+    // `BSouthKoreaOrBInstitutional…`, with a stray `B` per tag.
+    let replaced = strip_markup(label).replace('/', " Or ");
+    let segments: Vec<&str> = replaced
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    if segments.is_empty() {
+        return "Unknown".to_string();
+    }
+
+    segments
+        .iter()
+        .map(|seg| {
+            let mut chars = seg.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 /// Convert a label string to a PascalCase identifier suitable for XSD names.

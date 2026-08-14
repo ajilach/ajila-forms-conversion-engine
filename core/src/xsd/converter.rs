@@ -1,104 +1,26 @@
-//! XSD schema generation from structured nodes.
+//! Provisional bind paths derived from the structured tree.
 //!
-//! Traverses the `StructuredNode` tree and builds an `XsdSchema` tree
-//! (intermediate representation), which can then be serialized to XML.
-//! Headings create nested `xs:complexType` hierarchies, fields become
-//! `xs:element` declarations, conditionals become `xs:choice`, and
-//! repeatables use `minOccurs`/`maxOccurs`.
+//! These are **not** the `bindRef`s a form ships with — those come from
+//! [`super::from_aem`], which walks the finished AEM tree and emits the schema
+//! and the bindings together.
+//!
+//! This module exists only because fragment matching needs bind paths *before*
+//! the AEM tree is final: [`crate::aem::convert_to_aem`] matches a panel's
+//! children against the fragment library by their bind-path leaf names, and it
+//! has to do that while it is still building the tree. So the paths here are
+//! computed from the structured tree, used for matching, and then discarded and
+//! replaced by the authoritative ones.
+//!
+//! Headings nest sections (H1..H6), and a section whose children cover one or
+//! more registered complex types is matched to them, mirroring the shape the
+//! fragment matcher expects.
 
-use crate::structured::{FieldId, FieldNode, FieldType, GroupNode, HeadingNode, StructuredNode};
+use crate::structured::{FieldId, GroupNode, HeadingNode, StructuredNode};
 
 use super::{
-    XsdConfig, XsdNode, XsdRestriction, XsdSchema, find_matching_types, resolve_element,
-    resolve_section_name_with_heading, to_pascal_case,
+    XsdConfig, find_matching_types, resolve_element, resolve_section_name_with_heading,
+    to_pascal_case,
 };
-
-// ============================================================================
-// Public API
-// ============================================================================
-
-/// Generate a complete XSD schema tree from structured nodes.
-///
-/// Returns an `XsdSchema` with includes (deduplicated, only for used types)
-/// and a root `<xs:element name="form">` wrapping all generated content.
-pub fn generate_xsd_schema(nodes: &[StructuredNode], config: &XsdConfig) -> XsdSchema {
-    let sections = build_heading_hierarchy(nodes);
-    let mut body = Vec::new();
-    for section in &sections {
-        build_section(section, config, &mut body);
-    }
-
-    // Collect all non-builtin type refs used in the tree
-    let mut used_refs = std::collections::HashSet::new();
-    for node in &body {
-        collect_type_refs(node, &mut used_refs);
-    }
-
-    // Build deduplicated, sorted include list
-    let include_paths: std::collections::BTreeSet<&str> = config
-        .type_to_file
-        .iter()
-        .filter(|(name, _)| used_refs.contains(name.as_str()))
-        .map(|(_, path)| path.as_str())
-        .collect();
-
-    let root = XsdNode::Element {
-        name: config.root_element_name(),
-        type_ref: None,
-        min_occurs: None,
-        max_occurs: None,
-        content: Some(Box::new(XsdNode::ComplexType {
-            name: None,
-            sequence: body,
-        })),
-    };
-
-    XsdSchema {
-        includes: include_paths.into_iter().map(|s| s.to_string()).collect(),
-        root,
-    }
-}
-
-/// Generate a complete XSD schema XML string from structured nodes.
-pub fn generate_xsd(nodes: &[StructuredNode], config: &XsdConfig) -> String {
-    generate_xsd_schema(nodes, config).to_xml()
-}
-
-/// Recursively collect non-builtin type references from an XsdNode tree.
-fn collect_type_refs<'a>(node: &'a XsdNode, refs: &mut std::collections::HashSet<&'a str>) {
-    match node {
-        XsdNode::Element {
-            type_ref, content, ..
-        } => {
-            if let Some(tr) = type_ref {
-                if !tr.starts_with("xs:") {
-                    refs.insert(tr.as_str());
-                }
-            }
-            if let Some(child) = content {
-                collect_type_refs(child, refs);
-            }
-        }
-        XsdNode::Ref { ref_name, .. } => {
-            // A ref= references a global element; look up its type in the
-            // include index so the corresponding file is included.
-            refs.insert(ref_name.as_str());
-        }
-        XsdNode::ComplexType { sequence, .. } => {
-            for child in sequence {
-                collect_type_refs(child, refs);
-            }
-        }
-        XsdNode::SimpleType { .. } => {}
-        XsdNode::Choice { options } => {
-            for branch in options {
-                for child in branch {
-                    collect_type_refs(child, refs);
-                }
-            }
-        }
-    }
-}
 
 // ============================================================================
 // Heading hierarchy
@@ -343,85 +265,6 @@ fn collect_node_text(node: &StructuredNode, config: &XsdConfig, parts: &mut Vec<
 // Section → XsdNode building
 // ============================================================================
 
-/// Build XsdNode(s) for a section (heading + children).
-fn build_section(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) {
-    match &section.heading {
-        Some(heading) => {
-            let label = config.label_text(&heading.content);
-            let heading_text = config.label_text(&heading.content);
-            let name = resolve_section_name_with_heading(
-                &section_full_text(section, config),
-                Some(&heading_text),
-                &config.profile,
-            )
-            .unwrap_or_else(|| to_pascal_case(&label));
-
-            // Collect child (name, type) pairs and try auto-matching
-            let child_pairs = collect_child_name_type_pairs(section, config);
-            let matched = find_matching_types(&child_pairs, &config.registered_types);
-
-            if matched.len() == 1 {
-                // Single type covers all children.
-                out.push(XsdNode::Element {
-                    name,
-                    type_ref: Some(matched[0].name.clone()),
-                    min_occurs: None,
-                    max_occurs: None,
-                    content: None,
-                });
-            } else if matched.len() > 1 {
-                // Multiple disjoint types cover all children
-                let sequence: Vec<XsdNode> = matched
-                    .iter()
-                    .map(|rt| {
-                        let elem_name = config
-                            .type_to_element_name
-                            .get(&rt.name)
-                            .cloned()
-                            .unwrap_or_else(|| rt.name.trim_end_matches("Type").to_string());
-                        XsdNode::Element {
-                            name: elem_name,
-                            type_ref: Some(rt.name.clone()),
-                            min_occurs: None,
-                            max_occurs: None,
-                            content: None,
-                        }
-                    })
-                    .collect();
-
-                out.push(XsdNode::Element {
-                    name,
-                    type_ref: None,
-                    min_occurs: None,
-                    max_occurs: None,
-                    content: Some(Box::new(XsdNode::ComplexType {
-                        name: None,
-                        sequence,
-                    })),
-                });
-            } else {
-                // No match → inline complexType
-                let mut children = Vec::new();
-                build_section_children(section, config, &mut children);
-                out.push(XsdNode::Element {
-                    name,
-                    type_ref: None,
-                    min_occurs: None,
-                    max_occurs: None,
-                    content: Some(Box::new(XsdNode::ComplexType {
-                        name: None,
-                        sequence: children,
-                    })),
-                });
-            }
-        }
-        None => {
-            // Preamble section (no heading) — emit children directly
-            build_section_children(section, config, out);
-        }
-    }
-}
-
 /// Collect resolved (name, type) pairs for the direct children of a section.
 ///
 /// For fields, resolves against `[elements]` config. Unmatched items use
@@ -479,248 +322,8 @@ fn collect_node_name_type_pairs(
     }
 }
 
-/// Build XsdNode(s) for the children of a section.
-fn build_section_children(section: &Section, config: &XsdConfig, out: &mut Vec<XsdNode>) {
-    let items = &section.children;
-    let mut i = 0;
-    while i < items.len() {
-        match &items[i] {
-            SectionItem::SubSection(sub) => {
-                build_section(sub, config, out);
-                i += 1;
-            }
-            SectionItem::Node(node) => {
-                if let StructuredNode::Conditional(cond) = node {
-                    let field_name = &cond.condition.field_name;
-                    let start = i;
-                    let mut end = i + 1;
-                    while end < items.len() {
-                        if let SectionItem::Node(StructuredNode::Conditional(next_cond)) =
-                            &items[end]
-                        {
-                            if &next_cond.condition.field_name == field_name {
-                                end += 1;
-                                continue;
-                            }
-                        }
-                        break;
-                    }
-                    out.push(build_choice(&items[start..end], config));
-                    i = end;
-                } else {
-                    build_node(node, config, out, None, None);
-                    i += 1;
-                }
-            }
-        }
-    }
-}
-
 // ============================================================================
-// Node → XsdNode building
-// ============================================================================
-
-/// Build XsdNode(s) for a single structured node.
-fn build_node(
-    node: &StructuredNode,
-    config: &XsdConfig,
-    out: &mut Vec<XsdNode>,
-    min_occurs: Option<u32>,
-    max_occurs: Option<Option<u32>>,
-) {
-    match node {
-        StructuredNode::Field(field) => {
-            out.push(build_field(field, config, min_occurs, max_occurs));
-        }
-        StructuredNode::Repeatable(rep) => {
-            build_node(
-                &rep.item,
-                config,
-                out,
-                Some(rep.min_occurrences),
-                Some(rep.max_occurrences),
-            );
-        }
-        StructuredNode::Group(group) => {
-            build_group(group, config, out);
-        }
-        StructuredNode::Conditional(cond) => {
-            out.push(build_choice(
-                &[SectionItem::Node(StructuredNode::Conditional(cond.clone()))],
-                config,
-            ));
-        }
-        StructuredNode::GridLayout(grid) => {
-            for elem in &grid.elements {
-                build_node(&elem.node, config, out, None, None);
-            }
-        }
-        // Presentational nodes — skip
-        StructuredNode::Heading(_)
-        | StructuredNode::Paragraph(_)
-        | StructuredNode::Image(_)
-        | StructuredNode::Table(_)
-        | StructuredNode::List(_)
-        | StructuredNode::Footnote(_)
-        | StructuredNode::Empty => {}
-    }
-}
-
-/// Build an XsdNode for a field.
-fn build_field(
-    field: &FieldNode,
-    config: &XsdConfig,
-    min_occurs: Option<u32>,
-    max_occurs: Option<Option<u32>>,
-) -> XsdNode {
-    let label = field
-        .label
-        .as_ref()
-        .map(|l| config.label_text(l))
-        .unwrap_or_default();
-
-    let (name, type_ref) = match resolve_element(&label, &config.profile) {
-        Some(res) => (res.name, res.type_ref),
-        None => (to_pascal_case(&label), "xs:string".to_string()),
-    };
-
-    let restrictions = collect_restrictions(field);
-
-    if restrictions.is_empty() {
-        XsdNode::Element {
-            name,
-            type_ref: Some(type_ref),
-            min_occurs,
-            max_occurs,
-            content: None,
-        }
-    } else {
-        XsdNode::Element {
-            name,
-            type_ref: None,
-            min_occurs,
-            max_occurs,
-            content: Some(Box::new(XsdNode::SimpleType {
-                base: type_ref,
-                restrictions,
-            })),
-        }
-    }
-}
-
-/// Collect XSD restriction facets for a field based on its FieldType.
-fn collect_restrictions(field: &FieldNode) -> Vec<XsdRestriction> {
-    let mut restrictions = Vec::new();
-
-    match &field.input_type {
-        FieldType::Text {
-            regex,
-            max_length,
-            min_length,
-        } => {
-            if let Some(pattern) = regex {
-                restrictions.push(XsdRestriction::Pattern(pattern.clone()));
-            }
-            if let Some(min) = min_length {
-                restrictions.push(XsdRestriction::MinLength(*min));
-            }
-            if let Some(max) = max_length {
-                restrictions.push(XsdRestriction::MaxLength(*max));
-            }
-        }
-        FieldType::Textarea { max_length } => {
-            if let Some(max) = max_length {
-                restrictions.push(XsdRestriction::MaxLength(*max));
-            }
-        }
-        FieldType::Number { min, max, .. } => {
-            if let Some(min_val) = min {
-                restrictions.push(XsdRestriction::MinInclusive(min_val.to_string()));
-            }
-            if let Some(max_val) = max {
-                restrictions.push(XsdRestriction::MaxInclusive(max_val.to_string()));
-            }
-        }
-        FieldType::Radio { options } | FieldType::Select { options } => {
-            for opt in options {
-                let value_str = match &opt.value {
-                    crate::structured::InputValue::Text(s) => s.clone(),
-                    crate::structured::InputValue::Number(n) => n.to_string(),
-                    crate::structured::InputValue::Bool(b) => b.to_string(),
-                };
-                restrictions.push(XsdRestriction::Enumeration(value_str));
-            }
-        }
-        _ => {}
-    }
-
-    restrictions
-}
-
-/// Build XsdNode(s) for a group node (recurse into children).
-fn build_group(group: &GroupNode, config: &XsdConfig, out: &mut Vec<XsdNode>) {
-    let mut i = 0;
-    let children = &group.children;
-
-    while i < children.len() {
-        if let StructuredNode::Conditional(cond) = &children[i] {
-            let field_name = &cond.condition.field_name;
-            let start = i;
-            let mut end = i + 1;
-            while end < children.len() {
-                if let StructuredNode::Conditional(next_cond) = &children[end] {
-                    if &next_cond.condition.field_name == field_name {
-                        end += 1;
-                        continue;
-                    }
-                }
-                break;
-            }
-            let section_items: Vec<SectionItem> = children[start..end]
-                .iter()
-                .map(|n| SectionItem::Node(n.clone()))
-                .collect();
-            out.push(build_choice(&section_items, config));
-            i = end;
-        } else {
-            build_node(&children[i], config, out, None, None);
-            i += 1;
-        }
-    }
-}
-
-/// Build an `XsdNode::Choice` from a slice of conditional node items.
-fn build_choice(items: &[SectionItem], config: &XsdConfig) -> XsdNode {
-    let mut options = Vec::new();
-
-    for item in items {
-        if let SectionItem::Node(StructuredNode::Conditional(cond)) = item {
-            let mut branch = Vec::new();
-            build_conditional_content(&cond.content, config, &mut branch);
-            options.push(branch);
-        }
-    }
-
-    XsdNode::Choice { options }
-}
-
-/// Build XsdNode(s) for the content of a conditional branch.
-fn build_conditional_content(node: &StructuredNode, config: &XsdConfig, out: &mut Vec<XsdNode>) {
-    match node {
-        StructuredNode::Group(group) => {
-            for child in &group.children {
-                build_conditional_content(child, config, out);
-            }
-        }
-        _ => {
-            build_node(node, config, out, None, None);
-        }
-    }
-}
-
-// ============================================================================
-// ============================================================================
-// BindRef computation (for AEM XSD binding)
+// BindRef computation (provisional; input to fragment matching)
 // ============================================================================
 
 /// Maps produced by [`compute_bind_refs`] and consumed by the AEM converter
@@ -734,10 +337,11 @@ pub struct BindRefMaps {
     pub sections: std::collections::HashMap<String, String>,
 }
 
-/// Compute XSD bind-ref paths for all fields and heading sections in `nodes`.
+/// Compute provisional bind-ref paths for all fields and heading sections.
 ///
-/// Reuses the same name-resolution logic as [`generate_xsd`] so that the
-/// resulting paths exactly match the elements produced by the XSD generator.
+/// These feed fragment matching in [`crate::aem::convert_to_aem`] and are then
+/// discarded — the paths a form ships with come from
+/// [`crate::xsd::generate_xsd_from_aem`], which walks the finished AEM tree.
 pub fn compute_bind_refs(nodes: &[StructuredNode], config: &super::XsdConfig) -> BindRefMaps {
     let mut maps = BindRefMaps {
         fields: std::collections::HashMap::new(),

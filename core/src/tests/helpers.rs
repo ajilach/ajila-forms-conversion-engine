@@ -38,6 +38,202 @@ pub fn profiles_path(subpath: &str) -> String {
     format!("{}/../profiles/{}", manifest_dir, subpath)
 }
 
+/// Build a path to a file in the `fixtures/` directory.
+///
+/// Unlike [`input_path`], this does not load profile fonts — fixtures are text,
+/// and font loading costs seconds.
+pub fn fixture_path(subpath: &str) -> String {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    format!("{}/fixtures/{}", manifest_dir, subpath)
+}
+
+/// Read a fixture file as a `String`, panicking with the full path on failure.
+pub fn read_fixture(subpath: &str) -> String {
+    let path = fixture_path(subpath);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture {path}: {e}"))
+}
+
+/// Wrap a bare AEM form `.content.xml` in a minimal in-memory FileVault ZIP so
+/// it can go through the real [`crate::aem::parse_aem_zip`] entry point.
+///
+/// `parse_aem_zip` only requires that some entry under
+/// `jcr_root/content/forms/af/` ends in `/.content.xml` and mentions
+/// `guideContainer`; it never reads `META-INF`. That makes this the cheapest way
+/// to parse a fixture that ships as a bare form XML rather than a full package.
+pub fn aem_zip_from_form_xml(form_code: &str, content_xml: &str) -> Vec<u8> {
+    use std::io::Write;
+
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::<u8>::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    writer
+        .start_file(
+            format!("jcr_root/content/forms/af/fixtures/{form_code}/.content.xml"),
+            options,
+        )
+        .expect("start zip entry");
+    writer
+        .write_all(content_xml.as_bytes())
+        .expect("write zip entry");
+    writer.finish().expect("finish zip").into_inner()
+}
+
+/// Parse a fixture's bare form `.content.xml` into an [`crate::aem::AemNode`] tree.
+pub fn parse_fixture_form(form_code: &str) -> crate::aem::AemNode {
+    let xml = read_fixture(&format!("aem_xsd/{form_code}/source.content.xml"));
+    let zip = aem_zip_from_form_xml(form_code, &xml);
+    let parsed = crate::aem::parse_aem_zip(&zip)
+        .unwrap_or_else(|e| panic!("parse fixture form {form_code}: {e}"));
+    parsed.root
+}
+
+/// Like [`build_aem_test_output`] but with XSD binding and fragments enabled,
+/// i.e. the configuration production actually ships.
+pub(super) fn build_aem_test_output_bound(
+    pdfs: &[(&str, &str)],
+) -> (
+    Vec<StructuredNode>,
+    crate::aem::AemNode,
+    crate::aem::AemConfig,
+) {
+    use crate::aem::{AemConfig, convert_to_aem};
+
+    let envelopes: Vec<_> = pdfs
+        .iter()
+        .map(|(file, lang)| {
+            crate::run_exhaustive_to_envelope(input_path(file), lang)
+                .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"))
+        })
+        .collect();
+
+    let (ctx, content) = if envelopes.len() == 1 {
+        let env = envelopes.into_iter().next().unwrap();
+        (env.context, env.content)
+    } else {
+        let merged = crate::structured::merge_translations(envelopes, None)
+            .expect("Failed to merge translations");
+        (merged.context, merged.content)
+    };
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("Failed to create AemConfig");
+    let mut xsd_config = load_ubs_xsd_config();
+    xsd_config.form_code = Some(config.form_code.clone());
+    config.xsd_config = Some(xsd_config);
+    config.fragments = load_ubs_fragments();
+    config.use_fragments = true;
+    config.bind_to_xsd = true;
+
+    let config = crate::resolve_aem_languages(&content, &config);
+    let root = convert_to_aem(&content, &config);
+    (content, root, config)
+}
+
+/// Load the UBS profile's parsed fragment library, as `load_aem_config` does.
+pub fn load_ubs_fragments() -> Vec<crate::aem::ParsedFragment> {
+    let (profile, _, _) = load_ubs_profile();
+    let prefix = profile
+        .fragment_ref_prefix
+        .as_deref()
+        .unwrap_or("/content/dam/formsanddocuments/");
+    let paths: Vec<String> = profile
+        .fragment_paths
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    crate::profiles::load_aem_fragments("ubs", prefix, &paths).expect("load UBS fragment library")
+}
+
+/// Every element path in a schema, in depth-first document order.
+///
+/// Paths are absolute and rooted at the schema's root element, so they are
+/// directly comparable with `bindRef` values.
+pub fn xsd_element_paths_in_order(schema: &crate::xsd::XsdSchema) -> Vec<String> {
+    fn go(node: &crate::xsd::XsdNode, parent: &str, out: &mut Vec<String>) {
+        use crate::xsd::XsdNode;
+        match node {
+            XsdNode::Element { name, content, .. } => {
+                let path = format!("{parent}/{name}");
+                out.push(path.clone());
+                if let Some(child) = content {
+                    go(child, &path, out);
+                }
+            }
+            XsdNode::Ref { ref_name, .. } => out.push(format!("{parent}/{ref_name}")),
+            XsdNode::ComplexType { sequence, .. } => {
+                for child in sequence {
+                    go(child, parent, out);
+                }
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    go(&schema.root, "", &mut out);
+    out
+}
+
+/// Every `bindRef="…"` value in a rendered AEM XML, in document order.
+pub fn scrape_bind_refs(xml: &str) -> Vec<String> {
+    let needle = "bindRef=\"";
+    let mut out = Vec::new();
+    let mut cursor = xml;
+    while let Some(pos) = cursor.find(needle) {
+        let after = &cursor[pos + needle.len()..];
+        match after.find('"') {
+            Some(end) => {
+                out.push(after[..end].to_string());
+                cursor = &after[end + 1..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// The `bind_ref` of any node that can carry one.
+pub fn node_bind_ref(node: &crate::aem::AemNode) -> Option<&str> {
+    use crate::aem::AemNode;
+    match node {
+        AemNode::Panel { bind_ref, .. }
+        | AemNode::Repeatable { bind_ref, .. }
+        | AemNode::TextField { bind_ref, .. }
+        | AemNode::NumberField { bind_ref, .. }
+        | AemNode::DatePicker { bind_ref, .. }
+        | AemNode::Dropdown { bind_ref, .. }
+        | AemNode::Checkbox { bind_ref, .. }
+        | AemNode::RadioButton { bind_ref, .. }
+        | AemNode::Fragment { bind_ref, .. }
+        | AemNode::Custom { bind_ref, .. } => bind_ref.as_deref(),
+        _ => None,
+    }
+}
+
+/// Every `fragRef` reachable in an AEM tree.
+///
+/// Covers all three shapes a fragment can take: an opaque `Fragment` node (the
+/// fragment could not be resolved), a `Panel` whose fragment was inlined, and a
+/// `Repeatable` built from a repeating fragment panel.
+pub fn collect_frag_refs(root: &crate::aem::AemNode) -> Vec<String> {
+    use crate::aem::AemNode;
+    let mut found = Vec::new();
+    walk_aem_nodes(root, &mut |node| match node {
+        AemNode::Fragment { frag_ref, .. } => found.push(frag_ref.clone()),
+        AemNode::Panel {
+            frag_ref: Some(fr), ..
+        }
+        | AemNode::Repeatable {
+            frag_ref: Some(fr), ..
+        } => found.push(fr.clone()),
+        _ => {}
+    });
+    found
+}
+
 /// Recursively walk a tree of `StructuredNode`s, calling `callback` on every
 /// node encountered (depth-first, pre-order).
 ///
@@ -563,13 +759,24 @@ pub(super) fn build_aem_test_output(
     (content, root, config)
 }
 
-
 /// Load the UBS XSD config from `profiles/ubs/xsd/`, including registered types.
 pub fn load_ubs_xsd_config() -> crate::xsd::XsdConfig {
     let dir_path = profiles_path("ubs/xsd");
     let dir = std::path::Path::new(&dir_path);
-    crate::xsd::load_xsd_config_from_dir(dir)
-        .unwrap_or_else(|e| panic!("Failed to load UBS XSD config: {e}"))
+    let config = crate::xsd::load_xsd_config_from_dir(dir)
+        .unwrap_or_else(|e| panic!("Failed to load UBS XSD config: {e}"));
+    // Mirror `profiles::load_xsd_config`, which indexes every fragment library
+    // so a `fragRef` from any of them resolves to its type.
+    let fragment_types =
+        crate::profiles::load_aem_fragments("ubs", "/content/dam/formsanddocuments/", &[])
+            .map(|frags| {
+                frags
+                    .into_iter()
+                    .map(|f| (f.frag_ref, f.xsd_type_name))
+                    .collect()
+            })
+            .unwrap_or_default();
+    config.with_fragment_types(fragment_types)
 }
 
 /// Recursively walk an AemNode tree, calling `callback` on every node.
@@ -599,4 +806,131 @@ pub fn collect_aem_fragment_refs(root: &crate::aem::AemNode) -> Vec<(String, Opt
         }
     });
     fragments
+}
+
+// ============================================================================
+// Redacto helpers
+// ============================================================================
+
+/// Build a `RedactoConfig` for tests with fixed identity fields and a fixed
+/// `created` timestamp, so only the random UUIDs vary between runs.
+pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig {
+    crate::redacto::RedactoConfig {
+        document_id: "test_001".into(),
+        title: "TEST_001".into(),
+        form_path: "/content/forms/af/redacto-documents/test_001".into(),
+        style: "ubs-default.css".into(),
+        header: "Edition January 2026".into(),
+        footer: "61000 E       001 TEST    01.01.2026        N1".into(),
+        owner_id: "admin".into(),
+        schema: "redacto-document/v1".into(),
+        status: crate::redacto::Status::Draft,
+        grid_panel_style: "layout-split-block".into(),
+        footnote_panel_style: "footnote".into(),
+        column_panel_style: "layout-split".into(),
+        languages: languages.iter().map(|l| l.to_string()).collect(),
+        master_language: languages.first().copied().unwrap_or("en").to_string(),
+        created: "2026-01-01 00:00:00.000".into(),
+    }
+}
+
+/// Load `profiles/ubs/redacto/config.toml` from disk and resolve it against
+/// `ctx` (mirrors [`load_ubs_profile`]).
+pub fn load_ubs_redacto_config(ctx: &crate::Context) -> crate::redacto::RedactoConfig {
+    let path = profiles_path("ubs/redacto/config.toml");
+    let toml_str =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    let profile: crate::redacto::RedactoProfile =
+        toml::from_str(&toml_str).expect("Failed to parse UBS redacto config.toml");
+    crate::redacto::RedactoConfig::from_profile(&profile, ctx)
+        .expect("Failed to create RedactoConfig")
+}
+
+/// Run the pipeline for `pdfs` and produce the Redacto dump with `config`
+/// (mirrors [`build_aem_test_output`]).
+///
+/// The config is passed in rather than loaded from the UBS profile: that
+/// profile derives the document identity from XFA variables, which a plain
+/// (non-XFA) text PDF does not have.
+pub(super) fn build_redacto_test_dump(
+    pdfs: &[(&str, &str)],
+    config: &crate::redacto::RedactoConfig,
+) -> crate::redacto::RedactoDump {
+    let envelopes: Vec<_> = pdfs
+        .iter()
+        .map(|(file, lang)| {
+            crate::run_exhaustive_to_envelope(input_path(file), lang)
+                .unwrap_or_else(|e| panic!("Failed to process {file}: {e}"))
+        })
+        .collect();
+
+    let content = if envelopes.len() == 1 {
+        envelopes.into_iter().next().unwrap().content
+    } else {
+        crate::structured::merge_translations(envelopes, None)
+            .expect("Failed to merge translations")
+            .content
+    };
+
+    let config = crate::resolve_redacto_languages(&content, config);
+    crate::redacto::generate_redacto_dump(&content, &config)
+}
+
+/// All `asset_version.content` strings for one language, in insertion order.
+pub fn redacto_contents_for(dump: &crate::redacto::RedactoDump, lang: &str) -> Vec<String> {
+    dump.asset_versions
+        .iter()
+        .filter(|v| v.language == lang)
+        .map(|v| v.content.clone())
+        .collect()
+}
+
+/// The single `documents` row of a dump.
+pub fn redacto_configuration(
+    dump: &crate::redacto::RedactoDump,
+) -> &crate::redacto::RedactoConfiguration {
+    assert_eq!(dump.documents.len(), 1, "expected exactly one document row");
+    &dump.documents[0].configuration
+}
+
+/// Flatten a component tree into `"assetContainer(n)"` / `"styledPanel(style)"`
+/// labels, depth-first, for order assertions.
+pub fn flatten_redacto_components(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
+    fn walk(components: &[crate::redacto::RedactoComponent], out: &mut Vec<String>) {
+        for component in components {
+            match component {
+                crate::redacto::RedactoComponent::AssetContainer { assets, .. } => {
+                    out.push(format!("assetContainer({})", assets.len()));
+                }
+                crate::redacto::RedactoComponent::StyledPanel {
+                    style, components, ..
+                } => {
+                    out.push(format!("styledPanel({style})"));
+                    walk(components, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&cfg.components, &mut out);
+    out
+}
+
+/// Every asset reference in a configuration, depth-first.
+pub fn redacto_referenced_assets(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
+    fn walk(components: &[crate::redacto::RedactoComponent], out: &mut Vec<String>) {
+        for component in components {
+            match component {
+                crate::redacto::RedactoComponent::AssetContainer { assets, .. } => {
+                    out.extend(assets.iter().cloned());
+                }
+                crate::redacto::RedactoComponent::StyledPanel { components, .. } => {
+                    walk(components, out)
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&cfg.components, &mut out);
+    out
 }
