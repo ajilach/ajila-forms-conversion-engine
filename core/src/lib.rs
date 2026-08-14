@@ -196,7 +196,7 @@ pub use aem::{
 };
 
 // Post-conversion fidelity review
-pub use review::{NamingViolation, ReviewReport, review_output};
+pub use review::{LabelIssue, NamingViolation, ReviewReport, review_output};
 
 // GraphViz decision-flow output
 pub use graphviz::{

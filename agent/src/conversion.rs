@@ -150,6 +150,12 @@ info/error text), IMG_ image, TBL_ table, SPT_ separator, RCP_/RCHP_/RCBP_/RCHT_
 BT_ button, SIGN_ signature (consult the naming-conventions reference doc for the full table). Only the \
 leading PREFIX_ is enforced — the rest of the name is free — and the Reviewer flags any component whose \
 leading prefix does not match its resourceType (review_output's naming_violations, bucketed wrong-prefix/raw). \
+LABELS: every input (text box, number box, date, dropdown, radio, checkbox group, telephone, email) needs \
+a `label` holding its own question text — the visible caption, not a neighbouring hint. Positional label \
+attachment can leave a field with no label, or bind a fragment that merely sits nearby (a parenthetical \
+aside, a rich-text paragraph), so check each field against the source and move the real question into the \
+label, leaving any hint as its own static text. review_output's label_issues lists the offenders \
+(missing / parenthetical / markup / quoted). \
 PAGES: the Root is laid out as a wizard, so ONLY its direct-child Panels \
 become pages (wizard steps). Set `is_page: true` on each first-level section Panel — the top-level \
 sections of the form, in source order — and `is_page: false` on every Panel nested below them \
@@ -289,7 +295,9 @@ ANALOGY to the source AND conformance to the CONVERSION PLAN appended below, and
 in any prior REVIEW FEEDBACK is now fixed. Checklist: naming prefixes (trust \
 review_output's naming_violations — a deterministic per-node check on the rendered JCR XML: each \
 author-named component's leading PREFIX_ must match its resourceType, bucketed wrong-prefix/raw; \
-treat any listed violation as a defect); first-level \
+treat any listed violation as a defect); input labels (review_output's label_issues — every input must \
+carry its own question text as its label; a `missing`, `parenthetical` or `markup` entry is a defect, a \
+`quoted` one only if the quotes are not part of the source wording); first-level \
 sections are pages and nothing deeper is; exactly one rendered TitleDraw heading per section (a Panel \
 title does not render); banking = affrg_BankingRelationship1 inside a PN_BR sole-child wrapper with \
 dor_exclude; address uses the entity AddressBlock fragment; DoR exclusions set; no invented text; \
