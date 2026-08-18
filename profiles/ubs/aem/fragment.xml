@@ -27,10 +27,22 @@
         jcr:primaryType="nt:unstructured"
         sling:resourceType="{{ variables.default_layout }}"/>
     {% if not has_passthrough_rules %}<fd:rules jcr:primaryType="nt:unstructured"/>{% endif %}
-    {% if frag_ref is ending_with("affrg_AddressGeneric1") %}
-    <fd:scripts
-        fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;this&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.hideAFHideDor(TXT_StreetNumber);\\nwindow.forms.ubs.hideAFHideDor(TXT_AdditionalDetails_AddressBlock);\\nwindow.forms.ubs.hideAFHideDor(TXT_PostalCodeCity);\\nwindow.forms.ubs.hideAFHideDor(TXT_State_AddressBlock);\\nwindow.forms.ubs.hideAFHideDor(TXT_District_AddressBlock_APAC);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;this&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;var formMetadata = window.forms.ubs.getFormMetadata();\\nwindow.forms.ubs.referencedata.getCountryList(formMetadata.mandator\, formMetadata.language\, 'DOMICILE_INDIVIDUAL'\, DD_Country_AddressBlock);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
-        jcr:primaryType="nt:unstructured"/>
+    {#  The Initialize rules themselves live in the profile config, because
+        `preface.xml` emits the banking one too — see `[variables]` there for
+        what each carries and why it must be a single SCRIPTMODEL.
+
+        "Form of address" (salutation) fragments share the word and nothing else:
+        they carry no address block, so the address rule would reference fields
+        that do not exist. #}
+    {% set frag_base = frag_ref | split(pat="/") | last | lower %}
+    {% if frag_base is ending_with("affrg_addressgeneric1") %}
+    <fd:scripts fd:init="{{ variables.address_generic_init | default(value="") }}" jcr:primaryType="nt:unstructured"/>
+    {% elif frag_base is containing("address")
+        and not frag_base is containing("formofaddress")
+        and not frag_base is containing("form_address") %}
+    <fd:scripts fd:init="{{ variables.address_init | default(value="") }}" jcr:primaryType="nt:unstructured"/>
+    {% elif frag_base is ending_with("affrg_bankingrelationship1") and xfa.formrange_entity | default(value="") == "019" %}
+    <fd:scripts fd:init="{{ variables.banking_default_de_init | default(value="") }}" jcr:primaryType="nt:unstructured"/>
     {% else %}
     <fd:scripts jcr:primaryType="nt:unstructured"/>
     {% endif %}

@@ -9,7 +9,9 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use super::{AemConfig, AemNode, AemOption, OptionAlignment, Passthrough};
+use super::{
+    AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough, TextFieldKind,
+};
 use crate::aem::template;
 use crate::structured::InputValue;
 use crate::util::escape_html as xml_escape;
@@ -48,8 +50,8 @@ pub fn generate_aem_xml_with_passthrough(
 ) -> String {
     // Invert the trigger-field condition rules into a per-panel map so each
     // conditional panel can carry its own AABO-style `fd:visible` SHOW_EXPRESSION.
-    let vis = collect_panel_visibility(root);
-    let rendered = render_node(root, config, &vis, pass);
+    let index = RenderIndex::build(root);
+    let rendered = render_node(root, config, &index, pass);
     reformat_attributes(&rendered)
 }
 
@@ -61,6 +63,79 @@ pub fn generate_aem_xml_with_passthrough(
 /// that should make it visible. Built by inverting the `ConditionRule`s that
 /// the converter wired onto trigger fields (radio/checkbox/dropdown).
 type PanelVisibilityMap = HashMap<String, Vec<(String, InputValue)>>;
+
+/// Per-render indices derived from the whole tree before any node is written.
+///
+/// Both answer a question a single node cannot: which trigger values reveal this
+/// panel, and which panels does this choice decide. They are built once, from the
+/// root, because a node's own subtree does not contain the answer.
+struct RenderIndex {
+    visibility: PanelVisibilityMap,
+    /// Trigger field name → the panels it decides, for approved configurator
+    /// choices only. Absent means "no reset for this field".
+    resets: HashMap<String, Vec<ResetTarget>>,
+}
+
+impl RenderIndex {
+    fn build(root: &AemNode) -> Self {
+        Self {
+            visibility: collect_panel_visibility(root),
+            resets: collect_configurator_resets(root),
+        }
+    }
+}
+
+/// Walk the tree and, for every choice whose wording is an approved
+/// configurator, record the panels it decides.
+fn collect_configurator_resets(root: &AemNode) -> HashMap<String, Vec<ResetTarget>> {
+    let mut map = HashMap::new();
+    collect_configurator_resets_rec(root, root, &mut map);
+    map
+}
+
+fn collect_configurator_resets_rec(
+    root: &AemNode,
+    node: &AemNode,
+    map: &mut HashMap<String, Vec<ResetTarget>>,
+) {
+    let choice = match node {
+        AemNode::RadioButton {
+            name,
+            options,
+            conditions,
+            ..
+        }
+        | AemNode::Dropdown {
+            name,
+            options,
+            conditions,
+            ..
+        } => Some((name, options, conditions)),
+        // A checkbox group is a multi-select; "the option that was chosen
+        // instead" is not a well-defined thing to clear behind, and no approved
+        // configurator wording is a checkbox in this corpus.
+        _ => None,
+    };
+    if let Some((name, options, conditions)) = choice
+        && is_approved_configurator(options)
+    {
+        let targets = reset_targets_for(root, conditions);
+        if !targets.is_empty() {
+            map.insert(name.clone(), targets);
+        }
+    }
+
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => {
+            for child in children {
+                collect_configurator_resets_rec(root, child, map);
+            }
+        }
+        _ => {}
+    }
+}
 
 /// Walk the node tree and invert every trigger field's `show` conditions into
 /// a `panel_name → [(trigger_field, value), …]` map.
@@ -104,6 +179,188 @@ fn collect_panel_visibility_rec(node: &AemNode, map: &mut PanelVisibilityMap) {
     }
 }
 
+/// Whether a subtree holds anything a user can fill in.
+///
+/// This is what decides a wizard step's jump-to-field button. The button jumps
+/// the reader back to a field, so a step that is pure text — legal provisions, a
+/// declaration, terms to accept — has nothing to jump to and must not offer one
+/// (owner directive, 2026-08-10; 177 steps across 102 forms carried one wrongly).
+///
+/// A fragment counts as input even though its children are not in this package:
+/// the fields live in the fragment's own package, and in this corpus these are
+/// signature, banking and address fragments, all fillable. A custom element
+/// counts for the same reason — its body is opaque profile XML that the engine
+/// cannot see into, and every custom element in the profile carries fields.
+///
+/// Draws, footnotes, prefaces and appendices are static text and count for
+/// nothing, which is exactly the case this exists to detect.
+fn holds_input(node: &AemNode) -> bool {
+    match node {
+        AemNode::TextField { .. }
+        | AemNode::NumberField { .. }
+        | AemNode::DatePicker { .. }
+        | AemNode::Dropdown { .. }
+        | AemNode::Checkbox { .. }
+        | AemNode::RadioButton { .. }
+        | AemNode::Fragment { .. }
+        | AemNode::Custom { .. } => true,
+
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => children.iter().any(holds_input),
+
+        AemNode::TextDraw { .. }
+        | AemNode::TitleDraw { .. }
+        | AemNode::Preface { .. }
+        | AemNode::Appendix { .. }
+        | AemNode::FootnotePlaceholder { .. } => false,
+    }
+}
+
+// ============================================================================
+// Configurator reset-on-change (feedback #107)
+// ============================================================================
+
+/// Option wordings of a form-configurator choice, as reviewed and approved for
+/// the reset (`configurator_reset.py::APPROVED_LABEL_SETS`).
+///
+/// Identifying the configurator by its wording is a deliberate narrowing, not a
+/// shortcut. Structurally, *any* choice that reveals two or more panels has the
+/// same defect — switch option, come back, and the first option's panel returns
+/// with every field still filled. But plenty of such choices are ordinary
+/// questions inside a form (an order type, an occupation) where whether the
+/// answer should be wiped is a judgement about that form. So only wordings a
+/// person has confirmed get a reset written for them; anything else is left
+/// alone. Adding a wording here means giving it the same review these had.
+///
+/// Compared casefolded, in order, as a whole set: a choice offering one of these
+/// sets plus another option does not match.
+const APPROVED_CONFIGURATOR_LABEL_SETS: &[&[&str]] = &[
+    &["Individual", "Company/Entity"],
+    &["Private Person", "Minderjährige", "Firma", "GbR"],
+    &["Individual", "Legal Entity"],
+    &["Individuo", "Entità giuridica"],
+    &["Individuale", "Persona giuridica / Società / Ditta"],
+    &["Private Person", "Firma"],
+    &["Private Person", "Minderjährige", "Firma"],
+    &["Individual", "Legal entity"],
+    &["Persona", "Persona giuridica"],
+    &["Individual", "Corporate"],
+    &["Private Person", "Minderjährige"],
+    &["For financial institutions", "For natural persons"],
+];
+
+/// One panel a configurator choice decides, and the repeatables inside it.
+///
+/// The repeatables are reset first: a repeatable has to drop its added rows, not
+/// just blank them, so the row count is back to its declared minimum before the
+/// remaining fields are cleared.
+#[derive(serde::Serialize)]
+struct ResetTarget {
+    panel: String,
+    repeats: Vec<String>,
+}
+
+/// Whether a choice's option labels are one of the approved configurator sets.
+fn is_approved_configurator(options: &[AemOption]) -> bool {
+    let labels: Vec<String> = options.iter().map(|o| o.label.to_lowercase()).collect();
+    APPROVED_CONFIGURATOR_LABEL_SETS.iter().any(|set| {
+        set.len() == labels.len()
+            && set
+                .iter()
+                .zip(&labels)
+                .all(|(approved, actual)| approved.to_lowercase() == *actual)
+    })
+}
+
+/// The panels a trigger field reveals, in document order, each with the
+/// repeatables nested inside it.
+///
+/// The set is read from the same `ConditionRule`s that drive the panels'
+/// `fd:visible` expressions, so the reset covers exactly what the choice shows
+/// and hides — no more. Order follows the panels' order in the tree, which is
+/// what makes the generated script stable across runs.
+fn reset_targets_for(root: &AemNode, conditions: &[ConditionRule]) -> Vec<ResetTarget> {
+    let mut wanted: Vec<&str> = Vec::new();
+    for rule in conditions.iter().filter(|r| r.show) {
+        if !wanted.contains(&rule.target_panel_name.as_str()) {
+            wanted.push(&rule.target_panel_name);
+        }
+    }
+    // A choice that reveals fewer than two panels has nothing to clear behind
+    // it — there is no "other option" whose data could resurface.
+    if wanted.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut ordered: Vec<ResetTarget> = Vec::new();
+    collect_reset_targets(root, &wanted, &mut ordered);
+    // A rule may name a panel that is not in the tree, and two panels can share
+    // a name. Either way the invariant is about what will actually be reset:
+    // below two panels there is no other option whose data could resurface, and
+    // a partial reset would be worse than none — it would clear some panels and
+    // leave the reader to discover the rest still filled.
+    // Not `dedup_by`: two panels sharing a name need not be adjacent in the
+    // tree, and only the first occurrence should be reset (resetting twice says
+    // nothing, but it does mislead anyone reading the script).
+    let mut seen = std::collections::HashSet::new();
+    ordered.retain(|t| seen.insert(t.panel.clone()));
+    if ordered.len() < 2 {
+        return Vec::new();
+    }
+    ordered
+}
+
+fn collect_reset_targets(node: &AemNode, wanted: &[&str], out: &mut Vec<ResetTarget>) {
+    if let AemNode::Panel { name, children, .. } = node {
+        if wanted.contains(&name.as_str()) {
+            out.push(ResetTarget {
+                panel: name.clone(),
+                repeats: repeatable_panels(children),
+            });
+            // Panels the choice decides are not nested inside one another, and
+            // descending would attribute a nested match to the wrong parent.
+            return;
+        }
+    }
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => {
+            for child in children {
+                collect_reset_targets(child, wanted, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The instance-managed panel of every repeatable in a subtree, in document
+/// order. `repeatable.xml` names it `<repeatable>_repeat`, and that is the node
+/// `resetAllPanelInstances` has to be given.
+fn repeatable_panels(children: &[AemNode]) -> Vec<String> {
+    let mut out = Vec::new();
+    fn walk(node: &AemNode, out: &mut Vec<String>) {
+        if let AemNode::Repeatable { name, .. } = node {
+            out.push(format!("{}_repeat", name));
+        }
+        match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => {
+                for child in children {
+                    walk(child, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    for child in children {
+        walk(child, &mut out);
+    }
+    out
+}
+
 // ============================================================================
 // Template-based node rendering
 // ============================================================================
@@ -115,7 +372,7 @@ fn collect_panel_visibility_rec(node: &AemNode, map: &mut PanelVisibilityMap) {
 fn render_node(
     node: &AemNode,
     config: &AemConfig,
-    vis: &PanelVisibilityMap,
+    index: &RenderIndex,
     pass: &HashMap<Uuid, Passthrough>,
 ) -> String {
     // Custom nodes use a separate template lookup.
@@ -130,7 +387,7 @@ fn render_node(
                 return String::new();
             }
         };
-        let mut ctx = build_node_context(node, config, vis, pass);
+        let mut ctx = build_node_context(node, config, index, pass);
         insert_passthrough(&mut ctx, node, pass, template);
         return match template::render_string(template, &ctx) {
             Ok(rendered) => rendered,
@@ -148,7 +405,7 @@ fn render_node(
             ..
         } => "conditional",
         AemNode::Panel { .. } => "panel",
-        AemNode::TextField { .. } => "textbox",
+        AemNode::TextField { kind, .. } => kind.template_key(),
         AemNode::NumberField { .. } => "numericbox",
         AemNode::DatePicker { .. } => "datepicker",
         AemNode::Dropdown { .. } => "dropdownlist",
@@ -166,10 +423,26 @@ fn render_node(
 
     let template = match config.component_templates.get(template_key) {
         Some(tmpl) => tmpl,
-        None => return String::new(),
+        // A typed text input falls back to the plain text box when the profile
+        // ships no template for its kind. A missing template otherwise means the
+        // field is dropped from the output entirely, and losing a field is far
+        // worse than losing its validation clause.
+        None => match node {
+            AemNode::TextField { kind, .. } if *kind != TextFieldKind::Plain => {
+                log::warn!(
+                    "profile has no '{}' template; falling back to 'textbox'",
+                    template_key
+                );
+                match config.component_templates.get("textbox") {
+                    Some(tmpl) => tmpl,
+                    None => return String::new(),
+                }
+            }
+            _ => return String::new(),
+        },
     };
 
-    let mut ctx = build_node_context(node, config, vis, pass);
+    let mut ctx = build_node_context(node, config, index, pass);
     insert_passthrough(&mut ctx, node, pass, template);
     match template::render_string(template, &ctx) {
         Ok(rendered) => rendered,
@@ -288,12 +561,12 @@ fn insert_passthrough(
 fn render_children(
     children: &[AemNode],
     config: &AemConfig,
-    vis: &PanelVisibilityMap,
+    index: &RenderIndex,
     pass: &HashMap<Uuid, Passthrough>,
 ) -> String {
     children
         .iter()
-        .map(|c| render_node(c, config, vis, pass))
+        .map(|c| render_node(c, config, index, pass))
         .collect()
 }
 
@@ -306,7 +579,7 @@ fn render_children(
 fn build_node_context(
     node: &AemNode,
     config: &AemConfig,
-    vis: &PanelVisibilityMap,
+    index: &RenderIndex,
     pass: &HashMap<Uuid, Passthrough>,
 ) -> tera::Context {
     let mut ctx = tera::Context::new();
@@ -326,7 +599,7 @@ fn build_node_context(
         AemNode::Root { title, children } => {
             ctx.insert("title", &xml_escape(title));
             ctx.insert("form_code", &config.form_code);
-            ctx.insert("children", &render_children(children, config, vis, pass));
+            ctx.insert("children", &render_children(children, config, index, pass));
         }
 
         AemNode::Panel {
@@ -354,7 +627,8 @@ fn build_node_context(
             ctx.insert("dor_num_cols", dor_num_cols);
             ctx.insert("dor_colspan", dor_colspan);
             ctx.insert("bind_ref", bind_ref);
-            ctx.insert("children", &render_children(children, config, vis, pass));
+            ctx.insert("children", &render_children(children, config, index, pass));
+            ctx.insert("has_input", &children.iter().any(holds_input));
 
             // Conditional panels carry an AABO-style `fd:visible` SHOW_EXPRESSION
             // that toggles both form visibility and DOR inclusion via the UBS
@@ -364,7 +638,7 @@ fn build_node_context(
             // expression governs visibility, so the static `visible` attribute is
             // suppressed (see conditional.xml).
             if *is_conditional {
-                if let Some(triggers) = vis.get(name) {
+                if let Some(triggers) = index.visibility.get(name) {
                     if !triggers.is_empty() {
                         let trigger_ctx: Vec<HashMap<&str, String>> = triggers
                             .iter()
@@ -391,6 +665,7 @@ fn build_node_context(
             colspan,
             dor_colspan,
             bind_ref,
+            kind: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -596,7 +871,7 @@ fn build_node_context(
                 max_occur.to_string()
             };
             ctx.insert("max_occur", &max_occur_attr);
-            ctx.insert("children", &render_children(children, config, vis, pass));
+            ctx.insert("children", &render_children(children, config, index, pass));
             ctx.insert("bind_ref", bind_ref);
 
             // The outer panel is already `RCP_…`; suffix (rather than re-prefix)
@@ -659,7 +934,39 @@ fn build_node_context(
         }
     }
 
+    // A form-configurator choice must empty every panel it decides, so switching
+    // option and coming back never presents one option's panel carrying
+    // another's data (feedback #107). Keyed on the node's own name, so only the
+    // choices `RenderIndex` approved get the script.
+    if let Some(name) = node_name(node)
+        && let Some(targets) = index.resets.get(name)
+    {
+        ctx.insert("reset_targets", targets);
+    }
+
     ctx
+}
+
+/// A node's AEM `name`, where it has one. `Root` does not.
+fn node_name(node: &AemNode) -> Option<&str> {
+    match node {
+        AemNode::Root { .. } => None,
+        AemNode::Panel { name, .. }
+        | AemNode::TextField { name, .. }
+        | AemNode::NumberField { name, .. }
+        | AemNode::DatePicker { name, .. }
+        | AemNode::Dropdown { name, .. }
+        | AemNode::Checkbox { name, .. }
+        | AemNode::RadioButton { name, .. }
+        | AemNode::TextDraw { name, .. }
+        | AemNode::TitleDraw { name, .. }
+        | AemNode::Repeatable { name, .. }
+        | AemNode::Fragment { name, .. }
+        | AemNode::Preface { name, .. }
+        | AemNode::Appendix { name, .. }
+        | AemNode::FootnotePlaceholder { name, .. }
+        | AemNode::Custom { name, .. } => Some(name),
+    }
 }
 
 /// Insert options-related variables into a Tera context.
@@ -890,7 +1197,9 @@ fn parse_attributes(s: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aem::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment};
+    use crate::aem::{
+        AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, TextFieldKind,
+    };
     use uuid::Uuid;
 
     /// Create a test config with minimal templates for testing.
@@ -988,6 +1297,7 @@ mod tests {
                 colspan: 6,
                 dor_colspan: None,
                 bind_ref: None,
+                kind: TextFieldKind::Plain,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1564,6 +1874,7 @@ mod tests {
                         colspan: 8,
                         dor_colspan: Some(2),
                         bind_ref: None,
+                        kind: TextFieldKind::Plain,
                     },
                     AemNode::TextField {
                         uuid: fixed_uuid(),
@@ -1575,6 +1886,7 @@ mod tests {
                         colspan: 4,
                         dor_colspan: Some(1),
                         bind_ref: None,
+                        kind: TextFieldKind::Plain,
                     },
                 ],
             }],
@@ -1611,6 +1923,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                kind: TextFieldKind::Plain,
             }],
         };
         let xml = generate_aem_xml(&root, &test_config());
@@ -1679,7 +1992,7 @@ mod tests {
                 name: "PN_Preface_abcdef01".into(),
             };
 
-            let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+            let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
             assert!(
                 xml.contains(&format!("fragRef=\"{}\"", expected_frag_ref)),
@@ -1721,7 +2034,7 @@ mod tests {
             uuid: fixed_uuid(),
             name: "PN_Preface_abcdef01".into(),
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         // The wrapper panel exists and carries both exclusions.
         assert!(
@@ -1772,7 +2085,7 @@ mod tests {
             uuid: fixed_uuid(),
             name: "PN_Preface_abcdef01".into(),
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         let pn_br = xml.find("name=\"PN_BR\"").expect("PN_BR wrapper missing");
         let css = xml
@@ -1817,7 +2130,7 @@ mod tests {
             dor_colspan: None,
             bind_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         assert!(
             xml.contains("guideNodeClass=\"guideDatePicker\""),
@@ -1870,7 +2183,7 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         // The parent FormConfigurator panel element (up to the first `>`) must
         // NOT carry dorExclusion; it keeps only dorExcludeTitle/Description.
@@ -1935,7 +2248,7 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         assert!(
             xml.contains("BT_Add.visible = true"),
@@ -1981,7 +2294,7 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         let expected_remove_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
@@ -2036,7 +2349,7 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         let expected_add_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
@@ -2091,7 +2404,7 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         };
-        let xml = render_node(&node, &config, &PanelVisibilityMap::new(), no_passthrough());
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
         let expected_add_init = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",

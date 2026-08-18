@@ -1,3 +1,4 @@
+pub mod contact_field;
 pub mod element_merge;
 pub mod inline_html;
 mod merge_engine;

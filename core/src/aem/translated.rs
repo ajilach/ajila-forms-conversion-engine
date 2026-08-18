@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use uuid::Uuid;
 
-use super::{AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough};
+use super::{AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough, TextFieldKind};
 use crate::structured::FieldId;
 
 /// The translation dictionary shape the package writer expects:
@@ -149,6 +149,11 @@ pub enum AemNodeTranslated {
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
+        /// Which single-line input component this is; carried through the
+        /// translated form so a translate round-trip does not turn an email or
+        /// telephone field back into a plain text box.
+        #[serde(default)]
+        kind: TextFieldKind,
     },
     NumberField {
         uuid: Uuid,
@@ -513,6 +518,7 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                kind,
                 ..
             } => AemNode::TextField {
                 uuid: *uuid,
@@ -524,6 +530,7 @@ impl AemNodeTranslated {
                 colspan: *colspan,
                 dor_colspan: *dor_colspan,
                 bind_ref: bind_ref.clone(),
+                kind: *kind,
             },
             AemNodeTranslated::NumberField {
                 uuid,
@@ -790,6 +797,7 @@ mod tests {
                             colspan: 6,
                             dor_colspan: None,
                             bind_ref: None,
+                            kind: TextFieldKind::Plain,
                         },
                         AemNodeTranslated::Dropdown {
                             uuid: Uuid::nil(),
@@ -904,6 +912,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                kind: TextFieldKind::Plain,
             }],
         };
 
@@ -957,6 +966,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                kind: TextFieldKind::Plain,
             }],
         };
 
@@ -1027,6 +1037,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                kind: TextFieldKind::Plain,
             }],
         };
 

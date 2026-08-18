@@ -626,6 +626,7 @@ mod tests {
                 colspan: 12,
                 dor_colspan: None,
                 bind_ref: None,
+                kind: crate::aem::TextFieldKind::Plain,
             }],
         };
 

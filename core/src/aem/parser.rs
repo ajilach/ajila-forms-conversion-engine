@@ -15,7 +15,7 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use uuid::Uuid;
 
-use super::{AemNode, AemOption, OptionAlignment, Passthrough};
+use super::{AemNode, AemOption, OptionAlignment, Passthrough, TextFieldKind};
 
 // ============================================================================
 // Public types
@@ -647,7 +647,24 @@ fn convert_jcr_to_aem(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<A
 // Component converters
 // ============================================================================
 
+/// Which single-line input component a node's `sling:resourceType` names.
+///
+/// Preserving this on load is what lets a package that already carries
+/// `controls/email` / `controls/telephone` nodes survive a load → save
+/// round-trip: without it every one of them would be written back out as a plain
+/// `controls/textbox`, silently stripping the validation clause and the autofill
+/// hint the form was authored with.
+fn text_field_kind(node: &JcrNode) -> TextFieldKind {
+    let resource_type = node.resource_type().unwrap_or("");
+    match resource_type.rsplit('/').next().unwrap_or(resource_type) {
+        "email" => TextFieldKind::Email,
+        "telephone" => TextFieldKind::Telephone,
+        _ => TextFieldKind::Plain,
+    }
+}
+
 fn convert_textbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
+    let kind = text_field_kind(node);
     let name = node.component_name().unwrap_or("textbox").to_string();
     let label = node.attr("jcr:title").unwrap_or("").to_string();
     let uuid = ctx.next_uuid(&name);
@@ -671,6 +688,7 @@ fn convert_textbox(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
         colspan: parse_colspan(node),
         dor_colspan: parse_dor_colspan(node),
         bind_ref: node.attr("bindRef").map(|s| s.to_string()),
+        kind,
     }
 }
 

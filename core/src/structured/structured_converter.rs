@@ -22,6 +22,7 @@
 
 use crate::document::{Document, GroupKind};
 use crate::flattened::{Bounds, FlattenedNode, FlattenedNodeKind, RichRun, RichText, WidgetKind};
+use crate::structured::contact_field;
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, FootnoteNode, GroupNode,
     HeadingLevel, HeadingNode, InlineNode, InlineText, InputValue, ListItem, ListNode, NameValue,
@@ -2125,7 +2126,6 @@ impl<'a, 'b> Converter<'a, 'b> {
         };
 
         let field_type = self.determine_field_type(node);
-        let input_value = self.parse_input_value(value, &field_type);
 
         // Use the full SOM path as the field name so it matches the condition
         // field_name in conditionals (consistent with radio buttons which use
@@ -2135,15 +2135,67 @@ impl<'a, 'b> Converter<'a, 'b> {
             .cloned()
             .unwrap_or_else(|| SomPath::new(name.clone()));
 
+        let label = label.map(|l| self.translated(l.to_plain()));
+        let field_type = self.refine_contact_field_type(
+            field_type,
+            label.as_ref(),
+            &field_som_path,
+            node.is_interactive(),
+        );
+        let input_value = self.parse_input_value(value, &field_type);
+
         Some(StructuredNode::Field(FieldNode {
             name: FieldId::from_som_path(&field_som_path),
             som_path: Some(field_som_path),
-            label: label.map(|l| self.translated(l.to_plain())),
+            label,
             input_type: field_type,
             value: input_value,
             placeholder: self.get_placeholder(node).map(TranslatableString::Plain),
             required: false,
         }))
+    }
+
+    /// Promote a plain text or numeric field to [`FieldType::Email`] /
+    /// [`FieldType::Tel`] when its label names one.
+    ///
+    /// A PDF carries no type for these, so the label is the only signal — see
+    /// [`contact_field`] for the rules and why they are anchored the way they
+    /// are. Three guards keep the promotion from doing harm:
+    ///
+    /// * **Only text and numeric sources.** These are the single-line free-text
+    ///   inputs where "this holds a phone number" is a statement about the
+    ///   input. A panel, a static draw or a checkbox can carry the same word in
+    ///   its title without being a contact field. Numeric is included because a
+    ///   numeric field is the *worse* case: its display clause reformats
+    ///   `+41 44 234 56 78` as `1,234,567.00` and rejects the leading `+`.
+    /// * **Interactive fields only.** A read-only field is system-populated, so
+    ///   validation and an autofill hint buy nothing, while a strict pattern
+    ///   could reject a legitimately local-format value and make the form
+    ///   unsubmittable.
+    /// * **The label wins over the name**, and an unclassifiable field keeps the
+    ///   type it already had.
+    fn refine_contact_field_type(
+        &self,
+        field_type: FieldType,
+        label: Option<&TranslatedText>,
+        som_path: &SomPath,
+        interactive: bool,
+    ) -> FieldType {
+        if !interactive || !matches!(field_type, FieldType::Text { .. } | FieldType::Number { .. }) {
+            return field_type;
+        }
+
+        // The document's own language, not an arbitrary map entry: the
+        // translations live in a `HashMap`, so picking "the first" would make
+        // the classification depend on iteration order.
+        let label_text = label.map(|l| l.plain_text_in(&self.language));
+        let name = som_path.as_str().rsplit('.').next().unwrap_or_default();
+
+        match contact_field::classify(label_text.as_deref(), name) {
+            Some(contact_field::ContactKind::Email) => FieldType::Email,
+            Some(contact_field::ContactKind::Telephone) => FieldType::Tel,
+            None => field_type,
+        }
     }
 
     /// Determine FieldType from widget hints.

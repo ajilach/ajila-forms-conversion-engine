@@ -22,6 +22,19 @@
     <cq:responsive jcr:primaryType="nt:unstructured">
         <default jcr:primaryType="nt:unstructured" offset="0" width="{{ colspan }}"/>
     </cq:responsive>
-    {% if conditions_script %}<fd:scripts fd:valueCommit="{{ conditions_script }}" jcr:primaryType="nt:unstructured"/>{% endif %}
+    {#  A form-configurator choice must empty every panel it decides: the visibility
+        rule only shows and hides, so without this you can fill the form in as one
+        option, switch to another and come back to find the first option's panel
+        still populated — and the submission then carries one option's data under
+        another, invisibly (feedback #107).
+
+        Repeatables are reset first, and with `resetAllPanelInstances` rather than
+        `resetData`, because a repeatable has to DROP its added rows; a row left
+        behind and blanked still counts. `resetData()` on the panel then clears
+        the remaining fields.
+
+        Value Commit does not fire when the option already selected is chosen
+        again, so there is no no-op commit to guard against. #}
+    {% if reset_targets %}<fd:scripts fd:valueCommit="[{&quot;script&quot;:{&quot;field&quot;:&quot;{{ name }}&quot;\,&quot;event&quot;:&quot;Value Commit&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;/* emptied on change\, so no option is ever shown carrying another's data */{% for t in reset_targets %}{% for r in t.repeats %}\\nwindow.forms.ubs.resetAllPanelInstances({{ r }});{% endfor %}\\n{{ t.panel }}.resetData();{% endfor %}&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured"/>{% endif %}
     {{ raw_children }}
 </{{ element_name }}>

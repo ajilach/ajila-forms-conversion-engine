@@ -47,7 +47,20 @@
                 jcr:primaryType="nt:unstructured"
                 sling:resourceType="{{ variables.default_layout }}"/>
             {% if not has_passthrough_rules %}<fd:rules jcr:primaryType="nt:unstructured"/>{% endif %}
+            {#  Germany only (feedback #104) — see `banking_default_de_init` in the
+                profile config. Italy and every other entity share this same
+                canonical fragment and keep whatever value they have, so the gate is
+                the entity, not the fragment. #}
+            {#  Both lookups are defaulted: a Tera error inside a component
+                template drops the whole node from the output, so a profile that does
+                not carry the entity or the script must degrade to "no rule", not
+                to "no banking panel". #}
+            {% set banking_init = variables.banking_default_de_init | default(value="") %}
+            {% if xfa.formrange_entity | default(value="") == "019" and banking_init != "" %}
+            <fd:scripts fd:init="{{ banking_init }}" jcr:primaryType="nt:unstructured"/>
+            {% else %}
             <fd:scripts jcr:primaryType="nt:unstructured"/>
+            {% endif %}
             {{ raw_children }}
 </{{ element_name }}>
     </items>

@@ -240,6 +240,7 @@ mod tests {
                     colspan: 12,
                     dor_colspan: None,
                     bind_ref: None,
+                    kind: Default::default(),
                 }],
                 is_page: false,
                 dor_exclude: false,

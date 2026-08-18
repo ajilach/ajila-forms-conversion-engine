@@ -141,6 +141,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             colspan,
             dor_colspan,
             bind_ref,
+            kind,
         } => AemNodeTranslated::TextField {
             uuid: *uuid,
             passthrough: ctx.passthrough(uuid),
@@ -152,6 +153,7 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             colspan: *colspan,
             dor_colspan: *dor_colspan,
             bind_ref: bind_ref.clone(),
+            kind: *kind,
         },
         AemNode::NumberField {
             uuid,

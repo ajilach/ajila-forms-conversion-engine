@@ -98,6 +98,60 @@ css_radiobutton = "widget_ajila_forms_radiobutton"
 css_dropdownlist = "widget_ajila_forms_dropdownlist"
 css_primarybutton = "widget_ajila-forms-ubs-primarybutton"
 css_textbox_multiline = "widget_ajila-forms-ubs-textbox ubs-textbox-multiline"
+css_telephone = "widget_ajila-forms-ubs-phonebox"
+
+# Email / telephone validation, vendored from the deployed corpus (feedback #117,
+# PROBLEM-email-phone-component) rather than invented here: 63 hand-authored
+# instances across 26 forms agree on these, and they are what AEM already
+# validates against. The clauses are stored XML-attribute-escaped (`&lt;`,
+# `&quot;`), the form they are written in inside a JCR property.
+#
+# The message is the ENGLISH master. It is also a `[translations]` key in
+# `translations/*.toml`, so each form's per-locale dictionary carries the
+# translated wording under `fd_<master>` and AEM renders the message in the
+# reader's language. Change the string here and you must change that key too, or
+# the translation stops resolving.
+email_validate_clause = '^(([^&lt;>()\\[\\]\\\\.,;:\\s@&quot;]+(\\.[^&lt;>()\\[\\]\\\\.,;:\\s@&quot;]+)*)|(&quot;.+&quot;))@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}])|(([a-zA-Z\\-0-9]+\\.)+[a-zA-Z]{2,}))$'
+email_validate_message = "Please enter a valid email address (e.g., max.muster@beispiel.ch)."
+
+# `{0,20}` is the corpus majority (29 of 31 deployed telephones); the two
+# `{0,14}` variants are deliberate exceptions on existing forms and are left
+# alone by the sweep rather than widened.
+tel_validate_clause = '^([+]|00)[0-9]{0,20}$'
+tel_validate_message = "Please enter a valid phone number incl. country code (e.g., +41)."
+
+# ── Fragment-panel Initialize rules ──────────────────────────────────────────
+# Full `fd:init` attribute values, kept here rather than inline in the templates
+# because more than one template emits the same rule: the banking-relationship
+# panel is written by `preface.xml` on the from-XFA path and by `fragment.xml`
+# when a loaded package carries it as a fragment node. One string, one place to
+# change it.
+#
+# AEM's Expression Editor hands back exactly ONE SCRIPTMODEL per field+event
+# pair. Two or more sharing `this`+`Initialize` are concatenated with a bare
+# comma into invalid JSON, and the Editor then throws client-side the moment it
+# loads that field — taking the whole page's editor data with it. So each value
+# below is a SINGLE entry, however many statements it carries.
+
+# Address fragments (feedback #102): City and Country must be optional. The
+# fragment's own default makes them mandatory — a static attribute and/or its own
+# `setMandatory(this, true)` — so this overrides it defensively. Both fields sit
+# one level down in `PN_AddressBlock` and are passed as function ARGUMENTS, which
+# is why they need the `this.` prefix: a bare or merely panel-qualified reference
+# does not resolve (three successive corpus rollouts shipped broken on exactly
+# that).
+address_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.com.ajila.forms.ubs.components.setMandatory(this.PN_AddressBlock.TXT_City_AddressBlock\, false);\\nwindow.com.ajila.forms.ubs.components.setMandatory(this.PN_AddressBlock.DD_Country_AddressBlock\, false);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]'''
+
+# `affrg_AddressGeneric1` already carried two Initialize entries of its own —
+# the hide/DoR calls and the country list. They are folded in here, not
+# appended as a second entry.
+address_generic_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.hideAFHideDor(TXT_StreetNumber);\\nwindow.forms.ubs.hideAFHideDor(TXT_AdditionalDetails_AddressBlock);\\nwindow.forms.ubs.hideAFHideDor(TXT_PostalCodeCity);\\nwindow.forms.ubs.hideAFHideDor(TXT_State_AddressBlock);\\nwindow.forms.ubs.hideAFHideDor(TXT_District_AddressBlock_APAC);\\nvar formMetadata = window.forms.ubs.getFormMetadata();\\nwindow.forms.ubs.referencedata.getCountryList(formMetadata.mandator\, formMetadata.language\, 'DOMICILE_INDIVIDUAL'\, DD_Country_AddressBlock);\\nwindow.com.ajila.forms.ubs.components.setMandatory(this.PN_AddressBlock.TXT_City_AddressBlock\, false);\\nwindow.com.ajila.forms.ubs.components.setMandatory(this.PN_AddressBlock.DD_Country_AddressBlock\, false);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]'''
+
+# Germany only (feedback #104): the banking-relationship field defaults to
+# `0319` and renders disabled. Italy and every other entity share the same
+# canonical fragment but keep whatever they have, so the templates gate this on
+# the entity, not on the fragment.
+banking_default_de_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;TXT_BankingRelationship1.value = '0319';\\nTXT_BankingRelationship1.enabled = false;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]'''
 
 # =============================================================================
 # Language Synonyms

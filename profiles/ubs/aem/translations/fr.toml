@@ -19,3 +19,12 @@
 "For internal bank use only" = "Réservé à l'usage interne de la banque"
 "Signature(s) verified / Signed in my presence" = "Signature(s) verifiée(s) / Signé en ma présence"
 "Company" = "Société"
+
+# Email / telephone validation messages (feedback #117). The key is the English
+# master the `email`/`telephone` templates write into
+# `validatePictureClauseMessage`; AEM resolves it through this dictionary, so the
+# reader sees the message in their own language. Wordings are the ones already
+# deployed in the corpus, adopted verbatim so the same sentence does not ship in
+# two variants.
+"Please enter a valid email address (e.g., max.muster@beispiel.ch)." = "Veuillez saisir une adresse e-mail valide (p. ex. max.muster@beispiel.ch)."
+"Please enter a valid phone number incl. country code (e.g., +41)." = "Veuillez saisir un numéro de téléphone valide avec l'indicatif du pays (p. ex. +41)."

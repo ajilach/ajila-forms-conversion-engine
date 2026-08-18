@@ -93,7 +93,7 @@ pub(crate) fn embed_footnotes_in_value(
 }
 
 use super::fragment_parser::ParsedFragment;
-use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, ResolvedCustomElement};
+use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, ResolvedCustomElement, TextFieldKind};
 
 // ============================================================================
 // Conversion context
@@ -1559,6 +1559,7 @@ fn convert_field(
                 colspan,
                 dor_colspan,
                 bind_ref,
+                kind: TextFieldKind::Plain,
             }
         }
 
@@ -1575,6 +1576,7 @@ fn convert_field(
                 colspan,
                 dor_colspan,
                 bind_ref,
+                kind: TextFieldKind::Plain,
             }
         }
 
@@ -1621,6 +1623,7 @@ fn convert_field(
                 colspan,
                 dor_colspan,
                 bind_ref,
+                kind: TextFieldKind::Email,
             }
         }
 
@@ -1637,6 +1640,7 @@ fn convert_field(
                 colspan,
                 dor_colspan,
                 bind_ref,
+                kind: TextFieldKind::Telephone,
             }
         }
 

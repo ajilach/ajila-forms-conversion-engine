@@ -607,6 +607,9 @@ fn validate_guide_node_classes(doc: &ParsedXmlDocument, violations: &mut Vec<Str
         "guideDatePicker",
         "guideButton",
         "guideNumericBox",
+        // The telephone component's own class. An email field is a
+        // `guideTextBox` (the corpus is unanimous), so it needs no entry.
+        "guideTelephone",
         "guideToolbar",
         "guideFootnotePlaceHolder",
     ];

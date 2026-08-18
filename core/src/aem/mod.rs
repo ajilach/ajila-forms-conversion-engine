@@ -423,6 +423,52 @@ impl AemConfig {
 // AEM Node Types
 // ============================================================================
 
+/// Which single-line input component a [`AemNode::TextField`] renders as.
+///
+/// A form's PDF source has no type for an email address or a phone number — both
+/// arrive as plain text — so the kind is decided from the field's label in the
+/// structured model ([`crate::structured::contact_field`]) and carried through
+/// here. It selects the template, and with it the resource type, the validation
+/// clause, the `autofillFieldKeyword` and the phonebox styling.
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+pub enum TextFieldKind {
+    /// `controls/textbox` — the default.
+    #[default]
+    Plain,
+    /// `controls/email`, with the corpus's email validation clause.
+    Email,
+    /// `controls/telephone`, with the phonebox styling and the `^([+]|00)…`
+    /// display and validation clause.
+    Telephone,
+}
+
+impl TextFieldKind {
+    /// The profile template that renders this kind.
+    pub fn template_key(self) -> &'static str {
+        match self {
+            TextFieldKind::Plain => "textbox",
+            TextFieldKind::Email => "email",
+            TextFieldKind::Telephone => "telephone",
+        }
+    }
+
+    /// The JCR element-name stem, mirroring the template key so a package reads
+    /// the way AEM's own export does (`email_<uuid>`, `telephone_<uuid>`).
+    pub fn element_stem(self) -> &'static str {
+        self.template_key()
+    }
+}
+
 /// Alignment of options in checkbox / radio button groups.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
@@ -538,7 +584,8 @@ pub enum AemNode {
         frag_ref: Option<String>,
     },
 
-    /// Single-line text input (`guideTextBox`).
+    /// Single-line text input (`guideTextBox`), or one of its typed variants —
+    /// see [`TextFieldKind`].
     TextField {
         uuid: Uuid,
         name: String,
@@ -551,6 +598,11 @@ pub enum AemNode {
         dor_colspan: Option<u32>,
         /// XSD path for `bindRef` attribute.
         bind_ref: Option<String>,
+        /// Which single-line input component this is. Defaults to
+        /// [`TextFieldKind::Plain`] so packages serialised before the typed
+        /// variants existed still load.
+        #[serde(default)]
+        kind: TextFieldKind,
     },
 
     /// Numeric input (`guideNumericBox`).
@@ -766,7 +818,9 @@ impl AemNode {
         match self {
             AemNode::Root { .. } => "jcr:root".into(),
             AemNode::Panel { uuid, .. } => format!("panel_{}", uuid.as_simple()),
-            AemNode::TextField { uuid, .. } => format!("textbox_{}", uuid.as_simple()),
+            AemNode::TextField { uuid, kind, .. } => {
+                format!("{}_{}", kind.element_stem(), uuid.as_simple())
+            }
             AemNode::NumberField { uuid, .. } => format!("numericbox_{}", uuid.as_simple()),
             AemNode::DatePicker { uuid, .. } => format!("datepicker_{}", uuid.as_simple()),
             AemNode::Dropdown { uuid, .. } => format!("dropdownlist_{}", uuid.as_simple()),

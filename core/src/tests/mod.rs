@@ -22,6 +22,7 @@ fn aem_node_json_round_trips() {
                     colspan: 6,
                     dor_colspan: None,
                     bind_ref: None,
+                    kind: crate::aem::TextFieldKind::Plain,
                 },
                 AemNode::RadioButton {
                     uuid: Uuid::nil(),
@@ -31410,6 +31411,7 @@ fn passthrough_snapshot_back_compat_deserializes() {
         colspan: 12,
         dor_colspan: None,
         bind_ref: None,
+        kind: crate::aem::TextFieldKind::Plain,
     };
     let mut value = serde_json::to_value(&node).unwrap();
     // Remove the `passthrough` key wherever it appears (externally-tagged enum).
@@ -31476,6 +31478,7 @@ fn passthrough_survives_serde_snapshot_round_trip() {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            kind: crate::aem::TextFieldKind::Plain,
         }],
     };
 
@@ -33737,6 +33740,7 @@ mod ubs_xsd_naming {
             colspan: 12,
             dor_colspan: None,
             bind_ref: None,
+            kind: crate::aem::TextFieldKind::Plain,
         }
     }
 
@@ -34223,4 +34227,773 @@ mod ubs_xsd_naming {
             );
         }
     }
+}
+
+// ============================================================================
+// PROBLEM-email-phone-component (feedback #117)
+//
+// The engine used to have no email/telephone template, so every field labelled
+// "Email" / "Telephone" / "Fax" was emitted as a plain `controls/textbox`: no
+// format validation, no `autofillFieldKeyword` for browser autofill, no phonebox
+// styling. The corpus — 63 hand-authored instances across 26 forms — is the
+// ground truth for what these components look like, and these tests pin the
+// engine's output against it.
+// ============================================================================
+
+/// Render one field of each kind through the real UBS profile.
+#[cfg(test)]
+fn render_contact_fields() -> String {
+    use crate::aem::{AemConfig, AemNode, TextFieldKind, generate_aem_xml};
+    use uuid::Uuid;
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAEI".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("build AemConfig from the UBS profile");
+
+    let field = |name: &str, label: &str, kind| AemNode::TextField {
+        uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()),
+        name: name.into(),
+        label: label.into(),
+        mandatory: false,
+        visible: true,
+        max_chars: None,
+        colspan: 6,
+        dor_colspan: None,
+        bind_ref: None,
+        kind,
+    };
+
+    let root = AemNode::Root {
+        title: "Contact".into(),
+        children: vec![
+            field("EML_Email", "E-Mail", TextFieldKind::Email),
+            field("TEL_Telefon", "Telefon", TextFieldKind::Telephone),
+            field("TXT_Vorname", "Vorname", crate::aem::TextFieldKind::Plain),
+        ],
+    };
+    generate_aem_xml(&root, &config)
+}
+
+#[test]
+fn email_field_renders_the_corpus_email_component() {
+    let xml = render_contact_fields();
+
+    assert!(
+        xml.contains(
+            "sling:resourceType=\"ajila-forms-customers/ajila-forms-ubs/components/controls/email\""
+        ),
+        "an email field must use the email component, not a textbox:\n{xml}"
+    );
+    // Browser autofill and the validation clause are the whole point of the
+    // component; a textbox has neither.
+    assert!(xml.contains("autofillFieldKeyword=\"email\""), "{xml}");
+    assert!(xml.contains("validationPatternType=\"custom\""), "{xml}");
+    assert!(
+        xml.contains("validatePictureClauseMessage=\"Please enter a valid email address"),
+        "{xml}"
+    );
+    // The corpus drops `css` on email (31 of 32 deployed instances): the
+    // component brings its own styling and the textbox widget class fights it.
+    assert!(
+        !xml.contains("<email_") || !contact_node(&xml, "email_").contains("css="),
+        "an email field must not carry the textbox widget class:\n{xml}"
+    );
+    // The element name follows AEM's own export convention.
+    assert!(xml.contains("<email_"), "{xml}");
+}
+
+#[test]
+fn telephone_field_renders_the_corpus_telephone_component() {
+    let xml = render_contact_fields();
+
+    assert!(
+        xml.contains(
+            "sling:resourceType=\"ajila-forms-customers/ajila-forms-ubs/components/controls/telephone\""
+        ),
+        "a phone field must use the telephone component, not a textbox:\n{xml}"
+    );
+    assert!(xml.contains("autofillFieldKeyword=\"tel\""), "{xml}");
+    assert!(xml.contains("guideNodeClass=\"guideTelephone\""), "{xml}");
+    // The corpus is unanimous (31/31) on the phonebox class, against the
+    // hand-built fragments' textbox class — what is deployed wins.
+    assert!(xml.contains("css=\"widget_ajila-forms-ubs-phonebox\""), "{xml}");
+    // The display clause matters as much as the validation one: without it a
+    // numeric-lineage field reformats `+41 44 234 56 78` as `1,234,567.00`.
+    assert!(xml.contains("displayPictureClause=\"^([+]|00)[0-9]{0,20}$\""), "{xml}");
+    assert!(xml.contains("validatePictureClause=\"^([+]|00)[0-9]{0,20}$\""), "{xml}");
+    assert!(xml.contains("<telephone_"), "{xml}");
+}
+
+#[test]
+fn plain_text_fields_are_untouched_by_the_contact_components() {
+    let xml = render_contact_fields();
+    let node = contact_node(&xml, "textbox_");
+    assert!(
+        node.contains("controls/textbox") && node.contains("widget_ajila-forms-ubs-textbox"),
+        "an ordinary text field must still render as a textbox:\n{node}"
+    );
+    assert!(
+        !node.contains("validatePictureClause") && !node.contains("autofillFieldKeyword"),
+        "an ordinary text field must not pick up contact validation:\n{node}"
+    );
+}
+
+/// The single element whose tag starts with `stem`, as raw XML.
+#[cfg(test)]
+fn contact_node<'a>(xml: &'a str, stem: &str) -> &'a str {
+    let start = xml
+        .find(&format!("<{stem}"))
+        .unwrap_or_else(|| panic!("no <{stem}…> element in:\n{xml}"));
+    let end = xml[start..].find('>').expect("unterminated open tag") + start;
+    &xml[start..=end]
+}
+
+/// The two validation messages must resolve through each form's per-locale
+/// dictionary — the mechanism the corpus sweep confirmed empirically against a
+/// rendered AEM preview. A message present on the node but missing from the
+/// dictionary renders in English regardless of the reader's locale.
+#[test]
+fn contact_validation_messages_are_translated_in_every_profile_language() {
+    let (profile, _, _) = load_ubs_profile();
+    for master in [
+        "Please enter a valid email address (e.g., max.muster@beispiel.ch).",
+        "Please enter a valid phone number incl. country code (e.g., +41).",
+    ] {
+        let by_lang = profile
+            .default_translations
+            .get(master)
+            .unwrap_or_else(|| panic!("no dictionary entry for {master:?}"));
+        for lang in ["en", "de", "fr", "it", "sp"] {
+            let translated = by_lang
+                .get(lang)
+                .unwrap_or_else(|| panic!("{master:?} has no {lang} translation"));
+            assert!(!translated.trim().is_empty(), "{master:?} {lang} is blank");
+            if lang != "en" {
+                assert_ne!(
+                    translated, master,
+                    "{master:?} is an untranslated stub in {lang} — AEM would render English"
+                );
+            }
+        }
+    }
+}
+
+// ============================================================================
+// PROBLEM-jump-to-field-button (feedback #21, owner amendment 2026-08-10)
+//
+// The jump-to-field button jumps the reader back to a field. A step that is pure
+// text — legal provisions, a declaration, terms to accept — has nothing to jump
+// to, so it gets no button. 177 steps across 102 forms carried one wrongly.
+// ============================================================================
+
+/// Render a one-step form whose step holds `children`, through the real UBS
+/// profile, and return the step-title panel's open tag.
+#[cfg(test)]
+fn render_step_title_panel(step_name: &str, children: Vec<crate::aem::AemNode>) -> String {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+    use uuid::Uuid;
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAEI".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("build AemConfig from the UBS profile");
+
+    let root = AemNode::Root {
+        title: "Form".into(),
+        children: vec![AemNode::Panel {
+            uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, step_name.as_bytes()),
+            name: step_name.into(),
+            title: "Step".into(),
+            children,
+            is_page: true,
+            dor_exclude: false,
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }],
+    };
+    let xml = generate_aem_xml(&root, &config);
+    contact_node(&xml, "panel_title_").to_string()
+}
+
+#[cfg(test)]
+fn text_draw(name: &str) -> crate::aem::AemNode {
+    use uuid::Uuid;
+    crate::aem::AemNode::TextDraw {
+        uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()),
+        name: name.into(),
+        content: "<p>These provisions apply.</p>".into(),
+        dor_exclude: false,
+        colspan: 12,
+        dor_colspan: None,
+    }
+}
+
+#[cfg(test)]
+fn text_field(name: &str) -> crate::aem::AemNode {
+    use uuid::Uuid;
+    crate::aem::AemNode::TextField {
+        uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()),
+        name: name.into(),
+        label: "Vorname".into(),
+        mandatory: false,
+        visible: true,
+        max_chars: None,
+        colspan: 6,
+        dor_colspan: None,
+        bind_ref: None,
+        kind: crate::aem::TextFieldKind::Plain,
+    }
+}
+
+#[test]
+fn a_step_with_a_field_keeps_its_jump_to_field_button() {
+    let panel = render_step_title_panel("PN_Personal", vec![text_field("TXT_Vorname")]);
+    assert!(
+        panel.contains("jumpToFieldButtonVisible=\"true\""),
+        "a step the reader fills in must offer the button:\n{panel}"
+    );
+}
+
+#[test]
+fn a_text_only_step_gets_no_jump_to_field_button() {
+    let panel = render_step_title_panel("PN_Provisions", vec![text_draw("ST_Provisions")]);
+    assert!(
+        !panel.contains("jumpToFieldButtonVisible"),
+        "a step with nothing to fill in has nothing to jump to:\n{panel}"
+    );
+}
+
+/// A field nested inside a panel, a repeatable — or a fragment, whose fields
+/// live in another package entirely — still makes the step fillable.
+#[test]
+fn nested_and_fragment_input_still_counts_as_fillable() {
+    use crate::aem::AemNode;
+    use uuid::Uuid;
+
+    let nested = AemNode::Panel {
+        uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"PN_Inner"),
+        name: "PN_Inner".into(),
+        title: "Inner".into(),
+        children: vec![text_field("TXT_Nested")],
+        is_page: false,
+        dor_exclude: false,
+        visible: true,
+        is_conditional: false,
+        dor_num_cols: None,
+        colspan: 12,
+        dor_colspan: None,
+        bind_ref: None,
+        frag_ref: None,
+    };
+    let panel = render_step_title_panel("PN_Nested", vec![text_draw("ST_Intro"), nested]);
+    assert!(panel.contains("jumpToFieldButtonVisible=\"true\""), "{panel}");
+
+    let fragment = AemNode::Fragment {
+        uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"PN_Sig"),
+        name: "PN_Sig".into(),
+        title: "Unterschrift".into(),
+        frag_ref: "/content/forms/af/afforms_ubs_fragmentlib/affrg_Signature1".into(),
+        bind_ref: None,
+    };
+    let panel = render_step_title_panel("PN_Signature", vec![text_draw("ST_Legal"), fragment]);
+    assert!(
+        panel.contains("jumpToFieldButtonVisible=\"true\""),
+        "a fragment's fields live in its own package but are still fillable:\n{panel}"
+    );
+}
+
+/// The configurator step is excluded regardless — it has fields, but its button
+/// would also put it in the summary jump-list.
+#[test]
+fn the_form_configurator_step_never_gets_the_button() {
+    let panel = render_step_title_panel("PN_FormConfigurator", vec![text_field("TXT_Any")]);
+    assert!(!panel.contains("jumpToFieldButtonVisible"), "{panel}");
+}
+
+// ============================================================================
+// PROBLEM-address-city-country-mandatory (#102) and
+// PROBLEM-banking-relationship-default-de (#104)
+//
+// Both attach an Initialize rule to a fragment panel. The shared constraint,
+// learned the hard way over three broken corpus rollouts, is that a field+event
+// slot may hold exactly ONE SCRIPTMODEL: AEM's Expression Editor returns one
+// object per pair, and two of them are concatenated with a bare comma into
+// invalid JSON that takes down the whole page's editor data.
+// ============================================================================
+
+/// Render one fragment panel for the given `frag_ref` and entity, and return its
+/// `fd:init` attribute value (empty when it has none).
+#[cfg(test)]
+fn render_fragment_init(frag_ref: &str, entity: &str) -> String {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+    use uuid::Uuid;
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAEI".into());
+    vars.insert("formrange_entity".into(), entity.into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("build AemConfig from the UBS profile");
+
+    let root = AemNode::Root {
+        title: "Form".into(),
+        children: vec![AemNode::Fragment {
+            uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, frag_ref.as_bytes()),
+            name: "PN_Frag".into(),
+            title: "Fragment".into(),
+            frag_ref: frag_ref.into(),
+            bind_ref: None,
+        }],
+    };
+    let xml = generate_aem_xml(&root, &config);
+    match xml.find("fd:init=\"") {
+        Some(start) => {
+            let value = &xml[start + "fd:init=\"".len()..];
+            value[..value.find('"').expect("unterminated fd:init")].to_string()
+        }
+        None => String::new(),
+    }
+}
+
+/// How many SCRIPTMODEL objects an `fd:init` value holds.
+#[cfg(test)]
+fn scriptmodel_count(init: &str) -> usize {
+    init.matches("SCRIPTMODEL").count()
+}
+
+#[test]
+fn address_fragments_force_city_and_country_optional() {
+    for frag in [
+        "/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1",
+        "/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1",
+        "/content/forms/af/afforms_ubs_fragmentlib/affrg_addressclientid",
+        "/content/forms/af/afforms_germany_fragmentlib/affrg_germany_AddressBlock_CountryDD",
+        "/content/forms/af/afforms_italy_fragmentlib/affrg_italy_AddressBlock_CountryDD",
+    ] {
+        let init = render_fragment_init(frag, "019");
+        for field in ["TXT_City_AddressBlock", "DD_Country_AddressBlock"] {
+            assert!(
+                init.contains(&format!(
+                    "setMandatory(this.PN_AddressBlock.{field}\\, false)"
+                )),
+                "{frag}: {field} must be forced optional, and referenced as \
+                 `this.PN_AddressBlock.<field>` — a bare or merely \
+                 panel-qualified argument does not resolve.\nfd:init = {init}"
+            );
+        }
+    }
+}
+
+/// The salutation fragments share the word "address" and nothing else — they
+/// carry no address block, so the rule would reference fields that do not exist.
+#[test]
+fn form_of_address_fragments_are_left_alone() {
+    for frag in [
+        "/content/forms/af/afforms_ubs_fragmentlib/affrg_FormofAddress",
+        "/content/forms/af/afforms_germany_fragmentlib/affrg_germany_Form_Address",
+        "/content/forms/af/afforms_italy_fragmentlib/affrg_italy_Form_Address",
+    ] {
+        let init = render_fragment_init(frag, "019");
+        assert!(
+            init.is_empty(),
+            "{frag} has no address block and must get no Initialize rule: {init}"
+        );
+    }
+}
+
+/// The regression the corpus hit three times: `affrg_AddressGeneric1` already
+/// carried two Initialize entries of its own. Appending a third would produce
+/// the shape that breaks AEM's Expression Editor, so all of it — the hide/DoR
+/// calls, the country list, and the two `setMandatory` calls — has to live in
+/// one entry.
+#[test]
+fn a_fragment_panel_never_gets_two_initialize_scriptmodels() {
+    for (frag, entity) in [
+        ("/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1", "019"),
+        ("/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1", "019"),
+        ("/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1", "019"),
+    ] {
+        let init = render_fragment_init(frag, entity);
+        assert_eq!(
+            scriptmodel_count(&init),
+            1,
+            "{frag}: exactly one SCRIPTMODEL per field+event slot, got:\n{init}"
+        );
+    }
+
+    // The generic fragment keeps everything it had before the address rule was
+    // added — folded into the single entry, not dropped.
+    let init = render_fragment_init(
+        "/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1",
+        "019",
+    );
+    for kept in [
+        "hideAFHideDor(TXT_StreetNumber)",
+        "hideAFHideDor(TXT_District_AddressBlock_APAC)",
+        "referencedata.getCountryList",
+    ] {
+        assert!(init.contains(kept), "{kept} was lost from fd:init:\n{init}");
+    }
+}
+
+#[test]
+fn germany_banking_relationship_defaults_to_0319_and_disabled() {
+    let init = render_fragment_init(
+        "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
+        "019",
+    );
+    assert!(init.contains("TXT_BankingRelationship1.value = '0319';"), "{init}");
+    assert!(init.contains("TXT_BankingRelationship1.enabled = false;"), "{init}");
+}
+
+/// Italy and every other entity share the same canonical fragment, so the gate
+/// has to be the entity — not the fragment.
+#[test]
+fn non_germany_banking_relationship_keeps_its_own_default() {
+    for entity in ["033", "001", "999"] {
+        let init = render_fragment_init(
+            "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
+            entity,
+        );
+        assert!(
+            !init.contains("0319"),
+            "entity {entity} is out of scope for the Germany default: {init}"
+        );
+    }
+}
+
+// ============================================================================
+// PROBLEM-configurator-reset-on-change (feedback #107)
+//
+// The configurator asks what the form is for and each option reveals a different
+// panel. The visibility rule only shows and hides, so nothing is ever cleared:
+// fill the form in as one option, switch to another and come back, and the first
+// option returns with every field filled and every repeatable row still added.
+// The submission then carries one option's data under another, invisibly.
+// ============================================================================
+
+/// A form whose `choice` (radio) reveals one of two panels, the second holding a
+/// repeatable. Returns the rendered XML.
+#[cfg(test)]
+fn render_configurator(option_labels: &[&str]) -> String {
+    use crate::aem::{
+        AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, generate_aem_xml,
+    };
+    use crate::structured::InputValue;
+    use uuid::Uuid;
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAEI".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("build AemConfig from the UBS profile");
+
+    let uid = |s: &str| Uuid::new_v5(&Uuid::NAMESPACE_URL, s.as_bytes());
+    let panel = |name: &str, children: Vec<AemNode>| AemNode::Panel {
+        uuid: uid(name),
+        name: name.into(),
+        title: name.into(),
+        children,
+        is_page: false,
+        dor_exclude: false,
+        visible: true,
+        is_conditional: true,
+        dor_num_cols: None,
+        colspan: 12,
+        dor_colspan: None,
+        bind_ref: None,
+        frag_ref: None,
+    };
+    let repeatable = AemNode::Repeatable {
+        uuid: uid("RCP_Reps"),
+        name: "RCP_Reps".into(),
+        title: "Reps".into(),
+        children: vec![text_field("TXT_InRow")],
+        min_occur: 1,
+        max_occur: 5,
+        bind_ref: None,
+        frag_ref: None,
+    };
+
+    let choice = AemNode::RadioButton {
+        uuid: uid("RB_Kind"),
+        name: "RB_Kind".into(),
+        label: "Art".into(),
+        options: option_labels
+            .iter()
+            .enumerate()
+            .map(|(i, l)| AemOption {
+                label: (*l).into(),
+                value: (i + 1).to_string(),
+            })
+            .collect(),
+        alignment: OptionAlignment::Vertical,
+        mandatory: true,
+        visible: true,
+        colspan: 12,
+        dor_colspan: None,
+        field_id: None,
+        conditions: option_labels
+            .iter()
+            .enumerate()
+            .map(|(i, _)| ConditionRule {
+                value: InputValue::Text((i + 1).to_string()),
+                target_panel_name: format!("PN_Option{}", i + 1),
+                show: true,
+            })
+            .collect(),
+        bind_ref: None,
+    };
+
+    let mut children = vec![choice];
+    for (i, _) in option_labels.iter().enumerate() {
+        let name = format!("PN_Option{}", i + 1);
+        // Only the second option's panel holds a repeatable, so the test can tell
+        // the two reset calls apart.
+        let inner = if i == 1 {
+            vec![text_field(&format!("TXT_In{}", i + 1)), repeatable.clone()]
+        } else {
+            vec![text_field(&format!("TXT_In{}", i + 1))]
+        };
+        children.push(panel(&name, inner));
+    }
+
+    let root = AemNode::Root {
+        title: "Form".into(),
+        children,
+    };
+    generate_aem_xml(&root, &config)
+}
+
+#[test]
+fn an_approved_configurator_choice_empties_every_panel_it_decides() {
+    let xml = render_configurator(&["Individual", "Legal Entity"]);
+
+    assert!(
+        xml.contains("fd:valueCommit="),
+        "the reset runs on Value Commit:\n{xml}"
+    );
+    for panel in ["PN_Option1", "PN_Option2"] {
+        assert!(
+            xml.contains(&format!("{panel}.resetData();")),
+            "{panel} is decided by the choice and must be emptied:\n{xml}"
+        );
+    }
+    // A repeatable has to DROP its rows, not just blank them — a blanked row
+    // still counts against the row total the reader sees.
+    assert!(
+        xml.contains("resetAllPanelInstances(RCP_Reps_repeat);"),
+        "the repeatable inside a decided panel must drop its rows:\n{xml}"
+    );
+    // Rows first, then the panel's remaining fields.
+    let rows = xml.find("resetAllPanelInstances(RCP_Reps_repeat)").unwrap();
+    let fields = xml.find("PN_Option2.resetData()").unwrap();
+    assert!(
+        rows < fields,
+        "the row count must be back to its minimum before the fields are cleared"
+    );
+}
+
+/// The narrowing that keeps this off ordinary questions. Structurally an order
+/// type or an occupation has the same defect, but whether clearing is wanted
+/// there is a judgement about that form — so only reviewed wordings get a reset.
+#[test]
+fn an_unreviewed_choice_gets_no_reset() {
+    let xml = render_configurator(&["Standing order", "Single payment"]);
+    assert!(
+        !xml.contains("resetData();"),
+        "an unreviewed wording must be left alone:\n{xml}"
+    );
+}
+
+/// One panel means there is no other option whose data could resurface.
+#[test]
+fn a_choice_deciding_a_single_panel_gets_no_reset() {
+    let xml = render_configurator(&["Individual"]);
+    assert!(!xml.contains("resetData();"), "{xml}");
+}
+
+/// The UBS configurator itself goes through the `formular_adressat_radio` /
+/// `tipo_radio` custom templates, whose panels live in the `account_holder` and
+/// `signatures` templates they depend on. Those cannot be derived from the node
+/// tree, so the script is written out in the template — and has to stay in step
+/// with the panels those templates actually define.
+#[test]
+fn the_custom_configurator_radios_reset_the_panels_their_templates_define() {
+    use std::collections::HashSet;
+
+    let read = |name: &str| {
+        std::fs::read_to_string(helpers::profiles_path(&format!("ubs/aem/custom/{name}.xml")))
+            .unwrap_or_else(|e| panic!("read {name}.xml: {e}"))
+    };
+
+    for (radio, panel_sources, expected_panels) in [
+        (
+            "formular_adressat_radio",
+            vec!["account_holder", "signatures"],
+            vec![
+                "PN_IndividualContainer",
+                "PN_LegalGuardianContainer",
+                "PN_LegalEntityContainer",
+                "PN_165356b3",
+                "PN_165356b3_copy_1",
+                "PN_204491df",
+            ],
+        ),
+        (
+            "tipo_radio",
+            vec!["account_holder_it", "signatures_it"],
+            vec![
+                "PN_IndividualContainer",
+                "PN_LegalEntityContainer",
+                "PN_165356b3",
+                "PN_204491df",
+            ],
+        ),
+    ] {
+        let script = read(radio);
+        assert!(
+            script.contains("fd:valueCommit="),
+            "{radio} must carry the reset"
+        );
+        for panel in &expected_panels {
+            assert!(
+                script.contains(&format!("{panel}.resetData();")),
+                "{radio} must empty {panel}"
+            );
+        }
+        // Every panel the reset names must really exist in the templates this
+        // radio depends on — otherwise the script silently throws at runtime.
+        let defined: HashSet<String> = panel_sources
+            .iter()
+            .flat_map(|src| {
+                let body = read(src);
+                body.match_indices("name=\"PN_")
+                    .map(|(i, _)| {
+                        let rest = &body[i + "name=\"".len()..];
+                        rest[..rest.find('"').unwrap()].to_string()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for panel in &expected_panels {
+            assert!(
+                defined.contains(*panel),
+                "{radio} resets {panel}, which {panel_sources:?} does not define"
+            );
+        }
+    }
+}
+
+/// On the from-XFA path the banking-relationship panel is not a `Fragment` node
+/// at all — `preface.xml` writes it, as `PN_BankingRelationship` inside the
+/// `PN_BR` wrapper. That is the node the Germany default has to land on, so it is
+/// asserted separately from the fragment-node path.
+#[test]
+fn the_preface_banking_panel_carries_the_germany_default() {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+    use uuid::Uuid;
+
+    let render = |entity: &str| {
+        let (profile, templates, custom_templates) = load_ubs_profile();
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("formrange_code".into(), "AAEI".into());
+        vars.insert("formrange_entity".into(), entity.into());
+        let ctx = crate::Context::new("de".to_string(), vars);
+        let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+            .expect("build AemConfig from the UBS profile");
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![AemNode::Preface {
+                uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"preface"),
+                name: "PN_BR".into(),
+            }],
+        };
+        generate_aem_xml(&root, &config)
+    };
+
+    let germany = render("019");
+    assert!(
+        germany.contains("name=\"PN_BankingRelationship\""),
+        "the preface writes the banking panel:\n{germany}"
+    );
+    assert!(
+        germany.contains("TXT_BankingRelationship1.value = '0319';")
+            && germany.contains("TXT_BankingRelationship1.enabled = false;"),
+        "a Germany form's banking field must default to 0319 and be disabled:\n{germany}"
+    );
+    // Count within the panel's own `fd:init` — the document as a whole carries
+    // the toolbar's SCRIPTMODELs too.
+    let init_start = germany.find("fd:init=\"").expect("no fd:init on the banking panel");
+    let init = &germany[init_start..];
+    let init = &init[..init[9..].find('"').unwrap() + 9];
+    assert_eq!(
+        init.matches("SCRIPTMODEL").count(),
+        1,
+        "one SCRIPTMODEL for the panel's Initialize slot:\n{init}"
+    );
+
+    for entity in ["033", "001"] {
+        let other = render(entity);
+        assert!(
+            other.contains("name=\"PN_BankingRelationship\"") && !other.contains("0319"),
+            "entity {entity} shares the fragment but keeps its own value:\n{other}"
+        );
+    }
+}
+
+/// A profile that ships no `email`/`telephone` template must still emit the
+/// field. Dropping it is the failure mode this guards: `render_node` returns an
+/// empty string for a missing template, so without the fallback an email field
+/// would vanish from the package with nothing but a log line to show for it.
+#[test]
+fn a_profile_without_contact_templates_falls_back_to_the_text_box() {
+    use crate::aem::{AemConfig, AemNode, TextFieldKind, generate_aem_xml};
+    use uuid::Uuid;
+
+    let (profile, mut templates, custom_templates) = load_ubs_profile();
+    templates.remove("email");
+    templates.remove("telephone");
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "AAEI".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("build AemConfig from the UBS profile");
+
+    let root = AemNode::Root {
+        title: "Contact".into(),
+        children: vec![AemNode::TextField {
+            uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"EML_Email"),
+            name: "EML_Email".into(),
+            label: "E-Mail".into(),
+            mandatory: false,
+            visible: true,
+            max_chars: None,
+            colspan: 6,
+            dor_colspan: None,
+            bind_ref: None,
+            kind: TextFieldKind::Email,
+        }],
+    };
+    let xml = generate_aem_xml(&root, &config);
+    assert!(
+        xml.contains("name=\"EML_Email\"") && xml.contains("controls/textbox"),
+        "the field must survive as a plain text box:\n{xml}"
+    );
 }
