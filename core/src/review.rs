@@ -37,6 +37,11 @@ pub struct ReviewReport {
     /// `PREFIX_` token must be valid for its `sling:resourceType`. Empty when
     /// every named node conforms.
     pub naming_violations: Vec<NamingViolation>,
+    /// Input components whose `jcr:title` is missing or is not a plain label
+    /// (a parenthetical hint, leaked rich-text markup, a whole paragraph …).
+    /// Every input must carry a title; positional label attachment can leave
+    /// one empty or bind the wrong nearby text.
+    pub label_issues: Vec<LabelIssue>,
     /// Human-readable observations (field-count mismatch, empty tree, truncation).
     pub notes: Vec<String>,
 }
@@ -60,8 +65,31 @@ pub struct NamingViolation {
     pub confidence: String,
 }
 
+/// A single input component whose label is missing or malformed.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LabelIssue {
+    /// JCR node tag (AEM-internal id, e.g. `radiobutton_77897ce3…`).
+    pub node: String,
+    /// The component's `name` attribute.
+    pub name: String,
+    /// `sling:resourceType` leaf (e.g. `textbox`, `radiobutton`).
+    pub rt: String,
+    /// The offending `jcr:title`, unescaped and truncated for readability
+    /// (empty for `missing`).
+    pub title: String,
+    /// `missing` | `parenthetical` | `markup` | `quoted`.
+    pub kind: String,
+    /// `high` for a missing title or a structurally wrong one (parenthetical /
+    /// markup); `low` for `quoted`, which also occurs on genuine labels in the
+    /// reference forms (`Classification as "Eligible Counterparty" …`).
+    pub confidence: String,
+}
+
 /// Cap on how many missing texts to list, so the report stays readable.
 const MAX_MISSING: usize = 200;
+
+/// Cap on how many label issues to list, so the report stays readable.
+const MAX_LABEL_ISSUES: usize = 400;
 
 /// Cap on how many naming violations to list, so the report stays readable.
 const MAX_NAMING: usize = 400;
@@ -90,7 +118,8 @@ pub fn review_output(
     // walking the `AemNode` tree) is what lets this see template-expanded nodes
     // and custom-element internals, just as the detector sees the shipped ZIP.
     let aem_xml = generate_aem_xml(output, config);
-    let (mut naming_violations, naming_counts) = check_naming_conventions(&aem_xml);
+    let (mut naming_violations, naming_counts, mut label_issues) =
+        check_naming_conventions(&aem_xml);
 
     let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
 
@@ -121,6 +150,20 @@ pub fn review_output(
         ));
         naming_violations.truncate(MAX_NAMING);
     }
+    if !label_issues.is_empty() {
+        let missing_titles = label_issues.iter().filter(|l| l.kind == "missing").count();
+        notes.push(format!(
+            "labels: {missing_titles} inputs without a title, {} with a malformed one",
+            label_issues.len() - missing_titles
+        ));
+    }
+    if label_issues.len() > MAX_LABEL_ISSUES {
+        notes.push(format!(
+            "label_issues truncated to {MAX_LABEL_ISSUES} of {} entries",
+            label_issues.len()
+        ));
+        label_issues.truncate(MAX_LABEL_ISSUES);
+    }
 
     ReviewReport {
         coverage,
@@ -128,6 +171,7 @@ pub fn review_output(
         output_field_count: output_fields,
         missing_text: missing,
         naming_violations,
+        label_issues,
         notes,
     }
 }
@@ -216,6 +260,8 @@ pub fn review_redacto(
         output_field_count: 0,
         missing_text: missing,
         naming_violations: Vec::new(),
+        // Redacto is a text-only target: it has no AEM inputs to label.
+        label_issues: Vec::new(),
         notes,
     }
 }
@@ -500,6 +546,52 @@ const EXEMPT_PANEL_NAMES: &[&str] = &[
     "FormMetadata",
 ];
 
+/// Input (data-entry) resourceType leaves. Every one of these must present a
+/// label to the user, so a missing `jcr:title` is a defect — unlike a draw or
+/// a panel, which legitimately carries none.
+const INPUT_RT: &[&str] = &[
+    "textbox", "guidetextbox", "textboxMultiline", "numericbox", "datepicker", "guidedatepicker",
+    "dropdownlist", "radiobutton", "checkbox", "telephone", "email",
+];
+
+/// Classify one input's `jcr:title`. `None` = the title is a plain, usable
+/// label.
+///
+/// Both failure modes this catches come from positional label attachment
+/// (`document::modules::label_attacher`): it binds the nearest free text block
+/// to a field, so a field can end up with no label at all once its neighbours
+/// are taken, or with a fragment that merely sits close by — a parenthetical
+/// hint, a rich-text paragraph — instead of its actual question.
+fn classify_title(
+    rt_leaf: &str,
+    title: &str,
+    option_labels_present: bool,
+) -> Option<(&'static str, &'static str)> {
+    if !INPUT_RT.contains(&rt_leaf) {
+        return None;
+    }
+    let t = title.trim();
+    if t.is_empty() {
+        // A single-option checkbox carries its label in the option by design
+        // (`converter.rs`, `FieldType::Bool`), so it renders a label even with
+        // an empty title.
+        if rt_leaf == "checkbox" && option_labels_present {
+            return None;
+        }
+        return Some(("missing", "high"));
+    }
+    if t.starts_with('(') && t.ends_with(')') {
+        return Some(("parenthetical", "high"));
+    }
+    if t.contains('<') && t.contains('>') {
+        return Some(("markup", "high"));
+    }
+    if t.contains('"') {
+        return Some(("quoted", "low"));
+    }
+    None
+}
+
 /// A classified verdict for one node.
 struct Verdict {
     bucket: &'static str, // "ok" | "wrong-prefix" | "raw"
@@ -588,10 +680,13 @@ fn scan_element(
     ancestor_in_repeat: bool,
     counts: &mut [usize; 3],
     out: &mut Vec<NamingViolation>,
+    labels: &mut Vec<LabelIssue>,
 ) -> bool {
     let tag = String::from_utf8_lossy(e.name().as_ref()).into_owned();
     let mut name = String::new();
     let mut rt_full = String::new();
+    let mut title = String::new();
+    let mut options = String::new();
     let mut has_frag_ref = false;
     let mut has_occur = false;
     for attr in e.attributes().flatten() {
@@ -600,6 +695,8 @@ fn scan_element(
             b"sling:resourceType" => {
                 rt_full = attr.unescape_value().unwrap_or_default().into_owned()
             }
+            b"jcr:title" => title = attr.unescape_value().unwrap_or_default().into_owned(),
+            b"options" => options = attr.unescape_value().unwrap_or_default().into_owned(),
             b"fragRef" => has_frag_ref = true,
             b"minOccur" | b"maxOccur" => has_occur = true,
             _ => {}
@@ -607,6 +704,23 @@ fn scan_element(
     }
     let rt_leaf = rt_full.rsplit('/').next().unwrap_or("");
     let self_repeatable = has_occur || tag.starts_with("repeatable");
+
+    // `options` is `[value=Label,…]`; a label is present when any entry carries
+    // text after its `=`.
+    let option_labels_present = options
+        .trim_matches(['[', ']'])
+        .split(',')
+        .any(|o| o.split_once('=').is_some_and(|(_, l)| !l.trim().is_empty()));
+    if let Some((kind, confidence)) = classify_title(rt_leaf, &title, option_labels_present) {
+        labels.push(LabelIssue {
+            node: tag.clone(),
+            name: name.clone(),
+            rt: rt_leaf.to_string(),
+            title: title.chars().take(160).collect(),
+            kind: kind.to_string(),
+            confidence: confidence.to_string(),
+        });
+    }
 
     if let Some(v) = classify(&tag, rt_leaf, &name, has_frag_ref, self_repeatable, ancestor_in_repeat)
     {
@@ -631,10 +745,15 @@ fn scan_element(
     self_repeatable
 }
 
-/// Parse rendered JCR XML and return `(violations, [ok, wrong-prefix, raw])`.
-fn check_naming_conventions(xml: &str) -> (Vec<NamingViolation>, [usize; 3]) {
+/// Parse rendered JCR XML once and return the naming violations with their
+/// `[ok, wrong-prefix, raw]` counts, plus every input whose label is missing or
+/// malformed.
+fn check_naming_conventions(
+    xml: &str,
+) -> (Vec<NamingViolation>, [usize; 3], Vec<LabelIssue>) {
     let mut reader = Reader::from_str(xml);
     let mut violations = Vec::new();
+    let mut labels = Vec::new();
     let mut counts = [0usize; 3];
     // Stack of "is this open element a repeat container" flags; the running
     // count of `true`s is the number of repeat ancestors.
@@ -643,14 +762,26 @@ fn check_naming_conventions(xml: &str) -> (Vec<NamingViolation>, [usize; 3]) {
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let rep = scan_element(e, repeat_ancestors > 0, &mut counts, &mut violations);
+                let rep = scan_element(
+                    e,
+                    repeat_ancestors > 0,
+                    &mut counts,
+                    &mut violations,
+                    &mut labels,
+                );
                 stack.push(rep);
                 if rep {
                     repeat_ancestors += 1;
                 }
             }
             Ok(Event::Empty(ref e)) => {
-                scan_element(e, repeat_ancestors > 0, &mut counts, &mut violations);
+                scan_element(
+                    e,
+                    repeat_ancestors > 0,
+                    &mut counts,
+                    &mut violations,
+                    &mut labels,
+                );
             }
             Ok(Event::End(_)) => {
                 if let Some(rep) = stack.pop() {
@@ -664,7 +795,7 @@ fn check_naming_conventions(xml: &str) -> (Vec<NamingViolation>, [usize; 3]) {
             _ => {}
         }
     }
-    (violations, counts)
+    (violations, counts, labels)
 }
 
 #[cfg(test)]
@@ -813,7 +944,7 @@ mod tests {
             <panel_1 sling:resourceType="ubs/controls/panel" name="myPanel"/>
             <textbox_1 sling:resourceType="ubs/controls/textbox" name="TXT_First_ab12cd34"/>
         </jcr:root>"#;
-        let (viol, counts) = check_naming_conventions(xml);
+        let (viol, counts, _) = check_naming_conventions(xml);
         assert_eq!(counts, [1, 0, 1], "one ok (textbox), one raw (panel)");
         assert_eq!(viol.len(), 1);
         assert_eq!(viol[0].name, "myPanel");
@@ -829,10 +960,88 @@ mod tests {
                 <panel_2 sling:resourceType="ubs/controls/panel" name="PN_Inner"/>
             </repeatable_1>
         </r>"#;
-        let (viol, counts) = check_naming_conventions(xml);
+        let (viol, counts, _) = check_naming_conventions(xml);
         // RCP_Rows (repeat-panel, ok) + PN_Inner (repeat-subpanel, ok) → no violations.
         assert_eq!(counts, [2, 0, 0], "both conform, got {viol:?}");
         assert!(viol.is_empty());
+    }
+
+    /// AALJ shipped a radio button with no `jcr:title` at all: the label
+    /// attacher found no free text block for it, and nothing downstream
+    /// asserted that an input ends up labelled.
+    #[test]
+    fn untitled_input_is_reported() {
+        let xml = r#"<r xmlns:sling="s" xmlns:jcr="j">
+            <radiobutton_1 sling:resourceType="ubs/controls/radiobutton" name="RB_UsedFor"
+                options="[RB_1=business purposes,RB_2=private purposes]"/>
+            <textbox_1 sling:resourceType="ubs/controls/textbox" name="TXT_CommValue"/>
+            <textbox_2 sling:resourceType="ubs/controls/textbox" name="TXT_Ok" jcr:title="Last name"/>
+        </r>"#;
+        let (_, _, labels) = check_naming_conventions(xml);
+        let names: Vec<&str> = labels.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, vec!["RB_UsedFor", "TXT_CommValue"], "got {labels:?}");
+        assert!(labels.iter().all(|l| l.kind == "missing" && l.confidence == "high"));
+    }
+
+    /// A single-option checkbox carries its label in the option by design
+    /// (`converter.rs`, `FieldType::Bool`), so an empty title is not a defect
+    /// there — but a choice group whose options carry no labels still is.
+    #[test]
+    fn single_checkbox_label_may_live_in_its_option() {
+        let xml = r#"<r xmlns:sling="s" xmlns:jcr="j">
+            <checkbox_1 sling:resourceType="ubs/controls/checkbox" name="CB_RecordCalls"
+                options="[1=Recording of telephone calls]"/>
+            <checkbox_2 sling:resourceType="ubs/controls/checkbox" name="CB_Bare" options="[1=]"/>
+        </r>"#;
+        let (_, _, labels) = check_naming_conventions(xml);
+        assert_eq!(labels.len(), 1, "only the label-less group is a defect: {labels:?}");
+        assert_eq!(labels[0].name, "CB_Bare");
+    }
+
+    /// AAEJ shipped a radio button whose title was the parenthetical hint next
+    /// to it — `(Mandatory entry only if NMS IDD hit is "True")` — instead of
+    /// the question, which stayed behind in a separate static text.
+    #[test]
+    fn malformed_titles_are_classified() {
+        let xml = r#"<r xmlns:sling="s" xmlns:jcr="j">
+            <radiobutton_1 sling:resourceType="ubs/controls/radiobutton" name="RB_A1Q3"
+                jcr:title="(Mandatory entry only if NMS IDD hit is &quot;True&quot;)" options="[1=Yes,2=No]"/>
+            <textbox_1 sling:resourceType="ubs/controls/textbox" name="TXT_Rich"
+                jcr:title="&lt;p&gt;Company&lt;/p&gt;"/>
+            <textbox_2 sling:resourceType="ubs/controls/textbox" name="TXT_Quoted"
+                jcr:title="Classification as &quot;Eligible Counterparty&quot; can be approved."/>
+        </r>"#;
+        let (_, _, labels) = check_naming_conventions(xml);
+        let got: Vec<(&str, &str, &str)> = labels
+            .iter()
+            .map(|l| (l.name.as_str(), l.kind.as_str(), l.confidence.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("RB_A1Q3", "parenthetical", "high"),
+                ("TXT_Rich", "markup", "high"),
+                // quotes also occur in genuine reference-form labels.
+                ("TXT_Quoted", "quoted", "low"),
+            ]
+        );
+        assert!(
+            labels[0].title.contains('"'),
+            "the reported title is unescaped: {:?}",
+            labels[0].title
+        );
+    }
+
+    /// Draws and panels legitimately carry no title — only inputs are checked.
+    #[test]
+    fn non_input_components_are_not_label_checked() {
+        let xml = r#"<r xmlns:sling="s" xmlns:jcr="j">
+            <panel_1 sling:resourceType="ubs/controls/panel" name="PN_Section"/>
+            <textdraw_1 sling:resourceType="ubs/controls/textdraw" name="ST_Question"/>
+            <titledraw_1 sling:resourceType="ubs/controls/titledraw" name="TTL_Section"/>
+        </r>"#;
+        let (_, _, labels) = check_naming_conventions(xml);
+        assert!(labels.is_empty(), "got {labels:?}");
     }
 
     #[test]
@@ -846,3 +1055,4 @@ mod tests {
         let _ = &report.naming_violations;
     }
 }
+

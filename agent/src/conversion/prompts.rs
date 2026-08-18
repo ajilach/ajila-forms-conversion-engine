@@ -93,6 +93,12 @@ governs the component's `name` property, NOT the JCR node name — the engine ge
 corpus the `name` IS the binding, so scripts and fragments resolve panels and fields by it. Only the \
 leading PREFIX_ is enforced — the rest of the name is free — and the Reviewer flags any component whose \
 leading prefix does not match its resourceType (review_output's naming_violations, bucketed wrong-prefix/raw). \
+LABELS: every input (text box, number box, date, dropdown, radio, checkbox group, telephone, email) needs \
+a `label` holding its own question text — the visible caption, not a neighbouring hint. Positional label \
+attachment can leave a field with no label, or bind a fragment that merely sits nearby (a parenthetical \
+aside, a rich-text paragraph), so check each field against the source and move the real question into the \
+label, leaving any hint as its own static text. review_output's label_issues lists the offenders \
+(missing / parenthetical / markup / quoted). \
 PAGES: the Root is laid out as a wizard, so ONLY its direct-child Panels \
 become pages (wizard steps). Set `is_page: true` on each first-level section Panel — the top-level \
 sections of the form, in source order — and `is_page: false` on every Panel nested below them \
@@ -340,7 +346,9 @@ ANALOGY to the source AND conformance to the CONVERSION PLAN appended below, and
 in any prior REVIEW FEEDBACK is now fixed. Checklist: naming prefixes (trust \
 review_output's naming_violations — a deterministic per-node check on the rendered JCR XML: each \
 author-named component's leading PREFIX_ must match its resourceType, bucketed wrong-prefix/raw; \
-treat any listed violation as a defect); first-level \
+treat any listed violation as a defect); input labels (review_output's label_issues — every input must \
+carry its own question text as its label; a `missing`, `parenthetical` or `markup` entry is a defect, a \
+`quoted` one only if the quotes are not part of the source wording); first-level \
 sections are pages and nothing deeper is; each source heading rendered exactly ONCE — a page panel's \
 heading comes from its own `title` (the engine emits the PN_<name>Title wrapper and its TTL_ draw), so \
 a hand-authored TitleDraw on a page is a DUPLICATE, while a sub-heading inside a page does need its own \
