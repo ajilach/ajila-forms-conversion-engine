@@ -148,7 +148,9 @@ cargo run --release -p blueprint-cli -- convert path/to/form.pdf --session <ID> 
 Artefacts are named as in the app: `forms-package-<code>.zip`,
 `forms-package-bindrefs-<code>.zip`, `schema-<code>.xsd`, `redacto-<code>.sql`,
 plus `agent-log-<code>.md` — the run transcript. Ctrl-C stops the run at its next
-checkpoint, so what the agent built is still finalized and written out.
+checkpoint: no artefacts are written, but the session id is printed and the edit
+history holds what the agent had built, so the run can be resumed with
+`--session`.
 
 ## App
 

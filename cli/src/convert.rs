@@ -163,8 +163,10 @@ pub fn run(args: ConvertArgs) -> Result<(), Box<dyn Error>> {
 
     let completed = runtime.block_on(async {
         // Ctrl-C stops the run at its next checkpoint rather than killing the
-        // process, so the agent's work is still finalized and written out.
-        // A second Ctrl-C is the operating system's business.
+        // process: the stage ends cleanly and the edit history keeps what the
+        // agent had built, so the session can be resumed. It does NOT finalize —
+        // an interrupted run writes no artefacts. A second Ctrl-C is the
+        // operating system's business.
         tokio::spawn({
             let abort = abort.clone();
             async move {
