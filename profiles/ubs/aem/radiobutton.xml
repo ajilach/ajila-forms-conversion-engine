@@ -6,6 +6,15 @@
     jcr:primaryType="nt:unstructured"
     {% if label and label != "" %}jcr:title="{{ label }}"{% endif %}
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/radiobutton"
+    {#  The form configurator opens on a preselected option (UBS directive,
+        feedback PROBLEM-formconfig-private-person-default). The radio is named
+        by the profile because only this one choice has an answer that is right
+        before the reader gives one; `_value` is the mechanism — the widget marks
+        an option checked by comparing its key to this, and a `default` attribute
+        does nothing. #}
+    {%- if variables.preselect_radio_name and name == variables.preselect_radio_name %}
+    _value="{{ variables.preselect_radio_value }}"
+    {%- endif %}
     alignment="{{ alignment }}"
     css="{{ variables.css_radiobutton }}"
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}

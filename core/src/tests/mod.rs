@@ -34925,6 +34925,78 @@ fn a_choice_deciding_a_single_panel_gets_no_reset() {
     assert!(!xml.contains("resetData();"), "{xml}");
 }
 
+/// The form configurator opens on "Private Person" whichever path emitted the
+/// radio: the custom template (deterministic conversion) and the ordinary
+/// radiobutton template (an agent-authored tree, which never goes through custom
+/// element replacement) both preselect option `1`.
+#[test]
+fn an_authored_configurator_radio_also_preselects_private_person() {
+    use crate::aem::{AemConfig, AemNode, AemOption, generate_aem_xml};
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "TEST".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("profile config");
+
+    let radio = |name: &str| AemNode::RadioButton {
+        uuid: uuid::Uuid::from_u128(1),
+        name: name.into(),
+        label: "Formular Adressat".into(),
+        options: ["Private Person", "Minderjährige", "Firma", "GbR"]
+            .iter()
+            .enumerate()
+            .map(|(i, label)| AemOption {
+                label: (*label).into(),
+                value: (i + 1).to_string(),
+            })
+            .collect(),
+        alignment: crate::aem::OptionAlignment::Horizontal,
+        mandatory: true,
+        visible: true,
+        colspan: 12,
+        dor_colspan: None,
+        field_id: None,
+        conditions: vec![],
+        bind_ref: None,
+    };
+    let render = |node: AemNode| {
+        generate_aem_xml(
+            &AemNode::Root {
+                title: "TEST".into(),
+                children: vec![node],
+            },
+            &config,
+        )
+    };
+
+    // The form carries `_value` attributes of its own (the metadata control, text
+    // draws), so read the radio's own tag rather than the whole document.
+    let radio_tag = |name: &str| {
+        let xml = render(radio(name));
+        let at = xml
+            .find(&format!("name=\"{name}\""))
+            .unwrap_or_else(|| panic!("the radio must be emitted:\n{xml}"));
+        let start = xml[..at].rfind('<').expect("inside a tag");
+        let end = start + xml[start..].find('>').expect("the tag must close");
+        xml[start..end].to_string()
+    };
+
+    assert!(
+        radio_tag("RB_FormularAdressat").contains(r#"_value="1""#),
+        "the configurator radio must open preselected:\n{}",
+        radio_tag("RB_FormularAdressat")
+    );
+    // Every other radio is a question the reader has to answer themselves.
+    assert!(
+        !radio_tag("RB_Something_Else").contains("_value="),
+        "an ordinary radio must not be preselected:\n{}",
+        radio_tag("RB_Something_Else")
+    );
+}
+
 /// The form configurator opens on "Private Person": the radio ships with option
 /// `1` already selected.
 ///

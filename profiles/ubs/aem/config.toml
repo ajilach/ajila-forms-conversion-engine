@@ -162,6 +162,14 @@ banking_default_de_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&
 # the languages the form ships.
 metadata_master_language = "{% set entity = xfa.formrange_entity | default(value='') %}{% if entity == '019' %}DE{% elif entity == '033' %}IT{% else %}EN{% endif %}"
 
+# The form-configurator radio that ships with an option already selected, and the
+# option key it selects. Only this one choice has a right answer before the
+# reader gives one: nearly every German form is filled in for a private person,
+# so UBS asked for it to open that way (PROBLEM-formconfig-private-person-
+# default). Leave the name empty to preselect nothing.
+preselect_radio_name = "RB_FormularAdressat"
+preselect_radio_value = "1"
+
 # =============================================================================
 # Add-button wording
 # =============================================================================
