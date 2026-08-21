@@ -566,6 +566,7 @@ mod catalog_guards {
         "is_conditional",
         "is_page",
         "jcr_root",
+        "label_issues",
         "max_occur",
         "min_occur",
         "naming_violations",
