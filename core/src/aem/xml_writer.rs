@@ -460,14 +460,57 @@ fn collect_reset_targets(node: &AemNode, wanted: &[&str], out: &mut Vec<ResetTar
     }
 }
 
+/// The prefixes the naming convention accepts on a repeat-container panel; the
+/// first is what a name that has none of them is given.
+const REPEAT_PREFIXES: &[&str] = &["RCP", "RCBP", "RCHP", "RCHT"];
+
+/// `name` under a repeat-container prefix: kept if it already carries one,
+/// otherwise its leading type prefix is swapped for `RCP_`, or one is prepended
+/// when it has no prefix at all.
+///
+/// The two panels a repeatable is rendered with are named by the engine, not by
+/// whoever authored the tree, so their prefixes are the engine's to get right —
+/// and a repeat panel must not inherit `PN_` (a plain panel) or a legacy `RP_`
+/// just because the node it was derived from carries one.
+fn with_repeat_prefix(name: &str) -> String {
+    let (prefix, stem) = match name.split_once('_') {
+        // A leading run of capitals is a type prefix; anything else is the name
+        // itself (`Portfolio_ID` is not prefixed by `Portfolio`).
+        Some((first, rest))
+            if !first.is_empty()
+                && first.len() <= 5
+                && first.chars().all(|c| c.is_ascii_uppercase())
+                && !rest.is_empty() =>
+        {
+            (Some(first), rest)
+        }
+        _ => (None, name),
+    };
+    match prefix {
+        Some(p) if REPEAT_PREFIXES.contains(&p) => name.to_string(),
+        _ => format!("{}_{}", REPEAT_PREFIXES[0], stem),
+    }
+}
+
+/// The instance-managed panel's name, as `repeatable.xml` writes it.
+fn repeat_panel_name(name: &str) -> String {
+    format!("{}_repeat", with_repeat_prefix(name))
+}
+
+/// The row panel's name, as `repeatable.xml` writes it. One row of the repeat,
+/// holding the repeated fields.
+fn repeat_row_name(name: &str) -> String {
+    format!("{}_inner", with_repeat_prefix(name))
+}
+
 /// The instance-managed panel of every repeatable in a subtree, in document
-/// order. `repeatable.xml` names it `<repeatable>_repeat`, and that is the node
+/// order. `repeatable.xml` names it after the repeatable, and that is the node
 /// `resetAllPanelInstances` has to be given.
 fn repeatable_panels(children: &[AemNode]) -> Vec<String> {
     let mut out = Vec::new();
     fn walk(node: &AemNode, out: &mut Vec<String>) {
         if let AemNode::Repeatable { name, .. } = node {
-            out.push(format!("{}_repeat", name));
+            out.push(repeat_panel_name(name));
         }
         match node {
             AemNode::Root { children, .. }
@@ -1002,11 +1045,10 @@ fn build_node_context(
             ctx.insert("children", &render_children(children, config, index, pass));
             ctx.insert("bind_ref", bind_ref);
 
-            // The outer panel is already `RCP_…`; suffix (rather than re-prefix)
-            // the inner repeatable panel so it stays under the same prefix
-            // without producing a doubled `RCP_RCP_…` name.
-            let panel_name = format!("{}_repeat", name);
-            ctx.insert("panel_name", &panel_name);
+            // Both inner panels are named by the engine, from the repeatable's
+            // own stem under a repeat-container prefix.
+            ctx.insert("panel_name", &repeat_panel_name(name));
+            ctx.insert("row_name", &repeat_row_name(name));
 
             // What the Add button says it adds, in the master language. Empty
             // when nothing on screen names the block, or when the profile
@@ -2398,6 +2440,77 @@ mod tests {
         );
     }
 
+    /// The two panels the engine names for a repeatable carry a repeat-container
+    /// prefix whatever the repeatable itself is called.
+    ///
+    /// They used to inherit the authored name verbatim, so a repeatable named
+    /// `RP_Individual` (a legacy prefix, and what a run does pick) produced
+    /// `RP_Individual_repeat` and `RP_Individual_inner` — three violations of
+    /// PROBLEM-naming-conventions where the author made one. The authored name is
+    /// left alone: other scripts address the repeatable by it, and it is the
+    /// author's to correct.
+    #[test]
+    fn engine_named_repeat_panels_carry_a_repeat_prefix() {
+        // Prefix swapped, stem kept.
+        assert_eq!(with_repeat_prefix("RP_Individual"), "RCP_Individual");
+        assert_eq!(with_repeat_prefix("PN_AHRP"), "RCP_AHRP");
+        // Already a repeat-container prefix: untouched, never doubled.
+        assert_eq!(with_repeat_prefix("RCP_Clients"), "RCP_Clients");
+        assert_eq!(with_repeat_prefix("RCHT_Rows"), "RCHT_Rows");
+        // No prefix at all: given one.
+        assert_eq!(with_repeat_prefix("Clients"), "RCP_Clients");
+        // A capitalised word is not a prefix, so the whole name is the stem.
+        assert_eq!(with_repeat_prefix("Portfolio_ID"), "RCP_Portfolio_ID");
+
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
+
+        let node = AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "RP_Individual".into(),
+            title: String::new(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+            frag_ref: None,
+        };
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
+
+        for name in ["RCP_Individual_repeat", "RCP_Individual_inner"] {
+            assert!(
+                xml.contains(&format!("name=\"{name}\"")),
+                "expected name={name} in:\n{}",
+                xml
+            );
+        }
+        // The scripts must address the panel by the name it was actually given.
+        assert!(
+            xml.contains("RCP_Individual_repeat.instanceManager"),
+            "the scripts must follow the panel's name:\n{}",
+            xml
+        );
+        assert!(
+            !xml.contains("RP_Individual_repeat"),
+            "no panel may keep the legacy prefix:\n{}",
+            xml
+        );
+    }
+
     /// An Add button has to name what it adds. A repeatable carries no title of
     /// its own in an engine-authored tree, so the subject is the heading above it,
     /// or failing that the enclosing panel's title.
@@ -2645,7 +2758,7 @@ mod tests {
 
         let node = AemNode::Repeatable {
             uuid: fixed_uuid(),
-            name: "Test".into(),
+            name: "RCP_Test".into(),
             title: "Repeat Section".into(),
             children: vec![],
             min_occur: 1,
@@ -2657,13 +2770,13 @@ mod tests {
 
         let expected_remove_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "Test_repeat.instanceManager.removeInstance(this.parent.index);",
-            "\\var len = Test_repeat.instanceManager.instances.length;",
+            "RCP_Test_repeat.instanceManager.removeInstance(this.parent.index);",
+            "\\var len = RCP_Test_repeat.instanceManager.instances.length;",
             "\\for (var i = 0; i &lt; len; i++) {",
-            "\\Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\RCP_Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &lt; 5) {",
-            "\\Test.BT_Add.visible = true;",
+            "\\RCP_Test.BT_Add.visible = true;",
             "\\}",
             "&quot;\\,&quot;event&quot;:&quot;Click&quot;\\,&quot;field&quot;:&quot;BT_Remove&quot;}",
             "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
@@ -2700,7 +2813,7 @@ mod tests {
 
         let node = AemNode::Repeatable {
             uuid: fixed_uuid(),
-            name: "Test".into(),
+            name: "RCP_Test".into(),
             title: "Repeat Section".into(),
             children: vec![],
             min_occur: 1,
@@ -2712,10 +2825,10 @@ mod tests {
 
         let expected_add_click = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "Test_repeat.instanceManager.addInstance();",
-            "\\var len = Test_repeat.instanceManager.instances.length;",
+            "RCP_Test_repeat.instanceManager.addInstance();",
+            "\\var len = RCP_Test_repeat.instanceManager.instances.length;",
             "\\for (var i = 0; i &lt; len; i++) {",
-            "\\Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\RCP_Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &gt;= 5) {",
             "\\this.visible = false;",
@@ -2755,7 +2868,7 @@ mod tests {
 
         let node = AemNode::Repeatable {
             uuid: fixed_uuid(),
-            name: "Test".into(),
+            name: "RCP_Test".into(),
             title: "Repeat Section".into(),
             children: vec![],
             min_occur: 1,
@@ -2767,9 +2880,9 @@ mod tests {
 
         let expected_add_init = concat!(
             "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "var len = Test_repeat.instanceManager.instances.length;",
+            "var len = RCP_Test_repeat.instanceManager.instances.length;",
             "\\for (var i = 0; i &lt; len; i++) {",
-            "\\Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
+            "\\RCP_Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
             "\\}",
             "\\if (len &gt;= 5) {",
             "\\this.visible = false;",
