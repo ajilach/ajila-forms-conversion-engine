@@ -2260,6 +2260,67 @@ mod tests {
         );
     }
 
+    /// Every panel inside a repeatable must keep the repeatable's own name as its
+    /// stem, so the `RCP_` prefix the naming convention requires survives.
+    ///
+    /// The innermost row panel used to be named from the repeatable's *title*.
+    /// Engine-authored repeatables carry no title, so the name came out as the
+    /// bare suffix `_inner` — no prefix at all — and a title that did exist
+    /// dragged its spaces into a component name (`Portfolio ID_inner` in the
+    /// corpus). Both are violations of PROBLEM-naming-conventions, and the title
+    /// was never the right source: a name is not display text.
+    #[test]
+    fn repeatable_inner_panels_keep_the_repeatable_prefix() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
+
+        // Titleless, as an engine-authored repeatable is.
+        let node = AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "RCP_Clients".into(),
+            title: String::new(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+            frag_ref: None,
+        };
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
+
+        assert!(
+            xml.contains("name=\"RCP_Clients_inner\""),
+            "the row panel must be named after the repeatable. Got:\n{}",
+            xml
+        );
+        assert!(
+            !xml.contains("name=\"_inner\""),
+            "a titleless repeatable must not produce a prefixless name. Got:\n{}",
+            xml
+        );
+        // Every name the repeatable emits for itself stays under one prefix.
+        for name in ["RCP_Clients", "RCP_Clients_repeat", "RCP_Clients_inner"] {
+            assert!(
+                xml.contains(&format!("name=\"{name}\"")),
+                "expected name={name} in:\n{}",
+                xml
+            );
+        }
+    }
+
     /// The remove-button click script must restore BT_Add.visible on the last
     /// instance whenever the count drops back below max_occur.
     ///
