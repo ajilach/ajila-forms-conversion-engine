@@ -2012,8 +2012,9 @@ mod tests {
 
     /// The banking-relationship preface fragment must be wrapped in a `PN_BR`
     /// panel that is excluded from both the Document of Record and the Summary.
-    /// This mirrors the AAJC reference form, where the exclusions sit on the
-    /// surrounding `PN_BR` panel rather than on `PN_BankingRelationship` itself.
+    /// This mirrors the AAJC reference form; the fragment panel inside carries
+    /// its own `dorExclusion` as well (see
+    /// [`preface_fragment_panel_is_dor_excluded`]).
     #[test]
     fn preface_wraps_banking_relationship_in_excluded_panel() {
         let mut config = test_config();
@@ -2059,6 +2060,54 @@ mod tests {
             pn_br < pn_banking,
             "PN_BankingRelationship must be nested inside PN_BR. Got:\n{}",
             xml
+        );
+    }
+
+    /// The panel that *bears* the banking fragment must itself carry
+    /// `dorExclusion="true"`, not only the `PN_BR` wrapper around it.
+    ///
+    /// The wrapper alone is what the engine used to emit, and it is not what the
+    /// deployed corpus has: every form there carries the exclusion on the
+    /// fragment panel too, and the feedback guard reads that node and no other
+    /// (PROBLEM-banking-relationship-fragment, `find_panel_noncanonical.py
+    /// --require-attr dorExclusion=true`). The assertion is deliberately scoped
+    /// to the one tag: an exclusion anywhere else in the XML does not satisfy
+    /// the rule, which is exactly how the gap went unnoticed.
+    #[test]
+    fn preface_fragment_panel_is_dor_excluded() {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "preface".into(),
+            include_str!("../../../profiles/ubs/aem/preface.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ajila-forms-customers/ajila-forms-ubs/components".into(),
+        );
+
+        let node = AemNode::Preface {
+            uuid: fixed_uuid(),
+            name: "PN_Preface_abcdef01".into(),
+        };
+        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
+
+        let frag_at = xml
+            .find("affrg_BankingRelationship1")
+            .expect("the preface must emit the banking fragment");
+        let tag_start = xml[..frag_at].rfind('<').expect("fragRef inside a tag");
+        let tag_end = tag_start
+            + xml[tag_start..]
+                .find('>')
+                .expect("the fragment panel tag must close");
+        let tag = &xml[tag_start..tag_end];
+        assert!(
+            tag.contains("dorExclusion=\"true\""),
+            "the fragment panel tag must carry dorExclusion. Got:\n{}",
+            tag
         );
     }
 

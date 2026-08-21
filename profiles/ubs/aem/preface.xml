@@ -30,6 +30,7 @@
             jcr:primaryType="nt:unstructured"
             sling:resourceType="fd/af/components/panel"
             completionExpReq="{Boolean}false"
+            dorExclusion="true"
             fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"
             guideNodeClass="guidePanel"
             name="PN_BankingRelationship"
