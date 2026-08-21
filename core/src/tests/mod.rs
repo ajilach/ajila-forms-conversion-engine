@@ -34828,6 +34828,34 @@ fn a_choice_deciding_a_single_panel_gets_no_reset() {
     assert!(!xml.contains("resetData();"), "{xml}");
 }
 
+/// The form configurator opens on "Private Person": the radio ships with option
+/// `1` already selected.
+///
+/// UBS asked for the preselection (feedback PROBLEM-formconfig-private-person-
+/// default) and the mechanism is the component's `_value`, not a `default`
+/// attribute -- the widget renders an option checked by comparing its key to
+/// `_value`, so a `default` deploys cleanly and preselects nothing.
+#[test]
+fn the_form_configurator_preselects_private_person() {
+    let xml = std::fs::read_to_string(helpers::profiles_path(
+        "ubs/aem/custom/formular_adressat_radio.xml",
+    ))
+    .expect("read formular_adressat_radio.xml");
+
+    assert!(
+        xml.contains(r#"_value="1""#),
+        "the configurator radio must preselect option 1:\n{xml}"
+    );
+    assert!(
+        xml.contains("options=\"[1=") ,
+        "option 1 must be the Private Person key the preselection points at:\n{xml}"
+    );
+    assert!(
+        !xml.contains(r#"default="1""#),
+        "`default` does not preselect anything -- use `_value`:\n{xml}"
+    );
+}
+
 /// The UBS configurator itself goes through the `formular_adressat_radio` /
 /// `tipo_radio` custom templates, whose panels live in the `account_holder` and
 /// `signatures` templates they depend on. Those cannot be derived from the node

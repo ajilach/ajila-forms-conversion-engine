@@ -6,6 +6,7 @@
     jcr:primaryType="nt:unstructured"
     jcr:title="Formular Adressat"
     sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/radiobutton"
+    _value="1"
     alignment="guideFieldHorizontalAlignment"
     css="widget_ajila_forms_radiobutton"
     guideNodeClass="guideRadioButton"
