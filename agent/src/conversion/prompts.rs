@@ -377,7 +377,9 @@ The standing example: this engine lowers EVERY text field to the `textbox` resou
 telephone and multiline fields cannot carry the dedicated resourceTypes the deployed corpus uses, and \
 review_output buckets their EML_/TEL_/TXTM_ names as wrong-prefix. Keep naming them by the convention \
 anyway. Do not send such issues back to the Author and do not block approval on them — but do NOT use \
-the label as a catch-all, and do NOT treat it as \"fine\": before calling something engine-intrinsic, \
+the label as a catch-all, and do NOT treat it as \"fine\": a repeatable's prefix, for one, is NOT \
+engine-intrinsic — the engine derives its inner panels from the name the Author gave it, so a \
+repeatable named `RP_…` or `PN_…` is ONE authorable rename, not fixed template output; before calling something engine-intrinsic, \
 check what the reference forms and profile templates actually contain, because a shape the engine gets \
 wrong is still a real defect the operator needs told about. Report every one explicitly under a clearly \
 separated ENGINE DEFECTS heading, with the node path and the shape the references use instead — that \
