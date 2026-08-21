@@ -292,11 +292,16 @@ fn assemble_package(
     let mut translations = translations;
 
     // Merge default translations from the profile (toolbar buttons, messages, etc.).
-    // Form-content translations take precedence over defaults.
+    // Form-content translations take precedence over defaults — but per language,
+    // not per key: the content only carries the languages the form ships, so a
+    // wholesale win left the profile's other locales without the key at all. A
+    // form whose own label happens to read "Company" would knock `Company` out of
+    // the French and Italian dictionaries the profile itself emits.
     for (key, lang_map) in &config.default_translations {
-        translations
-            .entry(key.clone())
-            .or_insert_with(|| lang_map.clone());
+        let entry = translations.entry(key.clone()).or_default();
+        for (lang, text) in lang_map {
+            entry.entry(lang.clone()).or_insert_with(|| text.clone());
+        }
     }
 
     // Fold every synonym code onto the language it is a synonym of, so content
@@ -2088,6 +2093,74 @@ mod tests {
         );
     }
 
+    /// A profile default must reach every locale the profile has one for, even
+    /// when the form authored the same text in some of its own languages.
+    ///
+    /// The content used to win per key rather than per language: a form issued in
+    /// DE/EN/SP whose own label reads "Company" carries translations for those
+    /// languages only, and that entry then shadowed the profile's French and
+    /// Italian ones — so `Company` was missing from the fr and it dictionaries
+    /// the profile itself emits (feedback PROBLEM-default-translations).
+    #[test]
+    fn a_profile_default_fills_the_locales_the_form_does_not_translate() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        config.languages = vec!["en".into(), "de".into(), "fr".into()];
+        config.master_language = "en".into();
+        config.default_translations = {
+            let mut map = HashMap::new();
+            map.insert("Company".into(), {
+                let mut lm = HashMap::new();
+                lm.insert("de".into(), "Firma".into());
+                lm.insert("fr".into(), "Société".into());
+                lm
+            });
+            map
+        };
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        // The form authored the same master text, but only in its own languages.
+        let mut content: I18nDictionary = HashMap::new();
+        content.insert("Company".into(), {
+            let mut lm = HashMap::new();
+            lm.insert("de".into(), "Firma AG".into());
+            lm
+        });
+
+        let zip_bytes = generate_aem_package_from_node_with_translations(&root, &config, content);
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).expect("valid zip");
+        let dict_base = format!(
+            "jcr_root/content/forms/af/{}/AF_TEST/_jcr_content/guideContainer/assets/dictionary",
+            config.form_path
+        );
+        let read = |archive: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>, locale: &str| {
+            let path = format!("{}/{}.xml", dict_base, locale);
+            let mut xml = String::new();
+            archive
+                .by_name(&path)
+                .unwrap_or_else(|_| panic!("{} dictionary must exist at {}", locale, path))
+                .read_to_string(&mut xml)
+                .unwrap();
+            xml
+        };
+
+        // The profile fills the language the form left out …
+        assert!(
+            read(&mut archive, "fr").contains("sling:message=\"Société\""),
+            "the French default must survive the form's own entry"
+        );
+        // … and the form still wins for the language it did translate.
+        assert!(
+            read(&mut archive, "de").contains("sling:message=\"Firma AG\""),
+            "the form's own translation must take precedence"
+        );
+    }
+
     /// The Add-button label is a string the form did not author, so it needs its
     /// own dictionary entry per language, built from the subject's translation and
     /// the profile's word order for that language.
@@ -2285,18 +2358,35 @@ mod tests {
             required: false,
         })];
 
-        let mut translations = extract_translations(&content, "en");
-
-        // Merge defaults — form content should win
-        for (key, lang_map) in &config.default_translations {
-            translations
-                .entry(key.clone())
-                .or_insert_with(|| lang_map.clone());
-        }
-
-        assert_eq!(
-            translations["Company"]["de"], "Firma",
-            "Form-content translation must take precedence over default"
+        // Read the dictionary the writer actually produced rather than a local
+        // copy of the merge: the copy went on asserting the old rule after the
+        // real one changed.
+        let zip_bytes = generate_aem_package(
+            &AemNode::Root {
+                title: "TEST".into(),
+                children: vec![],
+            },
+            &config,
+            &content,
+        );
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).expect("valid zip");
+        let path = format!(
+            "jcr_root/content/forms/af/{}/AF_TEST/_jcr_content/guideContainer/assets/dictionary/de.xml",
+            config.form_path
+        );
+        let mut de_xml = String::new();
+        std::io::Read::read_to_string(
+            &mut archive
+                .by_name(&path)
+                .unwrap_or_else(|_| panic!("German dictionary must exist at {}", path)),
+            &mut de_xml,
+        )
+        .unwrap();
+        assert!(
+            de_xml.contains("sling:message=\"Firma\""),
+            "form-content translation must take precedence over the default, got: {}",
+            de_xml
         );
     }
 
