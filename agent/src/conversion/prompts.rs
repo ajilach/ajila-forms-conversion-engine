@@ -273,7 +273,12 @@ authority for content. (2) Carry EVERY language get_source_info lists and ONLY t
 value that merely repeats the master-language text is an untranslated stub, not a translation. \
 Regional locale variants are not authored: the packager derives each configured synonym locale \
 (here de-ch from de, es from sp) from its base language, so a deployed package carrying more \
-locales than were authored is correct, not a defect. \
+locales than were authored is correct, not a defect. The hidden metadata control's language \
+fields are template output and no tool changes them: `formrange_language` lists the source \
+languages under the codes the platform files them by (Spanish as SP), and \
+`formrange_afmasterlanguage` is the language the form was ISSUED in for its market — Germany DE, \
+Italy IT, elsewhere EN — which is deliberately not the authoring master the dictionaries are keyed \
+in (that stays EN). Do not plan around them and do not report them as defects. \
 (3) The reference forms and profile templates are ground truth for structure — consult them and \
 copy proven shapes (fragment references, visibility scripts) verbatim rather than inventing, and \
 read them fresh. When your stage is done, stop and reply with a concise, structured summary of what \

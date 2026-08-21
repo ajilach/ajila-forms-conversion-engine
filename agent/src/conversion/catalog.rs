@@ -560,6 +560,8 @@ mod catalog_guards {
         "bind_ref",
         "dor_exclude",
         "form_code",
+        "formrange_afmasterlanguage",
+        "formrange_language",
         "frag_ref",
         "is_conditional",
         "is_page",
