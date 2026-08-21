@@ -345,14 +345,47 @@ impl AemConfig {
             .map(|r| format!("jcr_root/{}", r.trim_start_matches('/')))
     }
 
+    /// The code this profile files `lang` under: a synonym resolves to the
+    /// language it is a synonym of, anything else to itself.
+    ///
+    /// The two ends of a conversion name a language differently. Detection
+    /// yields ISO 639-1 (`es` for Spanish), while a profile's dictionaries and
+    /// default translations are keyed by whatever the target platform files them
+    /// under (`sp`, with `es` declared as its synonym). Folding the one onto the
+    /// other is what keeps a language's content and its default translations in
+    /// the same bucket.
+    pub fn canonical_language(&self, lang: &str) -> String {
+        for (primary, synonyms) in &self.language_synonyms {
+            if synonyms.iter().any(|s| s == lang) {
+                return primary.clone();
+            }
+        }
+        lang.to_string()
+    }
+
+    /// [`canonical_language`](Self::canonical_language) over `languages`,
+    /// deduplicated and order-preserving.
+    pub fn canonical_languages(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::with_capacity(self.languages.len());
+        for lang in &self.languages {
+            let canonical = self.canonical_language(lang);
+            if !out.contains(&canonical) {
+                out.push(canonical);
+            }
+        }
+        out
+    }
+
     /// Expand `languages` to include synonyms.
     ///
     /// For each language in `self.languages`, if it has synonyms defined in
-    /// `language_synonyms`, those are added to the result. The result is
-    /// sorted alphabetically.
+    /// `language_synonyms`, those are added to the result. Synonyms are folded
+    /// onto their primary code first, so a language detected under its synonym
+    /// still brings the whole family. The result is sorted alphabetically.
     pub fn expand_languages(&self) -> Vec<String> {
-        let mut expanded = self.languages.clone();
-        for lang in &self.languages {
+        let canonical = self.canonical_languages();
+        let mut expanded = canonical.clone();
+        for lang in &canonical {
             if let Some(synonyms) = self.language_synonyms.get(lang) {
                 for syn in synonyms {
                     if !expanded.contains(syn) {

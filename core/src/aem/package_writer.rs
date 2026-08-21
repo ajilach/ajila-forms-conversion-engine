@@ -299,6 +299,28 @@ fn assemble_package(
             .or_insert_with(|| lang_map.clone());
     }
 
+    // Fold every synonym code onto the language it is a synonym of, so content
+    // detected as `es` and defaults configured under `sp` end up in one bucket
+    // rather than in two half-filled dictionaries. Without this the synonym file
+    // is written from whichever half was reached first and the other half is
+    // silently dropped: the file exists, so nothing looks missing.
+    let translations: I18nDictionary = translations
+        .into_iter()
+        .map(|(key, lang_map)| {
+            let mut folded: HashMap<String, String> = HashMap::new();
+            for (lang, text) in lang_map {
+                let canonical = config.canonical_language(&lang);
+                // A value already filed under the primary code wins: it is the
+                // one the profile itself asked for.
+                let already_primary = folded.contains_key(&canonical) && canonical != lang;
+                if !already_primary {
+                    folded.insert(canonical, text);
+                }
+            }
+            (key, folded)
+        })
+        .collect();
+
     if !translations.is_empty() {
         let dict_base = format!(
             "jcr_root/content/forms/af/{}/{}/_jcr_content/guideContainer/assets/dictionary",
@@ -429,7 +451,10 @@ fn generate_dam_xml(config: &AemConfig) -> String {
         ctx.insert("variables", &config.user_vars);
         ctx.insert("author", &config.author);
         ctx.insert("master_language", &config.master_language);
-        ctx.insert("languages", &config.languages.join(","));
+        // The canonical codes, not the detected ones: a language that reached
+        // the tree under a synonym (`es`) must be named on the form under the
+        // code the platform files it as (`sp`).
+        ctx.insert("languages", &config.canonical_languages().join(","));
         ctx.insert("expanded_languages", &config.expand_languages().join(","));
         ctx.insert("form_code", &config.form_code);
         ctx.insert("bind_to_xsd", &config.bind_to_xsd);
@@ -2032,6 +2057,84 @@ mod tests {
             "French dictionary must contain 'Retour' translation, got: {}",
             fr_xml
         );
+    }
+
+    /// A language the document was detected under (`es`) and the same language as
+    /// the profile files it (`sp`) must land in one dictionary, holding both the
+    /// form's own translations and the profile's defaults.
+    ///
+    /// They did not. Detection yields ISO 639-1, the profile keys its defaults
+    /// `sp` and declares `es` its synonym, and the writer bucketed by the raw
+    /// code: `sp.xml` got the defaults, `es.xml` got the content, and the synonym
+    /// pass could not repair `es.xml` because a file had already been written
+    /// there. Nothing looked missing -- both files existed -- but every default
+    /// UI string was absent from the one AEM actually serves (feedback
+    /// PROBLEM-default-translations).
+    #[test]
+    fn a_synonym_locale_gets_both_the_content_and_the_default_translations() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        // As a Spanish source arrives from language detection.
+        config.languages = vec!["en".into(), "es".into()];
+        config.master_language = "en".into();
+        config
+            .language_synonyms
+            .insert("sp".into(), vec!["es".into()]);
+        // As the profile ships them.
+        config.default_translations = {
+            let mut map = HashMap::new();
+            map.insert("Back".into(), {
+                let mut lm = HashMap::new();
+                lm.insert("sp".into(), "Atrás".into());
+                lm
+            });
+            map
+        };
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        // Form content translated into the detected code.
+        let mut content: I18nDictionary = HashMap::new();
+        content.insert("Client".into(), {
+            let mut lm = HashMap::new();
+            lm.insert("es".into(), "Cliente".into());
+            lm
+        });
+
+        let zip_bytes = generate_aem_package_from_node_with_translations(&root, &config, content);
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).expect("valid zip");
+        let dict_base = format!(
+            "jcr_root/content/forms/af/{}/AF_TEST/_jcr_content/guideContainer/assets/dictionary",
+            config.form_path
+        );
+
+        // Both the primary and the synonym file must be complete: AEM resolves
+        // one of them and the profile does not say which.
+        for locale in ["sp", "es"] {
+            let path = format!("{}/{}.xml", dict_base, locale);
+            let mut xml = String::new();
+            archive
+                .by_name(&path)
+                .unwrap_or_else(|_| panic!("{} dictionary must exist at {}", locale, path))
+                .read_to_string(&mut xml)
+                .unwrap();
+            assert!(
+                xml.contains("sling:message=\"Atrás\""),
+                "{} must carry the profile default, got: {}",
+                locale,
+                xml
+            );
+            assert!(
+                xml.contains("sling:message=\"Cliente\""),
+                "{} must carry the form content, got: {}",
+                locale,
+                xml
+            );
+        }
     }
 
     #[test]

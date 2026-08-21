@@ -589,7 +589,10 @@ fn build_node_context(
     ctx.insert("variables", &config.user_vars);
     ctx.insert("author", &config.author);
     ctx.insert("master_language", &config.master_language);
-    ctx.insert("languages", &config.languages.join(","));
+    // The canonical codes, not the detected ones: a language that reached the
+    // tree under a synonym (`es`) must be named on the form under the code the
+    // platform files it as (`sp`).
+    ctx.insert("languages", &config.canonical_languages().join(","));
     ctx.insert("expanded_languages", &config.expand_languages().join(","));
 
     // ── Node-specific context ──────────────────────────────────────────

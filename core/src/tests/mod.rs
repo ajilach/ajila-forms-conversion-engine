@@ -14923,6 +14923,47 @@ fn test_aaqm_inline_field_contratto() {
     );
 }
 
+/// The metadata control has to name a language by the code the platform files it
+/// under, not by the code language detection produced.
+///
+/// A Spanish source is detected as `es`; the profile keys Spanish `sp` and
+/// declares `es` its synonym. The control was written straight from the detected
+/// codes, so a DE/EN/SP form announced itself as issued in `ES` -- a language
+/// that, under the platform's own naming, it does not ship (feedback
+/// PROBLEM-metadata-languages).
+#[test]
+fn the_metadata_control_names_languages_by_their_canonical_codes() {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "TEST".into());
+    vars.insert("formrange_entity".into(), "019".into());
+    let ctx = crate::Context::new("de".to_string(), vars);
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("profile config");
+    // As the merge hands them over: ISO codes, Spanish among them.
+    config.languages = vec!["de".into(), "en".into(), "es".into()];
+
+    let root = AemNode::Root {
+        title: "TEST".into(),
+        children: vec![],
+    };
+    let xml = generate_aem_xml(&root, &config);
+
+    let value = xml
+        .split("formrange_language=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("the metadata control must name the form's languages");
+    let listed: std::collections::BTreeSet<&str> = value.split(',').collect();
+    assert_eq!(
+        listed,
+        ["DE", "EN", "SP"].into_iter().collect(),
+        "expected the canonical codes, got {value}"
+    );
+}
+
 #[test]
 fn test_ubs_profile_entity_folder_mapping() {
     use crate::aem::AemConfig;
