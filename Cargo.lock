@@ -480,6 +480,7 @@ dependencies = [
  "image",
  "pipeline",
  "reqwest",
+ "runner",
  "serde",
  "serde_json",
  "tokio",
@@ -489,11 +490,15 @@ dependencies = [
 name = "blueprint-cli"
 version = "0.1.0"
 dependencies = [
+ "agent",
  "blueprint",
  "clap",
  "env_logger",
  "log",
+ "pipeline",
+ "runner",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6192,6 +6197,22 @@ dependencies = [
  "quote",
  "serde_json",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "runner"
+version = "0.1.0"
+dependencies = [
+ "agent",
+ "base64 0.22.1",
+ "blueprint",
+ "futures-util",
+ "image",
+ "pipeline",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -10,7 +10,14 @@ path = "src/main.rs"
 
 [dependencies]
 blueprint = { path = "../core", features = ["semantic-matching"] }
+# `convert` drives the same AI pipeline the desktop app does.
+agent = { path = "../agent" }
+pipeline = { path = "../pipeline" }
+runner = { path = "../runner" }
 clap = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
+# The conversion run is async, so the CLI owns the runtime the app gets from
+# Dioxus. `signal` is what turns Ctrl-C into a clean stop.
+tokio = { version = "1", features = ["rt", "signal", "time"] }

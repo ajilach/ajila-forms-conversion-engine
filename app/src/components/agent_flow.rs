@@ -93,15 +93,6 @@ enum UploadState {
     Error(String),
 }
 
-/// Build a download filename like `forms-package-<code>.zip`, falling back to
-/// `forms-package.zip` when the form code is unknown.
-fn filename(prefix: &str, form_code: Option<&str>, ext: &str) -> String {
-    match form_code {
-        Some(code) => format!("{prefix}-{code}.{ext}"),
-        None => format!("{prefix}.{ext}"),
-    }
-}
-
 /// Render the activity timeline as a Markdown transcript of the run.
 fn agent_log_markdown(steps: &[AgentStep]) -> String {
     let mut out = String::from("# Agent Conversion Log\n\n");
@@ -931,10 +922,11 @@ impl Artifact {
     /// under another artefact's name.
     fn naming(self) -> (&'static str, &'static str) {
         match self {
-            Self::Package => ("forms-package", "zip"),
-            Self::PackageBound => ("forms-package-bindrefs", "zip"),
-            Self::RedactoSql => ("redacto", "sql"),
-            Self::Xsd => ("schema", "xsd"),
+            Self::Package => runner::Artifact::Package.naming(),
+            Self::PackageBound => runner::Artifact::PackageBound.naming(),
+            Self::RedactoSql => runner::Artifact::RedactoSql.naming(),
+            Self::Xsd => runner::Artifact::Xsd.naming(),
+            // The app's own by-product, not one of the run's artefacts.
             Self::AgentLog => ("agent-log", "md"),
         }
     }
@@ -999,7 +991,7 @@ fn DownloadButton(
             onclick: move |_| {
                 let state = state.read();
                 let (prefix, ext) = artifact.naming();
-                let name = filename(prefix, state.form_code.as_deref(), ext);
+                let name = runner::artifact_filename(prefix, state.form_code.as_deref(), ext);
                 error
                     .set(
                         match artifact.bytes(&state) {
@@ -1066,10 +1058,13 @@ mod tests {
     #[test]
     fn filename_falls_back_when_the_form_code_is_unknown() {
         assert_eq!(
-            filename("forms-package", Some("AAEV"), "zip"),
+            runner::artifact_filename("forms-package", Some("AAEV"), "zip"),
             "forms-package-AAEV.zip"
         );
-        assert_eq!(filename("redacto", None, "sql"), "redacto.sql");
+        assert_eq!(
+            runner::artifact_filename("redacto", None, "sql"),
+            "redacto.sql"
+        );
     }
 
     /// The four states the box can be in are derived from three separate fields,

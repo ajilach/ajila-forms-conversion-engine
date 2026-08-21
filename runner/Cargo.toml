@@ -1,0 +1,22 @@
+[package]
+name = "runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+agent = { path = "../agent" }
+blueprint = { path = "../core" }
+pipeline = { path = "../pipeline" }
+base64 = { workspace = true }
+futures-util = "0.3"
+image = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `spawn_blocking` for request preparation; the runtime itself is the caller's.
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+# The turn primitive is async; the tests drive it directly.
+tokio = { version = "1", features = ["macros", "rt"] }

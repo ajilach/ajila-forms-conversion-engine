@@ -143,7 +143,7 @@ impl AppSettings {
 
     /// Load settings from the database, falling back to defaults on any error.
     pub fn load() -> Self {
-        if let Some(json) = crate::db::get_setting(SETTINGS_KEY)
+        if let Some(json) = agent::db::get_setting(SETTINGS_KEY)
             && let Ok(mut settings) = serde_json::from_str::<AppSettings>(&json)
         {
             settings.normalize();
@@ -156,7 +156,7 @@ impl AppSettings {
     /// Save settings to the database.
     pub fn save(&self) {
         if let Ok(json) = serde_json::to_string(self) {
-            crate::db::set_setting(SETTINGS_KEY, &json);
+            agent::db::set_setting(SETTINGS_KEY, &json);
         }
     }
 }

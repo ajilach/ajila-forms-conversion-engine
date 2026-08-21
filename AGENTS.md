@@ -29,9 +29,10 @@
 | `core` (`blueprint`) | The engine: parsing, analysis, and every renderer. No UI, no network, no LLM. |
 | `agent` | The headless conversion agent: the tool catalog and executor, the edit-history store, the reference store, the AEM HTTP client. No UI and no LLM. |
 | `pipeline` | The conversion controller: Analyst → Author → Reviewer sequencing, retry recovery, the stuck watchdog. Reaches the outside world only through `TurnProvider` (the model) and `RunObserver` (progress), so it needs neither a UI framework nor a network to test. |
-| `app` | The Dioxus desktop app: the Anthropic transport, the two seam implementations, and all UI state. |
+| `runner` | The host side of a run, shared by `app` and `cli`: the Anthropic transport, the operator settings, and the entry points that build the agent, open a history session and record the result. |
+| `app` | The Dioxus desktop app: the observer implementation and all UI state. |
 | `mcp` | A stdio MCP server exposing `agent`'s tools to an external LLM client. |
-| `cli` | Thin arg-parse and dispatch over `core`. |
+| `cli` | Thin arg-parse and dispatch over `core`, plus `convert`/`sessions` — the AI conversion run headless, over `runner`. |
 | `judge` | Offline eval harness scoring translation quality to CSV. |
 
 - A run produces one **output target** (`OutputTarget::Aem` or `Redacto`). Targets are configured per profile under `profiles/<name>/<target>/`.

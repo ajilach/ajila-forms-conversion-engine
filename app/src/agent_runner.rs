@@ -1,22 +1,21 @@
-//! Wires the desktop app to the conversion controller in the `pipeline` crate.
+//! Wires the desktop app to the conversion run in the `runner` crate.
 //!
-//! Everything here is app-side glue: building the [`ConversionAgent`] from an
-//! upload or a resumed session, implementing [`pipeline::TurnProvider`] over the
-//! Anthropic transport in [`crate::llm`], implementing [`pipeline::RunObserver`]
+//! Everything here is app-side glue: implementing [`pipeline::RunObserver`]
 //! against the Dioxus signal the UI renders, and projecting the finished
-//! [`pipeline::RunOutcome`] onto [`ProcessingState`].
+//! [`runner::Completed`] onto [`ProcessingState`].
 //!
-//! The stage sequencing itself — Analyst → Author → (Reviewer → Author-fix)* —
-//! lives in `pipeline::run`, where it can be tested without a desktop runtime.
+//! Building the agent, opening the edit-history session and driving the
+//! controller live in [`runner::run`] — shared with the CLI, so both start a run
+//! the same way. The stage sequencing itself — Analyst → Author → (Reviewer →
+//! Author-fix)* — lives in `pipeline::run`, where it can be tested without a
+//! desktop runtime.
 
 use dioxus::prelude::*;
 
-use agent::ConversionAgent;
-use pipeline::{AbortFlag, RetryAction, RunEvent, RunObserver, TurnOutput, TurnProvider};
+use pipeline::{AbortFlag, RetryAction, RunEvent, RunObserver};
+use runner::TurnPlan;
 
-use crate::models::{
-    AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep,
-};
+use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 
 /// The choices the user made before starting a run.
 pub struct RunConfig {
@@ -27,37 +26,14 @@ pub struct RunConfig {
     pub abort: AbortFlag,
 }
 
-// ── The LLM seam: Anthropic behind pipeline::TurnProvider ────────────────────
-
-/// Runs the controller's turns against the Anthropic Messages API.
-///
-/// The model id and the output cap live here rather than in the controller —
-/// they are provider knowledge, and keeping them on this side is what lets the
-/// pipeline crate carry no model tables at all.
-struct AnthropicTurns {
-    api_key: String,
-    model: String,
-    max_tokens: u32,
-}
-
-impl TurnProvider for AnthropicTurns {
-    async fn turn(
-        &self,
-        history: &mut Vec<serde_json::Value>,
-        tools: &[serde_json::Value],
-        system: &str,
-        abort: &AbortFlag,
-    ) -> Result<TurnOutput, String> {
-        crate::llm::anthropic_stream_turn(
-            history,
-            tools,
-            &self.api_key,
-            &self.model,
-            self.max_tokens,
-            Some(system),
-            abort,
-        )
-        .await
+impl RunConfig {
+    fn into_options(self) -> runner::RunOptions {
+        runner::RunOptions {
+            profile: self.profile,
+            target: self.target,
+            settings: self.settings,
+            abort: self.abort,
+        }
     }
 }
 
@@ -147,64 +123,13 @@ pub async fn run_agent(
     files: Vec<(String, Vec<u8>)>,
     config: RunConfig,
     session_label: String,
-    mut processing_state: Signal<ProcessingState>,
+    processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
-    // An attached AEM content-package ZIP is pre-loaded as the agent's editable
-    // working tree (the ConversionAgent splits PDFs vs. template internally).
-    let has_template = files
-        .iter()
-        .any(|(_, bytes)| blueprint::detect_aem_zip(bytes));
-
-    // Structured history session (seeded empty). Hash on the PDFs when present,
-    // otherwise on the template so the session id is stable for template-only runs.
-    let pdfs: Vec<(String, Vec<u8>)> = files
-        .iter()
-        .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
-        .cloned()
-        .collect();
-    let doc_hash = crate::db::document_hash(if pdfs.is_empty() { &files } else { &pdfs });
-    crate::db::upsert_document(&doc_hash, &session_label);
-    let Some(structured_session) =
-        crate::db::create_session(&doc_hash, config.profile.as_deref(), &session_label)
-    else {
-        processing_state.set(ProcessingState {
-            step: ProcessingStep::Running,
-            error: Some("Could not create an edit-history session.".into()),
-            ..ProcessingState::default()
-        });
-        return;
-    };
-    crate::db::insert_edit(&structured_session, "Initial (empty)", "[]");
-
-    let agent = ConversionAgent::new(
-        config.profile.clone(),
-        files,
-        config.settings.aem_connection(),
-        structured_session.clone(),
-        config.target,
-    );
-
-    // An uploaded content package is an AEM artefact; it is not pre-loaded for
-    // any other target, so don't tell the Author it was.
-    let template_note = if has_template && config.target == blueprint::OutputTarget::Aem {
-        "\n\nA template AEM tree from an uploaded content package has been pre-loaded as the \
-working tree. Inspect it with get_aem_translated_outline and modify it to match the source \
-instead of authoring from scratch."
-    } else {
-        ""
-    };
-
-    drive(
-        agent,
-        config,
-        pipeline::RunSeed::Fresh,
-        template_note,
-        structured_session,
-        processing_state,
-        current_session,
-    )
-    .await;
+    let opts = config.into_options();
+    let mut observer = announce(&opts, processing_state);
+    let completed = runner::run_fresh(files, &opts, &session_label, &mut observer).await;
+    publish(completed, opts.target, processing_state, current_session);
 }
 
 /// Resume on an existing session to apply the user's feedback. Skips the Analyst;
@@ -218,101 +143,53 @@ pub async fn run_agent_feedback(
     processing_state: Signal<ProcessingState>,
     current_session: Signal<Option<String>>,
 ) {
-    // Seed the agent from the continuing session so feedback applies to the prior
-    // result: both the structured content and the AEM tree the last run authored,
-    // so the Author refines that tree instead of re-deriving one from the source.
-    let prior = crate::session::restore(&structured_session, config.profile.as_deref());
-
-    let mut agent = ConversionAgent::new(
-        config.profile.clone(),
-        pdfs,
-        config.settings.aem_connection(),
-        structured_session.clone(),
-        config.target,
-    );
-    if let Some(prior) = prior {
-        agent.seed_structured(prior.envelope.content);
-        // A no-op for a Redacto run, which has no AEM tree to seed.
-        if let Some(tree) = prior.aem_translated {
-            agent.seed_aem_translated(tree);
-        }
-    }
-
-    drive(
-        agent,
-        config,
-        pipeline::RunSeed::Feedback(feedback),
-        "",
-        structured_session,
-        processing_state,
-        current_session,
-    )
-    .await;
+    let opts = config.into_options();
+    let mut observer = announce(&opts, processing_state);
+    let completed =
+        runner::run_feedback(feedback, pdfs, &opts, structured_session, &mut observer).await;
+    publish(completed, opts.target, processing_state, current_session);
 }
 
-/// Run the controller and project its outcome onto the UI state.
-async fn drive(
-    agent: ConversionAgent,
-    config: RunConfig,
-    seed: pipeline::RunSeed,
-    template_note: &'static str,
-    structured_session: String,
+/// Surface the run's token budget, so a mis-detected context window is visible,
+/// and hand back the observer the run will report through.
+fn announce(
+    opts: &runner::RunOptions,
     mut processing_state: Signal<ProcessingState>,
-    mut current_session: Signal<Option<String>>,
-) {
-    let started_at = std::time::Instant::now();
-    let RunConfig {
-        profile,
-        target,
-        settings,
-        abort,
-    } = config;
-
-    let model = settings.anthropic_model.clone();
-    let max_tokens = crate::llm::max_output_tokens_for(&model);
-
-    // Surface the context budget once so a mis-detected window is visible. This
-    // is provider knowledge, so it is reported here rather than by the controller.
-    let ctx_window = crate::llm::context_window_for(&model);
-    let ctx_target = crate::llm::prompt_token_target(&model, max_tokens);
-    processing_state.write().context_window = ctx_window;
+) -> DioxusObserver {
+    let plan = TurnPlan::for_settings(&opts.settings);
+    processing_state.write().context_window = plan.context_window;
 
     let mut observer = DioxusObserver {
         state: processing_state,
     };
-    observer.emit(RunEvent::Thought(format!(
-        "Context window: {ctx_window} tokens · per-turn budget: {ctx_target} tokens · \
-         output cap: {max_tokens} · model: {model}"
-    )));
+    observer.emit(RunEvent::Thought(plan.describe()));
+    observer
+}
 
-    let turns = AnthropicTurns {
-        api_key: settings.anthropic_api_key.clone(),
-        model,
-        max_tokens,
+/// Project a finished run onto the UI state.
+fn publish(
+    completed: Result<runner::Completed, String>,
+    target: blueprint::OutputTarget,
+    mut processing_state: Signal<ProcessingState>,
+    mut current_session: Signal<Option<String>>,
+) {
+    let completed = match completed {
+        Ok(completed) => completed,
+        Err(e) => {
+            processing_state.set(ProcessingState {
+                step: ProcessingStep::Running,
+                error: Some(e),
+                ..ProcessingState::default()
+            });
+            return;
+        }
     };
 
-    let run_config = pipeline::RunConfig {
-        profile: profile.clone(),
-        target,
-        abort,
-        max_review_rounds: settings.max_review_rounds,
-        extra_instructions: crate::settings::extra_instructions_block(&settings.agent_instructions),
-        template_note,
-        has_aem_connection: settings.aem_connection().is_some(),
-    };
-
-    let Some(outcome) = pipeline::run(agent, run_config, seed, &turns, &mut observer).await else {
-        // Aborted, or the user gave up at a retry prompt. The observer has
-        // already recorded why; there is no result to publish.
+    // Aborted, or the user gave up at a retry prompt. The observer has already
+    // recorded why; there is no result to publish.
+    let Some(outcome) = completed.outcome else {
         return;
     };
-
-    // Record the result in the structured history, so the run can be reopened
-    // from the session browser. Without this the session holds nothing but the
-    // empty seed and there is nothing to load.
-    if let Ok(json) = serde_json::to_string(&outcome.envelope) {
-        crate::db::insert_edit(&structured_session, "Agent conversion", &json);
-    }
 
     {
         let mut state = processing_state.write();
@@ -326,10 +203,10 @@ async fn drive(
         state.form_code = outcome.form_code;
         state.aem_uploaded = outcome.aem_uploaded;
         state.aem_form_path = outcome.aem_form_path;
-        state.elapsed_secs = Some(started_at.elapsed().as_secs());
+        state.elapsed_secs = Some(completed.elapsed_secs);
     }
 
-    current_session.set(Some(structured_session));
+    current_session.set(Some(completed.session_id));
 }
 
 /// Describe a reference form so the reference store can match against it.
@@ -344,12 +221,7 @@ pub async fn describe_reference(
     api_key: String,
     model: String,
 ) -> Result<String, String> {
-    let max_tokens = crate::llm::max_output_tokens_for(&model);
-    let turns = AnthropicTurns {
-        api_key,
-        model,
-        max_tokens,
-    };
+    let turns = TurnPlan::for_model(&model).provider(api_key);
     pipeline::describe::describe_reference(
         profile,
         pdfs,

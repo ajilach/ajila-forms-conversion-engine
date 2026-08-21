@@ -305,8 +305,10 @@ async fn await_user_retry(
     err: &str,
 ) -> RetryAction {
     obs.retry_prompt(role, err);
+    // Surface-neutral: the app answers this with a button, a CLI with a retry
+    // budget, and the sentence has to read correctly in both.
     obs.emit(RunEvent::Thought(format!(
-        "Paused after a failed request ({err}). Press Retry to resume from this step."
+        "Paused after a failed request ({err}). Waiting for a retry decision."
     )));
 
     let action = loop {

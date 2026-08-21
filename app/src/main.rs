@@ -1,16 +1,16 @@
 mod agent_runner;
 mod components;
 mod files;
-mod llm;
 mod mcp_install;
 mod models;
-mod settings;
 mod upload;
 
 // The headless engine layer (edit-history store, reference store, AEM client)
-// lives in the `agent` crate. Re-export it under the historical `crate::*`
-// paths so the rest of the app is unchanged.
+// lives in the `agent` crate; the LLM transport and the operator settings live
+// in `runner`, shared with the CLI. Re-export both under the historical
+// `crate::*` paths so the rest of the app is unchanged.
 pub use agent::{aem_client, db, references, session};
+pub use runner::{llm, settings};
 
 use dioxus::prelude::*;
 

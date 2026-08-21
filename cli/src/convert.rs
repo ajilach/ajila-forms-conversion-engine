@@ -1,0 +1,417 @@
+//! `blueprint convert`: the autonomous conversion the desktop app runs, driven
+//! from a terminal.
+//!
+//! The run itself is [`runner::run_fresh`] / [`runner::run_feedback`] — the same
+//! entry points the app calls, over the same `pipeline` controller and the same
+//! Anthropic transport. What is different here is only the reporting (a
+//! [`crate::console::ConsoleObserver`] instead of a Dioxus signal) and where the
+//! artefacts land (an output directory instead of the Downloads folder).
+
+use std::error::Error;
+use std::path::{Path, PathBuf};
+
+use blueprint::OutputTarget;
+use clap::Args;
+use pipeline::AbortFlag;
+use runner::{AppSettings, Artifact, TurnPlan};
+
+use crate::console::ConsoleObserver;
+
+/// Environment variable consulted when `--api-key` is not given.
+const API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
+
+/// A source file set: `(file name, bytes)`, the shape every consumer of the
+/// conversion agent passes its sources in.
+type Sources = Vec<(String, Vec<u8>)>;
+
+#[derive(Args, Debug)]
+pub struct ConvertArgs {
+    /// Source document(s): the PDF(s) to convert, plus optionally an AEM
+    /// content-package ZIP to pre-load as an editable template.
+    #[arg(value_name = "DOCUMENT", required = true)]
+    documents: Vec<PathBuf>,
+
+    /// Conversion profile (AEM config + reference library). Defaults to the
+    /// session's profile when resuming, or to the only installed profile.
+    #[arg(long)]
+    profile: Option<String>,
+
+    /// What the run produces: "aem" or "redacto".
+    #[arg(long, default_value = "aem", value_parser = parse_target)]
+    target: OutputTarget,
+
+    /// Directory the artefacts are written to (created if missing).
+    #[arg(long, default_value = ".")]
+    out: PathBuf,
+
+    /// Anthropic API key. Defaults to $ANTHROPIC_API_KEY, then to the key
+    /// configured in the desktop app.
+    #[arg(long, value_name = "KEY")]
+    api_key: Option<String>,
+
+    /// Anthropic model. Defaults to the model configured in the desktop app.
+    #[arg(long, value_name = "ID")]
+    model: Option<String>,
+
+    /// Reviewer → Author-fix rounds to allow before finalizing.
+    #[arg(long, value_name = "N")]
+    max_review_rounds: Option<usize>,
+
+    /// Extra operator instructions, appended to every role's system prompt.
+    #[arg(long, value_name = "TEXT")]
+    instructions: Option<String>,
+
+    /// Read the extra operator instructions from a file.
+    #[arg(long, value_name = "PATH", conflicts_with = "instructions")]
+    instructions_file: Option<PathBuf>,
+
+    /// Hand the run its AEM connection: enables the agent's fetch/verify tools
+    /// and uploads the finished package to the author instance. Off by default,
+    /// so a console run touches nothing outside this machine.
+    #[arg(long)]
+    upload: bool,
+
+    /// AEM author instance to upload to. Defaults to the desktop app's setting.
+    #[arg(long, value_name = "URL", requires = "upload")]
+    aem_host: Option<String>,
+
+    /// AEM user for the upload. Defaults to the desktop app's setting.
+    #[arg(long, value_name = "NAME", requires = "upload")]
+    aem_user: Option<String>,
+
+    /// AEM password for the upload. Defaults to the desktop app's setting.
+    #[arg(long, value_name = "PASSWORD", requires = "upload")]
+    aem_password: Option<String>,
+
+    /// Refine an earlier run instead of converting afresh: applies this feedback
+    /// to the result held in --session. Skips the Analyst.
+    #[arg(long, value_name = "TEXT", requires = "session")]
+    feedback: Option<String>,
+
+    /// Edit-history session to resume (list them with `blueprint sessions`).
+    #[arg(long, value_name = "ID", requires = "feedback")]
+    session: Option<String>,
+
+    /// Retries for a failed model turn before the run gives up. The controller's
+    /// own automatic retries happen first; this budget is what a person would
+    /// otherwise decide with the app's Retry button.
+    #[arg(long, default_value = "2", value_name = "N")]
+    retries: usize,
+
+    /// Also write the structured document as JSON.
+    #[arg(long)]
+    structured: bool,
+}
+
+fn parse_target(value: &str) -> Result<OutputTarget, String> {
+    OutputTarget::parse(value).ok_or_else(|| {
+        let known: Vec<&str> = OutputTarget::ALL.iter().map(|t| t.as_str()).collect();
+        format!(
+            "unknown target `{value}` (expected one of: {})",
+            known.join(", ")
+        )
+    })
+}
+
+/// Run the conversion and write what it produced.
+pub fn run(args: ConvertArgs) -> Result<(), Box<dyn Error>> {
+    let files = read_documents(&args.documents)?;
+    let pdfs = pdfs_only(&files);
+    // The agent has to have something to work from: sources to convert, or an
+    // AEM content package to modify. A feedback run refines a previous result
+    // against those same sources, so for it the PDFs are not optional.
+    if pdfs.is_empty() {
+        if args.feedback.is_some() {
+            return Err("Applying feedback needs the run's source PDF(s) as well.".into());
+        }
+        if !files
+            .iter()
+            .any(|(_, bytes)| blueprint::detect_aem_zip(bytes))
+        {
+            return Err(
+                "Nothing to convert: pass a source PDF, an AEM content package, or both.".into(),
+            );
+        }
+    }
+
+    let profile = resolve_profile(&args)?;
+    let settings = resolve_settings(&args)?;
+
+    // The run is async; the CLI owns the runtime the app gets from Dioxus.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+
+    let abort = AbortFlag::default();
+    let plan = TurnPlan::for_settings(&settings);
+    let mut observer = ConsoleObserver::new(plan.context_window, args.retries);
+
+    println!("Profile: {}", profile.as_deref().unwrap_or("(none)"));
+    println!("Target: {}", args.target.label());
+    println!("{}", plan.describe());
+    match settings.aem_connection() {
+        Some(conn) => println!("AEM upload: on ({} as {})", conn.host, conn.username),
+        None => println!("AEM upload: off (pass --upload to enable it)"),
+    }
+
+    let opts = runner::RunOptions {
+        profile,
+        target: args.target,
+        settings,
+        abort: abort.clone(),
+    };
+
+    let completed = runtime.block_on(async {
+        // Ctrl-C stops the run at its next checkpoint rather than killing the
+        // process, so the agent's work is still finalized and written out.
+        // A second Ctrl-C is the operating system's business.
+        tokio::spawn({
+            let abort = abort.clone();
+            async move {
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    eprintln!("\nStopping at the next checkpoint…");
+                    abort.abort();
+                }
+            }
+        });
+
+        match (args.feedback.clone(), args.session.clone()) {
+            (Some(feedback), Some(session)) => {
+                runner::run_feedback(feedback, pdfs, &opts, session, &mut observer).await
+            }
+            _ => {
+                let label = files
+                    .iter()
+                    .map(|(name, _)| name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                runner::run_fresh(files, &opts, &label, &mut observer).await
+            }
+        }
+    })?;
+
+    // Printed before the outcome is examined: a run that stopped early still
+    // recorded its history under this id, and that is what a resume needs.
+    println!("\n── Result ──");
+    println!("Session: {}", completed.session_id);
+
+    let Some(outcome) = completed.outcome else {
+        // Aborted, or the retry budget ran out. The observer said why.
+        return Err("The run stopped before producing a result.".into());
+    };
+
+    println!("Elapsed: {}s", completed.elapsed_secs);
+    if let Some(code) = &outcome.form_code {
+        println!("Form code: {code}");
+    }
+    if outcome.aem_uploaded {
+        let path = outcome.aem_form_path.as_deref().unwrap_or("(path unknown)");
+        println!("Uploaded to AEM: {path}");
+    }
+    for warning in &outcome.warnings {
+        println!("Warning: {warning}");
+    }
+
+    write_artifacts(&args, &outcome, &observer)?;
+
+    println!(
+        "\nRefine it with: blueprint convert {} --session {} --feedback \"…\"",
+        args.documents
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(" "),
+        completed.session_id
+    );
+    Ok(())
+}
+
+/// Write every artefact the run produced for its target, plus the transcript.
+fn write_artifacts(
+    args: &ConvertArgs,
+    outcome: &pipeline::RunOutcome,
+    observer: &ConsoleObserver,
+) -> Result<(), Box<dyn Error>> {
+    std::fs::create_dir_all(&args.out)
+        .map_err(|e| format!("Could not create {}: {e}", args.out.display()))?;
+    let code = outcome.form_code.as_deref();
+
+    for artifact in Artifact::ALL {
+        if !artifact.belongs_to(args.target) {
+            continue;
+        }
+        match artifact.bytes_from(outcome) {
+            Some(bytes) => write_file(&args.out, &artifact.filename(code), &bytes)?,
+            None => println!("Not produced: {}", artifact.filename(code)),
+        }
+    }
+
+    write_file(
+        &args.out,
+        &runner::artifact_filename("agent-log", code, "md"),
+        observer.transcript().as_bytes(),
+    )?;
+
+    if args.structured {
+        let json = serde_json::to_vec_pretty(&outcome.envelope)?;
+        write_file(
+            &args.out,
+            &runner::artifact_filename("structured", code, "json"),
+            &json,
+        )?;
+    }
+    Ok(())
+}
+
+fn write_file(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    println!("Wrote: {}", path.display());
+    Ok(())
+}
+
+/// Read the sources, keeping the full file names: the agent tells PDFs from an
+/// attached content package by extension, so a stem would hide both.
+fn read_documents(paths: &[PathBuf]) -> Result<Sources, Box<dyn Error>> {
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("Unreadable file name: {}", path.display()))?
+            .to_string();
+        let bytes =
+            std::fs::read(path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+        files.push((name, bytes));
+    }
+    Ok(files)
+}
+
+fn pdfs_only(files: &[(String, Vec<u8>)]) -> Sources {
+    files
+        .iter()
+        .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".pdf"))
+        .cloned()
+        .collect()
+}
+
+/// Which profile the run uses: the flag, else the resumed session's, else the
+/// only one installed. Guessing between several would silently convert against
+/// the wrong AEM config and reference library.
+fn resolve_profile(args: &ConvertArgs) -> Result<Option<String>, Box<dyn Error>> {
+    let available = blueprint::list_profiles();
+
+    if let Some(name) = &args.profile {
+        if !available.iter().any(|p| p == name) {
+            return Err(format!(
+                "Unknown profile `{name}` (installed: {})",
+                available.join(", ")
+            )
+            .into());
+        }
+        return Ok(Some(name.clone()));
+    }
+
+    if let Some(session) = &args.session
+        && let Some(profile) = agent::db::session_profile(session)
+    {
+        return Ok(Some(profile));
+    }
+
+    match available.as_slice() {
+        [only] => Ok(Some(only.clone())),
+        [] => Ok(None),
+        many => Err(format!(
+            "Several profiles are installed ({}) — pick one with --profile.",
+            many.join(", ")
+        )
+        .into()),
+    }
+}
+
+/// The desktop app's saved settings, with this invocation's overrides applied.
+///
+/// Sharing the settings store is the point: a key, model and AEM connection
+/// configured in the app work here without being repeated on the command line.
+fn resolve_settings(args: &ConvertArgs) -> Result<AppSettings, Box<dyn Error>> {
+    let mut settings = AppSettings::load();
+
+    if let Some(key) = &args.api_key {
+        settings.anthropic_api_key = key.clone();
+    } else if let Ok(key) = std::env::var(API_KEY_ENV)
+        && !key.trim().is_empty()
+    {
+        settings.anthropic_api_key = key;
+    }
+    if settings.anthropic_api_key.trim().is_empty() {
+        return Err(format!(
+            "No Anthropic API key. Pass --api-key, set {API_KEY_ENV}, \
+             or configure one in the desktop app's settings."
+        )
+        .into());
+    }
+
+    if let Some(model) = &args.model {
+        settings.anthropic_model = model.clone();
+    }
+    if let Some(rounds) = args.max_review_rounds {
+        settings.max_review_rounds = rounds;
+    }
+    if let Some(text) = &args.instructions {
+        settings.agent_instructions = text.clone();
+    }
+    if let Some(path) = &args.instructions_file {
+        settings.agent_instructions = std::fs::read_to_string(path)
+            .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    }
+
+    // Without --upload the run gets no AEM connection at all: no upload, and no
+    // AEM fetch/verify tools either. Blanking the host is how that is expressed
+    // — `aem_connection()` is what every consumer asks.
+    if args.upload {
+        if let Some(host) = &args.aem_host {
+            settings.aem_host = host.clone();
+        }
+        if let Some(user) = &args.aem_user {
+            settings.aem_username = user.clone();
+        }
+        if let Some(password) = &args.aem_password {
+            settings.aem_password = password.clone();
+        }
+        if settings.aem_connection().is_none() {
+            return Err("--upload needs an AEM host and user (--aem-host / --aem-user).".into());
+        }
+    } else {
+        settings.aem_host = String::new();
+    }
+
+    Ok(settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_target_is_parsed_case_insensitively_and_rejected_when_unknown() {
+        assert_eq!(parse_target("ReDaCtO").unwrap(), OutputTarget::Redacto);
+        assert!(parse_target("html").is_err());
+    }
+
+    /// The full file name has to survive: the agent splits sources from an
+    /// attached content package on the `.pdf` extension, so a stem would leave
+    /// the PDFs looking like neither.
+    #[test]
+    fn documents_keep_their_extension() {
+        let dir = std::env::temp_dir().join("blueprint-cli-convert-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let pdf = dir.join("form_DE.pdf");
+        std::fs::write(&pdf, b"%PDF-1.4").unwrap();
+
+        let files = read_documents(std::slice::from_ref(&pdf)).unwrap();
+        assert_eq!(files[0].0, "form_DE.pdf");
+        assert_eq!(pdfs_only(&files).len(), 1);
+
+        let _ = std::fs::remove_file(&pdf);
+    }
+}

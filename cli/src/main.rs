@@ -1,8 +1,19 @@
+//! The `blueprint` command line.
+//!
+//! Two modes over one engine. Bare arguments run the deterministic pipeline —
+//! parse, render, export — with no model involved. The `convert` subcommand runs
+//! the AI conversion the desktop app runs (Analyst → Author → Reviewer, over the
+//! `pipeline` controller and the shared `runner` transport), which is why the app
+//! and this binary cannot drift apart.
+
+mod console;
+mod convert;
+
 use blueprint::{
     FieldLabelMap, GraphSelection, GraphState, HtmlConfig, PipelineConfig, PipelineEvent,
     PipelineStep, build_field_label_map, generate_dot, run_pipeline,
 };
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use log::info;
 use std::path::{Path, PathBuf};
 
@@ -18,7 +29,14 @@ pub enum RenderMode {
 #[derive(Parser, Debug)]
 #[command(name = "blueprint")]
 #[command(about = "Process and analyze XFA PDF documents", long_about = None)]
+// A subcommand replaces the deterministic run entirely, rather than adding to
+// it: the two modes share no arguments, and the document list is only required
+// by the bare form.
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Path(s) to the PDF document(s). Multiple files of the same document in
     /// different languages can be passed for multilingual output.
     #[arg(value_name = "DOCUMENT", required = true)]
@@ -74,10 +92,54 @@ struct Args {
     dump_xfa: bool,
 }
 
+/// The modes that do something other than the deterministic export run.
+///
+/// The size gap between the variants is clap's business, not a cost: exactly one
+/// is built, once, from the process arguments.
+#[allow(clippy::large_enum_variant)]
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Convert a form with the AI agent: the desktop app's pipeline, headless.
+    Convert(convert::ConvertArgs),
+
+    /// List the conversion sessions a `convert --feedback` run can resume.
+    Sessions,
+}
+
+/// Print every recorded conversion session, newest first.
+fn list_sessions() {
+    let sessions = agent::db::list_all_sessions();
+    if sessions.is_empty() {
+        println!("No conversion sessions recorded yet.");
+        return;
+    }
+    for s in sessions {
+        println!(
+            "{}  {}  {:<10}  {:>3} edit(s)  {}",
+            agent::db::format_timestamp(&s.created_at),
+            s.session_id,
+            s.profile.as_deref().unwrap_or("-"),
+            s.edit_count,
+            s.label,
+        );
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    // The AI modes are their own thing end to end; the deterministic run below
+    // never sees them.
+    match args.command.take() {
+        Some(Command::Convert(convert_args)) => return convert::run(convert_args),
+        Some(Command::Sessions) => {
+            list_sessions();
+            return Ok(());
+        }
+        None => {}
+    }
 
     // Validate that all paths exist up-front.
     for doc_path in &args.documents {

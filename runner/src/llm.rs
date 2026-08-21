@@ -718,7 +718,7 @@ pub async fn anthropic_stream_turn(
     system: Option<&str>,
     // Polled while the response streams, so an aborted run stops within a chunk
     // rather than at the end of a turn that may run for minutes.
-    abort: &crate::models::AbortFlag,
+    abort: &pipeline::AbortFlag,
 ) -> Result<TurnOutput, String> {
     use futures_util::StreamExt;
 
