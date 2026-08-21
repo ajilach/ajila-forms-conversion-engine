@@ -153,6 +153,15 @@ address_generic_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&quo
 # the entity, not on the fragment.
 banking_default_de_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;TXT_BankingRelationship1.value = '0319';\\nTXT_BankingRelationship1.enabled = false;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]'''
 
+# The language the metadata control reports as the form's master -- the issuing
+# region's own language: Germany's forms are written in German, Italy's in
+# Italian, everywhere else English. This is NOT `master_language` above: that is
+# the language the dictionaries are keyed in (English), which stays English for a
+# German form. `root.xml` overrides this with the form's own language when it
+# ships only one, and falls back to EN when the region's language is not among
+# the languages the form ships.
+metadata_master_language = "{% set entity = xfa.formrange_entity | default(value='') %}{% if entity == '019' %}DE{% elif entity == '033' %}IT{% else %}EN{% endif %}"
+
 # =============================================================================
 # Language Synonyms
 # =============================================================================

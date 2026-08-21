@@ -14923,6 +14923,62 @@ fn test_aaqm_inline_field_contratto() {
     );
 }
 
+/// The metadata control's master language is the *issuing region's* language --
+/// German for Germany, Italian for Italy, English elsewhere -- and never a
+/// language the form does not ship.
+///
+/// It used to be `master_language` from the profile, a flat `en`. That field is
+/// the authoring master the dictionaries are keyed in, which is a different
+/// question: a German form's keys are English while the form itself was issued in
+/// German. UBS reads this attribute as the latter (feedback
+/// PROBLEM-metadata-languages, the master half).
+#[test]
+fn the_metadata_control_masters_the_issuing_regions_language() {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+
+    let master_for = |entity: &str, languages: &[&str]| {
+        let (profile, templates, custom_templates) = load_ubs_profile();
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("formrange_code".into(), "TEST".into());
+        vars.insert("formrange_entity".into(), entity.to_string());
+        let ctx = crate::Context::new(languages[0].to_string(), vars);
+        let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+            .expect("profile config");
+        config.languages = languages.iter().map(|l| l.to_string()).collect();
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![],
+        };
+        let xml = generate_aem_xml(&root, &config);
+        // The Tera block that computes the value must not eat the whitespace
+        // separating this attribute from the one before it.
+        assert!(
+            xml.contains(" formrange_afmasterlanguage=\""),
+            "the master-language attribute must stay separated from its neighbour:\n{}",
+            &xml[..xml.len().min(4000)]
+        );
+        xml.split("formrange_afmasterlanguage=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .expect("the metadata control must carry a master language")
+            .to_string()
+    };
+
+    // Germany, issued in three languages: German masters it.
+    assert_eq!(master_for("019", &["de", "en", "es"]), "DE");
+    // Italy: Italian.
+    assert_eq!(master_for("033", &["de", "en", "it"]), "IT");
+    // A region whose language the form does not ship falls back to English -- a
+    // master the form does not carry is never right.
+    assert_eq!(master_for("019", &["en", "it"]), "EN");
+    // One language is its own master, whatever the region.
+    assert_eq!(master_for("019", &["en"]), "EN");
+    assert_eq!(master_for("001", &["de"]), "DE");
+    // Anywhere else: English.
+    assert_eq!(master_for("001", &["de", "en", "fr"]), "EN");
+}
+
 /// The metadata control has to name a language by the code the platform files it
 /// under, not by the code language detection produced.
 ///

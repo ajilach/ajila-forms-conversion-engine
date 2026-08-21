@@ -159,7 +159,11 @@
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/metadata"
                                 _value="Metadata"
                                 dorExclusion="true"
-                                formrange_afmasterlanguage="{{ master_language | upper }}"
+                                {#  The issuing region's language (profile variable), except that a
+                                    form shipping one language alone masters that one, and a region
+                                    language the form does not ship falls back to EN. #}
+                                {%- set langs = languages | upper | split(pat=",") -%}
+                                formrange_afmasterlanguage="{% if langs | length == 1 %}{{ languages | upper }}{% elif langs is containing(variables.metadata_master_language) %}{{ variables.metadata_master_language }}{% else %}EN{% endif %}"
                                 formrange_aftype="Single"
                                 formrange_code="{{ variables.form_code }}"
                                 guideNodeClass="guideTextDraw"
