@@ -111,6 +111,16 @@ pub struct AemProfile {
     #[serde(default)]
     pub language_synonyms: HashMap<String, Vec<String>>,
 
+    /// Per-language wording for a repeatable's Add button, as a pattern holding
+    /// `{subject}` (e.g. `en = "Add {subject}"`, `de = "{subject} hinzufügen"`).
+    ///
+    /// A repeatable's Add button has to name what it adds, and the word order
+    /// differs per language, so the phrasing is profile data rather than
+    /// something a template can compose. Absent, or absent for the master
+    /// language, the button keeps its bare template label.
+    #[serde(default)]
+    pub add_label_patterns: HashMap<String, String>,
+
     /// When `true`, the generated AEM package will include the XSD schema and
     /// all form fields / panels will receive a `bindRef` attribute pointing to
     /// their corresponding XSD element path.

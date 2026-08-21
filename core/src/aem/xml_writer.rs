@@ -74,6 +74,9 @@ struct RenderIndex {
     /// Trigger field name → the panels it decides, for approved configurator
     /// choices only. Absent means "no reset for this field".
     resets: HashMap<String, Vec<ResetTarget>>,
+    /// Repeatable name → what a reader would say it repeats. Absent means
+    /// nothing on screen names it.
+    add_subjects: HashMap<String, String>,
 }
 
 impl RenderIndex {
@@ -81,8 +84,130 @@ impl RenderIndex {
         Self {
             visibility: collect_panel_visibility(root),
             resets: collect_configurator_resets(root),
+            add_subjects: collect_add_subjects(root),
         }
     }
+}
+
+/// The longest a subject may be before it stops being a subject and starts being
+/// prose. Same limits the feedback rule applies when it reads the result back.
+const MAX_SUBJECT_WORDS: usize = 4;
+const MAX_SUBJECT_CHARS: usize = 42;
+
+/// Words that name no entity, so a heading that is only this is no subject.
+const SUBJECT_STOP_WORDS: &[&str] = &[
+    "name", "nome", "nombre", "no", "nr", "number", "details", "data", "daten",
+];
+
+/// What every repeatable in the tree repeats, so its Add button can say so.
+///
+/// A repeatable is titleless in an engine-authored tree, so the answer is
+/// whatever names the block on screen: its own title if it has one, else the
+/// nearest heading above it among its siblings, else the enclosing panel's
+/// title. That is the same evidence a reader uses, and the same order the
+/// feedback rule reads it in (PROBLEM-repeatable-add-label).
+///
+/// `pub(crate)` because the package writer has to translate the same labels this
+/// module writes into the form, and both must resolve the same subject.
+pub(crate) fn collect_add_subjects(root: &AemNode) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    collect_add_subjects_rec(root, None, &mut map);
+    map
+}
+
+fn collect_add_subjects_rec(
+    node: &AemNode,
+    inherited: Option<&str>,
+    map: &mut HashMap<String, String>,
+) {
+    // The title in force for this node's children: this panel's own, falling back
+    // to the one it inherited. Only panels contribute one — the root's title is
+    // the form's name, never the name of a block inside it.
+    let own_title = match node {
+        AemNode::Panel { title, .. } => sane_subject(title),
+        _ => None,
+    };
+    let in_force = own_title.as_deref().or(inherited);
+
+    let children = match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => children.as_slice(),
+        _ => &[],
+    };
+
+    // Headings are siblings, not parents: track the last one seen so a
+    // repeatable that follows it can claim it.
+    let mut heading: Option<String> = None;
+    for child in children {
+        match child {
+            AemNode::TitleDraw { content, .. } => heading = sane_subject(content),
+            AemNode::Repeatable { name, title, .. } => {
+                if let Some(subject) = sane_subject(title)
+                    .or_else(|| heading.clone())
+                    .or_else(|| in_force.map(String::from))
+                {
+                    map.insert(name.clone(), subject);
+                }
+            }
+            _ => {}
+        }
+        collect_add_subjects_rec(child, in_force, map);
+    }
+}
+
+/// `text` as a subject, or `None` when it names nothing usable.
+///
+/// Strips the decoration a heading carries — numbering, trailing colons, markup —
+/// and rejects what is left if it reads as prose rather than as the name of a
+/// thing. A wrong subject is worse than none: the button would name something the
+/// panel is not about.
+fn sane_subject(text: &str) -> Option<String> {
+    let plain = strip_markup(text);
+    // A leading token of nothing but digits and separators is section numbering
+    // ("2.", "3.1)"), not part of the name. `2nd holder` keeps its number: the
+    // token has letters in it, so it is a word.
+    let body = match plain.split_once(char::is_whitespace) {
+        Some((first, rest))
+            if !first.is_empty()
+                && first
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || matches!(c, '.' | ')' | '(' | '-')) =>
+        {
+            rest
+        }
+        _ => plain.as_str(),
+    };
+    let trimmed: String = body
+        .trim()
+        .trim_end_matches(|c: char| c == ':' || c == '*' || c.is_ascii_digit())
+        .trim()
+        .to_string();
+    if trimmed.is_empty()
+        || trimmed.chars().count() > MAX_SUBJECT_CHARS
+        || trimmed.split_whitespace().count() > MAX_SUBJECT_WORDS
+        || SUBJECT_STOP_WORDS.contains(&trimmed.to_lowercase().as_str())
+        // A sentence is not a subject.
+        || trimmed.ends_with('.')
+    {
+        return None;
+    }
+    Some(trimmed)
+}
+
+/// Drop any tags from a rich-text title and collapse the whitespace.
+fn strip_markup(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_tag = false;
+    for ch in text.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Walk the tree and, for every choice whose wording is an approved
@@ -882,6 +1007,16 @@ fn build_node_context(
             // without producing a doubled `RCP_RCP_…` name.
             let panel_name = format!("{}_repeat", name);
             ctx.insert("panel_name", &panel_name);
+
+            // What the Add button says it adds, in the master language. Empty
+            // when nothing on screen names the block, or when the profile
+            // configures no wording — the template keeps its own label then.
+            let add_label = index
+                .add_subjects
+                .get(name)
+                .and_then(|subject| config.add_label(&config.master_language, subject))
+                .unwrap_or_default();
+            ctx.insert("add_label", &xml_escape(&add_label));
         }
 
         AemNode::Fragment {
@@ -2260,6 +2395,117 @@ mod tests {
             xml.contains("dorExclusion=\"true\""),
             "FormConfigurator Title sub-panel must be DOR-excluded. Got:\n{}",
             xml
+        );
+    }
+
+    /// An Add button has to name what it adds. A repeatable carries no title of
+    /// its own in an engine-authored tree, so the subject is the heading above it,
+    /// or failing that the enclosing panel's title.
+    ///
+    /// A bare "Add" tells the reader nothing about which of a form's several
+    /// repeat blocks they are adding a row to, and the feedback guard reports it
+    /// (PROBLEM-repeatable-add-label).
+    #[test]
+    fn the_add_button_names_what_it_adds() {
+        let label_for = |children: Vec<AemNode>, panel_title: &str| {
+            let mut config = test_config();
+            config.component_templates.insert(
+                "repeatable".into(),
+                include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+            );
+            config.component_templates.insert(
+                "titledraw".into(),
+                "<{{ element_name }} name=\"{{ name }}\"/>".into(),
+            );
+            config.user_vars.insert(
+                "default_layout".into(),
+                "fd/af/layouts/gridFluidLayout2".into(),
+            );
+            config.user_vars.insert(
+                "custom_resource_type_base".into(),
+                "ubs/af/components".into(),
+            );
+            config
+                .user_vars
+                .insert("dor_field_styling".into(), "some_styling".into());
+            config
+                .add_label_patterns
+                .insert("en".into(), "Add {subject}".into());
+
+            let root = AemNode::Root {
+                title: "Form".into(),
+                children: vec![AemNode::Panel {
+                    uuid: fixed_uuid(),
+                    name: "PN_Outer".into(),
+                    title: panel_title.into(),
+                    children,
+                    is_page: false,
+                    dor_exclude: false,
+                    visible: true,
+                    is_conditional: false,
+                    dor_num_cols: None,
+                    colspan: 12,
+                    dor_colspan: None,
+                    bind_ref: None,
+                    frag_ref: None,
+                }],
+            };
+            let xml = generate_aem_xml(&root, &config);
+            xml.split("jcr:title=\"")
+                .find(|part| part.starts_with("Add"))
+                .and_then(|part| part.split('"').next())
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        let repeatable = |title: &str| AemNode::Repeatable {
+            uuid: fixed_uuid(),
+            name: "RCP_1".into(),
+            title: title.into(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+            frag_ref: None,
+        };
+        let heading = |content: &str| AemNode::TitleDraw {
+            uuid: fixed_uuid(),
+            name: "TTL_1".into(),
+            content: content.into(),
+            heading_level: 2,
+            colspan: 12,
+            dor_colspan: None,
+        };
+
+        // Its own title wins.
+        assert_eq!(
+            label_for(vec![repeatable("Beneficial owner")], "Client details"),
+            "Add Beneficial owner"
+        );
+        // Titleless: the heading above it, decoration stripped.
+        assert_eq!(
+            label_for(
+                vec![heading("2. Authorized representative:"), repeatable("")],
+                "Client details"
+            ),
+            "Add Authorized representative"
+        );
+        // Nothing above it: the panel it sits in.
+        assert_eq!(
+            label_for(vec![repeatable("")], "Client details"),
+            "Add Client details"
+        );
+        // Prose names nothing, so the button keeps the template's own label
+        // rather than reading out a sentence.
+        assert_eq!(
+            label_for(
+                vec![
+                    heading("The client confirms that the details given above are correct."),
+                    repeatable("")
+                ],
+                ""
+            ),
+            "Add"
         );
     }
 

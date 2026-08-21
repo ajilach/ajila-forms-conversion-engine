@@ -163,6 +163,21 @@ banking_default_de_init = '''[{&quot;script&quot;:{&quot;field&quot;:&quot;this&
 metadata_master_language = "{% set entity = xfa.formrange_entity | default(value='') %}{% if entity == '019' %}DE{% elif entity == '033' %}IT{% else %}EN{% endif %}"
 
 # =============================================================================
+# Add-button wording
+# =============================================================================
+# A repeatable's Add button has to name what it adds ("Add client", not "Add"),
+# and the word order differs per language, so the phrasing lives here rather than
+# in the template. `{subject}` is the block's own title, or the heading above it.
+# A language with no pattern gets no label: the button keeps the bare template
+# text rather than a sentence in the wrong word order.
+[add_label_patterns]
+en = "Add {subject}"
+de = "{subject} hinzufügen"
+fr = "Ajouter {subject}"
+it = "Aggiungere {subject}"
+sp = "Añadir {subject}"
+
+# =============================================================================
 # Language Synonyms
 # =============================================================================
 [language_synonyms]

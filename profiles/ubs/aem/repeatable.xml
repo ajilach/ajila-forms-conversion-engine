@@ -77,7 +77,7 @@
             jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
             jcr:lastModifiedBy="{{ author }}"
             jcr:primaryType="nt:unstructured"
-            jcr:title="Add"
+            jcr:title="{% if add_label %}{{ add_label }}{% else %}Add{% endif %}"
             sling:resourceType="{{ variables.custom_resource_type_base }}/controls/tertiarybutton"
             dorExclusion="true"
             dorFieldStyling="{{ variables.dor_field_styling }}"

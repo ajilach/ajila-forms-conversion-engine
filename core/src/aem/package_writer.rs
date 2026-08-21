@@ -321,6 +321,35 @@ fn assemble_package(
         })
         .collect();
 
+    // Every Add button reads "<subject>" through one of the profile's patterns.
+    // The subject is a title the dictionary already translates, but the composite
+    // is a string of its own, so it needs its own entry or it stays in the master
+    // language on every other locale's screen.
+    let mut translations = translations;
+    for subject in crate::aem::xml_writer::collect_add_subjects(root).values() {
+        let Some(master_label) = config.add_label(&config.master_language, subject) else {
+            continue;
+        };
+        let per_language: HashMap<String, String> = translations
+            .get(subject)
+            .map(|by_lang| {
+                by_lang
+                    .iter()
+                    .filter_map(|(lang, translated_subject)| {
+                        config
+                            .add_label(lang, translated_subject)
+                            .map(|label| (lang.clone(), label))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !per_language.is_empty() {
+            // A form-content key of the same text wins: it was authored, this is
+            // derived.
+            translations.entry(master_label).or_insert(per_language);
+        }
+    }
+
     if !translations.is_empty() {
         let dict_base = format!(
             "jcr_root/content/forms/af/{}/{}/_jcr_content/guideContainer/assets/dictionary",
@@ -2056,6 +2085,82 @@ mod tests {
             fr_xml.contains("sling:message=\"Retour\""),
             "French dictionary must contain 'Retour' translation, got: {}",
             fr_xml
+        );
+    }
+
+    /// The Add-button label is a string the form did not author, so it needs its
+    /// own dictionary entry per language, built from the subject's translation and
+    /// the profile's word order for that language.
+    ///
+    /// Without it the button reads the master language on every screen: German
+    /// readers of a German form would see "Add client".
+    #[test]
+    fn the_add_button_label_is_translated_from_the_subject() {
+        use std::io::Read;
+
+        let mut config = AemConfig::test_default("TEST");
+        config.languages = vec!["en".into(), "de".into()];
+        config.master_language = "en".into();
+        config
+            .add_label_patterns
+            .insert("en".into(), "Add {subject}".into());
+        config
+            .add_label_patterns
+            .insert("de".into(), "{subject} hinzufügen".into());
+
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![AemNode::Panel {
+                uuid: Uuid::from_u128(1),
+                name: "PN_Outer".into(),
+                title: "Client".into(),
+                children: vec![AemNode::Repeatable {
+                    uuid: Uuid::from_u128(2),
+                    name: "RCP_1".into(),
+                    title: String::new(),
+                    children: vec![],
+                    min_occur: 1,
+                    max_occur: 5,
+                    bind_ref: None,
+                    frag_ref: None,
+                }],
+                is_page: false,
+                dor_exclude: false,
+                visible: true,
+                is_conditional: false,
+                dor_num_cols: None,
+                colspan: 12,
+                dor_colspan: None,
+                bind_ref: None,
+                frag_ref: None,
+            }],
+        };
+        // The subject's own translation, as lowering produces it.
+        let mut content: I18nDictionary = HashMap::new();
+        content.insert("Client".into(), {
+            let mut lm = HashMap::new();
+            lm.insert("de".into(), "Kunde".into());
+            lm
+        });
+
+        let zip_bytes = generate_aem_package_from_node_with_translations(&root, &config, content);
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).expect("valid zip");
+        let path = format!(
+            "jcr_root/content/forms/af/{}/AF_TEST/_jcr_content/guideContainer/assets/dictionary/de.xml",
+            config.form_path
+        );
+        let mut de_xml = String::new();
+        archive
+            .by_name(&path)
+            .unwrap_or_else(|_| panic!("German dictionary must exist at {}", path))
+            .read_to_string(&mut de_xml)
+            .unwrap();
+
+        assert!(
+            de_xml.contains("sling:message=\"Kunde hinzufügen\""),
+            "the German dictionary must translate the Add label in German word order, got: {}",
+            de_xml
         );
     }
 

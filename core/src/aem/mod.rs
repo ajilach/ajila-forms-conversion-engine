@@ -104,6 +104,10 @@ pub struct AemConfig {
     /// Master / primary language code.
     pub master_language: String,
 
+    /// Per-language wording for a repeatable's Add button; the pattern holds
+    /// `{subject}` (see [`AemProfile::add_label_patterns`]).
+    pub add_label_patterns: HashMap<String, String>,
+
     /// Language synonyms: maps a base language code to additional codes that
     /// should receive the same translations (e.g. `"de" → ["de-ch"]`,
     /// `"sp" → ["es"]`).
@@ -251,6 +255,7 @@ impl AemConfig {
                 .clone()
                 .unwrap_or_else(|| "en".into()),
             language_synonyms: profile.language_synonyms.clone(),
+            add_label_patterns: profile.add_label_patterns.clone(),
 
             author: "blueprint".into(),
             deterministic_uuids: false,
@@ -363,6 +368,22 @@ impl AemConfig {
         lang.to_string()
     }
 
+    /// The Add-button label for `subject` in `lang`, or `None` when the profile
+    /// gives no wording for that language.
+    ///
+    /// The word order is the profile's business: `Add {subject}` in English,
+    /// `{subject} hinzufügen` in German. Without a pattern the caller keeps
+    /// whatever its template says, which is how a profile that never configured
+    /// this keeps its old output.
+    pub fn add_label(&self, lang: &str, subject: &str) -> Option<String> {
+        let subject = subject.trim();
+        if subject.is_empty() {
+            return None;
+        }
+        let pattern = self.add_label_patterns.get(&self.canonical_language(lang))?;
+        Some(pattern.replace("{subject}", subject))
+    }
+
     /// [`canonical_language`](Self::canonical_language) over `languages`,
     /// deduplicated and order-preserving.
     pub fn canonical_languages(&self) -> Vec<String> {
@@ -411,6 +432,7 @@ impl AemConfig {
             form_code: form_code.into(),
             languages: vec!["en".into()],
             master_language: "en".into(),
+            add_label_patterns: HashMap::new(),
             language_synonyms: {
                 let mut map = HashMap::new();
                 map.insert("de".into(), vec!["de-ch".into()]);
