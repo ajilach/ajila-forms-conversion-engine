@@ -164,7 +164,7 @@ def main():
     if args.cli:
         cli = args.cli.split()
     else:
-        built = os.path.join(ENGINE_ROOT, "target", "release", "blueprint-cli")
+        built = os.path.join(ENGINE_ROOT, "target", "release", "blueprint")
         cli = [built] if os.path.isfile(built) else \
             ["cargo", "run", "--quiet", "--release", "--manifest-path",
              os.path.join(ENGINE_ROOT, "Cargo.toml"), "-p", "blueprint-cli", "--"]
