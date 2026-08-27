@@ -208,6 +208,24 @@ cargo run --release -p judge
 python3 compare.py
 ```
 
+## Checking a conversion against the feedback guard
+
+The sister repo `ajila-forms-conversion-feedback` fixes systemic defects across the
+deployed UBS corpus, and its CI guard fails any form that re-introduces one. A form
+this engine converts joins that corpus, so the guard is the acceptance test for the
+AEM output. Run it on a fresh conversion without importing anything:
+
+```sh
+python3 scripts/check_feedback_rules.py core/input/AAOS_033_IT.pdf
+python3 scripts/check_feedback_rules.py core/input/BAGE_019_DE.pdf core/input/BAGE_019_EN.pdf
+python3 scripts/check_feedback_rules.py --json core/input/AAOS_033_IT.pdf > report.json
+```
+
+It converts each form with `--aem --profile ubs`, builds a throwaway directory the
+feedback repo's detectors read as their corpus (holding only the forms under test), and
+runs `check_regressions.py --no-skip` over it. Exit code 0 means every enrolled rule is
+clean. Pass `--feedback-repo` when the checkout is not next to this one.
+
 ## Regenerating build assets
 
 Two scripts regenerate checked-in assets. Neither runs as part of the build; run
