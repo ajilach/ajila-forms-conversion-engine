@@ -6,13 +6,18 @@
     jcr:primaryType="nt:unstructured"
     {% if title and title != "" %}jcr:title="{{ title }}"{% endif %}
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
+    {% if always_in_pdf %}alwaysInPdf="true"{% endif %}
+    {% if css %}css="{{ css }}"{% endif %}
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
     dorExcludeTitle="true"
+    {% if dor_exclude %}dorExclusion="true"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
     guideNodeClass="guidePanel"
     {% if variables.use_summary == "true" %}hideTitle="{Boolean}true"{% endif %}
     name="{{ name }}"
+    {% if show_if_hidden %}showIfHidden="true"{% endif %}
+    {% if dor_exclude or summary_exclude %}summaryExclusion="true"{% endif %}
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false"
     {% if not visible and not visibility_triggers %}visible="{Boolean}false"{% endif %}{{ extra_attributes }}>

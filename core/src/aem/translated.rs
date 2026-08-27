@@ -17,7 +17,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use uuid::Uuid;
 
-use super::{AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough, TextFieldKind};
+use super::{
+    AemAttrs, AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough, TextFieldKind,
+};
 use crate::structured::FieldId;
 
 /// The translation dictionary shape the package writer expects:
@@ -124,7 +126,9 @@ pub enum AemNodeTranslated {
         title: AemI18nText,
         children: Vec<AemNodeTranslated>,
         is_page: bool,
-        dor_exclude: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         visible: bool,
         is_conditional: bool,
         dor_num_cols: Option<u32>,
@@ -146,6 +150,9 @@ pub enum AemNodeTranslated {
         mandatory: bool,
         visible: bool,
         max_chars: Option<usize>,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
@@ -164,6 +171,9 @@ pub enum AemNodeTranslated {
         label: AemI18nText,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
@@ -177,6 +187,9 @@ pub enum AemNodeTranslated {
         label: AemI18nText,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
@@ -191,6 +204,9 @@ pub enum AemNodeTranslated {
         options: Vec<AemOptionTranslated>,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         #[schemars(with = "Option<String>")]
@@ -208,6 +224,9 @@ pub enum AemNodeTranslated {
         options: Vec<AemOptionTranslated>,
         alignment: OptionAlignment,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         #[schemars(with = "Option<String>")]
@@ -226,6 +245,9 @@ pub enum AemNodeTranslated {
         alignment: OptionAlignment,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         #[schemars(with = "Option<String>")]
@@ -240,7 +262,12 @@ pub enum AemNodeTranslated {
         passthrough: Passthrough,
         name: String,
         content: AemI18nText,
-        dor_exclude: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "super::default_true")]
+        visible: bool,
         colspan: u32,
         dor_colspan: Option<u32>,
     },
@@ -252,6 +279,12 @@ pub enum AemNodeTranslated {
         name: String,
         content: AemI18nText,
         heading_level: u8,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "super::default_true")]
+        visible: bool,
         colspan: u32,
         dor_colspan: Option<u32>,
     },
@@ -265,6 +298,12 @@ pub enum AemNodeTranslated {
         children: Vec<AemNodeTranslated>,
         min_occur: u32,
         max_occur: u32,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "super::default_true")]
+        visible: bool,
         bind_ref: Option<String>,
         /// `fragRef` this repeatable wraps, when a repeating panel carried a
         /// `fragRef` and its content was inlined.
@@ -282,6 +321,12 @@ pub enum AemNodeTranslated {
         #[serde(default)]
         title: AemI18nText,
         frag_ref: String,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "super::default_true")]
+        visible: bool,
         bind_ref: Option<String>,
     },
     Preface {
@@ -317,6 +362,9 @@ pub enum AemNodeTranslated {
         options: Vec<AemOptionTranslated>,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         dor_colspan: Option<u32>,
         bind_ref: Option<String>,
@@ -484,7 +532,7 @@ impl AemNodeTranslated {
                 title,
                 children,
                 is_page,
-                dor_exclude,
+                attrs,
                 visible,
                 is_conditional,
                 dor_num_cols,
@@ -499,7 +547,7 @@ impl AemNodeTranslated {
                 title: text!(title),
                 children: lower_children(children, master_lang, languages, dict, conflicts),
                 is_page: *is_page,
-                dor_exclude: *dor_exclude,
+                attrs: attrs.clone(),
                 visible: *visible,
                 is_conditional: *is_conditional,
                 dor_num_cols: *dor_num_cols,
@@ -519,8 +567,10 @@ impl AemNodeTranslated {
                 dor_colspan,
                 bind_ref,
                 kind,
+                attrs,
                 ..
             } => AemNode::TextField {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 label: text!(label),
@@ -541,8 +591,10 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                attrs,
                 ..
             } => AemNode::NumberField {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 label: text!(label),
@@ -561,8 +613,10 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                attrs,
                 ..
             } => AemNode::DatePicker {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 label: text!(label),
@@ -584,8 +638,10 @@ impl AemNodeTranslated {
                 field_id,
                 conditions,
                 bind_ref,
+                attrs,
                 ..
             } => AemNode::Dropdown {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 label: text!(label),
@@ -610,8 +666,10 @@ impl AemNodeTranslated {
                 field_id,
                 conditions,
                 bind_ref,
+                attrs,
                 ..
             } => AemNode::Checkbox {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 label: text!(label),
@@ -637,8 +695,10 @@ impl AemNodeTranslated {
                 field_id,
                 conditions,
                 bind_ref,
+                attrs,
                 ..
             } => AemNode::RadioButton {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 label: text!(label),
@@ -656,15 +716,17 @@ impl AemNodeTranslated {
                 uuid,
                 name,
                 content,
-                dor_exclude,
+                attrs,
+                visible,
                 colspan,
                 dor_colspan,
                 ..
             } => AemNode::TextDraw {
+                visible: *visible,
                 uuid: *uuid,
                 name: name.clone(),
                 content: text!(content),
-                dor_exclude: *dor_exclude,
+                attrs: attrs.clone(),
                 colspan: *colspan,
                 dor_colspan: *dor_colspan,
             },
@@ -675,8 +737,12 @@ impl AemNodeTranslated {
                 heading_level,
                 colspan,
                 dor_colspan,
+                attrs,
+                visible,
                 ..
             } => AemNode::TitleDraw {
+                attrs: attrs.clone(),
+                visible: *visible,
                 uuid: *uuid,
                 name: name.clone(),
                 content: text!(content),
@@ -693,8 +759,12 @@ impl AemNodeTranslated {
                 max_occur,
                 bind_ref,
                 frag_ref,
+                attrs,
+                visible,
                 ..
             } => AemNode::Repeatable {
+                attrs: attrs.clone(),
+                visible: *visible,
                 uuid: *uuid,
                 name: name.clone(),
                 title: text!(title),
@@ -710,8 +780,12 @@ impl AemNodeTranslated {
                 title,
                 frag_ref,
                 bind_ref,
+                attrs,
+                visible,
                 ..
             } => AemNode::Fragment {
+                attrs: attrs.clone(),
+                visible: *visible,
                 uuid: *uuid,
                 name: name.clone(),
                 title: text!(title),
@@ -747,8 +821,10 @@ impl AemNodeTranslated {
                 colspan,
                 dor_colspan,
                 bind_ref,
+                attrs,
                 ..
             } => AemNode::Custom {
+                attrs: attrs.clone(),
                 uuid: *uuid,
                 name: name.clone(),
                 template_key: template_key.clone(),
@@ -787,6 +863,7 @@ mod tests {
                     title: t(&[("de", "Abschnitt"), ("en", "Section")]),
                     children: vec![
                         AemNodeTranslated::TextField {
+                            attrs: AemAttrs::default(),
                             uuid: Uuid::nil(),
                     passthrough: Default::default(),
                             name: "f1".into(),
@@ -800,6 +877,7 @@ mod tests {
                             kind: TextFieldKind::Plain,
                         },
                         AemNodeTranslated::Dropdown {
+                            attrs: AemAttrs::default(),
                             uuid: Uuid::nil(),
                     passthrough: Default::default(),
                             name: "f2".into(),
@@ -818,7 +896,7 @@ mod tests {
                         },
                     ],
                     is_page: true,
-                    dor_exclude: false,
+                    attrs: AemAttrs::default(),
                     visible: true,
                     is_conditional: false,
                     dor_num_cols: None,
@@ -902,6 +980,7 @@ mod tests {
         let tree = AemNodeTranslated::Root {
             title: t(&[("de", "Formular"), ("en", "Form")]),
             children: vec![AemNodeTranslated::TextField {
+                attrs: AemAttrs::default(),
                 uuid: Uuid::from_u128(7),
                 passthrough: Default::default(),
                 name: "f1".into(),
@@ -956,6 +1035,7 @@ mod tests {
         let tree = AemNodeTranslated::Root {
             title: t(&[("de", "Formular")]),
             children: vec![AemNodeTranslated::TextField {
+                attrs: AemAttrs::default(),
                 uuid,
                 passthrough: passthrough.clone(),
                 name: "f1".into(),
@@ -992,20 +1072,22 @@ mod tests {
             title: t(&[]),
             children: vec![
                 AemNodeTranslated::TextDraw {
+                    visible: true,
                     uuid: Uuid::nil(),
                     passthrough: Default::default(),
                     name: "a".into(),
                     content: t(&[("de", "Hinweis"), ("en", "Note A")]),
-                    dor_exclude: false,
+                    attrs: AemAttrs::default(),
                     colspan: 12,
                     dor_colspan: None,
                 },
                 AemNodeTranslated::TextDraw {
+                    visible: true,
                     uuid: Uuid::nil(),
                     passthrough: Default::default(),
                     name: "b".into(),
                     content: t(&[("de", "Hinweis"), ("en", "Note B")]),
-                    dor_exclude: false,
+                    attrs: AemAttrs::default(),
                     colspan: 12,
                     dor_colspan: None,
                 },
@@ -1027,6 +1109,7 @@ mod tests {
         let tree = AemNodeTranslated::Root {
             title: t(&[("en", "Form"), ("de", "Formular")]),
             children: vec![AemNodeTranslated::TextField {
+                attrs: AemAttrs::default(),
                 uuid: Uuid::nil(),
                 passthrough: Default::default(),
                 name: "f1".into(),
@@ -1073,20 +1156,22 @@ mod tests {
             title: t(&[]),
             children: vec![
                 AemNodeTranslated::TextDraw {
+                    visible: true,
                     uuid: Uuid::nil(),
                     passthrough: Default::default(),
                     name: "a".into(),
                     content: t(&[("de", "Wort"), ("en", "Word")]),
-                    dor_exclude: false,
+                    attrs: AemAttrs::default(),
                     colspan: 12,
                     dor_colspan: None,
                 },
                 AemNodeTranslated::TextDraw {
+                    visible: true,
                     uuid: Uuid::nil(),
                     passthrough: Default::default(),
                     name: "b".into(),
                     content: t(&[("de", "Wort"), ("fr", "Mot")]),
-                    dor_exclude: false,
+                    attrs: AemAttrs::default(),
                     colspan: 12,
                     dor_colspan: None,
                 },

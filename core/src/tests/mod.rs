@@ -13,6 +13,7 @@ fn aem_node_json_round_trips() {
             title: "Panel 1".into(),
             children: vec![
                 AemNode::TextField {
+                    attrs: crate::AemAttrs::default(),
                     uuid: Uuid::nil(),
                     name: "tf".into(),
                     label: "Name".into(),
@@ -25,6 +26,7 @@ fn aem_node_json_round_trips() {
                     kind: crate::aem::TextFieldKind::Plain,
                 },
                 AemNode::RadioButton {
+                    attrs: crate::AemAttrs::default(),
                     uuid: Uuid::nil(),
                     name: "rb".into(),
                     label: "Type".into(),
@@ -43,7 +45,7 @@ fn aem_node_json_round_trips() {
                 },
             ],
             is_page: true,
-            dor_exclude: false,
+            attrs: crate::AemAttrs::default(),
             visible: true,
             is_conditional: false,
             dor_num_cols: None,
@@ -30998,6 +31000,250 @@ fn lift_languages(package: &crate::aem::ParsedAemPackage) -> Vec<String> {
     }
 }
 
+// ============================================================================
+// Presentation attributes (`AemAttrs`)
+//
+// A package dropped into the engine for review is edited and written back, so
+// every attribute that decides where a node shows up -- on screen, on the
+// summary step, in the DoR, in the PDF -- has to survive the trip as a typed
+// field the agent can also change. Before `AemAttrs` these travelled nowhere:
+// `summaryExclusion`, `alwaysInPdf`, `showIfHidden`, `dorHeaderSlot`,
+// `jumpToFieldButtonVisible` and `css` were dropped from the `Passthrough` as
+// "template-owned" and then not written, and `dorExcludeTitle` was folded into
+// `dorExclusion`, which turned every wizard step into a DoR-excluded node.
+// ============================================================================
+
+/// A hand-built form carrying every attribute `AemAttrs` models, in the shapes
+/// the deployed corpus uses: a step panel with a title exclusion and an Edit
+/// button, the DoR-only internal-bank-use panel (`alwaysInPdf` without
+/// `dorExclusion`), the slot-2 header draw, the first page's subtitle class,
+/// and a hidden fragment.
+#[cfg(test)]
+const ATTRS_FORM_XML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0"
+    xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    xmlns:nt="http://www.jcp.org/jcr/nt/1.0" jcr:primaryType="cq:Page">
+    <jcr:content jcr:primaryType="cq:PageContent" jcr:language="it" jcr:title="AAOS"
+        sling:resourceType="/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage">
+        <guideContainer jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/components/guideContainer"
+            guideNodeClass="guideContainerNode" name="guide1">
+            <rootPanel jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode" name="guideRootPanel">
+                <layout jcr:primaryType="nt:unstructured"
+                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/layouts/panel/wizard"/>
+                <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_step jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        dorExcludeTitle="true" guideNodeClass="guidePanel" jumpToFieldButtonVisible="true"
+                        name="PN_Step" textIsRich="true">
+                        <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <textdraw_subtitle jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                _value="&lt;p>Attestazione di avvenuta consegna&lt;/p>" css="subtitle-after-form-title"
+                                guideNodeClass="guideTextDraw" name="ST_Subtitle" textIsRich="true"/>
+                            <textdraw_slot2 jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+                                _value="&lt;p>&lt;b>UBS Europe SE&lt;/b> (Succursale Italia)&lt;/p>" alwaysInPdf="true"
+                                dorHeaderSlot="slot2" guideNodeClass="guideTextDraw" name="ST_HeaderSlot2"
+                                showIfHidden="true" summaryExclusion="true" textIsRich="true" visible="{Boolean}false"/>
+                            <textbox_iban jcr:primaryType="nt:unstructured" jcr:title="IBAN"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                                dorExclusion="true" guideNodeClass="guideTextBox" name="TXT_IBAN"
+                                summaryExclusion="true" textIsRich="[true,true,true]"/>
+                        </items>
+                    </panel_step>
+                    <panel_internal jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        alwaysInPdf="true" guideNodeClass="guidePanel" name="PN_InternalBankUseOnly"
+                        summaryExclusion="true" textIsRich="true" visible="{Boolean}false">
+                        <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <panel_frg jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                alwaysInPdf="true"
+                                fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_internalbankuse_ouref"
+                                guideNodeClass="guidePanel" name="PN_FRG_InternalBankUseOnly"
+                                summaryExclusion="true" textIsRich="true" visible="{Boolean}false">
+                                <items jcr:primaryType="nt:unstructured"/>
+                            </panel_frg>
+                        </items>
+                    </panel_internal>
+                </items>
+            </rootPanel>
+        </guideContainer>
+    </jcr:content>
+</jcr:root>
+"##;
+
+/// Every attribute of [`ATTRS_FORM_XML`] reaches the typed tree, and only the
+/// node that carried it.
+#[test]
+fn presentation_attributes_are_typed_fields_after_loading() {
+    use crate::aem::parse_aem_zip;
+
+    let zip = helpers::aem_zip_from_form_xml("ATTR", ATTRS_FORM_XML);
+    let package = parse_aem_zip(&zip).expect("parse the attribute fixture");
+
+    let mut by_name = std::collections::HashMap::new();
+    helpers::walk_aem_nodes(&package.root, &mut |node| {
+        if let (Some(name), Some(attrs)) = (node_name_of(node), node.attrs()) {
+            by_name.insert(name.to_string(), (attrs.clone(), node_visible_of(node)));
+        }
+    });
+
+    let (step, _) = &by_name["PN_Step"];
+    assert!(step.dor_exclude_title, "the step's title exclusion is typed");
+    assert!(
+        !step.dor_exclude,
+        "`dorExcludeTitle` must not read as `dorExclusion`: the step itself stays in the DoR"
+    );
+    assert!(step.jump_to_field, "the step-title panel keeps its Edit button");
+
+    let (subtitle, _) = &by_name["ST_Subtitle"];
+    assert_eq!(subtitle.css.as_deref(), Some("subtitle-after-form-title"));
+
+    let (slot2, slot2_visible) = &by_name["ST_HeaderSlot2"];
+    assert!(slot2.always_in_pdf && slot2.show_if_hidden && slot2.summary_exclude);
+    assert!(!slot2.dor_exclude, "the header draw must reach the PDF");
+    assert_eq!(slot2.dor_header_slot.as_deref(), Some("slot2"));
+    assert_eq!(*slot2_visible, Some(false));
+
+    let (iban, _) = &by_name["TXT_IBAN"];
+    assert!(iban.dor_exclude && iban.summary_exclude, "an input carries them too");
+
+    let (frag, frag_visible) = &by_name["PN_FRG_InternalBankUseOnly"];
+    assert!(frag.always_in_pdf && frag.summary_exclude && !frag.dor_exclude);
+    assert_eq!(*frag_visible, Some(false), "a hidden fragment stays hidden");
+}
+
+/// The same attributes come back out of the writer, on the same nodes and once
+/// each. This is the round trip a dropped-in package makes when the agent edits
+/// it: load, lift to the multilingual tree, lower, render.
+#[test]
+fn presentation_attributes_survive_a_load_save_round_trip() {
+    use crate::aem::xml_validation::duplicate_attribute_elements;
+    use crate::aem::{aem_to_translated, generate_aem_xml_with_passthrough, parse_aem_zip};
+
+    let zip = helpers::aem_zip_from_form_xml("ATTR", ATTRS_FORM_XML);
+    let package = parse_aem_zip(&zip).expect("parse the attribute fixture");
+    let languages = vec![package.language.clone()];
+    let lifted = aem_to_translated(
+        &package.root,
+        &package.translations,
+        &languages,
+        &package.language,
+        &package.raw_by_uuid,
+    );
+    let (lowered, _dict) = lifted.lower(&package.language, &languages);
+    let config = ubs_config_for(&package.language, &languages, "ATTR");
+    let xml = generate_aem_xml_with_passthrough(&lowered, &config, &lifted.passthrough_map());
+
+    let dups = duplicate_attribute_elements(&xml);
+    assert!(dups.is_empty(), "duplicate attributes after saving:\n{}", dups.join("\n"));
+
+    for (node, attr) in [
+        ("PN_Step", "dorExcludeTitle=\"true\""),
+        ("PN_Step", "jumpToFieldButtonVisible=\"true\""),
+        ("ST_Subtitle", "css=\"subtitle-after-form-title\""),
+        ("ST_HeaderSlot2", "alwaysInPdf=\"true\""),
+        ("ST_HeaderSlot2", "dorHeaderSlot=\"slot2\""),
+        ("ST_HeaderSlot2", "showIfHidden=\"true\""),
+        ("ST_HeaderSlot2", "summaryExclusion=\"true\""),
+        ("ST_HeaderSlot2", "visible=\"{Boolean}false\""),
+        ("TXT_IBAN", "dorExclusion=\"true\""),
+        ("TXT_IBAN", "summaryExclusion=\"true\""),
+        ("PN_InternalBankUseOnly", "alwaysInPdf=\"true\""),
+        ("PN_InternalBankUseOnly", "visible=\"{Boolean}false\""),
+        ("PN_FRG_InternalBankUseOnly", "alwaysInPdf=\"true\""),
+        ("PN_FRG_InternalBankUseOnly", "summaryExclusion=\"true\""),
+        ("PN_FRG_InternalBankUseOnly", "visible=\"{Boolean}false\""),
+    ] {
+        let tag = open_tag_of(&xml, node)
+            .unwrap_or_else(|| panic!("node {node} is missing from the saved form"));
+        assert!(
+            tag.contains(attr),
+            "node {node} lost {attr} on save; its tag was:\n{tag}"
+        );
+    }
+
+    // The step is not DoR-excluded: only its title is.
+    let step = open_tag_of(&xml, "PN_Step").expect("PN_Step");
+    assert!(
+        !step.contains("dorExclusion="),
+        "a `dorExcludeTitle` step must not gain `dorExclusion`:\n{step}"
+    );
+    // The internal-bank-use panels reach the PDF, so they must NOT be DoR-excluded.
+    for node in ["PN_InternalBankUseOnly", "PN_FRG_InternalBankUseOnly"] {
+        let tag = open_tag_of(&xml, node).expect(node);
+        assert!(
+            !tag.contains("dorExclusion="),
+            "{node} carries alwaysInPdf, so dorExclusion would undo it:\n{tag}"
+        );
+    }
+}
+
+/// The `name` of a node, for the attribute tests.
+#[cfg(test)]
+fn node_name_of(node: &crate::aem::AemNode) -> Option<&str> {
+    use crate::aem::AemNode as N;
+    match node {
+        N::Root { .. } => None,
+        N::Panel { name, .. }
+        | N::TextField { name, .. }
+        | N::NumberField { name, .. }
+        | N::DatePicker { name, .. }
+        | N::Dropdown { name, .. }
+        | N::Checkbox { name, .. }
+        | N::RadioButton { name, .. }
+        | N::TextDraw { name, .. }
+        | N::TitleDraw { name, .. }
+        | N::Repeatable { name, .. }
+        | N::Fragment { name, .. }
+        | N::Preface { name, .. }
+        | N::Appendix { name, .. }
+        | N::FootnotePlaceholder { name, .. }
+        | N::Custom { name, .. } => Some(name),
+    }
+}
+
+/// `visible` of the variants that carry one.
+#[cfg(test)]
+fn node_visible_of(node: &crate::aem::AemNode) -> Option<bool> {
+    use crate::aem::AemNode as N;
+    match node {
+        N::Panel { visible, .. }
+        | N::TextField { visible, .. }
+        | N::NumberField { visible, .. }
+        | N::DatePicker { visible, .. }
+        | N::Dropdown { visible, .. }
+        | N::Checkbox { visible, .. }
+        | N::RadioButton { visible, .. }
+        | N::TextDraw { visible, .. }
+        | N::TitleDraw { visible, .. }
+        | N::Repeatable { visible, .. }
+        | N::Fragment { visible, .. }
+        | N::Custom { visible, .. } => Some(*visible),
+        _ => None,
+    }
+}
+
+/// The full opening tag of the node named `name` in rendered JCR XML, quote-aware
+/// (a rich-text `_value` carries a literal `>`).
+#[cfg(test)]
+fn open_tag_of(xml: &str, name: &str) -> Option<String> {
+    let needle = format!("name=\"{name}\"");
+    let at = xml.find(&needle)?;
+    let start = xml[..at].rfind('<')?;
+    let mut in_quotes = false;
+    for (i, c) in xml[start..].char_indices() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            '>' if !in_quotes => return Some(xml[start..start + i + 1].to_string()),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Lifting an AEM package to `AemNodeTranslated` and lowering it back must
 /// reproduce the original `AemNode` tree exactly — the lift is the structural
 /// inverse of `lower`. `AemNode` has no `PartialEq`, so compare via serde.
@@ -31179,10 +31425,11 @@ fn strip_uuids(value: &mut serde_json::Value) {
     //   - `uuid`: node identity, re-synthesized per parse.
     //   - `dor_num_cols`: derived layout hint parsed from `layout@columns` but
     //     written both as a hardcoded `columns="1"` and a separate `dorNumCols`.
-    //   - `dor_exclude`: a single bool the parser folds two distinct attributes
-    //     into (`dorExclusion` OR `dorExcludeTitle`), emitted conditionally on
-    //     `is_page`/`visible` — the conflation cannot be perfectly reconstructed.
-    const DROP: &[&str] = &["uuid", "dor_num_cols", "dor_exclude"];
+    // `dor_exclude` used to be dropped here too: the parser folded `dorExclusion`
+    // and `dorExcludeTitle` into one bool, so the pair could not be
+    // reconstructed. They are two typed fields now (`AemAttrs`), so both are
+    // compared like any other loaded attribute.
+    const DROP: &[&str] = &["uuid", "dor_num_cols"];
     match value {
         serde_json::Value::Object(map) => {
             for k in DROP {
@@ -31495,6 +31742,7 @@ fn passthrough_snapshot_back_compat_deserializes() {
     let mut raw_attributes = BTreeMap::new();
     raw_attributes.insert("myCustomProp".to_string(), "x".to_string());
     let node = AemNodeTranslated::TextField {
+        attrs: crate::AemAttrs::default(),
         uuid: Uuid::from_u128(1),
         passthrough: Passthrough {
             raw_attributes,
@@ -31565,6 +31813,7 @@ fn passthrough_survives_serde_snapshot_round_trip() {
     let tree = AemNodeTranslated::Root {
         title: Default::default(),
         children: vec![AemNodeTranslated::TextField {
+            attrs: crate::AemAttrs::default(),
             uuid,
             passthrough: passthrough.clone(),
             name: "f1".into(),
@@ -31693,6 +31942,7 @@ fn conditional_panel_visibility_also_runs_on_initialize() {
 
     let xml = ubs_xml(vec![
         AemNode::RadioButton {
+            attrs: crate::AemAttrs::default(),
             uuid: Uuid::nil(),
             name: "RB_Adressat".into(),
             label: "Choose".into(),
@@ -31719,7 +31969,7 @@ fn conditional_panel_visibility_also_runs_on_initialize() {
             title: String::new(),
             children: vec![],
             is_page: false,
-            dor_exclude: true,
+            attrs: crate::AemAttrs { dor_exclude: true, ..Default::default() },
             visible: false,
             is_conditional: true,
             dor_num_cols: None,
@@ -33787,7 +34037,7 @@ mod ubs_xsd_naming {
             title: title.into(),
             children,
             is_page: true,
-            dor_exclude: false,
+            attrs: crate::AemAttrs::default(),
             visible: true,
             is_conditional: false,
             dor_num_cols: None,
@@ -33805,7 +34055,7 @@ mod ubs_xsd_naming {
             title: String::new(),
             children,
             is_page: false,
-            dor_exclude: false,
+            attrs: crate::AemAttrs::default(),
             visible: true,
             is_conditional: false,
             dor_num_cols: None,
@@ -33818,6 +34068,8 @@ mod ubs_xsd_naming {
 
     fn frag(name: &str, title: &str, frag_ref: &str) -> AemNode {
         AemNode::Fragment {
+            attrs: crate::AemAttrs::default(),
+            visible: true,
             uuid: Uuid::new_v4(),
             name: name.into(),
             title: title.into(),
@@ -33828,6 +34080,7 @@ mod ubs_xsd_naming {
 
     fn textbox(name: &str, label: &str) -> AemNode {
         AemNode::TextField {
+            attrs: crate::AemAttrs::default(),
             uuid: Uuid::new_v4(),
             name: name.into(),
             label: label.into(),
@@ -33843,6 +34096,7 @@ mod ubs_xsd_naming {
 
     fn radio(name: &str, label: &str, options: &[&str]) -> AemNode {
         AemNode::RadioButton {
+            attrs: crate::AemAttrs::default(),
             uuid: Uuid::new_v4(),
             name: name.into(),
             label: label.into(),
@@ -33898,6 +34152,7 @@ mod ubs_xsd_naming {
     #[test]
     fn field_type_comes_from_the_component_kind() {
         let xml = xml_for(vec![AemNode::DatePicker {
+            attrs: crate::AemAttrs::default(),
             uuid: Uuid::new_v4(),
             name: "DATE_x".into(),
             label: "Date of birth".into(),
@@ -34352,6 +34607,7 @@ fn render_contact_fields() -> String {
         .expect("build AemConfig from the UBS profile");
 
     let field = |name: &str, label: &str, kind| AemNode::TextField {
+        attrs: crate::AemAttrs::default(),
         uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()),
         name: name.into(),
         label: label.into(),
@@ -34510,7 +34766,7 @@ fn render_step_title_panel(step_name: &str, children: Vec<crate::aem::AemNode>) 
             title: "Step".into(),
             children,
             is_page: true,
-            dor_exclude: false,
+            attrs: crate::AemAttrs::default(),
             visible: true,
             is_conditional: false,
             dor_num_cols: None,
@@ -34528,10 +34784,11 @@ fn render_step_title_panel(step_name: &str, children: Vec<crate::aem::AemNode>) 
 fn text_draw(name: &str) -> crate::aem::AemNode {
     use uuid::Uuid;
     crate::aem::AemNode::TextDraw {
+        visible: true,
         uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()),
         name: name.into(),
         content: "<p>These provisions apply.</p>".into(),
-        dor_exclude: false,
+        attrs: crate::AemAttrs::default(),
         colspan: 12,
         dor_colspan: None,
     }
@@ -34541,6 +34798,7 @@ fn text_draw(name: &str) -> crate::aem::AemNode {
 fn text_field(name: &str) -> crate::aem::AemNode {
     use uuid::Uuid;
     crate::aem::AemNode::TextField {
+        attrs: crate::AemAttrs::default(),
         uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()),
         name: name.into(),
         label: "Vorname".into(),
@@ -34585,7 +34843,7 @@ fn nested_and_fragment_input_still_counts_as_fillable() {
         title: "Inner".into(),
         children: vec![text_field("TXT_Nested")],
         is_page: false,
-        dor_exclude: false,
+        attrs: crate::AemAttrs::default(),
         visible: true,
         is_conditional: false,
         dor_num_cols: None,
@@ -34598,6 +34856,8 @@ fn nested_and_fragment_input_still_counts_as_fillable() {
     assert!(panel.contains("jumpToFieldButtonVisible=\"true\""), "{panel}");
 
     let fragment = AemNode::Fragment {
+        attrs: crate::AemAttrs::default(),
+        visible: true,
         uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"PN_Sig"),
         name: "PN_Sig".into(),
         title: "Unterschrift".into(),
@@ -34648,6 +34908,8 @@ fn render_fragment_init(frag_ref: &str, entity: &str) -> String {
     let root = AemNode::Root {
         title: "Form".into(),
         children: vec![AemNode::Fragment {
+            attrs: crate::AemAttrs::default(),
+            visible: true,
             uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, frag_ref.as_bytes()),
             name: "PN_Frag".into(),
             title: "Fragment".into(),
@@ -34807,7 +35069,7 @@ fn render_configurator(option_labels: &[&str]) -> String {
         title: name.into(),
         children,
         is_page: false,
-        dor_exclude: false,
+        attrs: crate::AemAttrs::default(),
         visible: true,
         is_conditional: true,
         dor_num_cols: None,
@@ -34817,6 +35079,8 @@ fn render_configurator(option_labels: &[&str]) -> String {
         frag_ref: None,
     };
     let repeatable = AemNode::Repeatable {
+        attrs: crate::AemAttrs::default(),
+        visible: true,
         uuid: uid("RCP_Reps"),
         name: "RCP_Reps".into(),
         title: "Reps".into(),
@@ -34828,6 +35092,7 @@ fn render_configurator(option_labels: &[&str]) -> String {
     };
 
     let choice = AemNode::RadioButton {
+        attrs: crate::AemAttrs::default(),
         uuid: uid("RB_Kind"),
         name: "RB_Kind".into(),
         label: "Art".into(),
@@ -34942,6 +35207,7 @@ fn an_authored_configurator_radio_also_preselects_private_person() {
         .expect("profile config");
 
     let radio = |name: &str| AemNode::RadioButton {
+        attrs: crate::AemAttrs::default(),
         uuid: uuid::Uuid::from_u128(1),
         name: name.into(),
         label: "Formular Adressat".into(),
@@ -35176,6 +35442,7 @@ fn a_profile_without_contact_templates_falls_back_to_the_text_box() {
     let root = AemNode::Root {
         title: "Contact".into(),
         children: vec![AemNode::TextField {
+            attrs: crate::AemAttrs::default(),
             uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"EML_Email"),
             name: "EML_Email".into(),
             label: "E-Mail".into(),

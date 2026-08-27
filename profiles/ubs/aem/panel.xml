@@ -6,16 +6,20 @@
     jcr:primaryType="nt:unstructured"
     {% if not is_page and title and title != "" %}jcr:title="{{ title }}"{% endif %}
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
-    {% if name is starting_with("PN_FormConfigurator") %}css="ubs-margin-10"{% endif %}
-    {% if name is starting_with("PN_FormConfigurator") or name == "PN_BR" %}summaryExclusion="true"{% endif %}
+    {% if always_in_pdf %}alwaysInPdf="true"{% endif %}
+    {% if css %}css="{{ css }}"{% elif name is starting_with("PN_FormConfigurator") %}css="ubs-margin-10"{% endif %}
     {% if dor_colspan %}dorColspan="{{ dor_colspan }}"{% endif %}
     dorExcludeDescription="true"
-    {% if name == "PN_BR" %}dorExclusion="true"{% endif %}
-    {% if is_page %}dorExcludeTitle="true"{% endif %}
+    {% if dor_exclude_title or is_page %}dorExcludeTitle="true"{% endif %}
+    {% if dor_exclude or name == "PN_BR" %}dorExclusion="true"{% endif %}
     dorFieldStyling="{{ variables.dor_field_styling }}"
+    {% if dor_header_slot %}dorHeaderSlot="{{ dor_header_slot }}"{% endif %}
     guideNodeClass="guidePanel"
+    {% if jump_to_field %}jumpToFieldButtonVisible="true"{% endif %}
     name="{{ name }}"
     {% if bind_ref %}bindRef="{{ bind_ref }}"{% endif %}
+    {% if show_if_hidden %}showIfHidden="true"{% endif %}
+    {% if dor_exclude or summary_exclude or name is starting_with("PN_FormConfigurator") or name == "PN_BR" %}summaryExclusion="true"{% endif %}
     textIsRich="true"
     validateOnStepCompletion="{Boolean}false"
     {% if not visible %}visible="{Boolean}false"{% endif %}{{ extra_attributes }}>

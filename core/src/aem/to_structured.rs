@@ -356,10 +356,10 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
         AemNode::TextDraw {
             name,
             content,
-            dor_exclude,
+            attrs,
             ..
         } => {
-            if *dor_exclude {
+            if attrs.dor_exclude {
                 return None;
             }
 
@@ -617,6 +617,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Test Form".into(),
             children: vec![AemNode::TextField {
+                attrs: crate::AemAttrs::default(),
                 uuid: Uuid::nil(),
                 name: "myField".into(),
                 label: "My Field".into(),

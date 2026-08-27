@@ -217,7 +217,7 @@ fn master_language(profile: Option<&str>, languages: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blueprint::{AemI18nText, StructuredNode};
+    use blueprint::{AemAttrs, AemI18nText, StructuredNode};
     use uuid::Uuid;
 
     /// A bilingual tree with one panel holding one text field.
@@ -241,9 +241,10 @@ mod tests {
                     dor_colspan: None,
                     bind_ref: None,
                     kind: Default::default(),
+                    attrs: AemAttrs::default(),
                 }],
                 is_page: false,
-                dor_exclude: false,
+                attrs: AemAttrs::default(),
                 visible: true,
                 is_conditional: false,
                 dor_num_cols: None,

@@ -2188,6 +2188,8 @@ mod tests {
                 name: "PN_Outer".into(),
                 title: "Client".into(),
                 children: vec![AemNode::Repeatable {
+                    attrs: crate::AemAttrs::default(),
+                    visible: true,
                     uuid: Uuid::from_u128(2),
                     name: "RCP_1".into(),
                     title: String::new(),
@@ -2198,7 +2200,7 @@ mod tests {
                     frag_ref: None,
                 }],
                 is_page: false,
-                dor_exclude: false,
+                attrs: crate::AemAttrs::default(),
                 visible: true,
                 is_conditional: false,
                 dor_num_cols: None,

@@ -590,6 +590,102 @@ impl Passthrough {
     }
 }
 
+/// The JCR attributes every AEM component can carry that decide where it shows
+/// up: on screen, on the summary step, in the Document of Record, in the PDF.
+///
+/// They are one struct rather than a field per variant because the deployed
+/// corpus puts the same handful on panels, fields, draws and buttons alike, and
+/// because the feedback sweeps read them per open tag with no regard for the
+/// component type (`PROBLEM-dor-exclusion-implies-summary` sets
+/// `summaryExclusion` on 7'207 tags across eleven component types). Flattened
+/// into the node's own JSON object, so the agent addresses them as ordinary
+/// fields (`set_aem_translated_field … "summary_exclude"`) and a tree persisted
+/// before they existed still loads.
+///
+/// The UBS DoR is rendered by Redacto from the *summary* data, which is why
+/// these three are not interchangeable:
+/// - `dor_exclude` (`dorExclusion`) is Adobe's own switch and is not read on
+///   the Redacto path at all,
+/// - `summary_exclude` (`summaryExclusion`) is what actually keeps a node out of
+///   the summary and therefore out of the rendered DoR,
+/// - `always_in_pdf` (`alwaysInPdf`) puts a summary-excluded or hidden node back
+///   into the PDF alone, which is how the internal-bank-use block and the DoR
+///   copy of the Italy infobox reach the reader.
+#[derive(
+    Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+pub struct AemAttrs {
+    /// `dorExclusion="true"` — excluded from the Document of Record.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dor_exclude: bool,
+    /// `summaryExclusion="true"` — excluded from the summary step, and with it
+    /// from the Redacto-rendered DoR. Everything excluded from the DoR must also
+    /// be excluded from the summary (owner directive 2026-08-26), so a node with
+    /// `dor_exclude` carries this too.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub summary_exclude: bool,
+    /// `dorExcludeTitle="true"` — the node's own title is left out of the DoR.
+    /// On a wizard step this is the convention: the heading lives in the step's
+    /// `{name}Title` sub-panel.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dor_exclude_title: bool,
+    /// `alwaysInPdf="true"` — reaches the PDF even though it is hidden or
+    /// summary-excluded.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub always_in_pdf: bool,
+    /// `showIfHidden="true"` — a hidden node still reaches the summary data.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub show_if_hidden: bool,
+    /// `jumpToFieldButtonVisible="true"` — the summary's Edit button for this
+    /// step. It belongs on the step-title panel, never on the title draw.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub jump_to_field: bool,
+    /// `css` — the theme class list. Carries meaning here: `stepTitle` marks a
+    /// step heading, `subtitle-after-form-title` the first page's subtitle,
+    /// `ubs-margin-20` the banking-relationship wrapper.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub css: Option<String>,
+    /// `dorHeaderSlot` — the DoR header slot this text is printed in
+    /// (`"slot2"` for the legal-entity line below the banking relationship).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dor_header_slot: Option<String>,
+}
+
+impl AemAttrs {
+    /// Excluded from the DoR, and therefore from the summary as well.
+    pub fn dor_excluded() -> Self {
+        Self {
+            dor_exclude: true,
+            summary_exclude: true,
+            ..Self::default()
+        }
+    }
+
+    /// Reaches the PDF and nothing else: kept out of the summary on screen, put
+    /// back into the printed document. The shape the internal-bank-use panels
+    /// and the DoR copy of the Italy infobox need; `dor_exclude` must stay off,
+    /// or the node is dropped again.
+    pub fn pdf_only() -> Self {
+        Self {
+            summary_exclude: true,
+            always_in_pdf: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// `#[serde(skip_serializing_if)]` predicate — a `false` flag is the default and
+/// is left out of the JSON, so a tree reads as it did before these existed.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// `#[serde(default)]` for a `visible` field: a node with no `visible` in its
+/// JSON is visible.
+fn default_true() -> bool {
+    true
+}
+
 /// The intermediate AEM node tree.
 ///
 /// Each variant maps to a specific AEM Adaptive Forms component and carries
@@ -611,8 +707,9 @@ pub enum AemNode {
         children: Vec<AemNode>,
         /// Whether this panel represents a page/wizard step.
         is_page: bool,
-        /// Exclude from Document of Record.
-        dor_exclude: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         /// Whether the panel is visible. Default `true`.
         visible: bool,
         /// Whether this panel wraps a conditional branch.
@@ -648,6 +745,9 @@ pub enum AemNode {
         mandatory: bool,
         visible: bool,
         max_chars: Option<usize>,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -667,6 +767,9 @@ pub enum AemNode {
         label: String,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -681,6 +784,9 @@ pub enum AemNode {
         label: String,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -696,6 +802,9 @@ pub enum AemNode {
         options: Vec<AemOption>,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -717,6 +826,9 @@ pub enum AemNode {
         options: Vec<AemOption>,
         alignment: OptionAlignment,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -738,6 +850,9 @@ pub enum AemNode {
         alignment: OptionAlignment,
         mandatory: bool,
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -755,7 +870,12 @@ pub enum AemNode {
         uuid: Uuid,
         name: String,
         content: String,
-        dor_exclude: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "default_true")]
+        visible: bool,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -767,6 +887,12 @@ pub enum AemNode {
         name: String,
         content: String,
         heading_level: u8,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "default_true")]
+        visible: bool,
         colspan: u32,
         /// Column span in Document of Record layout (`dorColspan`).
         dor_colspan: Option<u32>,
@@ -780,6 +906,12 @@ pub enum AemNode {
         children: Vec<AemNode>,
         min_occur: u32,
         max_occur: u32,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "default_true")]
+        visible: bool,
         /// XSD path for `bindRef` attribute on the repeatable inner panel.
         bind_ref: Option<String>,
         /// `fragRef` of the fragment this repeatable wraps, when a repeating
@@ -811,6 +943,12 @@ pub enum AemNode {
         /// JCR path to the fragment (e.g.
         /// `"/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_Address1"`).
         frag_ref: String,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "default_true")]
+        visible: bool,
         /// XSD path for `bindRef` attribute.
         bind_ref: Option<String>,
     },
@@ -848,6 +986,9 @@ pub enum AemNode {
         mandatory: bool,
         /// Whether the original element was visible.
         visible: bool,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
         /// Column span of the original element.
         colspan: u32,
         /// DOR column span from the original element.
@@ -867,6 +1008,54 @@ impl AemNode {
     /// AEM spells this `maxOccur="-1"`, which does not fit the `u32` the model
     /// uses, so it is carried as this sentinel and written back out as `-1`.
     pub const UNBOUNDED_OCCUR: u32 = u32::MAX;
+
+    /// The node's presentation attributes ([`AemAttrs`]), or `None` for the
+    /// three variants that have none: `Root` and the profile-driven `Preface` /
+    /// `Appendix` / `FootnotePlaceholder` snippets, whose whole tag is fixed by
+    /// their template.
+    pub fn attrs(&self) -> Option<&AemAttrs> {
+        match self {
+            AemNode::Panel { attrs, .. }
+            | AemNode::TextField { attrs, .. }
+            | AemNode::NumberField { attrs, .. }
+            | AemNode::DatePicker { attrs, .. }
+            | AemNode::Dropdown { attrs, .. }
+            | AemNode::Checkbox { attrs, .. }
+            | AemNode::RadioButton { attrs, .. }
+            | AemNode::TextDraw { attrs, .. }
+            | AemNode::TitleDraw { attrs, .. }
+            | AemNode::Repeatable { attrs, .. }
+            | AemNode::Fragment { attrs, .. }
+            | AemNode::Custom { attrs, .. } => Some(attrs),
+            AemNode::Root { .. }
+            | AemNode::Preface { .. }
+            | AemNode::Appendix { .. }
+            | AemNode::FootnotePlaceholder { .. } => None,
+        }
+    }
+
+    /// Mutable counterpart of [`AemNode::attrs`], for the normalisation passes
+    /// that set exclusion flags on a finished tree.
+    pub fn attrs_mut(&mut self) -> Option<&mut AemAttrs> {
+        match self {
+            AemNode::Panel { attrs, .. }
+            | AemNode::TextField { attrs, .. }
+            | AemNode::NumberField { attrs, .. }
+            | AemNode::DatePicker { attrs, .. }
+            | AemNode::Dropdown { attrs, .. }
+            | AemNode::Checkbox { attrs, .. }
+            | AemNode::RadioButton { attrs, .. }
+            | AemNode::TextDraw { attrs, .. }
+            | AemNode::TitleDraw { attrs, .. }
+            | AemNode::Repeatable { attrs, .. }
+            | AemNode::Fragment { attrs, .. }
+            | AemNode::Custom { attrs, .. } => Some(attrs),
+            AemNode::Root { .. }
+            | AemNode::Preface { .. }
+            | AemNode::Appendix { .. }
+            | AemNode::FootnotePlaceholder { .. } => None,
+        }
+    }
 
     /// Get the element tag name used in JCR XML (e.g. `"panel_<uuid>"`).
     pub fn element_name(&self) -> String {

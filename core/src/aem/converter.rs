@@ -93,7 +93,10 @@ pub(crate) fn embed_footnotes_in_value(
 }
 
 use super::fragment_parser::ParsedFragment;
-use super::{AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, ResolvedCustomElement, TextFieldKind};
+use super::{
+    AemAttrs, AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment,
+    ResolvedCustomElement, TextFieldKind,
+};
 
 // ============================================================================
 // Conversion context
@@ -409,7 +412,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
                 title: title.clone(),
                 children: section_children,
                 is_page: true,
-                dor_exclude: false,
+                attrs: AemAttrs::default(),
                 visible: true,
                 is_conditional: false,
                 dor_num_cols: None,
@@ -435,7 +438,7 @@ pub fn convert_to_aem(nodes: &[StructuredNode], config: &AemConfig) -> AemNode {
             title: String::new(),
             children: preamble_nodes,
             is_page: true,
-            dor_exclude: false,
+            attrs: AemAttrs::default(),
             visible: true,
             is_conditional: false,
             dor_num_cols: None,
@@ -749,6 +752,7 @@ fn apply_custom_elements_recursive(
             } = node
             {
                 let custom = AemNode::Custom {
+                    attrs: AemAttrs::default(),
                     uuid: uuid::Uuid::new_v4(),
                     name: name.clone(),
                     template_key: rule.template.clone(),
@@ -781,6 +785,7 @@ fn apply_custom_elements_recursive(
                     bind_ref,
                     ..
                 } => AemNode::Custom {
+                    attrs: AemAttrs::default(),
                     uuid,
                     name,
                     template_key: rule.template.clone(),
@@ -802,6 +807,7 @@ fn apply_custom_elements_recursive(
                     bind_ref,
                     ..
                 } => AemNode::Custom {
+                    attrs: AemAttrs::default(),
                     uuid,
                     name,
                     template_key: rule.template.clone(),
@@ -821,6 +827,7 @@ fn apply_custom_elements_recursive(
                     bind_ref,
                     ..
                 } => AemNode::Custom {
+                    attrs: AemAttrs::default(),
                     uuid,
                     name,
                     template_key: rule.template.clone(),
@@ -1115,6 +1122,8 @@ fn convert_heading(
     let name = ctx.make_name("TTL", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TitleDraw {
+        attrs: AemAttrs::default(),
+        visible: true,
         uuid,
         name,
         content,
@@ -1140,10 +1149,11 @@ fn convert_paragraph(
     let name = ctx.make_name("ST", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
+        visible: true,
         uuid,
         name,
         content,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         colspan,
         dor_colspan,
     }
@@ -1195,10 +1205,11 @@ fn convert_list(
     let name = ctx.make_name("ST", &first_item_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
+        visible: true,
         uuid,
         name,
         content,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         colspan,
         dor_colspan,
     }
@@ -1379,10 +1390,11 @@ fn build_merged_textdraw(
     let name = ctx.make_name("ST", &source_text);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
+        visible: true,
         uuid,
         name,
         content,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         colspan,
         dor_colspan,
     }
@@ -1440,10 +1452,11 @@ fn convert_image(
     let name = ctx.make_name("IMG", alt);
     let uuid = ctx.uuid(&name);
     AemNode::TextDraw {
+        visible: true,
         uuid,
         name,
         content,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         colspan,
         dor_colspan,
     }
@@ -1497,7 +1510,7 @@ fn convert_table(
         title,
         children,
         is_page: false,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         visible: true,
         is_conditional: false,
         dor_num_cols: None,
@@ -1550,6 +1563,7 @@ fn convert_field(
             let name = ctx.make_name("TXT", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1567,6 +1581,7 @@ fn convert_field(
             let name = ctx.make_name("TXTM", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1584,6 +1599,7 @@ fn convert_field(
             let name = ctx.make_name("NB", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::NumberField {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1599,6 +1615,7 @@ fn convert_field(
             let name = ctx.make_name("DATE", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::DatePicker {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1614,6 +1631,7 @@ fn convert_field(
             let name = ctx.make_name("EML", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1631,6 +1649,7 @@ fn convert_field(
             let name = ctx.make_name("TEL", &source_text);
             let uuid = ctx.uuid(&name);
             AemNode::TextField {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1649,6 +1668,7 @@ fn convert_field(
             let uuid = ctx.uuid(&name);
             let option_label = label.clone();
             AemNode::Checkbox {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label: String::new(),
@@ -1671,6 +1691,7 @@ fn convert_field(
             let uuid = ctx.uuid(&name);
             let aem_options = convert_name_values(options, &ctx.language);
             AemNode::RadioButton {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1691,6 +1712,7 @@ fn convert_field(
             let uuid = ctx.uuid(&name);
             let aem_options = convert_name_values(options, &ctx.language);
             AemNode::Dropdown {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1710,6 +1732,7 @@ fn convert_field(
             let uuid = ctx.uuid(&name);
             let aem_options = convert_name_values(options, &ctx.language);
             AemNode::Checkbox {
+                attrs: AemAttrs::default(),
                 uuid,
                 name,
                 label,
@@ -1738,6 +1761,8 @@ fn convert_repeatable(
     let inner = convert_node(&r.item, config, ctx, config.grid_columns, None);
     let children = inner.into_iter().collect();
     AemNode::Repeatable {
+        attrs: AemAttrs::default(),
+        visible: true,
         uuid,
         name: name.clone(),
         title: name,
@@ -1767,7 +1792,7 @@ fn convert_group(
         title: String::new(),
         children,
         is_page: false,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         visible: true,
         is_conditional: false,
         dor_num_cols: None,
@@ -1817,7 +1842,7 @@ fn convert_conditional(
         title,
         children,
         is_page: false,
-        dor_exclude: true,
+        attrs: AemAttrs { dor_exclude: true, ..Default::default() },
         visible: false,
         is_conditional: true,
         dor_num_cols: None,
@@ -1853,7 +1878,7 @@ fn convert_grid_layout(
         title: String::new(),
         children,
         is_page: false,
-        dor_exclude: false,
+        attrs: AemAttrs::default(),
         visible: true,
         is_conditional: false,
         dor_num_cols: Some(gl.columns as u32),
@@ -2227,6 +2252,8 @@ fn make_fragment_nodes(
             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
             let uuid = ctx.uuid(&name);
             AemNode::Fragment {
+                attrs: AemAttrs::default(),
+                visible: true,
                 uuid,
                 name,
                 title: title.to_string(),
@@ -2300,6 +2327,8 @@ fn replace_with_fragments(
                             let name = ctx.make_name("PN_affrg", &fragment.dir_name);
                             let uuid = ctx.uuid(&name);
                             nodes[i] = AemNode::Fragment {
+                                attrs: AemAttrs::default(),
+                                visible: true,
                                 uuid,
                                 name,
                                 title: panel_title.clone(),
@@ -2351,6 +2380,8 @@ fn replace_with_fragments(
                             let uuid = ctx.uuid(&name);
                             let full_path = format!("{}/{}", br, int_path);
                             frag_nodes.push(AemNode::Fragment {
+                                attrs: AemAttrs::default(),
+                                visible: true,
                                 uuid,
                                 name,
                                 title: panel_title.clone(),
@@ -4012,13 +4043,13 @@ mod tests {
         match &children[1] {
             AemNode::Panel {
                 visible,
-                dor_exclude,
+                attrs,
                 title,
                 is_conditional,
                 ..
             } => {
                 assert!(!visible, "Conditional panel should start hidden");
-                assert!(*dor_exclude, "Conditional panel should exclude from DOR");
+                assert!(attrs.dor_exclude, "Conditional panel should exclude from DOR");
                 assert!(
                     title.contains("Condition"),
                     "Conditional panel title should mention 'Condition'. Got: {}",

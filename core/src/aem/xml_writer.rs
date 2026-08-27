@@ -10,7 +10,8 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{
-    AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough, TextFieldKind,
+    AemAttrs, AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough,
+    TextFieldKind,
 };
 use crate::aem::template;
 use crate::structured::InputValue;
@@ -725,6 +726,24 @@ fn insert_passthrough(
     ctx.insert("raw_children", &children);
 }
 
+/// Put the node's [`AemAttrs`] into its render context, one Tera variable per
+/// attribute, so every template writes them the same way
+/// (`{% if summary_exclude %}summaryExclusion="true"{% endif %}`).
+///
+/// Called for every node before the per-variant context is built, which is why
+/// no variant arm inserts these itself: a template that grows a new attribute
+/// needs no Rust change, and a node type cannot quietly lose one.
+fn insert_attrs(ctx: &mut tera::Context, attrs: &AemAttrs) {
+    ctx.insert("dor_exclude", &attrs.dor_exclude);
+    ctx.insert("summary_exclude", &attrs.summary_exclude);
+    ctx.insert("dor_exclude_title", &attrs.dor_exclude_title);
+    ctx.insert("always_in_pdf", &attrs.always_in_pdf);
+    ctx.insert("show_if_hidden", &attrs.show_if_hidden);
+    ctx.insert("jump_to_field", &attrs.jump_to_field);
+    ctx.insert("css", &attrs.css.as_deref().map(xml_escape));
+    ctx.insert("dor_header_slot", &attrs.dor_header_slot);
+}
+
 /// Render all children of a node and concatenate the results.
 fn render_children(
     children: &[AemNode],
@@ -757,6 +776,9 @@ fn build_node_context(
     ctx.insert("variables", &config.user_vars);
     ctx.insert("author", &config.author);
     ctx.insert("master_language", &config.master_language);
+    if let Some(attrs) = node.attrs() {
+        insert_attrs(&mut ctx, attrs);
+    }
     // The canonical codes, not the detected ones: a language that reached the
     // tree under a synonym (`es`) must be named on the form under the code the
     // platform files it as (`sp`).
@@ -779,7 +801,7 @@ fn build_node_context(
             title,
             children,
             is_page,
-            dor_exclude,
+            attrs: _,
             visible,
             is_conditional,
             dor_num_cols,
@@ -792,7 +814,6 @@ fn build_node_context(
             ctx.insert("name", name);
             ctx.insert("title", &xml_escape(title));
             ctx.insert("is_page", is_page);
-            ctx.insert("dor_exclude", dor_exclude);
             ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_num_cols", dor_num_cols);
@@ -837,6 +858,7 @@ fn build_node_context(
             dor_colspan,
             bind_ref,
             kind: _,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -858,6 +880,7 @@ fn build_node_context(
             colspan,
             dor_colspan,
             bind_ref,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -878,6 +901,7 @@ fn build_node_context(
             colspan,
             dor_colspan,
             bind_ref,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -904,6 +928,7 @@ fn build_node_context(
             // trigger field. See `collect_panel_visibility`.
             conditions: _,
             bind_ref,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -928,6 +953,7 @@ fn build_node_context(
             field_id: _,
             conditions: _,
             bind_ref,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -964,6 +990,7 @@ fn build_node_context(
             field_id: _,
             conditions: _,
             bind_ref,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -992,14 +1019,15 @@ fn build_node_context(
             uuid,
             name,
             content,
-            dor_exclude,
+            attrs: _,
+            visible,
             colspan,
             dor_colspan,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
             ctx.insert("content", &xml_escape(content));
-            ctx.insert("dor_exclude", dor_exclude);
+            ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
         }
@@ -1011,11 +1039,14 @@ fn build_node_context(
             heading_level,
             colspan,
             dor_colspan,
+            attrs: _,
+            visible,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
             ctx.insert("content", &xml_escape(content));
             ctx.insert("heading_level", heading_level);
+            ctx.insert("visible", visible);
             ctx.insert("colspan", colspan);
             ctx.insert("dor_colspan", dor_colspan);
         }
@@ -1029,10 +1060,13 @@ fn build_node_context(
             max_occur,
             bind_ref,
             frag_ref: _,
+            attrs: _,
+            visible,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
             ctx.insert("title", &xml_escape(title));
+            ctx.insert("visible", visible);
             ctx.insert("min_occur", min_occur);
             // AEM spells an unbounded repeat `maxOccur="-1"`; the model carries
             // that as `UNBOUNDED_OCCUR`, so map it back on the way out.
@@ -1067,11 +1101,14 @@ fn build_node_context(
             title,
             frag_ref,
             bind_ref,
+            attrs: _,
+            visible,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
             ctx.insert("title", title);
             ctx.insert("frag_ref", frag_ref);
+            ctx.insert("visible", visible);
             ctx.insert("bind_ref", bind_ref);
         }
 
@@ -1101,6 +1138,7 @@ fn build_node_context(
             colspan,
             dor_colspan,
             bind_ref,
+            attrs: _,
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
@@ -1450,10 +1488,11 @@ mod tests {
         let root = AemNode::Root {
             title: "Test Form".into(),
             children: vec![AemNode::TextDraw {
+                visible: true,
                 uuid: fixed_uuid(),
                 name: "ST_1".into(),
                 content: "<p>Hello &amp; world</p>".into(),
-                dor_exclude: false,
+                attrs: AemAttrs::default(),
                 colspan: 12,
                 dor_colspan: None,
             }],
@@ -1468,6 +1507,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::TextField {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "TF_test".into(),
                 label: "Test Label".into(),
@@ -1491,6 +1531,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Checkbox {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "CB_test".into(),
                 label: String::new(),
@@ -1523,6 +1564,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::RadioButton {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "RB_comma".into(),
                 label: "Choose".into(),
@@ -1560,6 +1602,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Dropdown {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "DD_comma".into(),
                 label: "Pick".into(),
@@ -1595,6 +1638,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Checkbox {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "CB_comma".into(),
                 label: String::new(),
@@ -1630,6 +1674,8 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Repeatable {
+                attrs: AemAttrs::default(),
+                visible: true,
                 uuid: fixed_uuid(),
                 name: "RCP_1".into(),
                 title: "Repeat Section".into(),
@@ -1651,6 +1697,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Dropdown {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "DD_test".into(),
                 label: "Pick one".into(),
@@ -1688,7 +1735,7 @@ mod tests {
                 title: "Hidden Panel".into(),
                 children: vec![],
                 is_page: false,
-                dor_exclude: true,
+                attrs: AemAttrs { dor_exclude: true, ..Default::default() },
                 visible: false,
                 is_conditional: true,
                 dor_num_cols: None,
@@ -1720,7 +1767,7 @@ mod tests {
             title: String::new(),
             children: vec![],
             is_page: false,
-            dor_exclude: true,
+            attrs: AemAttrs { dor_exclude: true, ..Default::default() },
             visible: false,
             is_conditional: true,
             dor_num_cols: None,
@@ -1739,6 +1786,7 @@ mod tests {
             title: "Form".into(),
             children: vec![
                 AemNode::RadioButton {
+                    attrs: AemAttrs::default(),
                     uuid: fixed_uuid(),
                     name: "RB_TriggerField".into(),
                     label: "Choose".into(),
@@ -1798,6 +1846,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::RadioButton {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "RB_Simple".into(),
                 label: "Choose".into(),
@@ -1830,6 +1879,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Dropdown {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "DD_Trigger".into(),
                 label: "Select".into(),
@@ -1876,6 +1926,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::Checkbox {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "CB_Trigger".into(),
                 label: String::new(),
@@ -1919,6 +1970,7 @@ mod tests {
             title: "Form".into(),
             children: vec![
                 AemNode::RadioButton {
+                    attrs: AemAttrs::default(),
                     uuid: fixed_uuid(),
                     name: "RB_Adressat".into(),
                     label: "Choose".into(),
@@ -1980,6 +2032,7 @@ mod tests {
             title: "Form".into(),
             children: vec![
                 AemNode::Dropdown {
+                    attrs: AemAttrs::default(),
                     uuid: fixed_uuid(),
                     name: "DD_Field".into(),
                     label: "Select".into(),
@@ -2035,7 +2088,7 @@ mod tests {
                 name: "GridPanel".into(),
                 title: "Grid Panel".into(),
                 is_page: false,
-                dor_exclude: false,
+                attrs: AemAttrs::default(),
                 visible: true,
                 is_conditional: false,
                 dor_num_cols: Some(3),
@@ -2045,6 +2098,7 @@ mod tests {
                 frag_ref: None,
                 children: vec![
                     AemNode::TextField {
+                        attrs: AemAttrs::default(),
                         uuid: fixed_uuid(),
                         name: "Street".into(),
                         label: "Street".into(),
@@ -2057,6 +2111,7 @@ mod tests {
                         kind: TextFieldKind::Plain,
                     },
                     AemNode::TextField {
+                        attrs: AemAttrs::default(),
                         uuid: fixed_uuid(),
                         name: "No".into(),
                         label: "No".into(),
@@ -2094,6 +2149,7 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::TextField {
+                attrs: AemAttrs::default(),
                 uuid: fixed_uuid(),
                 name: "PlainField".into(),
                 label: "Plain".into(),
@@ -2122,10 +2178,11 @@ mod tests {
         let root = AemNode::Root {
             title: "Form".into(),
             children: vec![AemNode::TextDraw {
+                visible: true,
                 uuid: fixed_uuid(),
                 name: "ST_1".into(),
                 content: "Hello".into(),
-                dor_exclude: false,
+                attrs: AemAttrs::default(),
                 colspan: 12,
                 dor_colspan: None,
             }],
@@ -2350,6 +2407,7 @@ mod tests {
             .insert("dor_field_styling".into(), "Default".into());
 
         let node = AemNode::DatePicker {
+            attrs: AemAttrs::default(),
             uuid: fixed_uuid(),
             name: "DATE_1".into(),
             label: "Date".into(),
@@ -2403,7 +2461,7 @@ mod tests {
             title: "Form configurator".into(),
             children: vec![],
             is_page: true,
-            dor_exclude: false,
+            attrs: AemAttrs::default(),
             visible: true,
             is_conditional: false,
             dor_num_cols: None,
@@ -2480,6 +2538,8 @@ mod tests {
             .insert("dor_field_styling".into(), "some_styling".into());
 
         let node = AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "RP_Individual".into(),
             title: String::new(),
@@ -2553,7 +2613,7 @@ mod tests {
                     title: panel_title.into(),
                     children,
                     is_page: false,
-                    dor_exclude: false,
+                    attrs: AemAttrs::default(),
                     visible: true,
                     is_conditional: false,
                     dor_num_cols: None,
@@ -2572,6 +2632,8 @@ mod tests {
         };
 
         let repeatable = |title: &str| AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "RCP_1".into(),
             title: title.into(),
@@ -2582,6 +2644,8 @@ mod tests {
             frag_ref: None,
         };
         let heading = |content: &str| AemNode::TitleDraw {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "TTL_1".into(),
             content: content.into(),
@@ -2652,6 +2716,8 @@ mod tests {
 
         // Titleless, as an engine-authored repeatable is.
         let node = AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "RCP_Clients".into(),
             title: String::new(),
@@ -2711,6 +2777,8 @@ mod tests {
             .insert("dor_field_styling".into(), "some_styling".into());
 
         let node = AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "Test".into(),
             title: "Repeat Section".into(),
@@ -2757,6 +2825,8 @@ mod tests {
             .insert("dor_field_styling".into(), "some_styling".into());
 
         let node = AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "RCP_Test".into(),
             title: "Repeat Section".into(),
@@ -2812,6 +2882,8 @@ mod tests {
             .insert("dor_field_styling".into(), "some_styling".into());
 
         let node = AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "RCP_Test".into(),
             title: "Repeat Section".into(),
@@ -2867,6 +2939,8 @@ mod tests {
             .insert("dor_field_styling".into(), "some_styling".into());
 
         let node = AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
             uuid: fixed_uuid(),
             name: "RCP_Test".into(),
             title: "Repeat Section".into(),

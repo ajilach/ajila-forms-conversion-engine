@@ -174,7 +174,7 @@ pub fn aem_translated_schema() -> serde_json::Value {
 
 // AEM generation
 pub use aem::{
-    AemConfig, AemConnectionProfile, AemI18nText, AemNode, AemNodeTranslated, AemOption,
+    AemAttrs, AemConfig, AemConnectionProfile, AemI18nText, AemNode, AemNodeTranslated, AemOption,
     AemOptionTranslated, AemProfile, AemScriptEngine, LowerConflict,
     ConditionRule, OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement,
     aem_to_structured, aem_to_translated, aem_translations_from_content, collect_languages,
