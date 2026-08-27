@@ -20,7 +20,7 @@
             jcr:lastModifiedBy="admin"
             jcr:primaryType="nt:unstructured"
             jcr:title="Dati del/i cliente/i (di seguito il «Cliente»)"
-            sling:resourceType="fd/af/components/panel"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
             dorExcludeDescription="true"
             dorFieldStyling="Default"
             guideNodeClass="guidePanel"
@@ -85,7 +85,7 @@
                     jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
                     jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
-                    sling:resourceType="fd/af/components/panel"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
                     guideNodeClass="guidePanel"
@@ -137,6 +137,7 @@
                                     jcr:primaryType="nt:unstructured"
                                     sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
                                     dorExclusion="true"
+                                    summaryExclusion="true"
                                     dorFieldStyling="Default"
                                     guideNodeClass="guideButton"
                                     name="BT_RemoveLR"
@@ -189,6 +190,7 @@
                                             jcr:primaryType="nt:unstructured"
                                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
                                             dorExclusion="true"
+                                            summaryExclusion="true"
                                             dorFieldStyling="Default"
                                             guideNodeClass="guideButton"
                                             name="BT_Remove"
@@ -335,6 +337,7 @@
                             jcr:title="Add"
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
+                            summaryExclusion="true"
                             dorFieldStyling="Default"
                             guideNodeClass="guideButton"
                             name="BT_Add"
@@ -348,10 +351,8 @@
                     </items>
                 </repeatable_fd881019b>
             </items>
-            <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_IndividualContainer&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_IndividualContainer&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;isDuplicate&quot;:true\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;1&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                jcr:primaryType="nt:unstructured"/>
-            <fd:scripts jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_IndividualContainer&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
+            <fd:rules jcr:primaryType="nt:unstructured"/>
+            <fd:scripts fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_IndividualContainer&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_IndividualContainer&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_GroupTipo.value == \\&quot;1\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
         </panel>
         <panel_1794356301
             jcr:created="{Date}2026-04-22T10:49:36.622+02:00"
@@ -405,7 +406,7 @@
                     jcr:lastModified="{Date}2026-04-15T09:14:16.994+02:00"
                     jcr:lastModifiedBy="t406261"
                     jcr:primaryType="nt:unstructured"
-                    sling:resourceType="fd/af/components/panel"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
                     dorFieldStyling="Default"
@@ -460,6 +461,7 @@
                                     jcr:primaryType="nt:unstructured"
                                     sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/removebutton"
                                     dorExclusion="true"
+                                    summaryExclusion="true"
                                     dorFieldStyling="Default"
                                     guideNodeClass="guideButton"
                                     name="BT_Remove"
@@ -604,6 +606,7 @@
                             jcr:title="Add"
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
+                            summaryExclusion="true"
                             dorFieldStyling="Default"
                             guideNodeClass="guideButton"
                             name="BT_AddLR"
@@ -618,10 +621,8 @@
                     </items>
                 </repeatable_cd38707fc>
             </items>
-            <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_LegalEntityContainer&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_LegalEntityContainer&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_GroupTipo&quot;\,&quot;displayName&quot;:&quot;Tipo&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;isDuplicate&quot;:true\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Tipo/&quot;\,&quot;name&quot;:&quot;RB_GroupTipo&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                jcr:primaryType="nt:unstructured"/>
-            <fd:scripts jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_LegalEntityContainer&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
+            <fd:rules jcr:primaryType="nt:unstructured"/>
+            <fd:scripts fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_LegalEntityContainer&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_DatiDelIClienteIDiSeguitoIl_5156bd48.PN_LegalEntityContainer&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_GroupTipo.value == \\&quot;2\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
         </panel_1794356301>
     </items>
     <layout

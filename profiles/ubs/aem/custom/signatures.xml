@@ -27,6 +27,7 @@
             dorExcludeDescription="true"
             dorExcludeTitle="true"
             dorExclusion="true"
+            summaryExclusion="true"
             dorFieldStyling="Default"
             guideNodeClass="guidePanel"
             hideTitle="true"
@@ -43,7 +44,7 @@
                     jcr:lastModified="{Date}2026-05-06T17:28:10.167+02:00"
                     jcr:lastModifiedBy="admin"
                     jcr:primaryType="nt:unstructured"
-                    sling:resourceType="fd/af/components/panel"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                     completionExpReq="{Boolean}false"
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
@@ -80,10 +81,8 @@
                     offset="0"
                     width="12"/>
             </cq:responsive>
-            <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures_de979668.PN_165356b3&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_165356b3&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;1&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_FormularAdressat.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                jcr:primaryType="nt:unstructured"/>
-            <fd:scripts jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;1\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
+            <fd:rules jcr:primaryType="nt:unstructured"/>
+            <fd:scripts fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;1\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;1\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
         </panel_67650949d78a48639312de790d1eb087>
         <panel_67650949d78a48
             jcr:created="{Date}2025-01-01T00:00:00.000Z"
@@ -96,6 +95,7 @@
             dorExcludeDescription="true"
             dorExcludeTitle="true"
             dorExclusion="true"
+            summaryExclusion="true"
             dorFieldStyling="Default"
             guideNodeClass="guidePanel"
             hideTitle="true"
@@ -112,7 +112,7 @@
                     jcr:lastModified="{Date}2026-05-06T17:26:37.979+02:00"
                     jcr:lastModifiedBy="admin"
                     jcr:primaryType="nt:unstructured"
-                    sling:resourceType="fd/af/components/panel"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                     completionExpReq="{Boolean}false"
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
@@ -149,10 +149,8 @@
                     offset="0"
                     width="12"/>
             </cq:responsive>
-            <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures_de979668.PN_165356b3_copy_1&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_165356b3_copy_1&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;2&quot;}}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_FormularAdressat.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                jcr:primaryType="nt:unstructured"/>
-            <fd:scripts jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3_copy_1&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;2\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
+            <fd:rules jcr:primaryType="nt:unstructured"/>
+            <fd:scripts fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3_copy_1&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;2\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3_copy_1&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;2\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
         </panel_67650949d78a48>
         <panel_65b04e3922f646e6abc81f8bf20f4224
             jcr:created="{Date}2025-01-01T00:00:00.000Z"
@@ -180,7 +178,7 @@
                     jcr:lastModified="{Date}2026-05-11T11:39:05.252+02:00"
                     jcr:lastModifiedBy="admin"
                     jcr:primaryType="nt:unstructured"
-                    sling:resourceType="fd/af/components/panel"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                     completionExpReq="{Boolean}false"
                     dorExcludeDescription="true"
                     dorExcludeTitle="true"
@@ -217,10 +215,8 @@
                     offset="0"
                     width="12"/>
             </cq:responsive>
-            <fd:rules
-                fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_Signatures_de979668.PN_204491df&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;name&quot;:&quot;PN_204491df&quot;}}\,{&quot;nodeName&quot;:&quot;When&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;CONDITIONORALWAYS&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;BOOLEAN_BINARY_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;3&quot;}}]}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;OR&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPARISON_EXPRESSION&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7.RB_FormularAdressat&quot;\,&quot;displayName&quot;:&quot;Formular Adressat&quot;\,&quot;type&quot;:&quot;STRING&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/PN_BankingRelationship/Form configurator/Formular Adressat/&quot;\,&quot;name&quot;:&quot;RB_FormularAdressat&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_FormConfigurator_ace3f0d7&quot;}}}\,{&quot;nodeName&quot;:&quot;OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EQUALS_TO&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;EXPRESSION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;STRING_LITERAL&quot;\,&quot;value&quot;:&quot;4&quot;}}]}\,&quot;nested&quot;:false}]}}\,{&quot;nodeName&quot;:&quot;Else&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;DONOTHING_OR_HIDE&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;Hide&quot;\,&quot;value&quot;:null}}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\nif (RB_FormularAdressat.value == \\&quot;3\\&quot; || RB_FormularAdressat.value == \\&quot;4\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;\,&quot;eventName&quot;:&quot;Visibility&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                jcr:primaryType="nt:unstructured"/>
-            <fd:scripts jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_204491df&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;3\\&quot; || RB_FormularAdressat.value == \\&quot;4\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
+            <fd:rules jcr:primaryType="nt:unstructured"/>
+            <fd:scripts fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_204491df&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;3\\&quot; || RB_FormularAdressat.value == \\&quot;4\\&quot;) {\\n    true;\\n } else {\\n    false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]" jcr:primaryType="nt:unstructured" fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_204491df&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;if (RB_FormularAdressat.value == \\&quot;3\\&quot; || RB_FormularAdressat.value == \\&quot;4\\&quot;) {\\n    this.visible = true;\\n } else {\\n    this.visible = false;\\n}\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"/>
         </panel_65b04e3922f646e6abc81f8bf20f4224>
         <panel_601608203_copy
             jcr:created="{Date}2026-04-08T20:13:40.782+02:00"
@@ -256,7 +252,7 @@
                     jcr:lastModifiedBy="admin"
                     jcr:primaryType="nt:unstructured"
                     jcr:title="For internal bank use only"
-                    sling:resourceType="fd/af/components/panel"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                     completionExpReq="{Boolean}false"
                     dorFieldStyling="Default"
                     fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_germany_InternalBankUse_OURef_Signature"

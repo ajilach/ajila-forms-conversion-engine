@@ -67,10 +67,11 @@
                     <fragment_formmetadata
                         jcr:primaryType="nt:unstructured"
                         jcr:title="FormMetadata"
-                        sling:resourceType="fd/af/components/panel"
+                        sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
                         dorExcludeDescription="true"
                         dorExcludeTitle="true"
                         dorExclusion="true"
+                        summaryExclusion="true"
                         fragRef="/content/dam/formsanddocuments/afforms_global_fragmentlib/formmetadata"
                         guideNodeClass="guidePanel"
                         name="FormMetadata"
@@ -99,6 +100,7 @@
                         jcr:title="Summary of form information"
                         sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
                         dorExclusion="true"
+                        summaryExclusion="true"
                         guideNodeClass="guidePanel"
                         name="summaryPanel"
                         textIsRich="true"
@@ -147,6 +149,7 @@
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/dorOptionsUBS"
                                 _value="Further configurations for the document of record"
                                 dorExclusion="true"
+                                summaryExclusion="true"
                                 guideNodeClass="guideTextDraw"
                                 name="doroptionsubs"
                                 visible="false"/>
@@ -159,6 +162,7 @@
                                 sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/metadata"
                                 _value="Metadata"
                                 dorExclusion="true"
+                                summaryExclusion="true"
                                 {#  The issuing region's language (profile variable), except that a
                                     form shipping one language alone masters that one, and a region
                                     language the form does not ship falls back to EN. #}
@@ -236,6 +240,7 @@
                                 displayPatternType="custom"
                                 displayPictureClause="\[0-9]"
                                 dorExclusion="true"
+                                summaryExclusion="true"
                                 guideNodeClass="guideTextBox"
                                 initScript="com.ajila.forms.control.carousel.initialize(this)"
                                 lazyLoadingStrategy="ondemand"
@@ -286,6 +291,7 @@
                             jcr:title="Next"
                             sling:resourceType="fd/af/components/actions/nextitemnav"
                             dorExclusion="true"
+                            summaryExclusion="true"
                             guideNodeClass="guideButton"
                             name="nextitemnav"
                             type="moveNext">
@@ -299,6 +305,7 @@
                             jcr:title="Submit"
                             sling:resourceType="fd/af/components/actions/submit"
                             dorExclusion="true"
+                            summaryExclusion="true"
                             guideNodeClass="guideButton"
                             name="submit"
                             type="submit">
@@ -314,6 +321,7 @@
                             jcr:title="Back"
                             sling:resourceType="fd/af/components/actions/previtemnav"
                             dorExclusion="true"
+                            summaryExclusion="true"
                             guideNodeClass="guideButton"
                             name="previtemnav"
                             type="movePrev">
@@ -328,18 +336,33 @@
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             css="previewGenerationButton"
                             dorExclusion="true"
+                            summaryExclusion="true"
                             guideNodeClass="guideButton"
                             name="preview"
                             textIsRich="[true,true]"
                             type="Button">
-                            <fd:rules
-                                fd:click="[{&quot;nodeName&quot;:&quot;ROOT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;EVENT_CONDITION&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;EVENT_AND_COMPARISON&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;COMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.toolbar.preview&quot;\,&quot;type&quot;:&quot;BUTTON|AFCOMPONENT|TOOLBAR_BUTTON&quot;\,&quot;name&quot;:&quot;preview&quot;}}\,{&quot;nodeName&quot;:&quot;EVENT_AND_COMPARISON_OPERATOR&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;is clicked&quot;\,&quot;value&quot;:null}}\,{&quot;nodeName&quot;:&quot;PRIMITIVE_EXPRESSION&quot;\,&quot;choice&quot;:null}]}\,&quot;nested&quot;:false}\,{&quot;nodeName&quot;:&quot;Then&quot;\,&quot;value&quot;:null}\,{&quot;nodeName&quot;:&quot;BLOCK_STATEMENTS&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;BLOCK_STATEMENT&quot;\,&quot;choice&quot;:{&quot;nodeName&quot;:&quot;SHOW_STATEMENT&quot;\,&quot;items&quot;:[{&quot;nodeName&quot;:&quot;AFCOMPONENT&quot;\,&quot;value&quot;:{&quot;id&quot;:&quot;guide.guideRootPanel.panel1597308651601.carouselPreview&quot;\,&quot;displayName&quot;:&quot;Carousel&quot;\,&quot;type&quot;:&quot;AFCOMPONENT&quot;\,&quot;displayPath&quot;:&quot;FORM/Root Panel/panel1597308651601/Carousel/&quot;\,&quot;name&quot;:&quot;carouselPreview&quot;\,&quot;parent&quot;:&quot;guide.guideRootPanel.panel1597308651601&quot;}}]}}]}]}}]\,&quot;isValid&quot;:true\,&quot;enabled&quot;:true\,&quot;version&quot;:1\,&quot;script&quot;:&quot;/**\\n\\n * This is a machine-generated code for the rule.\\n * If you modify it in the code editor\, you will not be able to view and edit the rule in the visual editor.\\n */\\n\\ncarouselPreview.visible = true;\\n\\n&quot;\,&quot;eventName&quot;:&quot;Click&quot;\,&quot;ruleType&quot;:&quot;&quot;\,&quot;description&quot;:&quot;&quot;}]"
-                                jcr:primaryType="nt:unstructured"/>
+                            <fd:rules jcr:primaryType="nt:unstructured"/>
                             <fd:scripts
-                                fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.preview&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;com.ajila.forms.control.carousel.initializeForPreview(carouselPreview\, undefined\, previewErrorMessage);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.preview&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;com.ajila.forms.control.carousel.initializeForPreview(carouselPreview\, undefined\, previewErrorMessage);&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.preview&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;carouselPreview.visible = true;\\n\\n&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 fd:navigationChange="[{&quot;script&quot;:{&quot;content&quot;:&quot;this.visible=(!this.panel.navigationContext.hasNextItem);&quot;\,&quot;event&quot;:&quot;Navigation&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.preview&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </preview>
+                        <guidebutton
+                            jcr:primaryType="nt:unstructured"
+                            jcr:title="Save Progress"
+                            sling:resourceType="fd/af/components/guidebutton"
+                            dorExclusion="true"
+                            summaryExclusion="true"
+                            dorFieldStyling="{{ variables.dor_field_styling }}"
+                            guideNodeClass="guideButton"
+                            name="fwbSaveProgress"
+                            textIsRich="[true,true,true]"
+                            type="Button">
+                            <fd:rules jcr:primaryType="nt:unstructured"/>
+                            <fd:scripts
+                                fd:click="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.toolbar.fwbSaveProgress&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;window.forms.ubs.fwb.saveFormData();&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                jcr:primaryType="nt:unstructured"/>
+                        </guidebutton>
                     </items>
                     <layout jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/toolbar/defaultToolbarLayout"/>
                 </toolbar>

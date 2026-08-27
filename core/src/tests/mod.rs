@@ -31001,6 +31001,181 @@ fn lift_languages(package: &crate::aem::ParsedAemPackage) -> Vec<String> {
 }
 
 // ============================================================================
+// The swept feedback rules, asserted on the engine's own output
+//
+// Every rule in `specs/feedback/consistent-problems.md` whose Status says
+// "swept" is enforced on the deployed corpus by the feedback repo's CI guard,
+// and a form this engine converts joins that corpus. `scripts/check_feedback_rules.py`
+// runs the real detectors against a real conversion; these tests are the fast
+// counterpart, pinning the same invariants on a rendered tree so a template edit
+// cannot quietly re-introduce one.
+// ============================================================================
+
+/// Every open tag of `xml` as `(tag_name, full_tag_text)`, quote-aware: a
+/// rich-text `_value` carries a literal `>`, so a `<tag[^>]*>` scan under-counts
+/// and splits tags in the middle (the trap `AGENTS.md` in the feedback repo
+/// warns about).
+#[cfg(test)]
+fn open_tags(xml: &str) -> Vec<(String, String)> {
+    let bytes = xml.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' || matches!(bytes.get(i + 1), Some(b'/') | Some(b'!') | Some(b'?')) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let mut j = i + 1;
+        let mut quoted = false;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'"' => quoted = !quoted,
+                b'>' if !quoted => break,
+                _ => {}
+            }
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
+        let tag = &xml[start..=j];
+        let name: String = tag[1..]
+            .chars()
+            .take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/')
+            .collect();
+        out.push((name, tag.to_string()));
+        i = j + 1;
+    }
+    out
+}
+
+/// A rendered UBS form for the rule assertions: an Italian form with the
+/// configurator, signature and internal-bank-use custom elements, and a German
+/// one for the other custom-element lineage.
+#[cfg(test)]
+fn rendered_ubs_forms() -> Vec<(&'static str, String)> {
+    use crate::aem::generate_aem_xml;
+
+    [("AAOS_033_IT.pdf", "it"), ("AAAI_019_DE.pdf", "de")]
+        .into_iter()
+        .map(|(pdf, lang)| {
+            let (_, root, config) = helpers::build_aem_test_output(&[(pdf, lang)]);
+            (pdf, generate_aem_xml(&root, &config))
+        })
+        .collect()
+}
+
+/// PROBLEM-panel-type-ubs: every panel is the UBS custom panel. The default AEM
+/// panel has no Summary authoring section, so options that live there (the
+/// jump-to-field button) cannot be set or rendered on it.
+#[test]
+fn rendered_form_uses_the_ubs_panel_everywhere() {
+    for (pdf, xml) in rendered_ubs_forms() {
+        let offenders: Vec<_> = open_tags(&xml)
+            .into_iter()
+            .filter(|(_, tag)| tag.contains("sling:resourceType=\"fd/af/components/panel\""))
+            .map(|(name, _)| name)
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "{pdf}: {} node(s) still use the default AEM panel: {}",
+            offenders.len(),
+            offenders.join(", ")
+        );
+    }
+}
+
+/// PROBLEM-dor-exclusion-implies-summary: the UBS DoR is rendered by Redacto
+/// from the summary data, so a node kept out of the DoR but left in the summary
+/// still reaches the reader. Owner directive 2026-08-26: no exceptions by
+/// component type.
+#[test]
+fn dor_excluded_nodes_are_summary_excluded_too() {
+    for (pdf, xml) in rendered_ubs_forms() {
+        let offenders: Vec<_> = open_tags(&xml)
+            .into_iter()
+            .filter(|(_, tag)| {
+                tag.contains("dorExclusion=\"true\"") && !tag.contains("summaryExclusion=\"true\"")
+            })
+            .map(|(name, _)| name)
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "{pdf}: {} node(s) are excluded from the DoR but not from the summary: {}",
+            offenders.len(),
+            offenders.join(", ")
+        );
+    }
+}
+
+/// PROBLEM-visual-editor-rules: a rule lives in the code editor as JavaScript
+/// (a SCRIPTMODEL on `fd:scripts`), and the `fd:rules` node stays empty. A
+/// visual-editor rule stores the same code inside a rule tree that only the
+/// visual editor understands.
+#[test]
+fn rendered_form_has_no_visual_editor_rules() {
+    for (pdf, xml) in rendered_ubs_forms() {
+        let offenders = open_tags(&xml)
+            .into_iter()
+            .filter(|(name, tag)| name == "fd:rules" && tag.contains("fd:"))
+            .filter(|(_, tag)| {
+                // `<fd:rules jcr:primaryType="nt:unstructured"/>` is the canonical
+                // empty node; anything with a rule property is a visual rule.
+                tag.contains("fd:visible=")
+                    || tag.contains("fd:click=")
+                    || tag.contains("fd:valueCommit=")
+                    || tag.contains("fd:init=")
+                    || tag.contains("fd:calculate=")
+                    || tag.contains("fd:validate=")
+            })
+            .count();
+        assert_eq!(offenders, 0, "{pdf}: {offenders} visual-editor rule(s) left");
+    }
+}
+
+/// PROBLEM-nav-save-progress-required: the toolbar carries the Save Progress
+/// button, visible, as its LAST child -- last is what keeps
+/// PROBLEM-nav-button-order (Next, Submit, Back first) green.
+#[test]
+fn toolbar_ends_with_the_save_progress_button() {
+    for (pdf, xml) in rendered_ubs_forms() {
+        assert!(
+            xml.contains("name=\"fwbSaveProgress\""),
+            "{pdf}: the toolbar has no Save Progress button"
+        );
+        assert!(
+            xml.contains("window.forms.ubs.fwb.saveFormData();"),
+            "{pdf}: the Save Progress button has no click handler"
+        );
+        let toolbar = xml
+            .find("name=\"toolbar\"")
+            .map(|at| &xml[at..])
+            .expect("toolbar");
+        let items_end = toolbar.find("</items>").expect("toolbar items");
+        let last_button = toolbar[..items_end]
+            .rfind("name=\"")
+            .map(|at| &toolbar[at..][..40])
+            .unwrap_or("");
+        assert!(
+            last_button.starts_with("name=\"fwbSaveProgress\""),
+            "{pdf}: Save Progress must be the toolbar's last child, found {last_button}"
+        );
+        // It must not be hidden: 49 Italy packages shipped it invisible, which is
+        // exactly the shape the rule flags.
+        let button = open_tags(&xml)
+            .into_iter()
+            .find(|(_, tag)| tag.contains("name=\"fwbSaveProgress\""))
+            .map(|(_, tag)| tag)
+            .expect("the Save Progress tag");
+        assert!(
+            !button.contains("visible=\"{Boolean}false\""),
+            "{pdf}: the Save Progress button is hidden:\n{button}"
+        );
+    }
+}
+
+// ============================================================================
 // Presentation attributes (`AemAttrs`)
 //
 // A package dropped into the engine for review is edited and written back, so
