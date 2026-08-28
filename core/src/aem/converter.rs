@@ -1591,7 +1591,7 @@ fn convert_field(
                 colspan,
                 dor_colspan,
                 bind_ref,
-                kind: TextFieldKind::Plain,
+                kind: TextFieldKind::Multiline,
             }
         }
 

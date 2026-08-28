@@ -155,6 +155,13 @@ pub struct AemConfig {
     /// Path to the theme client library (from `variables.theme_ref`).
     pub theme_ref: String,
 
+    /// The legal-entity line printed in the DoR's second header slot, derived
+    /// from the source document's master-page header
+    /// ([`Context::header`](crate::Context::header)) by [`header_slot_text`].
+    /// `None` when the source has no header region, or nothing in it but a
+    /// validity date.
+    pub header_slot_text: Option<String>,
+
     // -- Template-based XML generation ---------------------------------------
     /// Tera template strings keyed by component name
     /// (e.g. `"root"`, `"panel"`, `"textbox"`, …).
@@ -276,6 +283,7 @@ impl AemConfig {
                 .cloned()
                 .unwrap_or_else(|| "generate".into()),
             theme_ref: user_vars.get("theme_ref").cloned().unwrap_or_default(),
+            header_slot_text: ctx.header.as_deref().and_then(header_slot_text),
 
             component_templates: templates,
             xfa_vars,
@@ -453,6 +461,7 @@ impl AemConfig {
             dor_template_ref: String::new(),
             dor_type: "generate".into(),
             theme_ref: String::new(),
+            header_slot_text: None,
 
             component_templates: HashMap::new(),
             xfa_vars: HashMap::new(),
@@ -505,6 +514,10 @@ pub enum TextFieldKind {
     /// `controls/telephone`, with the phonebox styling and the `^([+]|00)…`
     /// display and validation clause.
     Telephone,
+    /// `controls/textboxMultiline` — a text area. A multi-line field named
+    /// `TXTM_` on a plain `textbox` is what `PROBLEM-naming-conventions` reads
+    /// as a wrong prefix, and the corpus has the dedicated component.
+    Multiline,
 }
 
 impl TextFieldKind {
@@ -514,6 +527,7 @@ impl TextFieldKind {
             TextFieldKind::Plain => "textbox",
             TextFieldKind::Email => "email",
             TextFieldKind::Telephone => "telephone",
+            TextFieldKind::Multiline => "textbox_multiline",
         }
     }
 
@@ -684,6 +698,67 @@ fn is_false(b: &bool) -> bool {
 /// JSON is visible.
 fn default_true() -> bool {
     true
+}
+
+/// The legal-entity line for the DoR's second header slot, from the source
+/// document's master-page header.
+///
+/// UBS forms print `UBS Europe SE (Succursale Italia)` under the banking
+/// relationship in the finished document, and the corpus carries it as a hidden
+/// static text with `dorHeaderSlot="slot2"`. The text is the form's own: the
+/// analysis already recovers the master-page header into
+/// [`Context::header`](crate::Context::header), where it arrives as stacked
+/// lines -- typically a validity or edition line and the entity name.
+///
+/// The validity line is dropped (it is the form's version, not the issuer) and
+/// the first line that survives is the entity, which the corpus prints in bold.
+/// Returns `None` when nothing is left, so a form whose header holds only a date
+/// gets no slot-2 text rather than a wrong one.
+pub fn header_slot_text(header: &str) -> Option<String> {
+    /// A line that dates the form rather than naming its issuer.
+    fn is_validity_line(line: &str) -> bool {
+        const PREFIXES: &[&str] = &[
+            "gültig", "gueltig", "valid", "valido", "valida", "valable", "edition",
+            "ausgabe", "version", "stand",
+        ];
+        let lower = line.to_lowercase();
+        if PREFIXES.iter().any(|p| lower.starts_with(p)) {
+            return true;
+        }
+        // A bare date (`02.01.2018`, `1/2018`) is the same thing without a word.
+        let digits = line.chars().filter(|c| c.is_ascii_digit()).count();
+        digits >= 4 && line.chars().all(|c| c.is_ascii_digit() || " ./-".contains(c))
+    }
+
+    let mut lines = header
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !is_validity_line(l));
+    let first = lines.next()?;
+    let rest = lines.collect::<Vec<_>>().join(" ");
+
+    // The corpus bolds the entity and leaves what qualifies it plain:
+    // `<b>UBS Europe SE</b> (Succursale Italia)`. A parenthesis is where the
+    // one ends and the other begins.
+    let (entity, qualifier) = match first.find(" (") {
+        Some(at) => (&first[..at], first[at..].trim()),
+        None => (first, ""),
+    };
+    let tail = [qualifier, rest.as_str()]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // The markup is stored the way a JCR rich-text value stores it: the tags
+    // themselves XML-escaped, so the attribute stays well-formed.
+    let mut value = format!("&lt;b>{}&lt;/b>", crate::util::escape_html(entity));
+    if !tail.is_empty() {
+        value.push(' ');
+        value.push_str(&crate::util::escape_html(&tail));
+    }
+    Some(value)
 }
 
 /// The intermediate AEM node tree.

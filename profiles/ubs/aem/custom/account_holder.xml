@@ -47,11 +47,10 @@
                     jcr:primaryType="nt:unstructured"
                     sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/titledraw"
                     _value="&lt;p>Account holder&lt;/p>&#xa;"
-                    css="stepTitle"
                     dorExclusion="true"
                     dorFieldStyling="Default"
                     guideNodeClass="guideTextDraw"
-                    headingLevel="2"
+                    headingLevel="3"
                     name="TTL_AccountHolder_727b1281"
                     summaryExclusion="true"
                     textIsRich="true"/>
@@ -326,7 +325,7 @@
                                     </items>
                                     <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
-                                        fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_TitolareDelContoDiSeguitoIl_a10b5831.PN_legalRepresentative.RCP_LR&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_EntityBasic.dorExclusion = true;\\n\\nPN_AddressClient.visible = false;\\nPN_AddressClient.dorExclusion = true;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        fd:init="[{&quot;script&quot;:{&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_TitolareDelContoDiSeguitoIl_a10b5831.RCP_LegalRepresentative.RCP_LR&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_EntityBasic.dorExclusion = true;\\n\\nPN_AddressClient.visible = false;\\nPN_AddressClient.dorExclusion = true;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
                                 </repeatableinner_copy>
                             </items>
@@ -337,7 +336,7 @@
                             jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
                             jcr:lastModifiedBy="blueprint"
                             jcr:primaryType="nt:unstructured"
-                            jcr:title="Add"
+                            jcr:title="Add account holder"
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
                             summaryExclusion="true"
@@ -636,7 +635,7 @@
                             jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
                             jcr:lastModifiedBy="blueprint"
                             jcr:primaryType="nt:unstructured"
-                            jcr:title="Add"
+                            jcr:title="Add legal guardian"
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
                             summaryExclusion="true"
@@ -714,7 +713,7 @@
                     dorExcludeTitle="true"
                     dorFieldStyling="Default"
                     guideNodeClass="guidePanel"
-                    name="PN_legalRepresentative"
+                    name="RCP_LegalRepresentative"
                     textIsRich="true"
                     validateOnStepCompletion="{Boolean}false">
                     <layout
@@ -773,7 +772,7 @@
                                     visible="{Boolean}false">
                                     <fd:rules jcr:primaryType="nt:unstructured"/>
                                     <fd:scripts
-                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_ARP.instanceManager.removeInstance(this.parent.index);var len = PN_ARP.instanceManager.instances.length;for (var i = 0; i &lt; len; i++) {PN_ARP.instanceManager.instances[i].BT_RemoveAR.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;}\\nPN_ARP_Sign.instanceManager.removeInstance(this.parent.index);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                        fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_ARP.instanceManager.removeInstance(this.parent.index);var len = PN_ARP.instanceManager.instances.length;for (var i = 0; i &lt; len; i++) {PN_ARP.instanceManager.instances[i].BT_RemoveAR.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;}\\nPN_ARP_Sign.instanceManager.removeInstance(this.parent.index);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.RCP_LegalRepresentative.BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                         jcr:primaryType="nt:unstructured"/>
                                 </removebutton>
                                 <panel_copy_copy
@@ -897,7 +896,7 @@
                             </items>
                             <fd:rules jcr:primaryType="nt:unstructured"/>
                             <fd:scripts
-                                fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_Address.visible = false;\\nDATE_Birth.visible = false;\\nDD_Nationality.visible = false;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.PN_LRP&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_EntityBasic.visible = false;\\nPN_Address.visible = false;\\nDATE_Birth.visible = false;\\nDD_Nationality.visible = false;&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.RCP_LegalRepresentative.PN_LRP&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </repeatableInner>
                         <tertiarybutton
@@ -906,7 +905,7 @@
                             jcr:lastModified="{Date}2026-04-20T09:58:30.965+02:00"
                             jcr:lastModifiedBy="t406261"
                             jcr:primaryType="nt:unstructured"
-                            jcr:title="Add"
+                            jcr:title="Add authorized representative"
                             sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/tertiarybutton"
                             dorExclusion="true"
                             summaryExclusion="true"
@@ -917,8 +916,8 @@
                             type="Button">
                             <fd:rules jcr:primaryType="nt:unstructured"/>
                             <fd:scripts
-                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_ARP.instanceManager.addInstance();\\nPN_ARP_Sign.instanceManager.addInstance();\\nvar len = PN_ARP.instanceManager.instances.length;\\nfor (var i = 0; i &lt; len; i++)\\n{\\n  PN_ARP.instanceManager.instances[i].BT_RemoveAR.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;\\n  PN_ARP_Sign.BT_RemoveLR.visible = false;\\n}\\n\\nif (len >= 4) {this.visible = false;}\\n&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_ARP.instanceManager.instances.length;\\n\\nif (len > 1)\\n  {\\n    window.forms.ubs.hideAFHideDor(PN_ARP.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP.instanceManager.instances[0].ST_AR1);\\n    window.forms.ubs.hideAFHideDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR1);\\n  }&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
-                                fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_ARP.instanceManager.instances.length;\\n\\nfor (var i = 0; i &lt; len; i++) \\n{\\n  PN_ARP.instanceManager.instances[i].BT_RemoveAR.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;\\n  PN_ARP_Sign.BT_RemoveLR.visible = false;\\n}\\nif (len >= 4) {this.visible = false;}&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_ARP.instanceManager.instances.length;\\n\\nif (len > 1)\\n  {\\n    window.forms.ubs.hideAFHideDor(PN_ARP.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP.instanceManager.instances[0].ST_AR1);\\n    window.forms.ubs.hideAFHideDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR1);\\n  }&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.PN_legalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;PN_ARP.instanceManager.addInstance();\\nPN_ARP_Sign.instanceManager.addInstance();\\nvar len = PN_ARP.instanceManager.instances.length;\\nfor (var i = 0; i &lt; len; i++)\\n{\\n  PN_ARP.instanceManager.instances[i].BT_RemoveAR.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;\\n  PN_ARP_Sign.BT_RemoveLR.visible = false;\\n}\\n\\nif (len >= 4) {this.visible = false;}\\n&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.RCP_LegalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_ARP.instanceManager.instances.length;\\n\\nif (len > 1)\\n  {\\n    window.forms.ubs.hideAFHideDor(PN_ARP.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP.instanceManager.instances[0].ST_AR1);\\n    window.forms.ubs.hideAFHideDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR1);\\n  }&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.RCP_LegalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                                fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_ARP.instanceManager.instances.length;\\n\\nfor (var i = 0; i &lt; len; i++) \\n{\\n  PN_ARP.instanceManager.instances[i].BT_RemoveAR.visible = (i === (len - 1) &amp;&amp; len > 1) ? true : false;\\n  PN_ARP_Sign.BT_RemoveLR.visible = false;\\n}\\nif (len >= 4) {this.visible = false;}&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.RCP_LegalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_ARP.instanceManager.instances.length;\\n\\nif (len > 1)\\n  {\\n    window.forms.ubs.hideAFHideDor(PN_ARP.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP.instanceManager.instances[0].ST_AR1);\\n    window.forms.ubs.hideAFHideDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR0);\\n    window.forms.ubs.showAFShowDor(PN_ARP_Sign.instanceManager.instances[0].ST_AR1);\\n  }&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;guide.guideRootPanel.PN_BankingRelationship.PN_AccountHolder.PN_LegalEntityContainer.RCP_LegalRepresentative.BT_AddLR&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
                                 jcr:primaryType="nt:unstructured"/>
                         </tertiarybutton>
                     </items>

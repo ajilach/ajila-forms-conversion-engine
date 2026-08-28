@@ -659,6 +659,7 @@ fn text_field_kind(node: &JcrNode) -> TextFieldKind {
     match resource_type.rsplit('/').next().unwrap_or(resource_type) {
         "email" => TextFieldKind::Email,
         "telephone" => TextFieldKind::Telephone,
+        "textboxMultiline" => TextFieldKind::Multiline,
         _ => TextFieldKind::Plain,
     }
 }
