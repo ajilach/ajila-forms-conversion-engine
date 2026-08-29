@@ -304,8 +304,7 @@ fn last_page(root: &mut AemNode) -> Option<&mut AemNode> {
     };
     children
         .iter_mut()
-        .filter(|c| matches!(c, AemNode::Panel { is_page: true, .. }))
-        .next_back()
+        .rfind(|c| matches!(c, AemNode::Panel { is_page: true, .. }))
 }
 
 fn node_name(node: &AemNode) -> Option<&str> {

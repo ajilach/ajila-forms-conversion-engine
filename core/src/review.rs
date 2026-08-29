@@ -735,8 +735,8 @@ pub(crate) fn check_feedback_rules(xml: &str) -> Vec<FeedbackViolation> {
                             .into(),
                     );
                 } else if !hidden
-                    && !(has_attr(tag, "dorExclusion", "true")
-                        && has_attr(tag, "summaryExclusion", "true"))
+                    && (!has_attr(tag, "dorExclusion", "true")
+                        || !has_attr(tag, "summaryExclusion", "true"))
                 {
                     push(
                         "PROBLEM-infobox-dor-copy",
