@@ -20,6 +20,19 @@
 - When checking bounds in a module, consider adding a helper method to Bounds directly or check if a helper function already exists.
 - Tests should never work with the ouput files. Instead they should analyze the intermediate structures (StrucuredNode, FlattenedNode, Document, ...) directly.
 - AEM output should be moved as much as possible to the templating engine.
+- The AEM output is judged by the feedback repo's CI guard, because a converted form joins the
+  corpus that guard polices. Run it on a real conversion with
+  `python3 scripts/check_feedback_rules.py core/input/AAOS_033_IT.pdf` (it needs
+  `../ajila-forms-conversion-feedback`); every enrolled rule must be clean. The rules themselves are
+  in `specs/feedback/consistent-problems.md`, the shapes a person still applies by hand in
+  `specs/feedback/manual-changes-italy-033.md`, and the subset the engine can check on its own
+  output in `review.rs`'s `feedback_violations`.
+- Three of those rules are about a node's position among its siblings, so no template can satisfy
+  them: they live in `core/src/aem/normalize.rs` and run over a copy of the tree on the way into
+  the writer, which is what makes them hold for an agent-authored or loaded tree as well.
+- Where a node shows up is `AemAttrs` on the node, not a template guess: `summary_exclude` is what
+  keeps content out of the UBS DoR (Redacto renders it from the summary), `dor_exclude` is Adobe's
+  own switch, and `always_in_pdf` is how a hidden node still reaches the printed document.
 - The XSD is generated from the **AemNode** tree (`core/src/xsd/from_aem.rs`), and each node's `bindRef` is assigned during that same walk, so a form's bindRefs are by construction exact element paths in its schema. Do not add a second XSD source. Customer-specific element names, ignore rules and occurrence overrides belong in `profiles/<name>/xsd/config.toml` under `[[aemElements]]`, never in Rust.
 
 ## Layout

@@ -223,9 +223,46 @@ rebuild. (c) If an AEM connection is configured, upload_to_aem, \
 then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result looks like the source. \
 Do not finish with unexplained misses or while the form still looks materially different from the \
 original.\n\
+WHERE A NODE SHOWS UP is four separate switches, and the DoR is not the one you would expect: the UBS \
+Document of Record is rendered by Redacto from the SUMMARY data, so `summary_exclude` \
+(`summaryExclusion`) is what actually keeps content out of it, while `dor_exclude` (`dorExclusion`) is \
+Adobe's own switch and is not read on that path at all. Everything excluded from the DoR must therefore \
+also be excluded from the summary — set both, never `dor_exclude` alone. To keep something off the \
+screen and out of the summary but IN the printed document, use `always_in_pdf` together with \
+`summary_exclude` and leave `dor_exclude` off, since it would undo them: that is the shape of the \
+internal-bank-use block, of the DoR copy of the Italy infobox, and of the legal-entity line printed in \
+the DoR header. `dor_exclude_title` excludes a panel's heading only, not the panel. These are ordinary \
+fields on every node (set_aem_translated_field), next to `css`, `jump_to_field`, `dor_header_slot` and \
+`show_if_hidden`.\n\n\
+THE ENGINE ADDS THREE SHAPES ITSELF when it writes the package, so do not author them and do not report \
+them missing from your tree: a run of adjacent static texts directly under a panel whose title is \
+DoR-excluded is wrapped in a content panel of its own (they do not render in the DoR as direct \
+children); the Italy infobox gets a hidden copy on the last page so it prints at the end of the \
+document; and the internal-bank-use fragments are made PDF-only. The first page's heading is likewise \
+rendered as a `subtitle-after-form-title` static text rather than an h2 step title, because an h2 does \
+not appear in the finished DoR.\n\n\
 After ANY edit to the tree, the package is invalidated — rebuild with build_aem_package and re-run \
 validate_aem_package before reviewing. Consult reference documentation when unsure: \
 list_reference_docs, read_reference_doc, grep_reference_docs.\n\n\
+HOUSE RULES a converted form is judged by, beyond fidelity to the source (they come from the QA \
+rounds on the deployed corpus; `specs/feedback/` holds the full list):\n\
+- A checkbox or radio list is ONE component with several options. A field that belongs to an option \
+goes AFTER the group, shown by a rule on that option — never between the options, which breaks the \
+group.\n\
+- Rules are code-editor JavaScript. The visual rule editor's own storage (a rule tree on `fd:rules`) is \
+not used.\n\
+- The form configurator's reset-on-change block is the engine's; do not add reset logic of your own \
+beside it.\n\
+- Renaming a panel means updating every rule that names it, including the rules inside it. A rule that \
+still names the old panel looks right in the editor and never fires.\n\
+- The Edit (jump-to-field) button: none on a text-only page and none on the form configurator; on a \
+page with repeatables it belongs to each repeatable instance, not to the page title; never two above \
+one heading.\n\
+- Italy address blocks are the reduced variant: street number, additional details, postal code and \
+city, state and district hidden, city and country not mandatory. The engine writes that rule onto the \
+address fragment.\n\
+- A field of width 6 alone on its line needs a 2-column DoR display; report it if you meet one, do not \
+invent an attribute for it.\n\n\
 Never invent text content: take all labels/options/help text verbatim from the XFA, and never \
 write copy of your own. The final form must contain EVERY language present in the source \
 (get_source_info lists them) and ONLY those: never drop a language the source contains, and never \
@@ -253,7 +290,14 @@ build_aem_package rather than being inlined into the transcript. \
 `upload_to_aem` and the fetch/verify tools work only when AEM host/credentials are configured in \
 the desktop app settings (shared history.db); otherwise they report no connection while \
 profile-derived config and packaging still work. `start_conversion` reports which applies for the \
-loaded session.";
+loaded session.\n\n\
+FIXING A DEPLOYED FORM rather than converting one: when a content-package ZIP is loaded, that package \
+is the ground truth. Study it with get_aem_translated_outline / get_aem_translated_node and EDIT it \
+(set_aem_translated_field / replace / insert / remove); never re-author the tree from the source, which \
+would discard the corrections the form already carries. Every attribute that decides where a node shows \
+up is a field on the node — `dor_exclude`, `summary_exclude`, `dor_exclude_title`, `always_in_pdf`, \
+`show_if_hidden`, `jump_to_field`, `css`, `dor_header_slot` — so a fix is a field edit, and \
+review_output's feedback_violations tells you which of the corpus-wide rules the package still breaks.";
 
 // ── Multi-agent role prompts ─────────────────────────────────────────────────
 //
@@ -310,7 +354,12 @@ PN_LGA, ARSignature1 → PN_ARP, BOSignature1 → PN_BORP, UBSEuropeSignature1 �
 ClientSignature1 → PN_AHRP, LegalGuardianSignature1 → PN_LGA, LegalRepresentativeSignature1 → PN_LRP, \
 UBSEuropeSignature1 → PN_AHRP), so the Author names that person's data panel to match — the mapping \
 differs per library, and the fragment's own `//Expecting …` comment is often stale. Also record any verbatim script/hook shape to copy (showAFShowDor / hideAFHideDor, \
-cascade visibility scripts) with its source ref_id + file path. List the languages (the source's own \
+cascade visibility scripts) with its source ref_id + file path. Record as well, for the shapes the \
+deployed corpus is held to: the master-page header line (the issuer, e.g. \"UBS Europe SE\", which the \
+engine prints in the DoR header rather than on screen); which heading is the FIRST page's, since that \
+one becomes a subtitle rather than a step title; and whether the form carries an Italy infobox, an \
+internal-bank-use block or a FIM signature-verification checkbox, all of which reach the reader through \
+the printed document alone. List the languages (the source's own \
 — synonym locales such as de-ch are derived by the packager and are not authored) and any DoR / \
 summary exclusion notes. Your final message IS the plan — make it complete and self-contained; the \
 Author works from it, not by re-reading the source.";
@@ -353,7 +402,14 @@ review_output's naming_violations — a deterministic per-node check on the rend
 author-named component's leading PREFIX_ must match its resourceType, bucketed wrong-prefix/raw; \
 treat any listed violation as a defect); input labels (review_output's label_issues — every input must \
 carry its own question text as its label; a `missing`, `parenthetical` or `markup` entry is a defect, a \
-`quoted` one only if the quotes are not part of the source wording); first-level \
+`quoted` one only if the quotes are not part of the source wording); the swept UBS rules \
+(review_output's feedback_violations — the invariants the deployed corpus is held to, checked on the \
+rendered JCR XML: anything excluded from the Document of Record is excluded from the summary too, every \
+panel is the UBS custom panel, rules live in the code editor and never in `fd:rules`, the toolbar carries \
+the Save Progress button, the internal-bank-use block and the DoR copy of the Italy infobox reach the \
+reader through the PDF alone, a checkbox carries richTextOptions, and the jump-to-field button sits on \
+the step-title panel and never on the title draw; each entry names the node and what is wrong with it); \
+first-level \
 sections are pages and nothing deeper is; each source heading rendered exactly ONCE — a page panel's \
 heading comes from its own `title` (the engine emits the PN_<name>Title wrapper and its TTL_ draw), so \
 a hand-authored TitleDraw on a page is a DUPLICATE, while a sub-heading inside a page does need its own \
@@ -373,10 +429,10 @@ actually receives the PAIRED Visibility + Initialize showAFShowDor/hideAFHideDor
 repeatable renders only one instance; every fillable source field present. \
 ENGINE-INTRINSIC issues — some defects come from the conversion engine itself (fixed template output, \
 resourceType assignments, lowering behaviour) and CANNOT be changed by the Author via the tree editors. \
-The standing example: this engine lowers EVERY text field to the `textbox` resourceType, so email, \
-telephone and multiline fields cannot carry the dedicated resourceTypes the deployed corpus uses, and \
-review_output buckets their EML_/TEL_/TXTM_ names as wrong-prefix. Keep naming them by the convention \
-anyway. Do not send such issues back to the Author and do not block approval on them — but do NOT use \
+An engine-intrinsic issue is one you can point at in the profile templates or the lowering, not one you \
+assume: the engine emits the dedicated email, telephone and multiline components, so an EML_/TEL_/TXTM_ \
+name reported as wrong-prefix is a real defect now, not the standing exception it used to be. \
+Do not send such issues back to the Author and do not block approval on them — but do NOT use \
 the label as a catch-all, and do NOT treat it as \"fine\": a repeatable's prefix, for one, is NOT \
 engine-intrinsic — the engine derives its inner panels from the name the Author gave it, so a \
 repeatable named `RP_…` or `PN_…` is ONE authorable rename, not fixed template output; before calling something engine-intrinsic, \
