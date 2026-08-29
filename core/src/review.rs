@@ -591,18 +591,6 @@ fn open_tags(xml: &str) -> Vec<(&str, &str)> {
     out
 }
 
-/// The fragment family that reaches the reader through the PDF alone
-/// (PROBLEM-internal-bank-use-pdf-only), by the `<library>/<fragment>` tail of
-/// its `fragRef` -- the same list `normalize.rs` sets the flags from.
-fn is_internal_bank_use(frag_ref: &str) -> bool {
-    let parts: Vec<&str> = frag_ref.rsplit('/').take(2).collect();
-    if parts.len() < 2 {
-        return false;
-    }
-    let tail = format!("{}/{}", parts[1], parts[0]);
-    crate::aem::normalize::INTERNAL_BANK_USE_FRAGMENTS.contains(&tail.as_str())
-}
-
 /// Check the rendered JCR XML against the swept feedback rules.
 pub(crate) fn check_feedback_rules(xml: &str) -> Vec<FeedbackViolation> {
     let mut out = Vec::new();
@@ -696,7 +684,7 @@ pub(crate) fn check_feedback_rules(xml: &str) -> Vec<FeedbackViolation> {
         // screen, never on the summary, always in the PDF -- and never
         // `dorExclusion`, which would undo `alwaysInPdf`.
         if let Some(frag_ref) = attr(tag, "fragRef") {
-            if is_internal_bank_use(frag_ref) {
+            if crate::aem::normalize::is_internal_bank_use(frag_ref) {
                 let mut missing = Vec::new();
                 if !has_attr(tag, "summaryExclusion", "true") {
                     missing.push("summaryExclusion");

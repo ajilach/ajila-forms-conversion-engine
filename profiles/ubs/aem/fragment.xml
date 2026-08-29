@@ -40,12 +40,18 @@
         they carry no address block, so the address rule would reference fields
         that do not exist. #}
     {% set frag_base = frag_ref | split(pat="/") | last | lower %}
+    {#  `field` names the component the rule runs on, and the corpus writes it as
+        the component's full guide path -- `this` works at runtime but is not what
+        PROBLEM-address-city-country-mandatory reads, and that rule is checked per
+        field+event slot. The path is per node, so it is substituted here rather
+        than being part of the stored rule. #}
+    {% set addr_field = '&quot;field&quot;:&quot;' ~ guide_path ~ '&quot;' %}
     {% if frag_base is ending_with("affrg_addressgeneric1") %}
-    <fd:scripts fd:init="{{ variables.address_generic_init | default(value="") }}" jcr:primaryType="nt:unstructured"/>
+    <fd:scripts fd:init="{{ variables.address_generic_init | default(value="") | replace(from='&quot;field&quot;:&quot;this&quot;', to=addr_field) }}" jcr:primaryType="nt:unstructured"/>
     {% elif frag_base is containing("address")
         and not frag_base is containing("formofaddress")
         and not frag_base is containing("form_address") %}
-    <fd:scripts fd:init="{{ variables.address_init | default(value="") }}" jcr:primaryType="nt:unstructured"/>
+    <fd:scripts fd:init="{{ variables.address_init | default(value="") | replace(from='&quot;field&quot;:&quot;this&quot;', to=addr_field) }}" jcr:primaryType="nt:unstructured"/>
     {% elif frag_base is ending_with("affrg_bankingrelationship1") and xfa.formrange_entity | default(value="") == "019" %}
     <fd:scripts fd:init="{{ variables.banking_default_de_init | default(value="") }}" jcr:primaryType="nt:unstructured"/>
     {% else %}

@@ -81,6 +81,11 @@ type PanelVisibilityMap = HashMap<String, Vec<(String, InputValue)>>;
 /// root, because a node's own subtree does not contain the answer.
 struct RenderIndex {
     visibility: PanelVisibilityMap,
+    /// Every node's AEM guide path (`guide.guideRootPanel.PN_Page.PN_Address`),
+    /// keyed by uuid. A rule that names the component it runs on -- the address
+    /// fragment's Initialize is the one that must, see `fragment.xml` -- needs
+    /// the path from the root, which a node cannot know on its own.
+    guide_paths: HashMap<Uuid, String>,
     /// Trigger field name → the panels it decides, for approved configurator
     /// choices only. Absent means "no reset for this field".
     resets: HashMap<String, Vec<ResetTarget>>,
@@ -93,6 +98,7 @@ impl RenderIndex {
     fn build(root: &AemNode) -> Self {
         Self {
             visibility: collect_panel_visibility(root),
+            guide_paths: collect_guide_paths(root),
             resets: collect_configurator_resets(root),
             add_subjects: collect_add_subjects(root),
         }
@@ -753,6 +759,51 @@ fn insert_attrs(ctx: &mut tera::Context, attrs: &AemAttrs) {
     ctx.insert("dor_header_slot", &attrs.dor_header_slot);
 }
 
+/// Map every node to its AEM guide path.
+///
+/// The path is what AEM calls a component by from the form root
+/// (`guide.guideRootPanel.<panel>.<…>.<component>`), and it is how a rule names
+/// the component it is attached to. Segments come from the JCR nesting, so a
+/// repeatable contributes three of them -- the wrapper, the instance-managed
+/// panel and the row -- exactly as `repeatable.xml` writes them.
+fn collect_guide_paths(root: &AemNode) -> HashMap<Uuid, String> {
+    fn walk(node: &AemNode, prefix: &[String], out: &mut HashMap<Uuid, String>) {
+        let own = node_name(node).unwrap_or("");
+        let mut here = prefix.to_vec();
+        if !own.is_empty() {
+            here.push(own.to_string());
+            if let Some(uuid) = node_uuid(node) {
+                out.insert(uuid, format!("guide.guideRootPanel.{}", here.join(".")));
+            }
+        }
+        // A repeatable's children live two panels deeper than the repeatable
+        // itself.
+        if let AemNode::Repeatable { name, .. } = node {
+            here.push(repeat_panel_name(name));
+            here.push(repeat_row_name(name));
+        }
+        let children = match node {
+            AemNode::Root { children, .. }
+            | AemNode::Panel { children, .. }
+            | AemNode::Repeatable { children, .. } => children.as_slice(),
+            _ => &[],
+        };
+        for child in children {
+            walk(child, &here, out);
+        }
+    }
+
+    let mut out = HashMap::new();
+    // The Root renders as `guideRootPanel` itself, so its own name is not a
+    // segment: its children are the first ones.
+    if let AemNode::Root { children, .. } = root {
+        for child in children {
+            walk(child, &[], &mut out);
+        }
+    }
+    out
+}
+
 /// Render all children of a node and concatenate the results.
 fn render_children(
     children: &[AemNode],
@@ -790,6 +841,10 @@ fn build_node_context(
     }
     // The DoR's second header slot, for the banking-relationship preface.
     ctx.insert("header_slot_text", &config.header_slot_text);
+    // What a rule attached to this node calls it (see `collect_guide_paths`).
+    if let Some(path) = node_uuid(node).and_then(|u| index.guide_paths.get(&u)) {
+        ctx.insert("guide_path", path);
+    }
     // The canonical codes, not the detected ones: a language that reached the
     // tree under a synonym (`es`) must be named on the form under the code the
     // platform files it as (`sp`).
@@ -839,11 +894,19 @@ fn build_node_context(
             // 2026-08-24). The wrapper panel stays -- it is what carries the
             // jump-to-field button -- but loses its own title, or the subtitle
             // would exist twice.
+            let is_first_page = children
+                .iter()
+                .any(|c| matches!(c, AemNode::Preface { .. }));
+            ctx.insert("is_first_page", &is_first_page);
+            // The form configurator is the step that asks what the form is for.
+            // It is excluded from the summary and gets no Edit button -- but it
+            // is only the configurator when it is the FIRST page: a later step
+            // that merely holds a "Tipo" choice is ordinary content, and
+            // PROBLEM-jump-to-field-button expects its title panel to behave
+            // like any other (the same first-page gate the rule itself applies).
             ctx.insert(
-                "is_first_page",
-                &children
-                    .iter()
-                    .any(|c| matches!(c, AemNode::Preface { .. })),
+                "is_form_configurator",
+                &(is_first_page && name.starts_with("PN_FormConfigurator")),
             );
 
             // Conditional panels carry an AABO-style `fd:visible` SHOW_EXPRESSION

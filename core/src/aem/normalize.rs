@@ -70,7 +70,7 @@ pub fn normalize(root: &mut AemNode) {
 /// not a static text, and by the two draws that are headings rather than body:
 /// a step title (`heading_level == 2`) and the first page's subtitle.
 pub fn wrap_static_text(root: &mut AemNode) {
-    walk_panels(root, &mut |children, excludes_title| {
+    walk_panels(root, &mut |parent, children, excludes_title| {
         if !excludes_title {
             return;
         }
@@ -80,11 +80,11 @@ pub fn wrap_static_text(root: &mut AemNode) {
             if is_run_member(&node) {
                 run.push(node);
             } else {
-                flush_run(&mut run, &mut out);
+                flush_run(parent, &mut run, &mut out);
                 out.push(node);
             }
         }
-        flush_run(&mut run, &mut out);
+        flush_run(parent, &mut run, &mut out);
         *children = out;
     });
 }
@@ -112,7 +112,7 @@ fn has_class(attrs: &AemAttrs, class: &str) -> bool {
 /// Move a finished run into a content panel of its own. A run in which every
 /// draw is already DoR-excluded needs no wrapper: nothing in it was going to
 /// render there anyway.
-fn flush_run(run: &mut Vec<AemNode>, out: &mut Vec<AemNode>) {
+fn flush_run(parent: &str, run: &mut Vec<AemNode>, out: &mut Vec<AemNode>) {
     if run.is_empty() {
         return;
     }
@@ -128,10 +128,14 @@ fn flush_run(run: &mut Vec<AemNode>, out: &mut Vec<AemNode>) {
         .filter_map(colspan_of)
         .max()
         .unwrap_or(12);
-    let first = run.first().and_then(node_name).unwrap_or("").to_string();
+    // Derived from the panel AND the run's first draw: two panels can each hold a
+    // run starting with a draw of the same name, and a shared uuid would be two
+    // different nodes claiming one JCR identity.
+    let first = run.first().and_then(node_name).unwrap_or("");
+    let seed = format!("{parent}/{first}");
     let name = format!(
         "PN_StaticText_{}",
-        &Uuid::new_v5(&Uuid::NAMESPACE_OID, first.as_bytes())
+        &Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes())
             .as_simple()
             .to_string()[..8]
     );
@@ -162,12 +166,18 @@ fn flush_run(run: &mut Vec<AemNode>, out: &mut Vec<AemNode>) {
 /// node before Redacto sees it, so without `always_in_pdf` the copy renders
 /// nowhere -- the mistake the first rollout of this rule shipped 28 times.
 pub fn copy_infobox_into_the_dor(root: &mut AemNode) {
-    let mut on_screen: Option<(String, String)> = None; // (frag_ref, bind_ref)
+    // Nothing is changed until it is clear the copy can be placed: excluding the
+    // on-screen infobox from the DoR without putting a copy in the document is
+    // strictly worse than leaving both alone -- the text would then reach nobody.
+    if last_page(root).is_none() {
+        return;
+    }
+
+    let mut on_screen: Option<String> = None;
     let mut copy_exists = false;
     visit(root, &mut |node| {
         if let AemNode::Fragment {
             frag_ref,
-            bind_ref,
             attrs,
             visible,
             ..
@@ -179,14 +189,14 @@ pub fn copy_infobox_into_the_dor(root: &mut AemNode) {
             if *visible {
                 attrs.dor_exclude = true;
                 attrs.summary_exclude = true;
-                on_screen = Some((frag_ref.clone(), bind_ref.clone().unwrap_or_default()));
+                on_screen = Some(frag_ref.clone());
             } else {
                 copy_exists = true;
             }
         }
     });
 
-    let Some((frag_ref, _)) = on_screen else { return };
+    let Some(frag_ref) = on_screen else { return };
     if copy_exists {
         return;
     }
@@ -201,10 +211,9 @@ pub fn copy_infobox_into_the_dor(root: &mut AemNode) {
         visible: false,
         bind_ref: None,
     };
-    if let Some(page) = last_page(root) {
-        if let AemNode::Panel { children, .. } = page {
-            children.push(copy);
-        }
+    // `last_page` was checked above, so this is the page the copy belongs on.
+    if let Some(AemNode::Panel { children, .. }) = last_page(root) {
+        children.push(copy);
     }
 }
 
@@ -234,15 +243,15 @@ pub fn internal_bank_use_is_pdf_only(root: &mut AemNode) {
 }
 
 /// Whether a `fragRef` names one of the internal-bank-use fragments.
-fn is_internal_bank_use(frag_ref: &str) -> bool {
-    let tail = frag_ref
-        .rsplit('/')
-        .take(2)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("/");
+///
+/// `pub(crate)` because the review checker asks the same question of the
+/// rendered XML, and two readings of "is this the family" would drift.
+pub(crate) fn is_internal_bank_use(frag_ref: &str) -> bool {
+    let mut parts = frag_ref.rsplit('/');
+    let (Some(fragment), Some(library)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    let tail = format!("{library}/{fragment}");
     INTERNAL_BANK_USE_FRAGMENTS.contains(&tail.as_str())
 }
 
@@ -258,11 +267,13 @@ fn visit(node: &mut AemNode, f: &mut impl FnMut(&mut AemNode)) {
     }
 }
 
-/// Call `f(children, excludes_title)` for every container, deepest last, where
-/// `excludes_title` says whether the container's own title is kept out of the
-/// DoR -- the condition the static-text rule keys on. A container that is itself
-/// DoR-excluded is not walked: nothing below it reaches the DoR.
-fn walk_panels(node: &mut AemNode, f: &mut impl FnMut(&mut Vec<AemNode>, bool)) {
+/// Call `f(name, children, excludes_title)` for every container, deepest FIRST
+/// (the callback runs after the recursion), where `excludes_title` says whether
+/// the container's own title is kept out of the DoR -- the condition the
+/// static-text rule keys on -- and `name` identifies it, so a node the callback
+/// creates can be named after the place it was created in. A container that is
+/// itself DoR-excluded is not walked: nothing below it reaches the DoR.
+fn walk_panels(node: &mut AemNode, f: &mut impl FnMut(&str, &mut Vec<AemNode>, bool)) {
     if node.attrs().is_some_and(|a| a.dor_exclude) {
         return;
     }
@@ -278,13 +289,14 @@ fn walk_panels(node: &mut AemNode, f: &mut impl FnMut(&mut Vec<AemNode>, bool)) 
         AemNode::Repeatable { .. } => true,
         _ => false,
     };
+    let name = node_name(node).unwrap_or("").to_string();
     if let Some(children) = children_mut(node) {
         for child in children.iter_mut() {
             walk_panels(child, f);
         }
     }
     if let Some(children) = children_mut(node) {
-        f(children, excludes_title);
+        f(&name, children, excludes_title);
     }
 }
 
@@ -531,6 +543,48 @@ mod tests {
         let AemNode::Root { children, .. } = &tree else { unreachable!() };
         let AemNode::Panel { children: page_children, .. } = &children[0] else { unreachable!() };
         assert_eq!(child_names(&page_children[0]), ["ST_Body"]);
+    }
+
+    /// Two panels can each hold a run that starts with a draw of the same name.
+    /// The wrappers must still be two different nodes: a shared uuid is two nodes
+    /// claiming one JCR identity.
+    #[test]
+    fn two_runs_with_the_same_first_draw_get_different_wrappers() {
+        let mut tree = root(vec![
+            page("PN_One", vec![draw("ST_Intro"), draw("ST_Body")]),
+            page("PN_Two", vec![draw("ST_Intro"), draw("ST_Body")]),
+        ]);
+        wrap_static_text(&mut tree);
+
+        let AemNode::Root { children, .. } = &tree else { unreachable!() };
+        let wrappers: Vec<_> = children
+            .iter()
+            .map(|p| match p {
+                AemNode::Panel { children, .. } => match &children[0] {
+                    AemNode::Panel { name, uuid, .. } => (name.clone(), *uuid),
+                    other => panic!("expected a wrapper, got {other:?}"),
+                },
+                other => panic!("expected a page, got {other:?}"),
+            })
+            .collect();
+        assert_ne!(wrappers[0].0, wrappers[1].0, "the names must differ");
+        assert_ne!(wrappers[0].1, wrappers[1].1, "the uuids must differ");
+    }
+
+    /// A form whose pages are not direct children of the Root has nowhere to put
+    /// the copy. Excluding the on-screen infobox anyway would leave the text
+    /// reaching nobody, so neither half is applied.
+    #[test]
+    fn the_infobox_is_left_alone_when_the_copy_has_nowhere_to_go() {
+        let path = "/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_infobox";
+        let mut tree = root(vec![fragment("PN_ItalyInfobox", path, true)]);
+        let before = serde_json::to_value(&tree).unwrap();
+        copy_infobox_into_the_dor(&mut tree);
+        assert_eq!(
+            before,
+            serde_json::to_value(&tree).unwrap(),
+            "the on-screen infobox must not be excluded without a copy to carry it"
+        );
     }
 
     #[test]

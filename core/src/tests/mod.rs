@@ -35202,12 +35202,35 @@ fn nested_and_fragment_input_still_counts_as_fillable() {
     );
 }
 
-/// The configurator step is excluded regardless — it has fields, but its button
-/// would also put it in the summary jump-list.
+/// The form configurator is excluded even though it has fields: its button would
+/// also put it in the summary jump-list. It is the configurator only on the FIRST
+/// page, though -- which is where the form asks what it is for, and which the
+/// banking-relationship preface marks. A later step that merely holds a "Tipo"
+/// choice is ordinary content, and PROBLEM-jump-to-field-button expects its title
+/// panel to behave like every other one.
 #[test]
 fn the_form_configurator_step_never_gets_the_button() {
-    let panel = render_step_title_panel("PN_FormConfigurator", vec![text_field("TXT_Any")]);
-    assert!(!panel.contains("jumpToFieldButtonVisible"), "{panel}");
+    use crate::aem::AemNode;
+    use uuid::Uuid;
+
+    let preface = AemNode::Preface {
+        uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"PN_Preface"),
+        name: "PN_Preface".into(),
+    };
+    let first_page = render_step_title_panel(
+        "PN_FormConfigurator",
+        vec![preface, text_field("TXT_Any")],
+    );
+    assert!(
+        !first_page.contains("jumpToFieldButtonVisible"),
+        "the configurator page gets no Edit button:\n{first_page}"
+    );
+
+    let later_step = render_step_title_panel("PN_FormConfigurator", vec![text_field("TXT_Any")]);
+    assert!(
+        later_step.contains("jumpToFieldButtonVisible=\"true\""),
+        "a configurator-named step that is not the first page is ordinary content:\n{later_step}"
+    );
 }
 
 // ============================================================================

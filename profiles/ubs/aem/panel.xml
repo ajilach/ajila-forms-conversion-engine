@@ -38,7 +38,7 @@
             {% if not is_first_page %}jcr:title="{{ title }}"{% endif %}
             sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
             dorExcludeDescription="true"
-            {% if name is starting_with("PN_FormConfigurator") %}dorExclusion="true" summaryExclusion="true"{% endif %}
+            {% if is_form_configurator %}dorExclusion="true" summaryExclusion="true"{% endif %}
             dorFieldStyling="{{ variables.dor_field_styling }}"
             guideNodeClass="guidePanel"
             name="{{ name }}Title"
@@ -47,7 +47,7 @@
                in — legal provisions, a declaration, terms — gets none. The form
                configurator gets none either: it would then also appear in the
                summary jump-list. #}
-            {% if is_page and has_input and name is not starting_with("PN_FormConfigurator") %}jumpToFieldButtonVisible="true"{% endif %}
+            {% if is_page and has_input and not is_form_configurator %}jumpToFieldButtonVisible="true"{% endif %}
             validateOnStepCompletion="{Boolean}false">
             <layout jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}" columns="1" dorLayoutType="columnar" nonNavigable="{Boolean}true" toolbarPosition="Bottom"/>
             <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
