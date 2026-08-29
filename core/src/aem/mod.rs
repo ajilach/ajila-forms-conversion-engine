@@ -24,6 +24,7 @@
 mod converter;
 pub mod fragment_parser;
 mod package_writer;
+pub mod normalize;
 pub mod parser;
 pub mod profile;
 pub mod script_engine;

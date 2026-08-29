@@ -49,6 +49,15 @@ pub fn generate_aem_xml_with_passthrough(
     config: &AemConfig,
     pass: &HashMap<Uuid, Passthrough>,
 ) -> String {
+    // Three of the swept feedback rules are about a node's position among its
+    // siblings, or about a node that has to exist twice in different roles, so
+    // no template can satisfy them. They are applied here, to a copy, which is
+    // what makes them hold for an agent-authored and a loaded tree as well as
+    // for one built from an XFA source. See `super::normalize`.
+    let mut root = root.clone();
+    super::normalize::normalize(&mut root);
+    let root = &root;
+
     // Invert the trigger-field condition rules into a per-panel map so each
     // conditional panel can carry its own AABO-style `fd:visible` SHOW_EXPRESSION.
     let index = RenderIndex::build(root);
