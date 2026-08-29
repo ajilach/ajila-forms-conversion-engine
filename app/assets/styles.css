@@ -1184,3 +1184,12 @@ body > div, #main {
 
 .mcp-installed { color: var(--success); font-size: 12px; }
 .mcp-error { color: var(--danger); font-size: 12px; margin-top: var(--space-2); }
+
+/* Progress and outcome of "Prepare browser tooling" in the AEM settings tab. */
+.browser-status {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: var(--space-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

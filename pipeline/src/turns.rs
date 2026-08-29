@@ -69,6 +69,20 @@ pub fn tool_result_message(results: Vec<(String, agent::ToolReply)>) -> serde_js
                     }))
                     .collect::<Vec<_>>(),
             }),
+            ToolReply::Blocks(blocks) => serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": id,
+                "content": blocks
+                    .into_iter()
+                    .map(|block| match block {
+                        agent::ReplyBlock::Text(text) => serde_json::json!({"type": "text", "text": text}),
+                        agent::ReplyBlock::Image { media_type, data } => serde_json::json!({
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": media_type, "data": data},
+                        }),
+                    })
+                    .collect::<Vec<_>>(),
+            }),
             ToolReply::Error(msg) => serde_json::json!({
                 "type": "tool_result",
                 "tool_use_id": id,
@@ -78,4 +92,37 @@ pub fn tool_result_message(results: Vec<(String, agent::ToolReply)>) -> serde_js
         })
         .collect();
     serde_json::json!({ "role": "user", "content": content })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent::{ReplyBlock, ToolReply};
+
+    /// A browser result interleaves a snapshot with a screenshot; the order and
+    /// the per-image media type must survive into the API message.
+    #[test]
+    fn mixed_blocks_become_ordered_text_and_image_content() {
+        let msg = tool_result_message(vec![(
+            "call-1".into(),
+            ToolReply::Blocks(vec![
+                ReplyBlock::Text("snapshot".into()),
+                ReplyBlock::Image {
+                    media_type: "image/png".into(),
+                    data: "AAAA".into(),
+                },
+                ReplyBlock::Text("done".into()),
+            ]),
+        )]);
+        let content = &msg["content"][0]["content"];
+        assert_eq!(
+            content[0],
+            serde_json::json!({"type": "text", "text": "snapshot"})
+        );
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["source"]["media_type"], "image/png");
+        assert_eq!(content[1]["source"]["data"], "AAAA");
+        assert_eq!(content[2]["text"], "done");
+        assert!(msg["content"][0].get("is_error").is_none());
+    }
 }

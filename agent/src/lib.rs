@@ -4,7 +4,8 @@
 //! engine via tools: the [`ConversionAgent`] (its tool catalog and executor),
 //! the edit-history store ([`db`]) and the restore path that reads it back
 //! ([`session`]), the per-profile reference store ([`references`]), the AEM HTTP
-//! client ([`aem_client`]), and image encoding helpers ([`image_encode`]).
+//! client ([`aem_client`]), the Playwright MCP browser client ([`browser`]), and
+//! image encoding helpers ([`image_encode`]).
 //!
 //! It carries **no UI (Dioxus) and no LLM** dependency, so it can be embedded in
 //! the desktop app *and* in a standalone MCP server. The LLM agent loop that
@@ -13,6 +14,7 @@
 
 pub mod aem_client;
 pub mod aem_translated_edit;
+pub mod browser;
 pub mod conversion;
 pub mod db;
 pub mod image_encode;
@@ -25,7 +27,7 @@ pub mod tree_edit;
 pub use conversion::{
     ANALYST_ADDENDUM, AUTHOR_ADDENDUM, ConversionAgent, MCP_ADDENDUM, NO_PACKAGE,
     REDACTO_ANALYST_ADDENDUM, REDACTO_AUTHOR_ADDENDUM, REDACTO_REVIEWER_ADDENDUM,
-    REDACTO_SHARED_PREAMBLE, REDACTO_SYSTEM_PROMPT, REVIEWER_ADDENDUM, ReviewResult,
+    REDACTO_SHARED_PREAMBLE, REDACTO_SYSTEM_PROMPT, REVIEWER_ADDENDUM, ReplyBlock, ReviewResult,
     SHARED_PREAMBLE, SYSTEM_PROMPT, ToolReply, ToolSpec, aem_connection_from_settings, all_tools,
     catalog, scope, target, tools_for, validate_package_bytes,
 };

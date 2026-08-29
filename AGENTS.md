@@ -40,7 +40,7 @@
 | Crate | What belongs there |
 |---|---|
 | `core` (`blueprint`) | The engine: parsing, analysis, and every renderer. No UI, no network, no LLM. |
-| `agent` | The headless conversion agent: the tool catalog and executor, the edit-history store, the reference store, the AEM HTTP client. No UI and no LLM. |
+| `agent` | The headless conversion agent: the tool catalog and executor, the edit-history store, the reference store, the AEM HTTP client, and the browser client (`browser.rs`: a Playwright MCP server spawned per run and driven over stdio). No UI and no LLM. |
 | `pipeline` | The conversion controller: Analyst → Author → Reviewer sequencing, retry recovery, the stuck watchdog. Reaches the outside world only through `TurnProvider` (the model) and `RunObserver` (progress), so it needs neither a UI framework nor a network to test. |
 | `runner` | The host side of a run, shared by `app` and `cli`: the Anthropic transport, the operator settings, and the entry points that build the agent, open a history session and record the result. |
 | `app` | The Dioxus desktop app: the observer implementation and all UI state. |
@@ -49,7 +49,8 @@
 | `judge` | Offline eval harness scoring translation quality to CSV. |
 
 - A run produces one **output target** (`OutputTarget::Aem` or `Redacto`). Targets are configured per profile under `profiles/<name>/<target>/`.
-- Tools are scoped **once**, in `SCOPING` in `agent/src/conversion/catalog.rs`: each tool declares which targets may execute it and which pipeline stages are offered it. Do not add a second allow-list anywhere — add a row there.
+- Tools are scoped **once**, in `SCOPING` in `agent/src/conversion/catalog.rs`: each tool declares which targets may execute it and which pipeline stages are offered it. Do not add a second allow-list anywhere — add a row there. The browser tool family (names only known at runtime) is scoped once too, as the whole family, in `BROWSER_SCOPES` next to it; a stage's actual tool list is `ConversionAgent::tools_for_stage`.
+- The Playwright MCP server is pinned to `PLAYWRIGHT_MCP_VERSION` in `agent/src/browser.rs` and its tool surface to `agent/tests/playwright_mcp_tools.json`; never `latest`. Bumping the version means regenerating that snapshot (ignored test `playwright_mcp_tool_surface_matches_snapshot`, needs Node and Chrome) and re-reading the prompts that name browser tools. The browser preflight fails loudly and refuses the run; do not add a silent fallback.
 - The tool catalog is pinned by `agent/tests/catalog.json`. After an intended change, regenerate with `UPDATE_SNAPSHOTS=1 cargo test -p agent` and review the diff: tool descriptions are prompt surface, so a wording change is a behaviour change.
 - Tool descriptions and role prompts may only name tools that exist; `prose_only_names_tools_that_exist` enforces it. Prompt text lives in `agent/src/conversion/prompts.rs`.
 - Controller behaviour (stage order, retry, abort) belongs in `pipeline` and gets a test there — a scripted `TurnProvider` plus a recording `RunObserver` drive the real `run` with no network. Do not add sequencing logic to the app.

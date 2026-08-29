@@ -13,7 +13,7 @@ use blueprint::{
     FieldLabelMap, GraphSelection, GraphState, HtmlConfig, PipelineConfig, PipelineEvent,
     PipelineStep, build_field_label_map, generate_dot, run_pipeline,
 };
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use log::info;
 use std::path::{Path, PathBuf};
 
@@ -104,6 +104,68 @@ enum Command {
 
     /// List the conversion sessions a `convert --feedback` run can resume.
     Sessions,
+
+    /// The browser the Author and Reviewer use to verify a deployed form.
+    Browser(BrowserArgs),
+}
+
+#[derive(ClapArgs, Debug)]
+struct BrowserArgs {
+    #[command(subcommand)]
+    action: BrowserAction,
+
+    /// Path to `npx`, when it is not on PATH or in the usual Node locations.
+    /// Defaults to the desktop app's setting, then to auto-detection.
+    #[arg(long, value_name = "PATH", global = true)]
+    npx: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+enum BrowserAction {
+    /// Warm the npm cache with the pinned Playwright MCP and confirm Node and
+    /// Google Chrome are usable. Needs a network connection once; needs no AEM.
+    Prepare,
+    /// The full preflight a run performs: prepare, log in to the configured
+    /// AEM instance, start the browser and open the instance in it.
+    Check,
+}
+
+/// `blueprint browser prepare|check`.
+fn browser_command(args: BrowserArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = runner::AppSettings::load();
+    let npx = args.npx.or_else(|| {
+        let configured = settings.browser_npx_path.trim();
+        (!configured.is_empty()).then(|| PathBuf::from(configured))
+    });
+    let cfg = agent::browser::BrowserConfig { npx };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let mut progress = |line: &str| println!("{line}");
+    runtime.block_on(async {
+        match args.action {
+            BrowserAction::Prepare => {
+                let prepared = agent::browser::prepare(&cfg, &mut progress).await?;
+                println!("{prepared}");
+                println!("Ready. Runs with --upload will use this without touching the network.");
+            }
+            BrowserAction::Check => {
+                let Some(conn) = settings.aem_connection() else {
+                    return Err(
+                        "No AEM connection configured in the desktop app settings; `browser check` logs in \
+                         to AEM. Use `browser prepare` for the machine-side checks only."
+                            .into(),
+                    );
+                };
+                println!("AEM: {} as {}", conn.host, conn.username);
+                let (report, session) = agent::browser::preflight(&cfg, &conn, &mut progress).await?;
+                session.shutdown().await;
+                println!("{report}");
+                println!("Ready.");
+            }
+        }
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
 }
 
 /// Print every recorded conversion session, newest first.
@@ -138,6 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             list_sessions();
             return Ok(());
         }
+        Some(Command::Browser(browser_args)) => return browser_command(browser_args),
         None => {}
     }
 

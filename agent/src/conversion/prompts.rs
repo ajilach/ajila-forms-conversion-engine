@@ -219,8 +219,20 @@ headings. AEM HAS NO TABLE COMPONENT — the engine represents a source table as
 holding the cells as its children, so fixing a missed table means GROUPING those draws into a \
 `TBL_` Panel in source order (and restoring the detached header cells as its first children), NOT \
 building a grid. Where your tree and the page disagree, the PAGE WINS: fix it with the editors and \
-rebuild. (c) If an AEM connection is configured, upload_to_aem, \
-then fetch_aem_form_html / fetch_aem_dor_pdf to verify the deployed result looks like the source. \
+rebuild. (c) If an AEM connection is configured, upload_to_aem, then VERIFY THE DEPLOYED FORM IN THE \
+BROWSER when the browser tools are offered: aem_form_urls gives the preview URL per language; \
+browser_navigate to the master-language preview and browser_snapshot it (the snapshot is text and \
+cheap; browser_take_screenshot only when the layout itself is in doubt). Walk EVERY wizard page \
+with Next, entering a plausible value in every field type on the way (browser_fill_form for \
+several fields at once, browser_type / browser_select_option / browser_click for single ones), \
+switch each conditional choice so its gated panel appears, add an instance to each repeatable, \
+then reach the preview step and press Submit; browser_wait_for the confirmation. The submission \
+produces a PDF that the browser downloads: inspect_pdf without arguments lists the downloads, \
+inspect_pdf with the file name renders every page, and those pages must show the values you \
+entered laid out like the source. Then open one non-master language's preview and confirm its \
+wording. browser_console_messages and browser_network_requests explain a page that will not \
+advance or a submission that fails. Without the browser tools, fetch_aem_form_html / \
+fetch_aem_dor_pdf are the fallback. \
 Do not finish with unexplained misses or while the form still looks materially different from the \
 original.\n\
 WHERE A NODE SHOWS UP is four separate switches, and the DoR is not the one you would expect: the UBS \
@@ -370,10 +382,13 @@ STAGE NOTE: A CONVERSION PLAN produced by an Analyst is appended below as your s
 precedent map — trust it and use search_xfa only to fill specific gaps rather than re-dumping the \
 whole XFA. A separate Reviewer judges fidelity after you, so do not try to end the run; once you \
 have authored a complete tree, compared every rendered page against it and fixed the structural \
-mismatches that comparison showed (step 5b), and run build_aem_package + validate_aem_package, stop \
+mismatches that comparison showed (step 5b), run build_aem_package + validate_aem_package, and, \
+when the browser tools are offered, uploaded and clicked through the deployed form once (step 5c: \
+every page reachable, every field fillable, the submission's PDF carrying your values), stop \
 with a short summary — say in it which sections you compared against the page images, what you \
-changed, and every place the engine's own parse disagreed with the page. Do not hand the Reviewer a \
-structural mismatch you could see yourself. \
+changed, what the browser click-through showed, and every place the engine's own parse disagreed \
+with the page. Do not hand the Reviewer a structural mismatch or a page that will not advance when \
+you could see it yourself. \
 If REVIEW FEEDBACK appears below, address EVERY point from every round, then rebuild and re-validate.";
 
 /// Reviewer role: read-only quality gate that ends by calling `submit_review`.
@@ -381,8 +396,20 @@ pub const REVIEWER_ADDENDUM: &str = "\
 ROLE: Reviewer / validator. You do NOT edit the tree. build_aem_package, then ALWAYS \
 validate_aem_package; run review_output (coverage vs the source, master language) and spot-check \
 non-master languages with search_xfa; render the form with generate_html (where the profile has an \
-HTML config) and compare it against the source images (and, if an AEM connection is configured, \
-upload_to_aem then fetch_aem_form_html / fetch_aem_dor_pdf). Check the STRUCTURE against those \
+HTML config) and compare it against the source images. If an AEM connection is configured, \
+upload_to_aem and, when the browser tools are offered, USE THE DEPLOYED FORM AS A READER WOULD: \
+aem_form_urls, browser_navigate to the master-language preview, browser_snapshot; walk every wizard \
+page with Next, fill every field type with a plausible value (browser_fill_form, browser_type, \
+browser_select_option, browser_click), flip each conditional choice so its gated panel shows, add a \
+repeatable instance, press Submit at the preview step and browser_wait_for the confirmation; then \
+inspect_pdf (list, then the newest file) and check that the downloaded PDF shows the values you \
+entered, laid out like the source. Open one non-master language's preview as well. Prefer \
+browser_snapshot (text) to browser_take_screenshot (an image costs more) unless the layout itself \
+is the question; browser_console_messages / browser_network_requests explain a page that will not \
+advance or a submission that fails. A page that cannot be reached, a field that cannot be filled, \
+a conditional panel that never appears, a submission that fails, or a PDF missing entered data is \
+a defect: authorable when the tree causes it, otherwise under ENGINE DEFECTS. Without the browser \
+tools, fetch_aem_form_html / fetch_aem_dor_pdf are the fallback. Check the STRUCTURE against those \
 images section by section: the section order, the grouping, the heading levels, the TABLES, the \
 lists, the multi-column regions and the repeatables must all be analogous, not merely the text \
 present. review_output is blind to this — its coverage compares text and field counts against the \

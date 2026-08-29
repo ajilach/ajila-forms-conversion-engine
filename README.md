@@ -145,6 +145,51 @@ cargo run --release -p blueprint-cli -- sessions
 cargo run --release -p blueprint-cli -- convert path/to/form.pdf --session <ID> --feedback "The IBAN field must be mandatory."
 ```
 
+### Browser verification
+
+With `--upload` (or the app's AEM connection) the Author and Reviewer also get a
+real browser: the run spawns the Playwright MCP server as a child process, logs it
+in to AEM, and the two stages open the deployed form's preview, walk every wizard
+page, fill the fields, submit, and read the PDF the submission downloads
+(`aem_form_urls`, `browser_*`, `inspect_pdf`). The Reviewer reports a page that will
+not advance, a field that cannot be filled or a PDF missing entered data as a
+defect.
+
+Prerequisites on the machine running the conversion: Node.js 18+ (with `npx`),
+Google Chrome, and an AEM author instance the configured user can log in to.
+Chrome is launched headless and isolated by the run itself; nothing has to be
+started beforehand, and nothing survives the run.
+
+The server version is pinned in `agent/src/browser.rs` (`PLAYWRIGHT_MCP_VERSION`);
+`latest` is never used. `npx` runs with the npm cache preferred, so once the
+package is cached a run never touches the registry. Warm the cache once, with a
+connection:
+
+```sh
+cargo run --release -p blueprint-cli -- browser prepare   # Node, Chrome, npm cache; needs no AEM
+cargo run --release -p blueprint-cli -- browser check     # the full preflight a run performs, against the configured AEM
+```
+
+Every run with the browser enabled repeats that preflight before it starts and
+refuses to run when it fails, with the reason and the fix (or the switch to turn
+the browser off). It never degrades silently. Switches:
+
+```sh
+# No browser for this run (the fetch_aem_dor_pdf fallback remains available to the agent)
+cargo run --release -p blueprint-cli -- convert path/to/form.pdf --upload --no-browser
+
+# npx lives somewhere unusual (a Finder-launched app sees a minimal PATH; the app has the same setting)
+cargo run --release -p blueprint-cli -- convert path/to/form.pdf --upload --npx /opt/homebrew/bin/npx
+```
+
+The tool surface the model sees is the checked-in snapshot
+`agent/tests/playwright_mcp_tools.json`, verified against the live server at every
+start. To move to a new Playwright MCP version: bump `PLAYWRIGHT_MCP_VERSION`,
+regenerate the snapshot with
+`UPDATE_SNAPSHOTS=1 cargo test -p agent -- --ignored playwright_mcp_tool_surface_matches_snapshot`,
+review the diff (tool descriptions are prompt surface), and re-read the prompts
+that name the tools.
+
 Artefacts are named as in the app: `forms-package-<code>.zip`,
 `forms-package-bindrefs-<code>.zip`, `schema-<code>.xsd`, `redacto-<code>.sql`,
 plus `agent-log-<code>.md` — the run transcript. Ctrl-C stops the run at its next

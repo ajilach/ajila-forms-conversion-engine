@@ -151,3 +151,94 @@ pub async fn fetch_dor_pdf(conn: &AemConnection, form_jcr_path: &str) -> Result<
     }
     Ok(bytes)
 }
+
+/// Log in to AEM the way a browser does and return the `login-token` cookie.
+///
+/// The rendered form and its preview are behind AEM's form login, which does
+/// not accept HTTP basic auth the way the Package Manager does, which is why a
+/// basic-auth GET of the `.html` render tends to 401. Posting the credentials to
+/// `j_security_check` yields the session cookie a browser would hold, which the
+/// browser session is then seeded with. `j_validate=true` makes AEM answer with
+/// a status instead of a redirect.
+pub async fn aem_login(conn: &AemConnection) -> Result<String, String> {
+    let host = conn.host.trim_end_matches('/');
+    let url = format!("{host}/libs/granite/core/content/login.html/j_security_check");
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("AEM login client failed: {e}"))?;
+    let resp = client
+        .post(&url)
+        .form(&[
+            ("j_username", conn.username.as_str()),
+            ("j_password", conn.password.as_str()),
+            ("j_validate", "true"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("AEM login request failed ({url}): {}", error_chain(&e)))?;
+    let status = resp.status();
+    let token = resp
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(login_token_from_set_cookie);
+    match token {
+        Some(token) if status.is_success() => Ok(token),
+        _ => {
+            let body = resp.text().await.unwrap_or_default();
+            let snippet: String = body.chars().take(200).collect();
+            Err(format!(
+                "AEM login rejected for user {:?} at {host} (HTTP {status}): {snippet}",
+                conn.username
+            ))
+        }
+    }
+}
+
+/// An error with its causes, innermost last: reqwest's top-level message
+/// ("error sending request") says nothing without the "connection refused"
+/// underneath it.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut parts = vec![err.to_string()];
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if parts.last() != Some(&text) {
+            parts.push(text);
+        }
+        source = cause.source();
+    }
+    parts.join(": ")
+}
+
+/// The value of a `login-token` cookie in one `Set-Cookie` header, if that is
+/// the cookie the header sets.
+pub fn login_token_from_set_cookie(header: &str) -> Option<String> {
+    let (name, rest) = header.split_once('=')?;
+    if name.trim() != "login-token" {
+        return None;
+    }
+    let value = rest.split(';').next()?.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_login_token_is_read_from_its_set_cookie_header() {
+        assert_eq!(
+            login_token_from_set_cookie("login-token=abc.def; Path=/; HttpOnly"),
+            Some("abc.def".to_string())
+        );
+        assert_eq!(
+            login_token_from_set_cookie("sling.formauth=x; Path=/"),
+            None
+        );
+        assert_eq!(login_token_from_set_cookie("login-token=; Path=/"), None);
+        assert_eq!(login_token_from_set_cookie("garbage"), None);
+    }
+}

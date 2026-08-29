@@ -9,8 +9,9 @@
 use std::time::Instant;
 
 use agent::ConversionAgent;
+use agent::browser::BrowserSession;
 use blueprint::OutputTarget;
-use pipeline::{AbortFlag, RunObserver, RunOutcome, RunSeed};
+use pipeline::{AbortFlag, RunEvent, RunObserver, RunOutcome, RunSeed};
 
 use crate::settings::AppSettings;
 use crate::turns::TurnPlan;
@@ -56,6 +57,10 @@ pub async fn run_fresh(
         .iter()
         .any(|(_, bytes)| blueprint::detect_aem_zip(bytes));
 
+    // The browser preflight comes first: it is the one step that can refuse
+    // the run, and a refused run should leave no session behind.
+    let browser = browser_for(opts, obs).await?;
+
     // Hash on the PDFs when present, otherwise on the template, so the session
     // id is stable for template-only runs.
     let pdfs: Vec<(String, Vec<u8>)> = files
@@ -65,17 +70,26 @@ pub async fn run_fresh(
         .collect();
     let doc_hash = agent::db::document_hash(if pdfs.is_empty() { &files } else { &pdfs });
     agent::db::upsert_document(&doc_hash, session_label);
-    let session_id = agent::db::create_session(&doc_hash, opts.profile.as_deref(), session_label)
-        .ok_or_else(|| NO_SESSION.to_string())?;
+    let session_id =
+        match agent::db::create_session(&doc_hash, opts.profile.as_deref(), session_label) {
+            Some(id) => id,
+            None => {
+                close_browser(browser).await;
+                return Err(NO_SESSION.to_string());
+            }
+        };
     agent::db::insert_edit(&session_id, "Initial (empty)", "[]");
 
-    let agent = ConversionAgent::new(
+    let mut agent = ConversionAgent::new(
         opts.profile.clone(),
         files,
         opts.settings.aem_connection(),
         session_id.clone(),
         opts.target,
     );
+    if let Some(browser) = browser {
+        agent = agent.with_browser(browser);
+    }
 
     // An uploaded content package is an AEM artefact; it is not pre-loaded for
     // any other target, so don't tell the Author it was.
@@ -105,6 +119,7 @@ pub async fn run_feedback(
     // result: both the structured content and the AEM tree the last run authored,
     // so the Author refines that tree instead of re-deriving one from the source.
     let prior = agent::session::restore(&session_id, opts.profile.as_deref());
+    let browser = browser_for(opts, obs).await?;
 
     let mut agent = ConversionAgent::new(
         opts.profile.clone(),
@@ -113,6 +128,9 @@ pub async fn run_feedback(
         session_id.clone(),
         opts.target,
     );
+    if let Some(browser) = browser {
+        agent = agent.with_browser(browser);
+    }
     if let Some(prior) = prior {
         agent.seed_structured(prior.envelope.content);
         // A no-op for a Redacto run, which has no AEM tree to seed.
@@ -130,6 +148,44 @@ pub async fn run_feedback(
         obs,
     )
     .await)
+}
+
+/// Run the browser preflight when the settings ask for a browser: a started,
+/// logged-in session on success, `None` when the browser is off, and the
+/// preflight's own error otherwise, which the caller returns before the run
+/// spends a token. Only an AEM target has anything to open.
+async fn browser_for(
+    opts: &RunOptions,
+    obs: &mut impl RunObserver,
+) -> Result<Option<BrowserSession>, String> {
+    if opts.target != OutputTarget::Aem {
+        return Ok(None);
+    }
+    let (Some(cfg), Some(conn)) = (
+        opts.settings.browser_config(),
+        opts.settings.aem_connection(),
+    ) else {
+        return Ok(None);
+    };
+    obs.emit(RunEvent::Thought(
+        "Checking the browser for form verification…".into(),
+    ));
+    let (report, session) = {
+        let mut progress = |line: &str| obs.emit(RunEvent::Thought(line.to_string()));
+        agent::browser::preflight(&cfg, &conn, &mut progress)
+            .await
+            .map_err(|e| format!("Browser verification is not possible: {e}"))?
+    };
+    obs.emit(RunEvent::Thought(format!(
+        "Browser verification ready.\n{report}"
+    )));
+    Ok(Some(session))
+}
+
+async fn close_browser(browser: Option<BrowserSession>) {
+    if let Some(browser) = browser {
+        browser.shutdown().await;
+    }
 }
 
 /// Drive the controller over `agent` and record what it produced.
@@ -177,5 +233,98 @@ async fn drive(
         session_id,
         outcome,
         elapsed_secs: started_at.elapsed().as_secs(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pipeline::NullObserver;
+
+    /// A run that asks for the browser and cannot have it must not start: no
+    /// session is opened, no token is spent, and the error says what to fix.
+    #[tokio::test]
+    async fn a_failed_browser_preflight_refuses_the_run_before_it_starts() {
+        let settings = AppSettings {
+            aem_host: "http://localhost:4502".into(),
+            aem_username: "admin".into(),
+            browser_enabled: true,
+            browser_npx_path: "/nonexistent/blueprint-test/npx".into(),
+            ..AppSettings::default()
+        };
+        assert!(settings.browser_config().is_some());
+
+        let opts = RunOptions {
+            profile: None,
+            target: OutputTarget::Aem,
+            settings,
+            abort: AbortFlag::default(),
+        };
+        let err = run_fresh(Vec::new(), &opts, "preflight-test", &mut NullObserver)
+            .await
+            .err()
+            .expect("the run must be refused");
+        assert!(
+            err.contains("Browser verification is not possible"),
+            "{err}"
+        );
+        assert!(err.contains("/nonexistent/blueprint-test/npx"), "{err}");
+        assert!(err.contains("--no-browser"), "{err}");
+    }
+
+    /// The feedback path runs the same preflight before restoring anything.
+    #[tokio::test]
+    async fn a_feedback_run_is_refused_the_same_way() {
+        let settings = AppSettings {
+            aem_host: "http://localhost:4502".into(),
+            aem_username: "admin".into(),
+            browser_enabled: true,
+            browser_npx_path: "/nonexistent/blueprint-test/npx".into(),
+            ..AppSettings::default()
+        };
+        let opts = RunOptions {
+            profile: None,
+            target: OutputTarget::Aem,
+            settings,
+            abort: AbortFlag::default(),
+        };
+        let err = run_feedback(
+            "make it better".into(),
+            Vec::new(),
+            &opts,
+            "no-such-session".into(),
+            &mut NullObserver,
+        )
+        .await
+        .err()
+        .expect("the run must be refused");
+        assert!(err.contains("/nonexistent/blueprint-test/npx"), "{err}");
+        assert!(err.contains("--no-browser"), "{err}");
+    }
+
+    /// The browser only ever accompanies an AEM upload, and a Redacto run has
+    /// nothing to open: neither gets a browser config.
+    #[test]
+    fn the_browser_needs_an_aem_connection_and_the_switch() {
+        let mut settings = AppSettings::default();
+        assert!(settings.browser_enabled, "on by default");
+        assert!(
+            settings.browser_config().is_some(),
+            "the default settings carry an AEM host"
+        );
+
+        settings.browser_enabled = false;
+        assert!(settings.browser_config().is_none());
+
+        settings.browser_enabled = true;
+        settings.aem_host = String::new();
+        assert!(settings.browser_config().is_none(), "no AEM, no browser");
+
+        settings.aem_host = "http://localhost:4502".into();
+        settings.browser_npx_path = "  /opt/homebrew/bin/npx ".into();
+        assert_eq!(
+            settings.browser_config().unwrap().npx,
+            Some(std::path::PathBuf::from("/opt/homebrew/bin/npx"))
+        );
     }
 }

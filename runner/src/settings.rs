@@ -47,6 +47,16 @@ pub struct AppSettings {
     pub aem_username: String,
     /// Password for AEM HTTP basic auth. Stored locally on disk.
     pub aem_password: String,
+    /// Whether the Author and Reviewer get a real browser to click through the
+    /// deployed form (Playwright MCP, spawned per run). Only takes effect with
+    /// an AEM connection; a failed preflight aborts the run rather than
+    /// degrading it.
+    #[serde(default = "default_browser_enabled")]
+    pub browser_enabled: bool,
+    /// Where `npx` is, when auto-detection (PATH plus the usual Node locations)
+    /// cannot find it. Empty = auto-detect.
+    #[serde(default)]
+    pub browser_npx_path: String,
     /// History-eviction tuning for the agent's token usage. See
     /// [`crate::llm::configure_eviction`]. Trailing messages kept verbatim
     /// (even → whole turn-pairs). Missing/0 is normalized to the default in
@@ -74,6 +84,8 @@ impl Default for AppSettings {
             aem_host: "http://localhost:4502".to_string(),
             aem_username: "admin".to_string(),
             aem_password: "admin".to_string(),
+            browser_enabled: default_browser_enabled(),
+            browser_npx_path: String::new(),
             evict_keep_recent_messages: crate::llm::DEFAULT_KEEP_RECENT_MESSAGES,
             evict_text_over_chars: crate::llm::DEFAULT_ELIDE_TEXT_OVER_CHARS,
             evict_input_over_chars: crate::llm::DEFAULT_ELIDE_INPUT_OVER_CHARS,
@@ -81,6 +93,14 @@ impl Default for AppSettings {
             agent_instructions: String::new(),
         }
     }
+}
+
+/// Settings saved before the browser existed load with it on. The defaults
+/// also carry a local AEM host, so out of the box a run expects a reachable
+/// AEM author on localhost:4502 and refuses to start without one; an operator
+/// who has no AEM turns the switch off (or blanks the host) once.
+fn default_browser_enabled() -> bool {
+    true
 }
 
 impl AppSettings {
@@ -117,6 +137,19 @@ impl AppSettings {
             host: host.trim_end_matches('/').to_string(),
             username: username.to_string(),
             password: self.aem_password.clone(),
+        })
+    }
+
+    /// The browser configuration for a run: `Some` only when browser
+    /// verification is on AND an AEM connection exists, since the browser has
+    /// nothing to open without one. This is what every consumer asks.
+    pub fn browser_config(&self) -> Option<agent::browser::BrowserConfig> {
+        if !self.browser_enabled || self.aem_connection().is_none() {
+            return None;
+        }
+        let npx = self.browser_npx_path.trim();
+        Some(agent::browser::BrowserConfig {
+            npx: (!npx.is_empty()).then(|| std::path::PathBuf::from(npx)),
         })
     }
 

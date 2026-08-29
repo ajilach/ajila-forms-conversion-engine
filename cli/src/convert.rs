@@ -83,6 +83,18 @@ pub struct ConvertArgs {
     #[arg(long, value_name = "PASSWORD", requires = "upload")]
     aem_password: Option<String>,
 
+    /// Skip the browser click-through of the deployed form. With --upload the
+    /// Author and Reviewer otherwise get a headless Chrome (Playwright MCP,
+    /// pinned) to fill, submit and read back the form; its preflight has to
+    /// pass or the run does not start.
+    #[arg(long, requires = "upload")]
+    no_browser: bool,
+
+    /// Path to `npx`, when it is not on PATH or in the usual Node locations.
+    /// Defaults to the desktop app's setting, then to auto-detection.
+    #[arg(long, value_name = "PATH", requires = "upload")]
+    npx: Option<PathBuf>,
+
     /// Refine an earlier run instead of converting afresh: applies this feedback
     /// to the result held in --session. Skips the Analyst.
     #[arg(long, value_name = "TEXT", requires = "session")]
@@ -152,6 +164,14 @@ pub fn run(args: ConvertArgs) -> Result<(), Box<dyn Error>> {
     match settings.aem_connection() {
         Some(conn) => println!("AEM upload: on ({} as {})", conn.host, conn.username),
         None => println!("AEM upload: off (pass --upload to enable it)"),
+    }
+    match settings.browser_config() {
+        Some(_) => println!(
+            "Browser verification: on (Playwright MCP {}, checked before the run starts)",
+            agent::browser::PLAYWRIGHT_MCP_VERSION
+        ),
+        None if settings.aem_connection().is_some() => println!("Browser verification: off"),
+        None => {}
     }
 
     let opts = runner::RunOptions {
@@ -382,6 +402,12 @@ fn resolve_settings(args: &ConvertArgs) -> Result<AppSettings, Box<dyn Error>> {
         }
         if settings.aem_connection().is_none() {
             return Err("--upload needs an AEM host and user (--aem-host / --aem-user).".into());
+        }
+        if args.no_browser {
+            settings.browser_enabled = false;
+        }
+        if let Some(npx) = &args.npx {
+            settings.browser_npx_path = npx.display().to_string();
         }
     } else {
         settings.aem_host = String::new();

@@ -111,8 +111,24 @@ pub enum ToolReply {
         media_type: &'static str,
         images: Vec<String>,
     },
+    /// Text and images interleaved, in order: what an external MCP tool (the
+    /// browser) returns: a page snapshot next to a screenshot, a download notice
+    /// next to nothing. Emitted as one block per entry in a single `tool_result`.
+    Blocks(Vec<ReplyBlock>),
     /// The tool failed; the message is surfaced to the model as an error result.
     Error(String),
+}
+
+/// One content block of a [`ToolReply::Blocks`] reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReplyBlock {
+    Text(String),
+    /// A base64 image; the media type is whatever the producer said (the
+    /// browser sends PNG or JPEG), so it is owned rather than a static str.
+    Image {
+        media_type: String,
+        data: String,
+    },
 }
 
 /// The outcome of the Reviewer role's `submit_review` call: whether the form is
@@ -503,6 +519,10 @@ pub struct ConversionAgent {
 
     /// Scale for on-demand page renders; see [`ConversionAgent::with_render_scale`].
     render_scale: f32,
+
+    /// The browser the preflight started, when browser verification is on.
+    /// Offers its tools to the Author and Reviewer (see `catalog::BROWSER_SCOPES`).
+    browser: Option<crate::browser::BrowserSession>,
 }
 
 impl ConversionAgent {
@@ -561,6 +581,7 @@ impl ConversionAgent {
             matcher: None,
             render_scale: RENDER_SCALE,
             review: None,
+            browser: None,
         };
         // Record the pre-loaded template as the initial AEM edit so it shows in
         // the AEM edit history (no-op when no template was uploaded).
@@ -634,6 +655,51 @@ impl ConversionAgent {
     pub fn with_render_scale(mut self, scale: f32) -> Self {
         self.render_scale = scale;
         self
+    }
+
+    /// Attach the browser session the preflight started. From then on the
+    /// stages in `catalog::BROWSER_SCOPES` are offered its tools and
+    /// `browser_*` calls are forwarded to it.
+    pub fn with_browser(mut self, session: crate::browser::BrowserSession) -> Self {
+        self.browser = Some(session);
+        self
+    }
+
+    /// Whether a browser session is attached to this run.
+    pub fn has_browser(&self) -> bool {
+        self.browser.is_some()
+    }
+
+    /// The tools a stage is offered: the catalog's, plus the browser's for the
+    /// stages `catalog::BROWSER_SCOPES` names when a session is attached. This
+    /// is what the controller hands the model; `tools_for` alone is the
+    /// catalog-only view the MCP server and the tests use.
+    pub fn tools_for_stage(&self, scopes: scope::Mask) -> Vec<serde_json::Value> {
+        let mut tools = tools_for(self.target(), scopes);
+        if let Some(browser) = &self.browser
+            && self.target() == OutputTarget::Aem
+            && scopes & catalog::BROWSER_SCOPES != 0
+        {
+            tools.extend(browser.tools().iter().cloned());
+        }
+        tools
+    }
+
+    /// Notes the browser session accumulated since the last call (restarts),
+    /// for the run's observer.
+    pub fn take_warnings(&mut self) -> Vec<String> {
+        self.browser
+            .as_mut()
+            .map(|b| b.take_warnings())
+            .unwrap_or_default()
+    }
+
+    /// Close the browser, if one is attached. Called by the controller on every
+    /// way out of a run, so no headless Chrome outlives it.
+    pub async fn shutdown_browser(&mut self) {
+        if let Some(browser) = self.browser.take() {
+            browser.shutdown().await;
+        }
     }
 
     // ── Public accessors (for the driving loop's result finalization) ─────────
@@ -1108,6 +1174,49 @@ fn join_form_path(form_path: &str, form_dir: &str) -> String {
     )
 }
 
+/// The preview a reviewer opens in a browser: the DAM rendition of the form,
+/// outside the editor, in one language. This is what humans use; the form's
+/// own `.html` render under `/content/forms/af` tends to 401 outside the
+/// editor.
+fn form_preview_url(host: &str, cfg: &AemConfig, lang: &str) -> String {
+    format!(
+        "{}/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={lang}",
+        host.trim_end_matches('/'),
+        cfg.form_path.trim_matches('/'),
+        cfg.form_dir.trim_matches('/')
+    )
+}
+
+/// The form opened in the AEM Forms editor.
+fn form_editor_url(host: &str, cfg: &AemConfig) -> String {
+    format!(
+        "{}/editor.html{}.html",
+        host.trim_end_matches('/'),
+        form_jcr_path(cfg)
+    )
+}
+
+/// The URLs of a deployed form, as the `aem_form_urls` tool and the
+/// `upload_to_aem` result report them: the JCR path, one preview per language
+/// (master first) and the editor.
+fn form_urls_text(host: &str, cfg: &AemConfig) -> String {
+    let mut langs: Vec<&str> = vec![cfg.master_language.as_str()];
+    for l in &cfg.languages {
+        if !langs.contains(&l.as_str()) {
+            langs.push(l);
+        }
+    }
+    let mut out = format!("jcr_path: {}\n", form_jcr_path(cfg));
+    for lang in langs {
+        out.push_str(&format!(
+            "preview ({lang}): {}\n",
+            form_preview_url(host, cfg, lang)
+        ));
+    }
+    out.push_str(&format!("editor: {}", form_editor_url(host, cfg)));
+    out
+}
+
 /// Render the DoR PDF to one base64 JPEG per page via the engine.
 fn render_pdf_pages(pdf: &[u8]) -> Result<Vec<String>, String> {
     let mut bp =
@@ -1255,6 +1364,107 @@ mod tests {
             .join(name);
         let bytes = std::fs::read(&pdf).unwrap_or_else(|e| panic!("read {name}: {e}"));
         (name.to_string(), bytes)
+    }
+
+    fn aem_connection() -> AemConnection {
+        AemConnection {
+            host: "http://localhost:4502".into(),
+            username: "admin".into(),
+            password: "admin".into(),
+        }
+    }
+
+    /// The URLs a reviewer opens are derived from the profile's paths: the DAM
+    /// preview per language (master first) and the editor. Before an upload
+    /// the tool refuses rather than pointing at a form that is not there.
+    #[tokio::test]
+    async fn aem_form_urls_follow_the_profile_and_need_an_upload() {
+        let mut agent = ConversionAgent::new(
+            Some("ubs".into()),
+            vec![fixture("AAEV_019_EN.pdf")],
+            Some(aem_connection()),
+            "test-form-urls".into(),
+            OutputTarget::Aem,
+        );
+        match agent.execute("aem_form_urls", &serde_json::json!({})).await {
+            ToolReply::Error(e) => assert!(e.contains("upload_to_aem"), "{e}"),
+            other => panic!("expected an error before upload, got {other:?}"),
+        }
+
+        let cfg = agent.config().expect("ubs config");
+        let text = form_urls_text("http://localhost:4502/", &cfg);
+        let jcr = form_jcr_path(&cfg);
+        assert!(text.contains(&format!("jcr_path: {jcr}")), "{text}");
+        assert!(
+            text.contains(&format!(
+                "preview ({}): http://localhost:4502/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={}",
+                cfg.master_language,
+                cfg.form_path.trim_matches('/'),
+                cfg.form_dir.trim_matches('/'),
+                cfg.master_language
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("editor: http://localhost:4502/editor.html{jcr}.html")),
+            "{text}"
+        );
+        // Every source language gets a preview, each once.
+        for lang in &cfg.languages {
+            assert_eq!(text.matches(&format!("preview ({lang}):")).count(), 1, "{text}");
+        }
+    }
+
+    /// `inspect_pdf` lists the browser's downloads and renders one of them, and
+    /// never reaches outside the browser's output directory.
+    #[tokio::test]
+    async fn inspect_pdf_lists_and_renders_only_the_browser_downloads() {
+        // Rendering needs the profile's fonts, which `pipeline::run` loads at
+        // the start of a run.
+        let _ = blueprint::load_profile_fonts("ubs");
+        let dir = std::env::temp_dir().join(format!("blueprint-inspect-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (name, bytes) = fixture("AAEV_019_EN.pdf");
+        std::fs::write(dir.join("submission.pdf"), &bytes).unwrap();
+        std::fs::write(dir.join("notes.txt"), b"not a pdf").unwrap();
+
+        let mut without = ConversionAgent::new(None, vec![(name.clone(), bytes.clone())], None, "t".into(), OutputTarget::Aem);
+        assert!(matches!(
+            without.execute("inspect_pdf", &serde_json::json!({})).await,
+            ToolReply::Error(e) if e.contains("No browser session")
+        ));
+
+        let mut agent = ConversionAgent::new(None, vec![(name, bytes)], None, "t".into(), OutputTarget::Aem)
+            .with_browser(crate::browser::BrowserSession::detached(Vec::new(), dir.clone()));
+
+        match agent.execute("inspect_pdf", &serde_json::json!({})).await {
+            ToolReply::Text(listing) => {
+                assert!(listing.contains("submission.pdf") && listing.contains("notes.txt"), "{listing}");
+            }
+            other => panic!("expected a listing, got {other:?}"),
+        }
+        match agent.execute("inspect_pdf", &serde_json::json!({"path": "submission.pdf"})).await {
+            ToolReply::Image { media_type, images } => {
+                assert_eq!(media_type, "image/jpeg");
+                assert!(!images.is_empty(), "at least one rendered page");
+            }
+            other => panic!("expected page images, got {other:?}"),
+        }
+        assert!(matches!(
+            agent.execute("inspect_pdf", &serde_json::json!({"path": "notes.txt"})).await,
+            ToolReply::Error(e) if e.contains("not a PDF")
+        ));
+        let outside = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input/AAEV_019_EN.pdf");
+        assert!(matches!(
+            agent.execute("inspect_pdf", &serde_json::json!({"path": outside.display().to_string()})).await,
+            ToolReply::Error(e) if e.contains("outside")
+        ));
+        assert!(matches!(
+            agent.execute("inspect_pdf", &serde_json::json!({"path": "../"})).await,
+            ToolReply::Error(_)
+        ));
+        agent.shutdown_browser().await;
+        assert!(!dir.exists(), "shutdown removes the output directory");
     }
 
     /// A single-PDF source keeps the whole merged envelope, not just its
@@ -1457,7 +1667,7 @@ mod tests {
         match reply {
             ToolReply::Text(t) => t,
             ToolReply::Error(e) => panic!("unexpected tool error: {e}"),
-            ToolReply::Image { .. } => panic!("unexpected image reply"),
+            ToolReply::Image { .. } | ToolReply::Blocks(_) => panic!("unexpected image reply"),
         }
     }
 

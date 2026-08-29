@@ -12,13 +12,22 @@ base64 = { workspace = true }
 image = { workspace = true }
 uuid = { workspace = true }
 dirs = { workspace = true }
-reqwest = { workspace = true, features = ["multipart"] }
+reqwest = { workspace = true, features = ["multipart", "form"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 chrono = { workspace = true }
 zip = { workspace = true }
 regex-lite = { workspace = true }
+# The Playwright MCP client: the agent spawns the browser server as a child
+# process and speaks MCP to it over stdio.
+rmcp = { version = "1.7.0", default-features = false, features = ["client", "transport-child-process"] }
+# Spawn the browser server as a process-group leader (job object on Windows), so
+# closing it takes the node process npx forks and its Chrome along.
+process-wrap = { version = "9.1", default-features = false, features = ["tokio1", "process-group", "job-object"] }
+tokio = { version = "1", features = ["process", "io-util", "rt", "time"] }
 
 [dev-dependencies]
 # The tool executor is async; the tests drive it directly.
 tokio = { version = "1", features = ["macros", "rt"] }
+# An in-process fake MCP server stands in for Playwright in the browser tests.
+rmcp = { version = "1.7.0", default-features = false, features = ["client", "server", "transport-child-process"] }

@@ -64,6 +64,12 @@ pub fn SettingsPage(
     let mut mcp_installed = use_signal(crate::mcp_install::is_installed);
     let mut mcp_install_error: Signal<Option<String>> = use_signal(|| None);
 
+    // The browser preparation's progress and outcome, shown under its row.
+    // `Ok` lines are progress and the final report; `Err` is the preflight's
+    // own message, which already says what to fix.
+    let mut browser_status: Signal<Option<Result<String, String>>> = use_signal(|| None);
+    let mut browser_preparing = use_signal(|| false);
+
     // The single write path: every row below calls this with the one field it
     // owns, so there is no per-row copy of the settings struct.
     let update = use_callback(move |edit: Edit| {
@@ -267,6 +273,63 @@ pub fn SettingsPage(
                                 placeholder: "••••••••",
                                 secret: true,
                                 on_change: move |v: String| update.call(Box::new(move |s| s.aem_password = v)),
+                            }
+                        }
+                        div { class: "settings-section",
+                            h3 { class: "settings-section-title", "Browser verification" }
+                            ToggleRow {
+                                label: "Verify the deployed form in a browser",
+                                desc: "After uploading, the Author and Reviewer open the form in a headless Chrome (Playwright MCP, pinned), fill it in, submit it and read the PDF. Needs Node.js and Google Chrome; a run refuses to start when the check fails.",
+                                checked: s.browser_enabled,
+                                on_toggle: move |v: bool| update.call(Box::new(move |s| s.browser_enabled = v)),
+                            }
+                            TextRow {
+                                label: "npx path",
+                                desc: "Leave empty to find npx on PATH and in the usual Node.js locations.",
+                                value: s.browser_npx_path.clone(),
+                                placeholder: "auto-detect",
+                                secret: false,
+                                on_change: move |v: String| {
+                                    update.call(Box::new(move |s| s.browser_npx_path = v.trim().to_string()))
+                                },
+                            }
+                            div { class: "row",
+                                RowInfo {
+                                    label: "Prepare browser tooling",
+                                    desc: "Download the pinned Playwright MCP into the npm cache once and confirm Node.js and Google Chrome are usable, so runs never wait on the network.",
+                                }
+                                button {
+                                    class: "btn btn-primary btn-sm",
+                                    disabled: browser_preparing(),
+                                    onclick: move |_| {
+                                        let npx = settings.read().browser_npx_path.trim().to_string();
+                                        let cfg = agent::browser::BrowserConfig {
+                                            npx: (!npx.is_empty()).then(|| std::path::PathBuf::from(npx)),
+                                        };
+                                        browser_preparing.set(true);
+                                        browser_status.set(Some(Ok(String::new())));
+                                        spawn(async move {
+                                            let mut progress = |line: &str| {
+                                                let mut status = browser_status.write();
+                                                if let Some(Ok(text)) = status.as_mut() {
+                                                    if !text.is_empty() {
+                                                        text.push('\n');
+                                                    }
+                                                    text.push_str(line);
+                                                }
+                                            };
+                                            let result = agent::browser::prepare(&cfg, &mut progress).await;
+                                            browser_status.set(Some(result.map(|p| format!("Ready.\n{p}"))));
+                                            browser_preparing.set(false);
+                                        });
+                                    },
+                                    if browser_preparing() { "Preparing…" } else { "Prepare" }
+                                }
+                            }
+                            match browser_status.read().as_ref() {
+                                Some(Ok(text)) if !text.is_empty() => rsx! { div { class: "browser-status", "{text}" } },
+                                Some(Err(err)) => rsx! { div { class: "mcp-error", "{err}" } },
+                                _ => rsx! {},
                             }
                         }
                     },

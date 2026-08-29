@@ -103,10 +103,13 @@ pub(crate) const AUTHOR: Role = Role {
     max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,
 };
 
+/// The Reviewer's budget covers a browser click-through of the deployed form
+/// (one turn per page, per field group, per language), not just the package
+/// checks the Redacto reviewer needs.
 pub(crate) const REVIEWER: Role = Role {
     name: "Reviewer",
     scope: agent::scope::AEM_REVIEWER,
-    max_iterations: 30,
+    max_iterations: 60,
     stuck_tool: Some("validate_aem_package"),
     stuck_activity: "validation",
     max_tokens_nudge: AEM_MAX_TOKENS_NUDGE,

@@ -562,7 +562,10 @@ impl ConversionAgent {
                             aem.uploaded = true;
                             aem.form_path = Some(form_jcr_path(&cfg));
                         }
-                        ToolReply::Text("Uploaded and installed on AEM.".into())
+                        ToolReply::Text(format!(
+                            "Uploaded and installed on AEM.\n{}",
+                            form_urls_text(&conn.host, &cfg)
+                        ))
                     }
                     Err(e) => ToolReply::Error(e),
                 }
@@ -591,6 +594,85 @@ impl ConversionAgent {
                         Err(e) => ToolReply::Error(e),
                     },
                     Err(e) => ToolReply::Error(e),
+                }
+            }
+            "aem_form_urls" => {
+                let (Some(conn), Ok(cfg)) = (self.conn.clone(), self.config()) else {
+                    return ToolReply::Error("No AEM connection / profile configured.".into());
+                };
+                if !self.aem_uploaded() {
+                    return ToolReply::Error(
+                        "The form has not been uploaded in this run yet: run upload_to_aem first."
+                            .into(),
+                    );
+                }
+                ToolReply::Text(form_urls_text(&conn.host, &cfg))
+            }
+            "inspect_pdf" => {
+                let Some(dir) = self.browser.as_ref().map(|b| b.output_dir().to_path_buf()) else {
+                    return ToolReply::Error(
+                        "No browser session in this run, so nothing has been downloaded. Use \
+                         fetch_aem_dor_pdf to look at the Document of Record instead."
+                            .into(),
+                    );
+                };
+                let path = input["path"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty());
+                match path {
+                    None => match crate::browser::list_output_files(&dir) {
+                        Ok(files) if files.is_empty() => ToolReply::Text(
+                            "The browser output directory is empty: nothing has been downloaded yet."
+                                .into(),
+                        ),
+                        Ok(files) => ToolReply::Text(
+                            files
+                                .iter()
+                                .map(|f| format!("{}  {} bytes  {}", f.name, f.size, f.modified))
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        ),
+                        Err(e) => ToolReply::Error(e),
+                    },
+                    Some(path) => {
+                        let file = match crate::browser::resolve_inside(&dir, path) {
+                            Ok(f) => f,
+                            Err(e) => return ToolReply::Error(e),
+                        };
+                        // Check the magic bytes before reading a possibly large
+                        // download that turns out not to be a PDF at all.
+                        let mut head = [0u8; 8];
+                        let read = std::fs::File::open(&file).and_then(|mut f| {
+                            use std::io::Read;
+                            f.read(&mut head)
+                        });
+                        let n = match read {
+                            Ok(n) => n,
+                            Err(e) => {
+                                return ToolReply::Error(format!("could not read {path:?}: {e}"));
+                            }
+                        };
+                        if !head[..n].starts_with(b"%PDF") {
+                            return ToolReply::Error(format!(
+                                "{path:?} is not a PDF (starts with {:?})",
+                                String::from_utf8_lossy(&head[..n])
+                            ));
+                        }
+                        let bytes = match std::fs::read(&file) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                return ToolReply::Error(format!("could not read {path:?}: {e}"));
+                            }
+                        };
+                        match render_pdf_pages(&bytes) {
+                            Ok(images) => ToolReply::Image {
+                                media_type: "image/jpeg",
+                                images,
+                            },
+                            Err(e) => ToolReply::Error(e),
+                        }
+                    }
                 }
             }
 
@@ -713,6 +795,16 @@ impl ConversionAgent {
                 })
             }
 
+            // Browser tools are not catalog entries: their specs come from the
+            // attached session, and so do their results.
+            other if other.starts_with("browser_") => match self.browser.as_mut() {
+                Some(browser) => browser.call(other, input).await,
+                None => ToolReply::Error(
+                    "Browser tools are not available in this run (browser verification is off or \
+                     no AEM connection is configured). Verify with fetch_aem_dor_pdf instead."
+                        .into(),
+                ),
+            },
             other => ToolReply::Error(format!("Unknown tool: {other}")),
         }
     }

@@ -161,6 +161,17 @@ fn reply_to_result(reply: ToolReply) -> CallToolResult {
                 .map(|b64| Content::image(b64, media_type.to_string()))
                 .collect(),
         ),
+        ToolReply::Blocks(blocks) => CallToolResult::success(
+            blocks
+                .into_iter()
+                .map(|block| match block {
+                    agent::ReplyBlock::Text(text) => Content::text(text),
+                    agent::ReplyBlock::Image { media_type, data } => {
+                        Content::image(data, media_type)
+                    }
+                })
+                .collect(),
+        ),
         ToolReply::Error(msg) => CallToolResult::error(vec![Content::text(msg)]),
     }
 }

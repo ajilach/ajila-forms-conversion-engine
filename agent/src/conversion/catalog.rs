@@ -175,6 +175,8 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
         ("upload_to_aem",                     target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
         ("fetch_aem_form_html",               target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
         ("fetch_aem_dor_pdf",                 target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("aem_form_urls",                     target::AEM,     AEM_AUTHOR | AEM_REVIEWER | MCP),
+        ("inspect_pdf",                       target::AEM,     AEM_AUTHOR | AEM_REVIEWER),
 
         // §7 references. The reference *forms* are AEM packages, so they are
         // pure token cost for a text-only Redacto document; only the reference
@@ -195,6 +197,14 @@ const SCOPING: &[(&str, target::Mask, scope::Mask)] = {
         ("submit_review",                     target::BOTH,    AEM_REVIEWER | REDACTO_REVIEWER | MCP),
     ]
 };
+
+/// The single scoping decision for the externally discovered browser tool
+/// family (Playwright MCP, see `crate::browser`). Its tool names are only known
+/// at runtime, so this is one row for the whole family rather than one per
+/// tool: the Author and Reviewer of an AEM run, nobody else. An external MCP
+/// client brings its own browser, the Analyst and the describe pass only read,
+/// and a Redacto document has nothing to click through.
+pub const BROWSER_SCOPES: scope::Mask = scope::AEM_AUTHOR | scope::AEM_REVIEWER;
 
 fn tool_specs() -> Vec<serde_json::Value> {
     {
@@ -442,6 +452,18 @@ fn tool_specs() -> Vec<serde_json::Value> {
                 serde_json::json!({}),
                 serde_json::json!([]),
             ),
+            t(
+                "aem_form_urls",
+                "The deployed form's URLs (after upload_to_aem): its JCR path, one preview URL per language (the DAM rendition outside the editor, which is what a reviewer opens with browser_navigate) and the editor URL.",
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ),
+            t(
+                "inspect_pdf",
+                "Look at a PDF the browser downloaded (the PDF a submission produces). Without `path`: list the files in the browser's output directory, newest first. With `path` (a file name from that list): render every page of that PDF as an image. Only files the browser produced can be inspected.",
+                serde_json::json!({"path": {"type": "string", "description": "File name from the listing. Omit to list."}}),
+                serde_json::json!([]),
+            ),
             // §7 references
             t(
                 "list_reference_forms",
@@ -639,7 +661,10 @@ mod catalog_guards {
     #[test]
     fn prose_only_names_tools_that_exist() {
         let catalog = specs();
-        let names: BTreeSet<&str> = catalog.iter().filter_map(|t| t["name"].as_str()).collect();
+        let mut names: BTreeSet<&str> = catalog.iter().filter_map(|t| t["name"].as_str()).collect();
+        // The browser tools are offered alongside the catalog (see BROWSER_SCOPES),
+        // so the prompts may name them too.
+        names.extend(crate::browser::BROWSER_TOOLS.iter().copied());
 
         let mut prose = String::new();
         for tool in &catalog {
@@ -791,6 +816,51 @@ mod catalog_guards {
                 );
             }
         }
+    }
+
+    /// The browser family is offered next to the catalog, so its names must not
+    /// shadow an engine tool, and it must reach exactly the two stages that
+    /// upload and verify, never a read-only pass, a Redacto stage or an MCP
+    /// client that has its own browser.
+    #[test]
+    fn the_browser_family_is_scoped_once_and_collides_with_nothing() {
+        for name in crate::browser::BROWSER_TOOLS {
+            assert!(
+                !catalog().iter().any(|t| t.name() == *name),
+                "{name} is both a browser tool and an engine tool"
+            );
+            assert!(
+                name.starts_with("browser_"),
+                "{name}: the executor routes on the prefix"
+            );
+        }
+        assert_eq!(BROWSER_SCOPES, scope::AEM_AUTHOR | scope::AEM_REVIEWER);
+        assert_eq!(
+            BROWSER_SCOPES
+                & (scope::MCP | scope::DESCRIBE | scope::AEM_ANALYST | scope::REDACTO_STAGES),
+            0
+        );
+
+        // The Rust-side companions of the browser go where the browser goes.
+        let has = |scope, name: &str| {
+            tools_for(OutputTarget::Aem, scope)
+                .iter()
+                .any(|t| t["name"].as_str() == Some(name))
+        };
+        for name in ["aem_form_urls", "inspect_pdf"] {
+            assert!(
+                has(scope::AEM_AUTHOR, name) && has(scope::AEM_REVIEWER, name),
+                "{name}"
+            );
+            assert!(
+                !has(scope::AEM_ANALYST, name) && !has(scope::DESCRIBE, name),
+                "{name}"
+            );
+        }
+        // inspect_pdf reads the browser's output directory, which an MCP client
+        // never has; aem_form_urls is useful to anyone who uploaded.
+        assert!(!has(scope::MCP, "inspect_pdf"));
+        assert!(has(scope::MCP, "aem_form_urls"));
     }
 
     #[test]

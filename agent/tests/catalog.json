@@ -570,6 +570,29 @@
     "name": "fetch_aem_dor_pdf"
   },
   {
+    "description": "The deployed form's URLs (after upload_to_aem): its JCR path, one preview URL per language (the DAM rendition outside the editor, which is what a reviewer opens with browser_navigate) and the editor URL.",
+    "input_schema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "aem_form_urls"
+  },
+  {
+    "description": "Look at a PDF the browser downloaded (the PDF a submission produces). Without `path`: list the files in the browser's output directory, newest first. With `path` (a file name from that list): render every page of that PDF as an image. Only files the browser produced can be inspected.",
+    "input_schema": {
+      "properties": {
+        "path": {
+          "description": "File name from the listing. Omit to list.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "inspect_pdf"
+  },
+  {
     "description": "List the profile's reference forms (hand-built, known-good worked examples). Consult references BEFORE building: they show the expected JCR structure, dictionary setup and DoR conventions for this profile's forms.",
     "input_schema": {
       "properties": {},

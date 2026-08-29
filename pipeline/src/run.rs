@@ -66,6 +66,22 @@ pub async fn run(
     turns: &impl TurnProvider,
     obs: &mut impl RunObserver,
 ) -> Option<RunOutcome> {
+    let outcome = run_stages(&mut agent, &config, seed, turns, obs).await;
+    // Every way out (approved, unapproved, aborted, given up at a retry
+    // prompt) closes the browser, so no headless Chrome outlives the run.
+    agent.shutdown_browser().await;
+    outcome
+}
+
+/// The stages themselves; [`run`] wraps this with the teardown that must happen
+/// on every exit path.
+async fn run_stages(
+    agent: &mut ConversionAgent,
+    config: &RunConfig,
+    seed: RunSeed,
+    turns: &impl TurnProvider,
+    obs: &mut impl RunObserver,
+) -> Option<RunOutcome> {
     // Load the selected profile's fonts so on-demand renders have the right
     // typefaces (the font store is global, shared with rendering). Both a fresh
     // run and a feedback re-run funnel through here, so this covers both.
@@ -91,7 +107,7 @@ pub async fn run(
                 doing: "analysing the source and researching precedents".into(),
             });
             plan = run_stage(
-                &mut agent,
+                agent,
                 stages.analyst,
                 &roles::sys_analyst(target, extra),
                 "Analyse the source form and produce the detailed CONVERSION PLAN. \
@@ -115,7 +131,7 @@ pub async fn run(
         stages.author_fix_seed
     };
     run_stage(
-        &mut agent,
+        agent,
         stages.author,
         &roles::sys_author(target, extra, config.template_note, &plan, &reviews),
         author_seed,
@@ -134,7 +150,7 @@ pub async fn run(
             doing: format!("reviewing (round {})", round + 1),
         });
         run_stage(
-            &mut agent,
+            agent,
             stages.reviewer,
             &roles::sys_reviewer(target, extra, &plan, &reviews),
             "Review the built form end to end against the source and the CONVERSION PLAN, \
@@ -162,7 +178,7 @@ pub async fn run(
                     doing: format!("applying review feedback (round {})", round + 1),
                 });
                 run_stage(
-                    &mut agent,
+                    agent,
                     stages.author,
                     &roles::sys_author(target, extra, config.template_note, &plan, &reviews),
                     stages.author_fix_seed,
@@ -194,10 +210,10 @@ pub async fn run(
     // dump the Author already validated is the artefact, and calling this would
     // paint a failed build step on an otherwise successful run.
     if target == OutputTarget::Aem {
-        ensure_built_and_uploaded(&mut agent, config.has_aem_connection, obs).await;
+        ensure_built_and_uploaded(agent, config.has_aem_connection, obs).await;
     }
 
-    Some(finalize(&mut agent, &config, warnings))
+    Some(finalize(agent, config, warnings))
 }
 
 /// Assemble the run's artefacts from the agent's working trees.
@@ -421,6 +437,15 @@ impl StuckWatch {
                 ToolReply::Text(t) => (0u8, t).hash(&mut hasher),
                 ToolReply::Error(e) => (1u8, e).hash(&mut hasher),
                 ToolReply::Image { .. } => 2u8.hash(&mut hasher),
+                ToolReply::Blocks(blocks) => {
+                    3u8.hash(&mut hasher);
+                    for block in blocks {
+                        match block {
+                            agent::ReplyBlock::Text(t) => (0u8, t).hash(&mut hasher),
+                            agent::ReplyBlock::Image { .. } => 1u8.hash(&mut hasher),
+                        }
+                    }
+                }
             }
             hasher.finish()
         };
@@ -469,7 +494,7 @@ pub(crate) async fn run_stage(
     turns: &impl TurnProvider,
     obs: &mut impl RunObserver,
 ) -> Option<String> {
-    let tools = agent::tools_for(agent.target(), role.scope);
+    let tools = agent.tools_for_stage(role.scope);
     let mut history: Vec<serde_json::Value> = vec![serde_json::json!({
         "role": "user",
         "content": [{"type": "text", "text": seed_user_msg}],
@@ -538,6 +563,11 @@ pub(crate) async fn run_stage(
                 id: tc.id.clone(),
                 ok,
             });
+            // A browser restart is the agent's business to perform and the
+            // operator's to know about.
+            for warning in agent.take_warnings() {
+                obs.emit(RunEvent::Warning(warning));
+            }
 
             // `submit_review` ends the stage after its result is recorded.
             if tc.name == "submit_review" {
@@ -975,6 +1005,141 @@ mod controller {
             template_note: "",
             has_aem_connection: false,
         }
+    }
+
+    fn browser_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "blueprint-pipeline-browser-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn fake_browser_tools() -> Vec<serde_json::Value> {
+        vec![serde_json::json!({
+            "name": "browser_navigate",
+            "description": "fake",
+            "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+        })]
+    }
+
+    fn names(tools: &[serde_json::Value]) -> Vec<&str> {
+        tools.iter().filter_map(|t| t["name"].as_str()).collect()
+    }
+
+    fn aem_agent() -> ConversionAgent {
+        ConversionAgent::new(None, Vec::new(), None, "t".into(), OutputTarget::Aem)
+    }
+
+    fn with_fake_browser(agent: ConversionAgent, dir: std::path::PathBuf) -> ConversionAgent {
+        agent.with_browser(agent::browser::BrowserSession::detached(
+            fake_browser_tools(),
+            dir,
+        ))
+    }
+
+    /// The browser family is offered to exactly the stages `BROWSER_SCOPES`
+    /// names, and only when a session is attached: the Author and Reviewer of
+    /// an AEM run see it, the Analyst never does, and a Redacto run has nothing
+    /// to click through even with a session attached.
+    #[test]
+    fn browser_tools_reach_only_the_aem_author_and_reviewer() {
+        let roles = roles::roles_for(OutputTarget::Aem);
+
+        let without = aem_agent();
+        for role in [roles.analyst, roles.author, roles.reviewer] {
+            assert_eq!(
+                without.tools_for_stage(role.scope),
+                agent::tools_for(OutputTarget::Aem, role.scope),
+                "{}",
+                role.name
+            );
+        }
+
+        let with = with_fake_browser(aem_agent(), browser_dir());
+        assert!(with.has_browser());
+        for role in [roles.author, roles.reviewer] {
+            let tools = with.tools_for_stage(role.scope);
+            assert!(
+                names(&tools).contains(&"browser_navigate"),
+                "{}: {:?}",
+                role.name,
+                names(&tools)
+            );
+            // The catalog tools come first and are untouched.
+            assert_eq!(
+                &tools[..tools.len() - 1],
+                &agent::tools_for(OutputTarget::Aem, role.scope)[..]
+            );
+        }
+        assert!(!names(&with.tools_for_stage(roles.analyst.scope)).contains(&"browser_navigate"));
+
+        let redacto = with_fake_browser(bare_agent(), browser_dir());
+        let redacto_roles = roles::roles_for(OutputTarget::Redacto);
+        for role in [
+            redacto_roles.analyst,
+            redacto_roles.author,
+            redacto_roles.reviewer,
+        ] {
+            assert!(
+                !names(&redacto.tools_for_stage(role.scope)).contains(&"browser_navigate"),
+                "{}",
+                role.name
+            );
+        }
+    }
+
+    /// Whatever way a run ends, its browser is closed and its output directory
+    /// removed: no headless Chrome and no downloads outlive the run.
+    #[tokio::test]
+    async fn every_way_out_of_a_run_closes_the_browser() {
+        // Approved.
+        let dir = browser_dir();
+        let agent = with_fake_browser(aem_agent(), dir.clone());
+        let turns = ScriptedTurns::new(vec![
+            text_turn("PLAN"),
+            text_turn("BUILT"),
+            review_turn(true, ""),
+        ]);
+        let mut run_config = config(AbortFlag::default(), 1);
+        run_config.target = OutputTarget::Aem;
+        let outcome = run(agent, run_config, RunSeed::Fresh, &turns, &mut Recorder::default()).await;
+        assert!(outcome.is_some());
+        assert!(!dir.exists(), "the browser output directory must be removed on approval");
+
+        // Unapproved: the review rounds run out.
+        let dir = browser_dir();
+        let agent = with_fake_browser(aem_agent(), dir.clone());
+        let turns = ScriptedTurns::new(vec![
+            text_turn("PLAN"),
+            text_turn("BUILT"),
+            review_turn(false, "nope"),
+            text_turn("FIXED"),
+        ]);
+        let mut run_config = config(AbortFlag::default(), 1);
+        run_config.target = OutputTarget::Aem;
+        let outcome = run(agent, run_config, RunSeed::Fresh, &turns, &mut Recorder::default()).await;
+        assert!(outcome.is_some());
+        assert!(!dir.exists(), "the browser output directory must be removed when unapproved");
+
+        // Aborted before the first turn.
+        let dir = browser_dir();
+        let agent = with_fake_browser(aem_agent(), dir.clone());
+        let abort = AbortFlag::default();
+        abort.abort();
+        let mut run_config = config(abort, 1);
+        run_config.target = OutputTarget::Aem;
+        let outcome = run(
+            agent,
+            run_config,
+            RunSeed::Fresh,
+            &ScriptedTurns::new(vec![]),
+            &mut Recorder::default(),
+        )
+        .await;
+        assert!(outcome.is_none());
+        assert!(!dir.exists(), "the browser output directory must be removed on abort");
     }
 
     #[tokio::test]
