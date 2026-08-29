@@ -31,7 +31,11 @@
             jcr:lastModified="{Date}2025-01-01T00:00:00.000+01:00"
             jcr:lastModifiedBy="{{ author }}"
             jcr:primaryType="nt:unstructured"
-            jcr:title="{{ title }}"
+            {#  On the first page the heading below is a static text; this panel
+                repeating it as its own title would render the subtitle twice
+                (PROBLEM-banking-subtitle, owner directive 2026-08-26). The panel
+                itself stays: it is what carries the jump-to-field button. #}
+            {% if not is_first_page %}jcr:title="{{ title }}"{% endif %}
             sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
             dorExcludeDescription="true"
             {% if name is starting_with("PN_FormConfigurator") %}dorExclusion="true" summaryExclusion="true"{% endif %}
@@ -47,6 +51,26 @@
             validateOnStepCompletion="{Boolean}false">
             <layout jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}" columns="1" dorLayoutType="columnar" nonNavigable="{Boolean}true" toolbarPosition="Bottom"/>
             <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
+                {#  First page: a plain static text carrying `subtitle-after-form-title`,
+                    which is what renders in the finished DoR -- an `h2` step title does
+                    not. It carries no DoR or summary exclusion for the same reason: the
+                    heading is meant to appear there. Every other page keeps its step
+                    title (PROBLEM-banking-subtitle). #}
+                {% if is_first_page %}
+                <textdraw_{{ uuid }}
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="{{ author }}"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="{{ author }}"
+                    jcr:primaryType="nt:unstructured"
+                    sling:resourceType="{{ variables.custom_resource_type_base }}/controls/textdraw"
+                    _value="&lt;p>{{ title }}&lt;/p>&#xa;"
+                    css="subtitle-after-form-title"
+                    dorFieldStyling="{{ variables.dor_field_styling }}"
+                    guideNodeClass="guideTextDraw"
+                    name="ST_{{ name | replace(from="PN_", to="") }}"
+                    textIsRich="true"/>
+                {% else %}
                 <titledraw_{{ uuid }}
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
                     jcr:createdBy="{{ author }}"
@@ -63,6 +87,7 @@
                     name="TTL_{{ name | replace(from="PN_", to="") }}"
                     summaryExclusion="true"
                     textIsRich="true"/>
+                {% endif %}
             </items>
         </panel_title_{{ uuid }}>
         {% endif %}

@@ -779,6 +779,8 @@ fn build_node_context(
     if let Some(attrs) = node.attrs() {
         insert_attrs(&mut ctx, attrs);
     }
+    // The DoR's second header slot, for the banking-relationship preface.
+    ctx.insert("header_slot_text", &config.header_slot_text);
     // The canonical codes, not the detected ones: a language that reached the
     // tree under a synonym (`es`) must be named on the form under the code the
     // platform files it as (`sp`).
@@ -821,6 +823,19 @@ fn build_node_context(
             ctx.insert("bind_ref", bind_ref);
             ctx.insert("children", &render_children(children, config, index, pass));
             ctx.insert("has_input", &children.iter().any(holds_input));
+            // The banking-relationship fragment marks the FIRST page. A heading
+            // rendered there as an `h2` step title does not appear in the finished
+            // DoR, so on that page the heading is a `subtitle-after-form-title`
+            // static text instead (PROBLEM-banking-subtitle, owner directive
+            // 2026-08-24). The wrapper panel stays -- it is what carries the
+            // jump-to-field button -- but loses its own title, or the subtitle
+            // would exist twice.
+            ctx.insert(
+                "is_first_page",
+                &children
+                    .iter()
+                    .any(|c| matches!(c, AemNode::Preface { .. })),
+            );
 
             // Conditional panels carry an AABO-style `fd:visible` SHOW_EXPRESSION
             // that toggles both form visibility and DOR inclusion via the UBS

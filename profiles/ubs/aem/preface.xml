@@ -65,5 +65,31 @@
             {% endif %}
             {{ raw_children }}
 </{{ element_name }}>
+        {#  The legal-entity line the finished document prints under the banking
+            relationship ("UBS Europe SE (Succursale Italia)"). It is not shown on
+            screen and not listed on the summary step; `dorHeaderSlot="slot2"`
+            places it in the DoR header, and `alwaysInPdf` + `showIfHidden` are
+            what carry a hidden node that far. The text is the source document's
+            own master-page header (see `header_slot_text`), so a form without one
+            gets no draw rather than an invented line. #}
+        {% if header_slot_text %}
+        <textdraw_slot2_{{ uuid }}
+            jcr:created="{Date}2025-01-01T00:00:00.000Z"
+            jcr:createdBy="{{ author }}"
+            jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+            jcr:lastModifiedBy="{{ author }}"
+            jcr:primaryType="nt:unstructured"
+            sling:resourceType="{{ variables.custom_resource_type_base }}/controls/textdraw"
+            _value="&lt;p>{{ header_slot_text }}&lt;/p>&#xa;"
+            alwaysInPdf="true"
+            dorFieldStyling="{{ variables.dor_field_styling }}"
+            dorHeaderSlot="slot2"
+            guideNodeClass="guideTextDraw"
+            name="ST_HeaderSlot2"
+            showIfHidden="true"
+            summaryExclusion="true"
+            textIsRich="true"
+            visible="{Boolean}false"/>
+        {% endif %}
     </items>
 </panel_{{ uuid }}>
