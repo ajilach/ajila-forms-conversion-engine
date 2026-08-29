@@ -31175,6 +31175,146 @@ fn toolbar_ends_with_the_save_progress_button() {
     }
 }
 
+/// PROBLEM-banking-subtitle: on the first page -- the one carrying the banking
+/// relationship -- the heading is a `subtitle-after-form-title` static text, not
+/// an `h2` step title, because an `h2` does not appear in the finished DoR. The
+/// wrapper panel stays (it carries the Edit button) but loses its own title, or
+/// the subtitle would render twice.
+#[test]
+fn the_first_page_heading_is_a_subtitle_not_a_step_title() {
+    for (pdf, xml) in rendered_ubs_forms() {
+        let subtitles: Vec<_> = open_tags(&xml)
+            .into_iter()
+            .filter(|(_, tag)| tag.contains("css=\"subtitle-after-form-title\""))
+            .collect();
+        assert_eq!(
+            subtitles.len(),
+            1,
+            "{pdf}: expected exactly one first-page subtitle, found {}",
+            subtitles.len()
+        );
+        let (_, subtitle) = &subtitles[0];
+        assert!(
+            subtitle.contains("controls/textdraw") && !subtitle.contains("headingLevel"),
+            "{pdf}: the subtitle must be a plain static text:\n{subtitle}"
+        );
+        assert!(
+            subtitle.contains("name=\"ST_"),
+            "{pdf}: a static text is named ST_:\n{subtitle}"
+        );
+        assert!(
+            !subtitle.contains("dorExclusion=") && !subtitle.contains("summaryExclusion="),
+            "{pdf}: the subtitle is excluded from the DoR it exists for:\n{subtitle}"
+        );
+
+        // The panel around it keeps the Edit button and carries no title.
+        let at = xml.find("css=\"subtitle-after-form-title\"").unwrap();
+        let wrapper = open_tags(&xml[..at])
+            .into_iter()
+            .rev()
+            .find(|(name, _)| name.starts_with("panel_title_"))
+            .map(|(_, tag)| tag)
+            .unwrap_or_else(|| panic!("{pdf}: no title panel around the subtitle"));
+        assert!(
+            !wrapper.contains("jcr:title="),
+            "{pdf}: the wrapper repeats the subtitle as its own title:\n{wrapper}"
+        );
+        // The Edit button survives the conversion -- unless the page is the form
+        // configurator, which is excluded from the summary and gets none by
+        // design (see `panel.xml`, and the checklist in
+        // `specs/feedback/manual-changes-italy-033.md`).
+        if !wrapper.contains("name=\"PN_FormConfigurator") {
+            assert!(
+                wrapper.contains("jumpToFieldButtonVisible=\"true\""),
+                "{pdf}: the wrapper lost the Edit button:\n{wrapper}"
+            );
+        }
+
+        // Every other page keeps its step title.
+        assert!(
+            xml.contains("css=\"stepTitle\""),
+            "{pdf}: the other pages lost their step titles"
+        );
+    }
+}
+
+/// The legal-entity line under the banking relationship goes to the DoR's second
+/// header slot, hidden on screen and off the summary step. Its text is the source
+/// document's own master-page header, so a form without one gets no draw.
+#[test]
+fn the_banking_preface_carries_the_dor_header_slot_text() {
+    let (pdf, xml) = rendered_ubs_forms()
+        .into_iter()
+        .find(|(pdf, _)| pdf.starts_with("AAOS"))
+        .expect("the Italian form");
+    let draw = open_tags(&xml)
+        .into_iter()
+        .find(|(_, tag)| tag.contains("dorHeaderSlot=\"slot2\""))
+        .map(|(_, tag)| tag)
+        .unwrap_or_else(|| panic!("{pdf}: no slot-2 header draw"));
+    for attr in [
+        "alwaysInPdf=\"true\"",
+        "showIfHidden=\"true\"",
+        "summaryExclusion=\"true\"",
+        "visible=\"{Boolean}false\"",
+        "name=\"ST_HeaderSlot2\"",
+    ] {
+        assert!(draw.contains(attr), "{pdf}: the slot-2 draw lacks {attr}:\n{draw}");
+    }
+    assert!(
+        !draw.contains("dorExclusion="),
+        "{pdf}: the slot-2 draw exists to reach the DoR:\n{draw}"
+    );
+    assert!(
+        draw.contains("&lt;b>UBS Europe SE&lt;/b> (Succursale Italia)"),
+        "{pdf}: the slot-2 text is not the source's own header:\n{draw}"
+    );
+}
+
+/// [`crate::aem::header_slot_text`]: the entity is bolded, what qualifies it is
+/// not, and a validity line is not the issuer.
+#[test]
+fn header_slot_text_keeps_the_entity_and_drops_the_validity_line() {
+    use crate::aem::header_slot_text;
+
+    assert_eq!(
+        header_slot_text("Gültig ab 02.01.2018\nUBS Europe SE").as_deref(),
+        Some("&lt;b>UBS Europe SE&lt;/b>")
+    );
+    assert_eq!(
+        header_slot_text("UBS Europe SE (Succursale Italia)").as_deref(),
+        Some("&lt;b>UBS Europe SE&lt;/b> (Succursale Italia)")
+    );
+    assert_eq!(
+        header_slot_text("UBS Europe SE\nSuccursale Italia").as_deref(),
+        Some("&lt;b>UBS Europe SE&lt;/b> Succursale Italia")
+    );
+    // Nothing but a date: no line to print, so no draw.
+    assert_eq!(header_slot_text("02.01.2018").as_deref(), None);
+    assert_eq!(header_slot_text("   ").as_deref(), None);
+}
+
+/// `review_output` reports the swept feedback rules, so the Reviewer sees the
+/// same verdicts the corpus guard would give. The engine's own output must be
+/// clean.
+#[test]
+fn review_output_reports_no_feedback_violations_for_the_engine() {
+    for (pdf, lang) in [("AAOS_033_IT.pdf", "it"), ("AAAI_019_DE.pdf", "de")] {
+        let (input, root, config) = helpers::build_aem_test_output(&[(pdf, lang)]);
+        let report = crate::review_output(&input, &root, &config, lang);
+        assert!(
+            report.feedback_violations.is_empty(),
+            "{pdf}: {} feedback violation(s): {:?}",
+            report.feedback_violations.len(),
+            report
+                .feedback_violations
+                .iter()
+                .map(|v| format!("{} on {} -- {}", v.rule, v.node, v.detail))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 // ============================================================================
 // Presentation attributes (`AemAttrs`)
 //
@@ -31659,10 +31799,26 @@ fn loaded_subtree_diff(
             Some(Value::Array(a)) => a,
             _ => &empty,
         };
-        let by_name: std::collections::HashMap<&str, &Value> = rc
-            .iter()
-            .filter_map(|c| c.get("name").and_then(|n| n.as_str()).map(|n| (n, c)))
-            .collect();
+        // A run of adjacent static texts is wrapped in a `PN_StaticText_…` panel on
+        // the way out (the writer's normalisation, see `aem::normalize`), so a draw
+        // that was a direct child is one level deeper on reload. Look through those
+        // wrappers: they are writer scaffolding, like the per-page `panel_title`.
+        let mut by_name: std::collections::HashMap<&str, &Value> = std::collections::HashMap::new();
+        for child in rc {
+            let name = child.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            if name.starts_with("PN_StaticText_") {
+                if let Some(Value::Array(inner)) = child.get("children") {
+                    for wrapped in inner {
+                        if let Some(n) = wrapped.get("name").and_then(|n| n.as_str()) {
+                            by_name.insert(n, wrapped);
+                        }
+                    }
+                }
+            }
+            if !name.is_empty() {
+                by_name.insert(name, child);
+            }
+        }
         for child in oc {
             let name = child.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let ty = child.get("type").and_then(|t| t.as_str()).unwrap_or("?");

@@ -42,6 +42,10 @@ pub struct ReviewReport {
     /// Every input must carry a title; positional label attachment can leave
     /// one empty or bind the wrong nearby text.
     pub label_issues: Vec<LabelIssue>,
+    /// Violations of the swept feedback rules -- the invariants the deployed
+    /// corpus is held to, checked on the rendered JCR XML. See
+    /// [`FeedbackViolation`].
+    pub feedback_violations: Vec<FeedbackViolation>,
     /// Human-readable observations (field-count mismatch, empty tree, truncation).
     pub notes: Vec<String>,
 }
@@ -121,6 +125,8 @@ pub fn review_output(
     let (mut naming_violations, naming_counts, mut label_issues) =
         check_naming_conventions(&aem_xml);
 
+    let mut feedback_violations = check_feedback_rules(&aem_xml);
+
     let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
 
     let mut notes = Vec::new();
@@ -165,6 +171,25 @@ pub fn review_output(
         label_issues.truncate(MAX_LABEL_ISSUES);
     }
 
+    if !feedback_violations.is_empty() {
+        let mut rules: Vec<&str> = feedback_violations.iter().map(|v| v.rule.as_str()).collect();
+        rules.sort_unstable();
+        rules.dedup();
+        notes.push(format!(
+            "feedback: {} violation(s) of {} swept rule(s) ({})",
+            feedback_violations.len(),
+            rules.len(),
+            rules.join(", ")
+        ));
+    }
+    if feedback_violations.len() > MAX_FEEDBACK {
+        notes.push(format!(
+            "feedback_violations truncated to {MAX_FEEDBACK} of {} entries",
+            feedback_violations.len()
+        ));
+        feedback_violations.truncate(MAX_FEEDBACK);
+    }
+
     ReviewReport {
         coverage,
         input_field_count: input_fields,
@@ -172,6 +197,7 @@ pub fn review_output(
         missing_text: missing,
         naming_violations,
         label_issues,
+        feedback_violations,
         notes,
     }
 }
@@ -260,6 +286,9 @@ pub fn review_redacto(
         output_field_count: 0,
         missing_text: missing,
         naming_violations: Vec::new(),
+        // Redacto documents are text: none of the AEM shapes these rules police
+        // exist there.
+        feedback_violations: Vec::new(),
         // Redacto is a text-only target: it has no AEM inputs to label.
         label_issues: Vec::new(),
         notes,
@@ -470,6 +499,277 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
         | AemNode::Appendix { .. }
         | AemNode::FootnotePlaceholder { .. } => {}
     }
+}
+
+// ── Swept feedback rules (ports the feedback repo's detectors) ───────────────
+//
+// `ajila-forms-conversion-feedback` fixes systemic defects across the deployed
+// UBS corpus and its CI guard fails any form that re-introduces one. A form this
+// engine converts joins that corpus, and a package dropped in for review IS one
+// of its forms, so the same verdicts belong in the review the agent reads --
+// `scripts/check_feedback_rules.py` runs the real detectors, this runs the ones
+// that need nothing but the rendered XML.
+//
+// Deliberately not ported, because they need data this crate does not have:
+// PROBLEM-fragment-title-duplicate (the titles each fragment renders, vendored
+// per fragment library) and PROBLEM-metadata-languages (the source PDFs
+// delivered for the form).
+
+/// One swept-rule violation found in the rendered JCR XML.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FeedbackViolation {
+    /// The registry slug, e.g. `PROBLEM-dor-exclusion-implies-summary`.
+    pub rule: String,
+    /// The offending component's `name`, or its JCR tag when it has none.
+    pub node: String,
+    /// What is wrong with this node, in one line.
+    pub detail: String,
+}
+
+/// Cap on how many feedback violations to list, so the report stays readable.
+const MAX_FEEDBACK: usize = 400;
+
+/// Attribute value lookup on one open tag, quote-aware.
+fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let mut rest = tag;
+    while let Some(at) = rest.find(name) {
+        let after = &rest[at + name.len()..];
+        let before_ok = at == 0
+            || rest.as_bytes()[at - 1].is_ascii_whitespace();
+        if before_ok && after.starts_with("=\"") {
+            let value = &after[2..];
+            return value.find('"').map(|end| &value[..end]);
+        }
+        rest = &rest[at + name.len()..];
+    }
+    None
+}
+
+fn has_attr(tag: &str, name: &str, value: &str) -> bool {
+    attr(tag, name) == Some(value)
+}
+
+/// The `name` a violation is reported under: the component's own, or its tag.
+fn tag_label(tag_name: &str, tag: &str) -> String {
+    attr(tag, "name").unwrap_or(tag_name).to_string()
+}
+
+/// Every open tag of `xml` as `(tag_name, tag_text)`, quote-aware: a rich-text
+/// `_value` contains a literal `>`, so a `<tag[^>]*>` scan splits tags in the
+/// middle and both over- and under-matches.
+fn open_tags(xml: &str) -> Vec<(&str, &str)> {
+    let bytes = xml.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' || matches!(bytes.get(i + 1), Some(b'/') | Some(b'!') | Some(b'?')) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let mut j = i + 1;
+        let mut quoted = false;
+        while j < bytes.len() {
+            match bytes[j] {
+                b'"' => quoted = !quoted,
+                b'>' if !quoted => break,
+                _ => {}
+            }
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
+        let tag = &xml[start..=j];
+        let name_end = tag[1..]
+            .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .map(|n| n + 1)
+            .unwrap_or(tag.len());
+        out.push((&tag[1..name_end], tag));
+        i = j + 1;
+    }
+    out
+}
+
+/// The fragment family that reaches the reader through the PDF alone
+/// (PROBLEM-internal-bank-use-pdf-only), by the `<library>/<fragment>` tail of
+/// its `fragRef` -- the same list `normalize.rs` sets the flags from.
+fn is_internal_bank_use(frag_ref: &str) -> bool {
+    let parts: Vec<&str> = frag_ref.rsplit('/').take(2).collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    let tail = format!("{}/{}", parts[1], parts[0]);
+    crate::aem::normalize::INTERNAL_BANK_USE_FRAGMENTS.contains(&tail.as_str())
+}
+
+/// Check the rendered JCR XML against the swept feedback rules.
+pub(crate) fn check_feedback_rules(xml: &str) -> Vec<FeedbackViolation> {
+    let mut out = Vec::new();
+    let mut push = |rule: &str, node: String, detail: String| {
+        out.push(FeedbackViolation {
+            rule: rule.into(),
+            node,
+            detail,
+        })
+    };
+
+    let tags = open_tags(xml);
+    let mut save_progress = 0usize;
+
+    for (tag_name, tag) in &tags {
+        let label = tag_label(tag_name, tag);
+
+        // PROBLEM-panel-type-ubs: every panel is the UBS custom panel. The
+        // default AEM panel has no Summary authoring section, so the
+        // jump-to-field button cannot be set on it.
+        if has_attr(tag, "sling:resourceType", "fd/af/components/panel") {
+            push(
+                "PROBLEM-panel-type-ubs",
+                label.clone(),
+                "uses the default AEM panel; every panel must be \
+                 ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                    .into(),
+            );
+        }
+
+        // PROBLEM-dor-exclusion-implies-summary: the UBS DoR is Redacto
+        // rendering the summary, so a node kept out of the DoR but left in the
+        // summary still reaches the reader.
+        if has_attr(tag, "dorExclusion", "true") && !has_attr(tag, "summaryExclusion", "true") {
+            push(
+                "PROBLEM-dor-exclusion-implies-summary",
+                label.clone(),
+                "is excluded from the Document of Record but not from the summary".into(),
+            );
+        }
+
+        // PROBLEM-visual-editor-rules: a rule lives in the code editor as
+        // JavaScript on `fd:scripts`; `fd:rules` stays empty.
+        if *tag_name == "fd:rules" {
+            for prop in [
+                "fd:visible",
+                "fd:click",
+                "fd:valueCommit",
+                "fd:init",
+                "fd:calculate",
+                "fd:validate",
+            ] {
+                if tag.contains(&format!("{prop}=\"")) {
+                    push(
+                        "PROBLEM-visual-editor-rules",
+                        label.clone(),
+                        format!("carries a visual-editor rule in {prop}; it belongs on fd:scripts"),
+                    );
+                }
+            }
+        }
+
+        // PROBLEM-checkbox-rich-text-options: without it the DoR wraps a long
+        // caption under the box instead of beside it.
+        if attr(tag, "sling:resourceType").is_some_and(|rt| rt.ends_with("controls/checkbox"))
+            && !has_attr(tag, "richTextOptions", "true")
+        {
+            push(
+                "PROBLEM-checkbox-rich-text-options",
+                label.clone(),
+                "a checkbox needs richTextOptions=\"true\" or its DoR caption wraps under the box"
+                    .into(),
+            );
+        }
+
+        // PROBLEM-jump-to-field-button: the Edit button belongs on the
+        // step-title panel, never on the title draw, where it does nothing.
+        if attr(tag, "sling:resourceType").is_some_and(|rt| rt.ends_with("controls/titledraw"))
+            && has_attr(tag, "jumpToFieldButtonVisible", "true")
+        {
+            push(
+                "PROBLEM-jump-to-field-button",
+                label.clone(),
+                "the jump-to-field button sits on the title draw, where it has no effect; \
+                 it belongs on the enclosing step-title panel"
+                    .into(),
+            );
+        }
+
+        // PROBLEM-internal-bank-use-pdf-only: the bank's own copy. Never on
+        // screen, never on the summary, always in the PDF -- and never
+        // `dorExclusion`, which would undo `alwaysInPdf`.
+        if let Some(frag_ref) = attr(tag, "fragRef") {
+            if is_internal_bank_use(frag_ref) {
+                let mut missing = Vec::new();
+                if !has_attr(tag, "summaryExclusion", "true") {
+                    missing.push("summaryExclusion");
+                }
+                if !has_attr(tag, "alwaysInPdf", "true") {
+                    missing.push("alwaysInPdf");
+                }
+                if !has_attr(tag, "visible", "{Boolean}false") {
+                    missing.push("visible=false");
+                }
+                if !missing.is_empty() {
+                    push(
+                        "PROBLEM-internal-bank-use-pdf-only",
+                        label.clone(),
+                        format!("internal-bank-use panel lacks {}", missing.join(", ")),
+                    );
+                }
+                if has_attr(tag, "dorExclusion", "true") {
+                    push(
+                        "PROBLEM-internal-bank-use-pdf-only",
+                        label.clone(),
+                        "dorExclusion undoes alwaysInPdf: the block would reach no one".into(),
+                    );
+                }
+            }
+
+            // PROBLEM-infobox-dor-copy: the on-screen infobox is kept out of the
+            // DoR, and a hidden copy carries it into the PDF.
+            if frag_ref.ends_with("affrg_italy_infobox") {
+                let hidden = has_attr(tag, "visible", "{Boolean}false");
+                if hidden && !has_attr(tag, "alwaysInPdf", "true") {
+                    push(
+                        "PROBLEM-infobox-dor-copy",
+                        label.clone(),
+                        "the DoR copy of the infobox needs alwaysInPdf, or it renders nowhere"
+                            .into(),
+                    );
+                } else if !hidden
+                    && !(has_attr(tag, "dorExclusion", "true")
+                        && has_attr(tag, "summaryExclusion", "true"))
+                {
+                    push(
+                        "PROBLEM-infobox-dor-copy",
+                        label.clone(),
+                        "the on-screen infobox must be excluded from the DoR and the summary"
+                            .into(),
+                    );
+                }
+            }
+        }
+
+        if has_attr(tag, "name", "fwbSaveProgress") {
+            save_progress += 1;
+            if has_attr(tag, "visible", "{Boolean}false") {
+                push(
+                    "PROBLEM-nav-save-progress-required",
+                    label.clone(),
+                    "the Save Progress button is hidden".into(),
+                );
+            }
+        }
+    }
+
+    // PROBLEM-nav-save-progress-required: the toolbar must carry it at all.
+    if save_progress == 0 {
+        push(
+            "PROBLEM-nav-save-progress-required",
+            "toolbar".into(),
+            "the toolbar has no Save Progress button (`fwbSaveProgress`)".into(),
+        );
+    }
+
+    out
 }
 
 // ── Naming conventions (ports `find_naming_violations.py`) ───────────────────
@@ -1056,3 +1356,125 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod feedback_rule_tests {
+    use super::check_feedback_rules;
+
+    /// A form with the swept defects in it, one per node. Hand-built: the engine
+    /// cannot emit these shapes any more, and a package loaded into the engine is
+    /// repaired by the templates on the way out -- which is why this checks the
+    /// checker directly, on the XML a reviewer would be looking at.
+    const DEFECTIVE: &str = r##"<jcr:root>
+  <panel_default sling:resourceType="fd/af/components/panel" dorExclusion="true"
+      guideNodeClass="guidePanel" name="PN_Default"/>
+  <checkbox_plain sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/checkbox"
+      guideNodeClass="guideCheckBox" name="CB_Options" options="[1=One]"/>
+  <titledraw_jtf sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/titledraw"
+      _value="&lt;p>Heading&lt;/p>" headingLevel="2" jumpToFieldButtonVisible="true" name="TTL_Step"/>
+  <fd:rules fd:visible="[{&quot;nodeName&quot;:&quot;ROOT&quot;}]" jcr:primaryType="nt:unstructured"/>
+  <panel_internal sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+      fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_internalbankuse_ouref"
+      guideNodeClass="guidePanel" name="PN_FRG_InternalBankUseOnly"/>
+  <panel_infobox_copy sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+      fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_infobox"
+      guideNodeClass="guidePanel" name="PN_ItalyInfoboxDoR" visible="{Boolean}false"/>
+</jcr:root>"##;
+
+    /// A form that satisfies every rule the checker knows.
+    const CLEAN: &str = r##"<jcr:root>
+  <panel_ubs sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+      dorExclusion="true" summaryExclusion="true" guideNodeClass="guidePanel" name="PN_Ok"/>
+  <checkbox_ok sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/checkbox"
+      guideNodeClass="guideCheckBox" name="CB_Ok" options="[1=One]" richTextOptions="true"/>
+  <fd:rules jcr:primaryType="nt:unstructured"/>
+  <panel_internal sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+      alwaysInPdf="true"
+      fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_internalbankuse_ouref"
+      guideNodeClass="guidePanel" name="PN_FRG_InternalBankUseOnly" summaryExclusion="true"
+      visible="{Boolean}false"/>
+  <panel_infobox sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+      dorExclusion="true"
+      fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_infobox"
+      guideNodeClass="guidePanel" name="PN_ItalyInfobox" summaryExclusion="true"/>
+  <panel_infobox_copy sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+      alwaysInPdf="true"
+      fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_infobox"
+      guideNodeClass="guidePanel" name="PN_ItalyInfoboxDoR" summaryExclusion="true"
+      visible="{Boolean}false"/>
+  <guidebutton sling:resourceType="fd/af/components/guidebutton" dorExclusion="true"
+      summaryExclusion="true" guideNodeClass="guideButton" name="fwbSaveProgress"/>
+</jcr:root>"##;
+
+    fn rules_of(xml: &str) -> Vec<String> {
+        let mut rules: Vec<String> = check_feedback_rules(xml)
+            .into_iter()
+            .map(|v| v.rule)
+            .collect();
+        rules.sort();
+        rules.dedup();
+        rules
+    }
+
+    #[test]
+    fn every_swept_defect_is_reported() {
+        let rules = rules_of(DEFECTIVE);
+        for expected in [
+            "PROBLEM-checkbox-rich-text-options",
+            "PROBLEM-dor-exclusion-implies-summary",
+            "PROBLEM-infobox-dor-copy",
+            "PROBLEM-internal-bank-use-pdf-only",
+            "PROBLEM-jump-to-field-button",
+            "PROBLEM-nav-save-progress-required",
+            "PROBLEM-panel-type-ubs",
+            "PROBLEM-visual-editor-rules",
+        ] {
+            assert!(
+                rules.iter().any(|r| r == expected),
+                "{expected} was not reported; got {rules:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_conforming_form_reports_nothing() {
+        assert_eq!(rules_of(CLEAN), Vec::<String>::new());
+    }
+
+    /// The defect is named on the node that carries it, so the reviewer can find
+    /// it -- by the component's `name`, which is how these forms address a node.
+    #[test]
+    fn a_violation_names_the_node_it_is_on() {
+        let violations = check_feedback_rules(DEFECTIVE);
+        let internal = violations
+            .iter()
+            .find(|v| v.rule == "PROBLEM-internal-bank-use-pdf-only")
+            .expect("the internal-bank-use violation");
+        assert_eq!(internal.node, "PN_FRG_InternalBankUseOnly");
+        assert!(
+            internal.detail.contains("summaryExclusion")
+                && internal.detail.contains("alwaysInPdf")
+                && internal.detail.contains("visible"),
+            "the detail must say what is missing: {}",
+            internal.detail
+        );
+    }
+
+    /// A rich-text `_value` carries a literal `>`, which a naive tag scan reads
+    /// as the end of the tag -- and then misses the attributes behind it.
+    #[test]
+    fn a_rich_text_value_does_not_hide_the_rest_of_the_tag() {
+        let xml = r##"<jcr:root>
+  <textdraw sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textdraw"
+      _value="&lt;p>text with a &gt; and a &lt;b>bold&lt;/b> run&lt;/p>" name="ST_Rich"
+      dorExclusion="true"/>
+  <guidebutton name="fwbSaveProgress"/>
+</jcr:root>"##;
+        let rules = rules_of(xml);
+        assert_eq!(
+            rules,
+            vec!["PROBLEM-dor-exclusion-implies-summary".to_string()],
+            "the attribute after the rich text must still be seen"
+        );
+    }
+}
