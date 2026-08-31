@@ -37,22 +37,23 @@
             <items
                 jcr:primaryType="nt:unstructured"
                 sling:resourceType="fd/af/layouts/gridFluidLayout2">
-                <panel_copy_copy
-                    jcr:created="{Date}2026-04-08T17:16:18.644+02:00"
-                    jcr:createdBy="admin"
-                    jcr:lastModified="{Date}2026-05-06T17:28:10.167+02:00"
-                    jcr:lastModifiedBy="admin"
+                <panel_sgn_cpgrp
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="blueprint"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
+                    jcr:title="Account holder"
                     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
-                    completionExpReq="{Boolean}false"
+                    accessibilityLabel="Account holder"
                     dorExcludeDescription="true"
-                    dorExcludeTitle="true"
-                    dorFieldStyling="Default"
-                    fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_ClientSignature1"
+                    dorFieldStyling="Repeating Panel Numbering"
+                    fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
                     guideNodeClass="guidePanel"
+                    headingLevel="3"
                     maxOccur="4"
                     minOccur="1"
-                    name="PN_SignatureIndividual"
+                    name="PN_SGN_CPGRP"
                     textIsRich="true"
                     validateOnStepCompletion="{Boolean}false">
                     <layout
@@ -60,11 +61,36 @@
                         sling:resourceType="fd/af/layouts/gridFluidLayout2"
                         columns="1"
                         dorLayoutType="columnar"
-                        dorNumCols="6"
+                        dorNumCols="1"
                         nonNavigable="{Boolean}true"
                         toolbarPosition="Bottom"/>
-                    <items jcr:primaryType="nt:unstructured"/>
-                </panel_copy_copy>
+                    <items
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2"/>
+                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                    <fd:scripts jcr:primaryType="nt:unstructured"/>
+                </panel_sgn_cpgrp>
+                <textbox_donotdelete
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="blueprint"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="blueprint"
+                    jcr:primaryType="nt:unstructured"
+                    jcr:title="Do not delete"
+                    sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/textbox"
+                    dorExclusion="true"
+                    summaryExclusion="true"
+                    dorFieldStyling="Default"
+                    guideNodeClass="guideTextBox"
+                    hideTitle="true"
+                    name="TXT_Donotdelete"
+                    textIsRich="[true,true,true,true]"
+                    visible="{Boolean}false">
+                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                    <fd:scripts
+                        fd:calc="[{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_CPGRP.instanceManager.instances.length;\\nfor (var i = 0; i &lt; len; i++)\\n{\\nvar pnIndividual = PN_CPGRP.instanceManager.instances[i].PN_IndividualBasic.PN_Name_Individual;\\nvar lastName = pnIndividual.TXT_LastName.value;\\nvar firstName = pnIndividual.TXT_FirstName.value;\\nPN_SGN_CPGRP.instanceManager.instances[i].PN_GenericSignature.TXT_Name_Generic.value = ((firstName ? firstName : \\&quot;\\&quot;) + \\&quot; \\&quot; + (lastName ? lastName : \\&quot;\\&quot;)).trim();\\n}&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3.TXT_Donotdelete&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_AHGRP.instanceManager.instances.length;\\nfor (var i = 0; i &lt; len; i++)\\n{\\nvar pnIndividual = PN_AHGRP.instanceManager.instances[i].PN_IndividualBasic.PN_Name_Individual;\\nvar lastName = pnIndividual.TXT_LastName.value;\\nvar firstName = pnIndividual.TXT_FirstName.value;\\nPN_Sign_AHGRP.instanceManager.instances[i].PN_GenericSignature.TXT_Name_Generic.value = ((firstName ? firstName : \\&quot;\\&quot;) + \\&quot; \\&quot; + (lastName ? lastName : \\&quot;\\&quot;)).trim();\\n}&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3.TXT_Donotdelete&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true},{&quot;script&quot;:{&quot;content&quot;:&quot;var len = PN_AHGRP_AR.instanceManager.instances.length;\\nfor (var i = 0; i &lt; len; i++)\\n{\\nvar pnIndividual = PN_AHGRP_AR.instanceManager.instances[i].PN_IndividualBasic.PN_Name_Individual;\\nvar lastName = pnIndividual.TXT_LastName.value;\\nvar firstName = pnIndividual.TXT_FirstName.value;\\nPN_Sign_AHGRP_AR.instanceManager.instances[i].PN_GenericSignature.TXT_Name_Generic.value = ((firstName ? firstName : \\&quot;\\&quot;) + \\&quot; \\&quot; + (lastName ? lastName : \\&quot;\\&quot;)).trim();\\n}&quot;\,&quot;event&quot;:&quot;Calculate&quot;\,&quot;field&quot;:&quot;guide.PN_Signatures_de979668.PN_165356b3.TXT_Donotdelete&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true}]"
+                        jcr:primaryType="nt:unstructured"/>
+                </textbox_donotdelete>
             </items>
             <layout
                 jcr:primaryType="nt:unstructured"
@@ -105,22 +131,23 @@
             <items
                 jcr:primaryType="nt:unstructured"
                 sling:resourceType="fd/af/layouts/gridFluidLayout2">
-                <panel_copy_copy
-                    jcr:created="{Date}2026-04-08T17:16:18.644+02:00"
-                    jcr:createdBy="admin"
-                    jcr:lastModified="{Date}2026-05-06T17:26:37.979+02:00"
-                    jcr:lastModifiedBy="admin"
+                <panel_sign_ahgrp
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="blueprint"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
+                    jcr:title="Legal guardian"
                     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
-                    completionExpReq="{Boolean}false"
+                    accessibilityLabel="Legal guardian"
                     dorExcludeDescription="true"
-                    dorExcludeTitle="true"
-                    dorFieldStyling="Default"
-                    fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_LegalGuardianSignature1"
+                    dorFieldStyling="Repeating Panel Numbering"
+                    fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
                     guideNodeClass="guidePanel"
+                    headingLevel="3"
                     maxOccur="4"
                     minOccur="2"
-                    name="PN_SignatureIndividual"
+                    name="PN_Sign_AHGRP"
                     textIsRich="true"
                     validateOnStepCompletion="{Boolean}false">
                     <layout
@@ -128,11 +155,15 @@
                         sling:resourceType="fd/af/layouts/gridFluidLayout2"
                         columns="1"
                         dorLayoutType="columnar"
-                        dorNumCols="6"
+                        dorNumCols="1"
                         nonNavigable="{Boolean}true"
                         toolbarPosition="Bottom"/>
-                    <items jcr:primaryType="nt:unstructured"/>
-                </panel_copy_copy>
+                    <items
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2"/>
+                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                    <fd:scripts jcr:primaryType="nt:unstructured"/>
+                </panel_sign_ahgrp>
             </items>
             <layout
                 jcr:primaryType="nt:unstructured"
@@ -171,22 +202,23 @@
             <items
                 jcr:primaryType="nt:unstructured"
                 sling:resourceType="fd/af/layouts/gridFluidLayout2">
-                <panel_copy
-                    jcr:created="{Date}2026-04-08T17:16:18.000+02:00"
-                    jcr:createdBy="admin"
-                    jcr:lastModified="{Date}2026-05-11T11:39:05.252+02:00"
-                    jcr:lastModifiedBy="admin"
+                <panel_sign_ahgrp_ar
+                    jcr:created="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:createdBy="blueprint"
+                    jcr:lastModified="{Date}2025-01-01T00:00:00.000Z"
+                    jcr:lastModifiedBy="blueprint"
                     jcr:primaryType="nt:unstructured"
+                    jcr:title="Authorized representative"
                     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
-                    completionExpReq="{Boolean}false"
+                    accessibilityLabel="Authorized representative"
                     dorExcludeDescription="true"
-                    dorExcludeTitle="true"
-                    dorFieldStyling="Default"
-                    fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_ARSignature1"
+                    dorFieldStyling="Repeating Panel Numbering"
+                    fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_SignatureGeneric1"
                     guideNodeClass="guidePanel"
+                    headingLevel="3"
                     maxOccur="4"
                     minOccur="1"
-                    name="PN_ARP_Sign"
+                    name="PN_Sign_AHGRP_AR"
                     textIsRich="true"
                     validateOnStepCompletion="{Boolean}false">
                     <layout
@@ -194,11 +226,15 @@
                         sling:resourceType="fd/af/layouts/gridFluidLayout2"
                         columns="1"
                         dorLayoutType="columnar"
-                        dorNumCols="6"
+                        dorNumCols="1"
                         nonNavigable="{Boolean}true"
                         toolbarPosition="Bottom"/>
-                    <items jcr:primaryType="nt:unstructured"/>
-                </panel_copy>
+                    <items
+                        jcr:primaryType="nt:unstructured"
+                        sling:resourceType="fd/af/layouts/gridFluidLayout2"/>
+                    <fd:rules jcr:primaryType="nt:unstructured"/>
+                    <fd:scripts jcr:primaryType="nt:unstructured"/>
+                </panel_sign_ahgrp_ar>
             </items>
             <layout
                 jcr:primaryType="nt:unstructured"

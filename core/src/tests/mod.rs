@@ -28966,6 +28966,58 @@ fn test_aaox_custom_elements_signatures_on_last_page() {
     );
 }
 
+/// UBS directive (2026-08-20, "AF Fragments and Common Fields with XSD List"):
+/// a form references the generic PARTNER fragments and the generic signature
+/// fragment from `afforms_ubs_fragmentlib`, never the market person/signature
+/// fragments those libraries are being emptied of. The custom templates are the
+/// engine's only source of partner and signature fragment references, so pin
+/// them: every fragRef they emit is either a UBS generic or one of the
+/// deliberately market-specific leftovers (internal bank use).
+#[test]
+fn test_custom_templates_reference_only_ubs_generic_fragments() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/ubs/aem/custom");
+    let mut seen_generics = 0usize;
+    for entry in std::fs::read_dir(&dir).expect("custom templates dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("xml") {
+            continue;
+        }
+        let xml = std::fs::read_to_string(&path).expect("read template");
+        for cap in xml.split("fragRef=\"").skip(1) {
+            let frag = cap.split('\"').next().unwrap_or_default();
+            let market_ok = frag.contains("internalbankuse")
+                || frag.contains("InternalBankUse");
+            assert!(
+                frag.contains("afforms_ubs_fragmentlib") || market_ok,
+                "{:?} references the market fragment {frag:?}; partner and signature \
+                 blocks must use the UBS generics (affrg_ContractualPartnerGeneric1, \
+                 affrg_PartnertoPartnerGeneric1, affrg_SignatureGeneric1)",
+                path.file_name().unwrap()
+            );
+            if frag.contains("afforms_ubs_fragmentlib") {
+                seen_generics += 1;
+            }
+        }
+        // The host authors the signer-name fill: each signatures template must
+        // carry the hidden anchor field with a Calculate document per pair.
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name.starts_with("signatures") {
+            assert!(
+                xml.contains("TXT_Donotdelete") && xml.contains("fd:calc"),
+                "{name} must carry the signer-name calc anchor"
+            );
+            assert!(
+                xml.contains("TXT_Name_Generic"),
+                "{name}'s calc must write the generic signature's name field"
+            );
+        }
+    }
+    assert!(
+        seen_generics >= 8,
+        "expected the partner and signature panels across the four templates, found {seen_generics}"
+    );
+}
+
 #[test]
 fn test_aagz_no_empty_panels_in_tree() {
     let root = build_aem_test_output_with_custom_elements(&[("AAGZ_019_DE.pdf", "de")]);
@@ -32432,9 +32484,13 @@ fn custom_templates_pair_every_visibility_rule_with_an_initialize_rule() {
     }
 
     assert!(files > 0, "no custom templates found in {dir}");
+    // 16 since the UBS general-fragments change: the three remove buttons that
+    // carried a visibility rule are gone (the generic fragments bring their own
+    // BT_RemoveCPG), and the five Add buttons now each carry a paired
+    // fd:visible/fd:init capping the instance count.
     assert_eq!(
-        components, 14,
-        "expected the 14 known visibility rules in the custom templates; a change in \
+        components, 16,
+        "expected the 16 known visibility rules in the custom templates; a change in \
          that count means a rule was added or removed and needs reviewing"
     );
 }

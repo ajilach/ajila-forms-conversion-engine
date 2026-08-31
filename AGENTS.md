@@ -33,6 +33,7 @@
 - Where a node shows up is `AemAttrs` on the node, not a template guess: `summary_exclude` is what
   keeps content out of the UBS DoR (Redacto renders it from the summary), `dor_exclude` is Adobe's
   own switch, and `always_in_pdf` is how a hidden node still reaches the printed document.
+- Partner and signature blocks follow the UBS general-fragments directive (specs/"AF Fragments and Common Fields with XSD List.md", 2026-08-20): the custom templates and the role prompts reference only the four `afforms_ubs_fragmentlib` partner generics plus `affrg_SignatureGeneric1`, hide unneeded sub-panels via one Initialize `hideAFHideDor` rule, pair each data panel with its signature panel by name (`PN_CPGRP`/`PN_SGN_CPGRP`, `PN_AHGRP`/`PN_Sign_AHGRP`), and let the host author the signer-name fill (`TXT_Donotdelete` calc). `test_custom_templates_reference_only_ubs_generic_fragments` pins it; do not reintroduce germany/italy person or signature fragments.
 - The XSD is generated from the **AemNode** tree (`core/src/xsd/from_aem.rs`), and each node's `bindRef` is assigned during that same walk, so a form's bindRefs are by construction exact element paths in its schema. Do not add a second XSD source. Customer-specific element names, ignore rules and occurrence overrides belong in `profiles/<name>/xsd/config.toml` under `[[aemElements]]`, never in Rust.
 
 ## Layout

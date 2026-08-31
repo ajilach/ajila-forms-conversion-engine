@@ -132,28 +132,36 @@ flags, and never a germany/italy/global variant or a dam-path reference. Note `d
 Panel is not what produces those flags here — the `Preface` shape is fixed by the template. The \
 fragment renders the \"UBS Europe SE\" line itself, so \
 NEVER also author a standalone \"UBS Europe SE\" text draw (that duplicates it). It belongs on the \
-FIRST page. ADDRESS block → the entity's AddressBlock fragment (germany \
-`affrg_germany_AddressBlock_CountryDD`, italy `affrg_italy_AddressBlock_CountryDD`, else \
-`affrg_AddressGeneric1` / `affrg_Address1`), NEVER hand-built Street / No. / PLZ / City / Country \
-fields; it renders Country as a dropdown and may add an \"Additional address details\" (Adresszusatz) \
-line, which is standard — keep it. \
-SIGNATURES → choose the fragment for the SIGNER ROLE from the form's entity library \
-(`affrg_ClientSignature1`, `affrg_ARSignature1`, `affrg_LegalGuardianSignature1`, \
-`affrg_LegalRepresentativeSignature1`, `affrg_BOSignature1`, `affrg_UBSEuropeSignature1`, …); do NOT \
-default to `affrg_SignatureGeneric1`, which resolves two different panels and is therefore ambiguous. \
-A signature fragment PRE-FILLS the signer's name by resolving that person's repeatable data panel \
-through a HARDCODED name, and these forms carry no `bind_ref` — so a data panel's `name` IS the \
-binding, and naming it anything else makes the fragment throw and the signature name render empty. \
-The contract is keyed by library AND fragment: germany — ClientSignature1 → `PN_AHRP`, \
-LegalGuardianSignature1 → `PN_LGA`, ARSignature1 → `PN_ARP`, BOSignature1 → `PN_BORP`, \
-UBSEuropeSignature1 → `PN_EURP`; italy — ClientSignature1 → `PN_AHRP`, LegalGuardianSignature1 → \
-`PN_LGA`, LegalRepresentativeSignature1 → `PN_LRP`, UBSEuropeSignature1 → `PN_AHRP`. That list is \
-NOT exhaustive — for any signature fragment not on it, read the fragment's own name-calc and take \
-the identifier before `.instanceManager`. Note that the \
-same fragment name means different things in different libraries, and that a fragment's \
-`//Expecting <role> panel …` comment is frequently stale copy-paste — trust this table and the \
-fragment's actual code, never the comment. Where the \"AF Fragments and Common Fields\" catalogue \
-prescribes `affrg_SignatureGeneric1` for every signer role, THIS paragraph supersedes it. \
+FIRST page. PERSON BLOCKS (account holder / client, representative, legal guardian, beneficial owner, power of \
+attorney): a person's data section is ONE of the four UBS generic PARTNER fragments, chosen by the \
+party's ROLE in the form — the contracting party → `affrg_ContractualPartnerGeneric1` (panel name \
+`PN_CPGRP`); a partner OF that party (representative, guardian, connected party) → \
+`affrg_PartnertoPartnerGeneric1` (`PN_AHGRP`, a second one `PN_AHGRP_AR`); beneficial owner / \
+trustee → `affrg_BeneficialOwnerGeneric1` (`PN_BOGRP`); authorized signer / POA / e-banking user → \
+`affrg_PowerofAttorneyGeneric1` (`PN_PAGRP`). Never reference a germany/italy person fragment and \
+never reference the small building-block fragments a form is assembled from by hand. Each generic \
+contains six sub-panels (PN_EntityBasic, PN_FormAddress, PN_IndividualBasic, PN_Address, \
+PN_DOBNationality, PN_DateIncorporation); the fragment node itself is the repeating row \
+(min/maxOccur on it), and the host hides every sub-panel the source does not show via ONE \
+Initialize SCRIPTMODEL of hideAFHideDor(this.PN_X) calls on that panel — an individual-only block \
+keeps PN_IndividualBasic and hides at least PN_EntityBasic and PN_Address. \
+ADDRESS block → a person's address is that person's partner generic with PN_Address kept visible, \
+never a separate fragment; only a loose address that belongs to no person block is its own \
+`affrg_AddressGeneric1` / `affrg_Address1` reference. NEVER hand-build Street / No. / PLZ / City / \
+Country fields; the fragment renders Country as a dropdown and may add an \"Additional address \
+details\" (Adresszusatz) line, which is standard — keep it. \
+SIGNATURES → EVERY signature block is `affrg_SignatureGeneric1` (the \"AF Fragments and Common \
+Fields\" catalogue mandates it for every signer role; the role-specific germany/italy signature \
+fragments are retired). The generic is role-neutral: the HOST supplies whose signature it is, \
+twice over. (1) By NAME PAIRING: the contracting party's signature panel is `PN_SGN_CPGRP`, and \
+every other party's is `PN_Sign_` + its data panel's token (`PN_AHGRP` → `PN_Sign_AHGRP`); the Add \
+button of a repeatable party adds BOTH instances (window.forms.ubs.addInstance on the data panel \
+and on its signature panel). (2) By the NAME-FILL CALC: the generic's own calc ships disabled, so \
+the host carries a hidden textbox `TXT_Donotdelete` (dorExclusion + summaryExclusion, visible \
+false) beside the first signature panel whose fd:calc holds ONE Calculate document per (data panel \
+→ signature panel) pair, looping the data panel's instances and writing \
+PN_GenericSignature.TXT_Name_Generic from PN_IndividualBasic.PN_Name_Individual — without it no \
+signature carries a name. \
 A fragment is OPAQUE: its internal fields are supplied by AEM at runtime from that path (its \
 `<items>` in the JCR are empty), so never recreate them as children and never try to edit inside it \
 — that duplicates the section. Keep the fragment's `bind_ref`; for a \
@@ -354,18 +362,21 @@ read_reference_file. The plan must give, per top-level SECTION in source order: 
 wizard page (a first-level section = one page); its heading and the verbatim labels / options / \
 field text in EVERY language; each field's control type; any conditional or CASCADING behaviour \
 (quote the XFA change-event function and its clearItems/addItem/rawValue branches); the recommended \
-standard fragment with its exact JCR path + entity library (banking relationship → \
+standard fragment with its exact JCR path (banking relationship → \
 affrg_BankingRelationship1 in afforms_ubs_fragmentlib, referenced under /content/forms/af/ while every \
-other fragment is referenced under /content/dam/formsanddocuments/; address → \
-affrg_germany_AddressBlock_CountryDD \
-(019) / affrg_italy_AddressBlock_CountryDD (033) / else affrg_AddressGeneric1; signatures → the \
-fragment for that SIGNER ROLE in the form's entity library, never the ambiguous \
-affrg_SignatureGeneric1). For every signature fragment you recommend, ALSO state the exact panel \
-`name` its name-prefill resolves (germany ClientSignature1 → PN_AHRP, LegalGuardianSignature1 → \
-PN_LGA, ARSignature1 → PN_ARP, BOSignature1 → PN_BORP, UBSEuropeSignature1 → PN_EURP; italy \
-ClientSignature1 → PN_AHRP, LegalGuardianSignature1 → PN_LGA, LegalRepresentativeSignature1 → PN_LRP, \
-UBSEuropeSignature1 → PN_AHRP), so the Author names that person's data panel to match — the mapping \
-differs per library, and the fragment's own `//Expecting …` comment is often stale. Also record any verbatim script/hook shape to copy (showAFShowDor / hideAFHideDor, \
+other fragment is referenced under /content/dam/formsanddocuments/; person blocks → one of the four \
+UBS generic partner fragments in afforms_ubs_fragmentlib, chosen by the party's ROLE: contracting \
+party → affrg_ContractualPartnerGeneric1, partner of that party → affrg_PartnertoPartnerGeneric1, \
+beneficial owner → affrg_BeneficialOwnerGeneric1, POA/authorized signer → \
+affrg_PowerofAttorneyGeneric1 — state the class per person section, which sub-panels stay visible, \
+and which get a hideAFHideDor call; a loose address with no person block → affrg_AddressGeneric1; \
+signatures → always affrg_SignatureGeneric1). For every party, ALSO state the panel-name PAIR the \
+Author must use — the data panel (PN_CPGRP for the contracting party; PN_AHGRP, then PN_AHGRP_AR, \
+for partners of the party) and its signature panel (PN_SGN_CPGRP for the contracting party, \
+otherwise PN_Sign_ + the data panel token) — since the host authors the signer-name calc from \
+exactly those names. Never recommend a germany/italy person or signature fragment: those libraries \
+are being emptied into the UBS generics, and the reference forms predating the change do not \
+override this. Also record any verbatim script/hook shape to copy (showAFShowDor / hideAFHideDor, \
 cascade visibility scripts) with its source ref_id + file path. Record as well, for the shapes the \
 deployed corpus is held to: the master-page header line (the issuer, e.g. \"UBS Europe SE\", which the \
 engine prints in the DoR header rather than on screen); which heading is the FIRST page's, since that \
@@ -443,10 +454,13 @@ a hand-authored TitleDraw on a page is a DUPLICATE, while a sub-heading inside a
 TitleDraw; banking relationship authored as a `Preface` node on the first page, rendering \
 affrg_BankingRelationship1 as the sole child of a PN_BR wrapper that carries BOTH dorExclusion and \
 summaryExclusion (a wrapper missing either flag is a defect, not a pass), and no \
-separately authored \"UBS Europe SE\" draw beside it; address uses the entity AddressBlock fragment; \
-each signature fragment's signer data panel is named exactly what that fragment resolves (per library \
-— e.g. germany ClientSignature1 → PN_AHRP, ARSignature1 → PN_ARP), since a mismatch renders an empty \
-signature name; DoR exclusions set; no invented text; \
+separately authored \"UBS Europe SE\" draw beside it; every person block is one of the four UBS \
+generic partner fragments chosen by party role (a germany/italy person or signature fragRef is a \
+defect — those libraries are retired), with the unneeded sub-panels hidden via an Initialize \
+hideAFHideDor rule; every signature is affrg_SignatureGeneric1, its panel name paired to its data \
+panel (PN_CPGRP → PN_SGN_CPGRP, PN_AHGRP → PN_Sign_AHGRP), the Add button adding both instances, \
+and the host carrying the hidden TXT_Donotdelete calc that fills TXT_Name_Generic per pair — a \
+missing calc renders every signature nameless; DoR exclusions set; no invented text; \
 every source language present and non-stub — but a packager-derived synonym locale (de-ch from de, es \
 from sp) matching its base language is CORRECT, not a stub, so never flag it as one; cascading \
 dropdowns implemented as static visibility-gated \

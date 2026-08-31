@@ -205,10 +205,12 @@ field_name = "^(Formular Adressat|Form addressee)$"
 template = "formular_adressat_radio"
 depends_on = ["account_holder", "signatures"]
 
-# account_holder cross-references panels produced by `signatures` (BT_Add /
-# BT_AddLR / BT_RemoveLR scripts call into PN_SignatureIndividual and
-# PN_ARP_Sign) and reads `RB_FormularAdressat` from `formular_adressat_radio`
-# in its visibility rules, so both must also be present in the form.
+# account_holder cross-references panels produced by `signatures` (the Add
+# buttons pair each partner panel with its signature panel: PN_CPGRP with
+# PN_SGN_CPGRP, PN_AHGRP with PN_Sign_AHGRP, PN_AHGRP_AR with
+# PN_Sign_AHGRP_AR) and reads `RB_FormularAdressat` from
+# `formular_adressat_radio` in its visibility rules, so both must also be
+# present in the form.
 # Matches German (and English-mirrored) forms only; the Italian variant lives
 # in `account_holder_it`.
 [[custom_elements]]
@@ -228,7 +230,7 @@ depends_on = ["formular_adressat_radio", "account_holder"]
 
 # Italian variant of account_holder: visibility/scripts reference
 # `RB_GroupTipo` (Individual=1, Legal entity=2) and cross-reference
-# `PN_SignatureIndividual` / `PN_LRP_Sign` from `signatures_it`.
+# `PN_SGN_CPGRP` / `PN_Sign_AR` from `signatures_it`.
 [[custom_elements]]
 field_name = '(?i)^\s*Dati\s+del/i\s+cliente/i\s*(?:\(.*\))?\s*$'
 template = "account_holder_it"
