@@ -1179,8 +1179,16 @@ fn join_form_path(form_path: &str, form_dir: &str) -> String {
 /// own `.html` render under `/content/forms/af` tends to 401 outside the
 /// editor.
 fn form_preview_url(host: &str, cfg: &AemConfig, lang: &str) -> String {
+    // The mandator (entity code, e.g. 033 for Italy, 019 for Germany) is not
+    // decoration: the UBS runtime reads it for reference data and the
+    // submit/DoR backend, so a preview without it renders but cannot submit.
+    let mandator = cfg
+        .mandator
+        .as_deref()
+        .map(|m| format!("&mandator={m}"))
+        .unwrap_or_default();
     format!(
-        "{}/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={lang}",
+        "{}/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={lang}{mandator}",
         host.trim_end_matches('/'),
         cfg.form_path.trim_matches('/'),
         cfg.form_dir.trim_matches('/')
@@ -1395,9 +1403,10 @@ mod tests {
         let text = form_urls_text("http://localhost:4502/", &cfg);
         let jcr = form_jcr_path(&cfg);
         assert!(text.contains(&format!("jcr_path: {jcr}")), "{text}");
+        assert_eq!(cfg.mandator.as_deref(), Some("019"), "AAEV_019 is a Germany form");
         assert!(
             text.contains(&format!(
-                "preview ({}): http://localhost:4502/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={}",
+                "preview ({}): http://localhost:4502/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={}&mandator=019",
                 cfg.master_language,
                 cfg.form_path.trim_matches('/'),
                 cfg.form_dir.trim_matches('/'),

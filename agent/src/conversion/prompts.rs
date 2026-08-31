@@ -228,7 +228,10 @@ holding the cells as its children, so fixing a missed table means GROUPING those
 `TBL_` Panel in source order (and restoring the detached header cells as its first children), NOT \
 building a grid. Where your tree and the page disagree, the PAGE WINS: fix it with the editors and \
 rebuild. (c) If an AEM connection is configured, upload_to_aem, then VERIFY THE DEPLOYED FORM IN THE \
-BROWSER when the browser tools are offered: aem_form_urls gives the preview URL per language; \
+BROWSER when the browser tools are offered: aem_form_urls gives the preview URL per language, \
+including the `mandator` query parameter (the entity code: 033 for Italian forms, 019 for German \
+ones) which the UBS runtime needs for reference data and for Submit/DoR to work — always open the \
+URL exactly as given, never strip its parameters; \
 browser_navigate to the master-language preview and browser_snapshot it (the snapshot is text and \
 cheap; browser_take_screenshot only when the layout itself is in doubt). Walk EVERY wizard page \
 with Next, entering a plausible value in every field type on the way (browser_fill_form for \
@@ -409,7 +412,8 @@ validate_aem_package; run review_output (coverage vs the source, master language
 non-master languages with search_xfa; render the form with generate_html (where the profile has an \
 HTML config) and compare it against the source images. If an AEM connection is configured, \
 upload_to_aem and, when the browser tools are offered, USE THE DEPLOYED FORM AS A READER WOULD: \
-aem_form_urls, browser_navigate to the master-language preview, browser_snapshot; walk every wizard \
+aem_form_urls, browser_navigate to the master-language preview URL exactly as given (its `mandator` \
+parameter — 033 Italy, 019 Germany — is required for Submit/DoR to work), browser_snapshot; walk every wizard \
 page with Next, fill every field type with a plausible value (browser_fill_form, browser_type, \
 browser_select_option, browser_click), flip each conditional choice so its gated panel shows, add a \
 repeatable instance, press Submit at the preview step and browser_wait_for the confirmation; then \

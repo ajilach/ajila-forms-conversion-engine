@@ -99,6 +99,15 @@ pub struct AemConfig {
     /// Internal form code (used for metadata and paths).
     pub form_code: String,
 
+    /// The issuing entity's mandator code from the source's
+    /// `formrange_entity` (019 Germany, 033 Italy, 001 Switzerland), `None`
+    /// when the source names none. The UBS runtime needs it as a `mandator=`
+    /// query parameter on the rendered form: reference data lookups
+    /// (`getFormMetadata().mandator`) and the submit/DoR backend resolve the
+    /// entity from it, so a preview link without it can render but fail to
+    /// submit.
+    pub mandator: Option<String>,
+
     /// Available languages (ISO 639-1 codes, e.g. `["de", "en", "fr"]`).
     pub languages: Vec<String>,
 
@@ -254,9 +263,15 @@ impl AemConfig {
             None => None,
         };
 
+        let mandator = xfa_vars
+            .get("formrange_entity")
+            .map(|e| e.trim().to_string())
+            .filter(|e| !e.is_empty());
+
         Ok(Self {
             form_title,
             form_code,
+            mandator,
             languages: vec!["en".into()],
             master_language: profile
                 .master_language
@@ -439,6 +454,7 @@ impl AemConfig {
         Self {
             form_title: form_code.into(),
             form_code: form_code.into(),
+            mandator: None,
             languages: vec!["en".into()],
             master_language: "en".into(),
             add_label_patterns: HashMap::new(),
