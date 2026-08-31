@@ -621,6 +621,37 @@ pub(crate) fn check_feedback_rules(xml: &str) -> Vec<FeedbackViolation> {
             );
         }
 
+        // PROBLEM-fragment-library-consolidation: the germany/italy person and
+        // signature fragments are being emptied into the UBS generics (UBS
+        // directive 2026-08-20, "AF Fragments and Common Fields with XSD
+        // List"), so a reference to one is a defect. The deliberately
+        // market-specific families stay: internal bank use, footnote, infobox,
+        // banking relationship and the form configurator.
+        if let Some(frag) = attr(tag, "fragRef") {
+            let market = frag.contains("afforms_germany_fragmentlib/")
+                || frag.contains("afforms_italy_fragmentlib/");
+            let allowed = frag.contains("internalbankuse")
+                || frag.contains("InternalBankUse")
+                || frag.contains("internal_bank_use")
+                || frag.contains("footnote")
+                || frag.contains("infobox")
+                || frag.contains("BankingRelationship")
+                || frag.contains("FormConfig");
+            if market && !allowed {
+                push(
+                    "PROBLEM-fragment-library-consolidation",
+                    label.clone(),
+                    format!(
+                        "references the retired market fragment {frag}; person blocks use the \
+                         UBS partner generics (affrg_ContractualPartnerGeneric1 / \
+                         affrg_PartnertoPartnerGeneric1 / affrg_BeneficialOwnerGeneric1 / \
+                         affrg_PowerofAttorneyGeneric1) and signatures use \
+                         affrg_SignatureGeneric1"
+                    ),
+                );
+            }
+        }
+
         // PROBLEM-dor-exclusion-implies-summary: the UBS DoR is Redacto
         // rendering the summary, so a node kept out of the DoR but left in the
         // summary still reaches the reader.
@@ -1252,6 +1283,35 @@ mod tests {
         // RCP_Rows (repeat-panel, ok) + PN_Inner (repeat-subpanel, ok) → no violations.
         assert_eq!(counts, [2, 0, 0], "both conform, got {viol:?}");
         assert!(viol.is_empty());
+    }
+
+    /// A germany/italy person or signature fragment is retired (UBS general
+    /// fragments, 2026-08-20); the deliberately market-specific families and
+    /// the UBS generics themselves are not.
+    #[test]
+    fn retired_market_fragments_are_reported() {
+        let xml = r#"<r xmlns:sling="s" xmlns:jcr="j">
+            <panel_1 sling:resourceType="ubs/controls/panel" name="PN_AHRP"
+                fragRef="/content/dam/formsanddocuments/afforms_germany_fragmentlib/affrg_IndividualBasic1"/>
+            <panel_2 sling:resourceType="ubs/controls/panel" name="PN_LRP_Sign"
+                fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_LegalRepresentativeSignature1"/>
+            <panel_3 sling:resourceType="ubs/controls/panel" name="PN_FRG_InternalBankUseOnly"
+                fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_internalbankuse_ouref"/>
+            <panel_4 sling:resourceType="ubs/controls/panel" name="PN_ITFootnote"
+                fragRef="/content/dam/formsanddocuments/afforms_italy_fragmentlib/affrg_italy_footnote"/>
+            <panel_5 sling:resourceType="ubs/controls/panel" name="PN_BankingRelationship"
+                fragRef="/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1"/>
+            <panel_6 sling:resourceType="ubs/controls/panel" name="PN_CPGRP"
+                fragRef="/content/dam/formsanddocuments/afforms_ubs_fragmentlib/affrg_ContractualPartnerGeneric1"/>
+        </r>"#;
+        let hits: Vec<_> = check_feedback_rules(xml)
+            .into_iter()
+            .filter(|v| v.rule == "PROBLEM-fragment-library-consolidation")
+            .collect();
+        let names: Vec<&str> = hits.iter().map(|v| v.node.as_str()).collect();
+        assert_eq!(names, vec!["PN_AHRP", "PN_LRP_Sign"], "got {hits:?}");
+        assert!(hits[0].detail.contains("affrg_IndividualBasic1"), "{hits:?}");
+        assert!(hits[0].detail.contains("affrg_SignatureGeneric1"), "the detail names the fix");
     }
 
     /// AALJ shipped a radio button with no `jcr:title` at all: the label

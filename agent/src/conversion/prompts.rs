@@ -460,7 +460,12 @@ defect — those libraries are retired), with the unneeded sub-panels hidden via
 hideAFHideDor rule; every signature is affrg_SignatureGeneric1, its panel name paired to its data \
 panel (PN_CPGRP → PN_SGN_CPGRP, PN_AHGRP → PN_Sign_AHGRP), the Add button adding both instances, \
 and the host carrying the hidden TXT_Donotdelete calc that fills TXT_Name_Generic per pair — a \
-missing calc renders every signature nameless; DoR exclusions set; no invented text; \
+missing calc renders every signature nameless. VERIFY the retirement explicitly: review_output's \
+feedback_violations reports every fragRef still pointing into the germany/italy libraries as \
+PROBLEM-fragment-library-consolidation (the deliberately market-specific internal-bank-use, \
+footnote, infobox and banking-relationship families excepted); the package must carry ZERO such \
+entries, and every one is an authorable defect to return — name the panel and the UBS generic that \
+replaces it. DoR exclusions set; no invented text; \
 every source language present and non-stub — but a packager-derived synonym locale (de-ch from de, es \
 from sp) matching its base language is CORRECT, not a stub, so never flag it as one; cascading \
 dropdowns implemented as static visibility-gated \
