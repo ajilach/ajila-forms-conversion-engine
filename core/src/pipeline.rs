@@ -229,6 +229,14 @@ pub struct PipelineOutput {
     /// structured node tree.  When multiple files were provided (multilingual
     /// mode) all language envelopes are merged.
     pub merged: DocumentEnvelope,
+
+    /// One context per language variant, in discovery order.
+    ///
+    /// Unlike [`merged`](Self::merged)'s single context, each of these carries
+    /// its own language's XFA variables and recovered master-page header, which
+    /// is what an output with per-language page furniture (the Redacto header
+    /// and footer sections) resolves its templates against.
+    pub contexts: Vec<Context>,
 }
 
 // ============================================================================
@@ -405,6 +413,7 @@ where
 
     let mut labelled_renders: Vec<(String, Vec<Arc<RgbaImage>>)> = Vec::new();
     let mut per_language_state_maps: Vec<(String, StateMap)> = Vec::new();
+    let mut language_contexts: Vec<Context> = Vec::new();
     let mut state_labels: Vec<(String, Vec<Selection>)> = Vec::new();
 
     for (_filename, language, form_states, context) in &explored {
@@ -418,8 +427,7 @@ where
             if config.render_labelled {
                 match form_state.render_labelled_pages(config.scale) {
                     Ok(pages) => {
-                        let images: Vec<Arc<RgbaImage>> =
-                            pages.into_iter().map(Arc::new).collect();
+                        let images: Vec<Arc<RgbaImage>> = pages.into_iter().map(Arc::new).collect();
                         on_event(PipelineEvent::LabelledRender {
                             label: label.clone(),
                             images: images.clone(),
@@ -471,6 +479,23 @@ where
             }
         }
 
+        // One context per language, carrying that language's recovered
+        // master-page header. The header is the same across a language's
+        // states, so the first non-empty one wins (as in `merge_form_states`).
+        let mut language_context = context.clone();
+        if language_context.header.is_none() {
+            // Sorted, because `state_map` is a HashMap and the same input must
+            // always produce the same header.
+            let mut signatures: Vec<&String> = state_map.keys().collect();
+            signatures.sort();
+            language_context.header = signatures.into_iter().find_map(|signature| {
+                state_map
+                    .get(signature)
+                    .and_then(|(_, envelope)| envelope.context.header.clone())
+            });
+        }
+        language_contexts.push(language_context);
+
         per_language_state_maps.push((language.clone(), state_map));
         yield_fn().await;
     }
@@ -500,12 +525,15 @@ where
 
         on_event(PipelineEvent::StepChanged(PipelineStep::Complete));
 
+        // AEM envelopes carry no per-language PDF contexts of their own.
+        let contexts = vec![merged.context.clone()];
         return Ok(PipelineOutput {
             plain_renders,
             annotated_renders,
             labelled_renders,
             state_labels,
             merged,
+            contexts,
         });
     }
 
@@ -622,6 +650,7 @@ where
         labelled_renders,
         state_labels,
         merged,
+        contexts: language_contexts,
     })
 }
 

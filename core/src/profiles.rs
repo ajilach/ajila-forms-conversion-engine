@@ -74,10 +74,16 @@ pub fn redacto_master_language(name: &str) -> Option<String> {
     Some(profile.master_language.unwrap_or_else(|| "en".to_string()))
 }
 
-/// Load and resolve `{profile}/redacto/config.toml` against a document context.
-pub fn load_redacto_config(name: &str, ctx: &Context) -> Result<RedactoConfig, String> {
+/// Load and resolve `{profile}/redacto/config.toml` against the master-language
+/// document context, rendering the page header and footer once per context in
+/// `language_ctxs`.
+pub fn load_redacto_config(
+    name: &str,
+    master_ctx: &Context,
+    language_ctxs: &[Context],
+) -> Result<RedactoConfig, String> {
     let profile: RedactoProfile = read_profile_config_toml(name, "redacto")?;
-    RedactoConfig::from_profile(&profile, ctx)
+    RedactoConfig::from_profile(&profile, master_ctx, language_ctxs)
         .map_err(|e| format!("Failed to build Redacto config: {e}"))
 }
 

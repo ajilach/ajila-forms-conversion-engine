@@ -4,14 +4,18 @@
 //! against the source (that is [`review_redacto`](crate::review_redacto)), it
 //! asks whether the dump is a usable document at all.
 //!
-//! The check that matters most is the dullest one — **a dump with no text
-//! assets is a failure, not an output**. Such a dump is still valid SQL: it
-//! inserts a `documents` row with an empty component list and imports cleanly,
-//! which is exactly why an empty one once shipped unnoticed.
+//! The check that matters most is the dullest one — **a dump with an empty
+//! body section is a failure, not an output**. Such a dump is still valid SQL:
+//! it inserts a `documents` row that imports cleanly, which is exactly why an
+//! empty one once shipped unnoticed. The body is the measure, not the assets:
+//! the header and footer sections carry page furniture resolved from the
+//! profile, so a contentless document can still have assets.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::{RedactoComponent, RedactoConfig, RedactoDump};
+use super::{
+    INITIAL_VERSION, RedactoComponent, RedactoConfig, RedactoConfiguration, RedactoDump, asset_ref,
+};
 
 /// The outcome of validating a dump.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -42,14 +46,29 @@ pub struct RedactoCounts {
     pub document_versions: usize,
     /// Total `INSERT` statements the dump will emit.
     pub rows: usize,
-    /// `assetContainer` components in the configuration.
+    /// `assetContainer` components across all four sections.
     pub asset_containers: usize,
     /// `styledPanel` components, counted per style (e.g. `layout-split`,
-    /// `footnote`).
+    /// `footnote`), across all four sections.
     pub styled_panels: BTreeMap<String, usize>,
+    /// Asset references in the `header` section (the page header ships as a
+    /// text asset, so a document with page furniture must show one).
+    pub header_assets: usize,
+    /// Asset references in the `footer` section.
+    pub footer_assets: usize,
 }
 
-/// Count the components of a configuration tree, recursing into panels.
+/// Every section of a configuration, in page order.
+fn sections(configuration: &RedactoConfiguration) -> [&[RedactoComponent]; 4] {
+    [
+        &configuration.first_header,
+        &configuration.header,
+        &configuration.body,
+        &configuration.footer,
+    ]
+}
+
+/// Count the components of a configuration section, recursing into panels.
 fn count_components(
     components: &[RedactoComponent],
     containers: &mut usize,
@@ -68,6 +87,23 @@ fn count_components(
     }
 }
 
+/// Collect the asset references of a section, recursing into panels.
+fn collect_refs(components: &[RedactoComponent], refs: &mut Vec<String>) {
+    for component in components {
+        match component {
+            RedactoComponent::AssetContainer { assets, .. } => refs.extend(assets.iter().cloned()),
+            RedactoComponent::StyledPanel { components, .. } => collect_refs(components, refs),
+        }
+    }
+}
+
+/// The asset references of one section.
+fn section_refs(components: &[RedactoComponent]) -> Vec<String> {
+    let mut refs = Vec::new();
+    collect_refs(components, &mut refs);
+    refs
+}
+
 impl RedactoValidation {
     /// Whether the dump is fit to ship.
     pub fn is_ok(&self) -> bool {
@@ -83,9 +119,9 @@ pub fn validate_dump(dump: &RedactoDump, config: &RedactoConfig) -> RedactoValid
     let mut problems = Vec::new();
 
     // The guard this module exists for. Everything else is secondary.
-    if dump.assets.is_empty() {
+    if dump.is_empty_document() {
         problems.push(
-            "the dump contains no text assets: it describes an empty document".to_string(),
+            "the body section is empty: the dump describes a document with no content".to_string(),
         );
     }
 
@@ -109,9 +145,7 @@ pub fn validate_dump(dump: &RedactoDump, config: &RedactoConfig) -> RedactoValid
             .iter()
             .any(|v| &v.language == language)
         {
-            problems.push(format!(
-                "language '{language}': no document_version row"
-            ));
+            problems.push(format!("language '{language}': no document_version row"));
         }
     }
 
@@ -136,12 +170,34 @@ pub fn validate_dump(dump: &RedactoDump, config: &RedactoConfig) -> RedactoValid
 
     let mut asset_containers = 0;
     let mut styled_panels = BTreeMap::new();
+    let mut header_assets = 0;
+    let mut footer_assets = 0;
+    let emitted: BTreeSet<String> = dump
+        .assets
+        .iter()
+        .map(|a| asset_ref(&a.asset_id, INITIAL_VERSION))
+        .collect();
+
     for document in &dump.documents {
-        count_components(
-            &document.configuration.components,
-            &mut asset_containers,
-            &mut styled_panels,
-        );
+        let configuration = &document.configuration;
+        for section in sections(configuration) {
+            count_components(section, &mut asset_containers, &mut styled_panels);
+        }
+        header_assets += section_refs(&configuration.header).len();
+        footer_assets += section_refs(&configuration.footer).len();
+
+        // A section referencing an asset the dump does not insert renders as a
+        // hole in the page — a wiring bug, not missing content.
+        for section in sections(configuration) {
+            for reference in section_refs(section) {
+                if !emitted.contains(&reference) {
+                    problems.push(format!(
+                        "the configuration references asset '{reference}', which the dump \
+                         does not insert"
+                    ));
+                }
+            }
+        }
     }
 
     RedactoValidation {
@@ -154,6 +210,8 @@ pub fn validate_dump(dump: &RedactoDump, config: &RedactoConfig) -> RedactoValid
             rows: dump.row_count(),
             asset_containers,
             styled_panels,
+            header_assets,
+            footer_assets,
         },
     }
 }

@@ -327,7 +327,7 @@
     "name": "remove_structured_node"
   },
   {
-    "description": "Build the Redacto PostgreSQL dump from the working structured tree and report what it contains: languages, document id, per-table row counts, `problems` and `warnings`. Run it after every substantive change. A `problem` means the dump is not shippable (no text assets at all, a language missing its variants); a `warning` means content was dropped in translation to the Redacto model. Resolve every problem before you stop.",
+    "description": "Build the Redacto PostgreSQL dump from the working structured tree and report what it contains: languages, document id, per-table row counts, the per-language page `headers` and `footers` with their `header_assets`/`footer_assets` counts, the component shape, `problems` and `warnings`. Run it after every substantive change. A `problem` means the dump is not shippable (no text assets at all, an empty body section, a language missing its variants); a `warning` means content was dropped in translation to the Redacto model. Resolve every problem before you stop.",
     "input_schema": {
       "properties": {},
       "required": [],

@@ -28985,8 +28985,7 @@ fn test_custom_templates_reference_only_ubs_generic_fragments() {
         let xml = std::fs::read_to_string(&path).expect("read template");
         for cap in xml.split("fragRef=\"").skip(1) {
             let frag = cap.split('\"').next().unwrap_or_default();
-            let market_ok = frag.contains("internalbankuse")
-                || frag.contains("InternalBankUse");
+            let market_ok = frag.contains("internalbankuse") || frag.contains("InternalBankUse");
             assert!(
                 frag.contains("afforms_ubs_fragmentlib") || market_ok,
                 "{:?} references the market fragment {frag:?}; partner and signature \
@@ -31182,7 +31181,10 @@ fn rendered_form_has_no_visual_editor_rules() {
                     || tag.contains("fd:validate=")
             })
             .count();
-        assert_eq!(offenders, 0, "{pdf}: {offenders} visual-editor rule(s) left");
+        assert_eq!(
+            offenders, 0,
+            "{pdf}: {offenders} visual-editor rule(s) left"
+        );
     }
 }
 
@@ -31311,7 +31313,10 @@ fn the_banking_preface_carries_the_dor_header_slot_text() {
         "visible=\"{Boolean}false\"",
         "name=\"ST_HeaderSlot2\"",
     ] {
-        assert!(draw.contains(attr), "{pdf}: the slot-2 draw lacks {attr}:\n{draw}");
+        assert!(
+            draw.contains(attr),
+            "{pdf}: the slot-2 draw lacks {attr}:\n{draw}"
+        );
     }
     assert!(
         !draw.contains("dorExclusion="),
@@ -31458,12 +31463,18 @@ fn presentation_attributes_are_typed_fields_after_loading() {
     });
 
     let (step, _) = &by_name["PN_Step"];
-    assert!(step.dor_exclude_title, "the step's title exclusion is typed");
+    assert!(
+        step.dor_exclude_title,
+        "the step's title exclusion is typed"
+    );
     assert!(
         !step.dor_exclude,
         "`dorExcludeTitle` must not read as `dorExclusion`: the step itself stays in the DoR"
     );
-    assert!(step.jump_to_field, "the step-title panel keeps its Edit button");
+    assert!(
+        step.jump_to_field,
+        "the step-title panel keeps its Edit button"
+    );
 
     let (subtitle, _) = &by_name["ST_Subtitle"];
     assert_eq!(subtitle.css.as_deref(), Some("subtitle-after-form-title"));
@@ -31475,7 +31486,10 @@ fn presentation_attributes_are_typed_fields_after_loading() {
     assert_eq!(*slot2_visible, Some(false));
 
     let (iban, _) = &by_name["TXT_IBAN"];
-    assert!(iban.dor_exclude && iban.summary_exclude, "an input carries them too");
+    assert!(
+        iban.dor_exclude && iban.summary_exclude,
+        "an input carries them too"
+    );
 
     let (frag, frag_visible) = &by_name["PN_FRG_InternalBankUseOnly"];
     assert!(frag.always_in_pdf && frag.summary_exclude && !frag.dor_exclude);
@@ -31505,7 +31519,11 @@ fn presentation_attributes_survive_a_load_save_round_trip() {
     let xml = generate_aem_xml_with_passthrough(&lowered, &config, &lifted.passthrough_map());
 
     let dups = duplicate_attribute_elements(&xml);
-    assert!(dups.is_empty(), "duplicate attributes after saving:\n{}", dups.join("\n"));
+    assert!(
+        dups.is_empty(),
+        "duplicate attributes after saving:\n{}",
+        dups.join("\n")
+    );
 
     for (node, attr) in [
         ("PN_Step", "dorExcludeTitle=\"true\""),
@@ -32352,7 +32370,10 @@ fn conditional_panel_visibility_also_runs_on_initialize() {
             title: String::new(),
             children: vec![],
             is_page: false,
-            attrs: crate::AemAttrs { dor_exclude: true, ..Default::default() },
+            attrs: crate::AemAttrs {
+                dor_exclude: true,
+                ..Default::default()
+            },
             visible: false,
             is_conditional: true,
             dor_num_cols: None,
@@ -32709,7 +32730,7 @@ fn redacto_footnotes_are_linked_and_collected_into_a_panel() {
 
     let cfg = helpers::redacto_configuration(&dump);
     assert_eq!(
-        helpers::flatten_redacto_components(cfg),
+        helpers::flatten_redacto_body(cfg),
         [
             "assetContainer(1)".to_string(),
             "styledPanel(footnote)".to_string(),
@@ -32728,7 +32749,7 @@ fn redacto_grid_layout_becomes_a_styled_panel() {
     let cfg = helpers::redacto_configuration(&dump);
 
     assert_eq!(
-        helpers::flatten_redacto_components(cfg),
+        helpers::flatten_redacto_body(cfg),
         [
             "styledPanel(layout-split-block)".to_string(),
             "assetContainer(1)".to_string(),
@@ -32770,7 +32791,7 @@ fn redacto_group_is_flattened_into_the_surrounding_container() {
     let cfg = helpers::redacto_configuration(&dump);
 
     assert_eq!(
-        helpers::flatten_redacto_components(cfg),
+        helpers::flatten_redacto_body(cfg),
         ["assetContainer(3)".to_string()],
         "a group must not introduce a panel"
     );
@@ -32790,7 +32811,7 @@ fn redacto_consecutive_blocks_share_one_asset_container() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             "assetContainer(2)".to_string(),
             "styledPanel(layout-split-block)".to_string(),
@@ -32817,7 +32838,7 @@ fn redacto_column_flow_group_becomes_a_layout_split_panel() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             // The full-width title stays outside the columns.
             "assetContainer(1)".to_string(),
@@ -32846,7 +32867,7 @@ fn redacto_adjacent_column_flow_panels_are_merged_into_one() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             "assetContainer(1)".to_string(),
             "styledPanel(layout-split)".to_string(),
@@ -32874,7 +32895,7 @@ fn redacto_three_adjacent_column_flow_panels_are_merged_into_one() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             "styledPanel(layout-split)".to_string(),
             "assetContainer(3)".to_string(),
@@ -32895,7 +32916,7 @@ fn redacto_column_flow_panels_merge_across_a_plain_group() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             "styledPanel(layout-split)".to_string(),
             "assetContainer(2)".to_string(),
@@ -32917,7 +32938,7 @@ fn redacto_column_flow_panels_separated_by_content_stay_apart() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             "styledPanel(layout-split)".to_string(),
             "assetContainer(1)".to_string(),
@@ -32941,7 +32962,7 @@ fn redacto_adjacent_grid_panels_stay_apart() {
     let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         [
             "styledPanel(layout-split-block)".to_string(),
             "assetContainer(1)".to_string(),
@@ -32963,7 +32984,7 @@ fn redacto_plain_group_does_not_become_a_panel() {
     );
 
     assert_eq!(
-        helpers::flatten_redacto_components(helpers::redacto_configuration(&dump)),
+        helpers::flatten_redacto_body(helpers::redacto_configuration(&dump)),
         ["assetContainer(2)".to_string()],
         "only a column flow may introduce a layout panel"
     );
@@ -33202,11 +33223,28 @@ fn redacto_configuration_json_round_trips() {
 
     let json = serde_json::to_string(cfg).expect("serialize configuration");
     assert!(
-        json.contains("\"$schema\":\"redacto-document/v1\""),
+        json.contains("\"$schema\":\"redacto-document/v2\""),
         "{json}"
     );
     assert!(json.contains("\"type\":\"assetContainer\""), "{json}");
     assert!(json.contains("\"type\":\"styledPanel\""), "{json}");
+    assert!(json.contains("\"body\":["), "{json}");
+    assert!(json.contains("\"header\":["), "{json}");
+    assert!(json.contains("\"footer\":["), "{json}");
+    assert!(
+        !json.contains("\"firstHeader\""),
+        "an empty firstHeader must be omitted: {json}"
+    );
+
+    let value: serde_json::Value = serde_json::from_str(&json).expect("parse configuration json");
+    assert!(
+        value["document"].get("header").is_none(),
+        "document metadata no longer carries a header field: {json}"
+    );
+    assert!(
+        value["document"].get("footer").is_none(),
+        "document metadata no longer carries a footer field: {json}"
+    );
 
     let parsed: crate::RedactoConfiguration =
         serde_json::from_str(&json).expect("deserialize configuration");
@@ -33291,9 +33329,9 @@ fn redacto_ubs_profile_resolves_document_identity() {
 
 #[test]
 fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
-    // The footer is page furniture, not a text asset: it is assembled from the
-    // XFA `Footer_Line_*` variables into `document.footer`, which the Redacto
-    // stylesheet renders in the bottom-left margin box.
+    // The footer is page furniture: it is assembled from the XFA
+    // `Footer_Line_*` variables into a text asset that Redacto draws at the
+    // bottom of every page.
     let variables = std::collections::HashMap::from([
         ("formrange_code".to_string(), "AAEV".to_string()),
         ("formrange_entity".to_string(), "019".to_string()),
@@ -33312,7 +33350,7 @@ fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
     let config = helpers::load_ubs_redacto_config(&ctx);
 
     assert_eq!(
-        config.footer,
+        config.footers["en"],
         "66300    EN    V0    019    AAEV    31.10.2019    N1"
     );
 }
@@ -33331,9 +33369,9 @@ fn redacto_ubs_profile_footer_is_resilient_to_missing_variables() {
 
     // Only the always-present form code survives; the rest collapse to blanks.
     assert!(
-        config.footer.contains("AAEV"),
+        config.footers["en"].contains("AAEV"),
         "footer: {:?}",
-        config.footer
+        config.footers["en"]
     );
 }
 
@@ -33352,43 +33390,7 @@ fn redacto_ubs_profile_reads_header_from_recovered_page_header() {
 
     let config = helpers::load_ubs_redacto_config(&ctx);
 
-    assert_eq!(config.header, "UBS Europe SE");
-}
-
-#[test]
-fn redacto_header_is_flattened_to_a_single_plain_line() {
-    // `${meta:header}` is drawn literally: markup would leak into the page
-    // furniture and the stacked lines of the recovered header would not break.
-    let mut ctx = crate::Context::new(
-        "en".into(),
-        std::collections::HashMap::from([
-            ("formrange_code".to_string(), "AAEV".to_string()),
-            ("formrange_entity".to_string(), "019".to_string()),
-        ]),
-    );
-    ctx.header = Some("<b>G\u{fc}ltig ab 02.01.2018</b><br/>UBS &amp; Co. SE".into());
-
-    let config = helpers::load_ubs_redacto_config(&ctx);
-
-    assert_eq!(config.header, "G\u{fc}ltig ab 02.01.2018 UBS & Co. SE");
-}
-
-#[test]
-fn redacto_header_keeps_column_spacing_while_collapsing_newlines() {
-    // Only whitespace runs that would have broken the line collapse; runs of
-    // plain spaces are load-bearing (the footer separates its fields with four).
-    let mut ctx = crate::Context::new(
-        "en".into(),
-        std::collections::HashMap::from([
-            ("formrange_code".to_string(), "AAEV".to_string()),
-            ("formrange_entity".to_string(), "019".to_string()),
-        ]),
-    );
-    ctx.header = Some("  left    right \n second \t line  ".into());
-
-    let config = helpers::load_ubs_redacto_config(&ctx);
-
-    assert_eq!(config.header, "left    right second line");
+    assert_eq!(config.headers["en"], "UBS Europe SE");
 }
 
 #[test]
@@ -33405,7 +33407,219 @@ fn redacto_header_recovered_from_master_page_is_empty_when_absent() {
 
     let config = helpers::load_ubs_redacto_config(&ctx);
 
-    assert_eq!(config.header, "");
+    assert_eq!(config.headers["en"], "");
+}
+
+/// The whole point of the per-language furniture: each language variant carries
+/// its own `Footer_Line_*` variables and its own recovered header, so resolving
+/// the profile once against the master language would have shipped the English
+/// footer code on the Italian pages.
+#[test]
+fn redacto_ubs_profile_renders_the_furniture_per_language() {
+    let variant = |language: &str, footer_language: &str, header: &str| {
+        let mut ctx = crate::Context::new(
+            language.into(),
+            std::collections::HashMap::from([
+                ("formrange_code".to_string(), "AAEV".to_string()),
+                ("formrange_entity".to_string(), "019".to_string()),
+                (
+                    "Footer_Line_txtlanguage".to_string(),
+                    footer_language.to_string(),
+                ),
+            ]),
+        );
+        ctx.header = Some(header.to_string());
+        ctx
+    };
+    let contexts = [
+        variant("en", "EN", "UBS Europe SE"),
+        variant("it", "IT", "UBS Europe SE, Succursale Italia"),
+    ];
+
+    let config = helpers::load_ubs_redacto_config_for(&contexts[0], &contexts);
+
+    assert_eq!(config.headers["en"], "UBS Europe SE");
+    assert_eq!(config.headers["it"], "UBS Europe SE, Succursale Italia");
+    assert!(config.footers["en"].contains("EN"), "{:?}", config.footers);
+    assert!(config.footers["it"].contains("IT"), "{:?}", config.footers);
+}
+
+// ============================================================================
+// Redacto page-furniture sections (header / footer)
+// ============================================================================
+
+#[test]
+fn redacto_furniture_ships_as_one_asset_per_section_with_a_version_per_language() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en", "de"],
+        &[
+            ("en", "Edition January 2026"),
+            ("de", "Ausgabe Januar 2026"),
+        ],
+        &[("en", "61000 E"), ("de", "61000 D")],
+    );
+
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+    let cfg = helpers::redacto_configuration(&dump);
+
+    let header_refs = helpers::redacto_section_assets(&cfg.header);
+    let footer_refs = helpers::redacto_section_assets(&cfg.footer);
+    assert_eq!(header_refs.len(), 1, "one header asset: {header_refs:?}");
+    assert_eq!(footer_refs.len(), 1, "one footer asset: {footer_refs:?}");
+
+    let header_versions = helpers::redacto_versions_of(&dump, &header_refs[0]);
+    assert_eq!(
+        header_versions["en"], "<p>Edition January 2026</p>",
+        "{header_versions:?}"
+    );
+    assert_eq!(
+        header_versions["de"], "<p>Ausgabe Januar 2026</p>",
+        "{header_versions:?}"
+    );
+    assert_eq!(header_versions.len(), 2, "one version per language");
+
+    // The furniture assets belong to the document like any other asset, or
+    // Redacto rejects the authoring write.
+    for reference in [&header_refs[0], &footer_refs[0]] {
+        assert!(
+            dump.ownerships.iter().any(|o| &o.object_id == reference),
+            "no ownership row for '{reference}'"
+        );
+        assert!(
+            dump.relations.iter().any(|r| &r.object_id == reference),
+            "no relation row for '{reference}'"
+        );
+    }
+}
+
+/// Redacto fails a render when a referenced asset has no version for the
+/// requested language, so a language without furniture of its own takes the
+/// master's rather than being left out.
+#[test]
+fn redacto_furniture_falls_back_to_the_master_language() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en", "de"],
+        &[("en", "Edition January 2026")],
+        &[],
+    );
+
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+    let cfg = helpers::redacto_configuration(&dump);
+
+    let header_refs = helpers::redacto_section_assets(&cfg.header);
+    let versions = helpers::redacto_versions_of(&dump, &header_refs[0]);
+    assert_eq!(
+        versions["de"], "<p>Edition January 2026</p>",
+        "{versions:?}"
+    );
+    assert_eq!(versions["en"], versions["de"]);
+}
+
+#[test]
+fn redacto_a_document_without_furniture_gets_no_furniture_sections() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+
+    let dump = crate::generate_redacto_dump(&nodes, &helpers::test_redacto_config(&["en"]));
+    let cfg = helpers::redacto_configuration(&dump);
+
+    assert!(cfg.header.is_empty(), "{:?}", cfg.header);
+    assert!(cfg.footer.is_empty(), "{:?}", cfg.footer);
+    assert_eq!(dump.assets.len(), 1, "only the body's own asset");
+}
+
+/// The first header is supported by the schema but not yet recovered from the
+/// source, and an absent one makes Redacto reuse the normal header on page one.
+#[test]
+fn redacto_first_header_stays_unset() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en"],
+        &[("en", "Edition January 2026")],
+        &[],
+    );
+
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+
+    assert!(
+        helpers::redacto_configuration(&dump)
+            .first_header
+            .is_empty()
+    );
+}
+
+/// The footer aligns its fields with runs of four spaces, which HTML would
+/// otherwise collapse to one.
+#[test]
+fn redacto_footer_keeps_its_column_spacing() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config =
+        helpers::test_redacto_config_with_furniture(&["en"], &[], &[("en", "66300    EN    V0")]);
+
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+    let cfg = helpers::redacto_configuration(&dump);
+
+    let refs = helpers::redacto_section_assets(&cfg.footer);
+    let versions = helpers::redacto_versions_of(&dump, &refs[0]);
+    assert_eq!(
+        versions["en"], "<p>66300&nbsp;&nbsp;&nbsp; EN&nbsp;&nbsp;&nbsp; V0</p>",
+        "{versions:?}"
+    );
+}
+
+/// Every section is checked, so a reference that resolves to nothing cannot
+/// hide in the furniture.
+#[test]
+fn redacto_validate_rejects_a_dangling_reference_in_a_furniture_section() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config(&["en"]);
+    let mut dump = crate::generate_redacto_dump(&nodes, &config);
+    dump.documents[0].configuration.header = vec![crate::RedactoComponent::AssetContainer {
+        id: "container".into(),
+        assets: vec!["missing-asset-ver-1".into()],
+    }];
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("missing-asset-ver-1")),
+        "the dangling reference must be named: {:?}",
+        report.problems
+    );
+}
+
+#[test]
+fn redacto_validation_counts_report_the_furniture_sections() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en"],
+        &[("en", "Edition January 2026")],
+        &[("en", "61000 E")],
+    );
+
+    let report = crate::validate_dump(&crate::generate_redacto_dump(&nodes, &config), &config);
+
+    assert_eq!(report.counts.header_assets, 1);
+    assert_eq!(report.counts.footer_assets, 1);
+    assert!(report.is_ok(), "{:?}", report.problems);
+}
+
+/// A v1 configuration must not deserialize into a v2 one: silently reading it
+/// as an empty document would be worse than failing.
+#[test]
+fn redacto_a_v1_configuration_no_longer_deserializes() {
+    let v1 = r#"{"$schema":"redacto-document/v1",
+                 "document":{"id":"a","title":"A","style":"s.css",
+                             "header":"H","footer":"F"},
+                 "components":[]}"#;
+
+    let parsed = serde_json::from_str::<crate::RedactoConfiguration>(v1);
+
+    assert!(parsed.is_err(), "a v1 configuration must be rejected");
 }
 
 #[test]
@@ -33474,11 +33688,40 @@ fn redacto_validate_rejects_a_dump_with_no_content() {
 
     assert!(!report.is_ok(), "an empty dump must not validate");
     assert!(
-        report.problems.iter().any(|p| p.contains("no text assets")),
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("the body section is empty")),
         "the problem must name the empty document: {:?}",
         report.problems
     );
     assert_eq!(report.counts.assets, 0);
+}
+
+/// Page furniture is resolved from the profile rather than authored, so a
+/// document with a header and a footer but nothing to say is still empty — and
+/// it now has assets, which is exactly what the old `assets.is_empty()` guard
+/// keyed on.
+#[test]
+fn redacto_validate_rejects_a_document_that_is_only_page_furniture() {
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en"],
+        &[("en", "Edition January 2026")],
+        &[("en", "61000    E    001")],
+    );
+    let dump = crate::generate_redacto_dump(&[], &config);
+
+    let report = crate::validate_dump(&dump, &config);
+
+    assert_eq!(report.counts.assets, 2, "the header and footer assets");
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("the body section is empty")),
+        "furniture alone must not pass as content: {:?}",
+        report.problems
+    );
 }
 
 #[test]
@@ -35060,11 +35303,20 @@ fn telephone_field_renders_the_corpus_telephone_component() {
     assert!(xml.contains("guideNodeClass=\"guideTelephone\""), "{xml}");
     // The corpus is unanimous (31/31) on the phonebox class, against the
     // hand-built fragments' textbox class — what is deployed wins.
-    assert!(xml.contains("css=\"widget_ajila-forms-ubs-phonebox\""), "{xml}");
+    assert!(
+        xml.contains("css=\"widget_ajila-forms-ubs-phonebox\""),
+        "{xml}"
+    );
     // The display clause matters as much as the validation one: without it a
     // numeric-lineage field reformats `+41 44 234 56 78` as `1,234,567.00`.
-    assert!(xml.contains("displayPictureClause=\"^([+]|00)[0-9]{0,20}$\""), "{xml}");
-    assert!(xml.contains("validatePictureClause=\"^([+]|00)[0-9]{0,20}$\""), "{xml}");
+    assert!(
+        xml.contains("displayPictureClause=\"^([+]|00)[0-9]{0,20}$\""),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("validatePictureClause=\"^([+]|00)[0-9]{0,20}$\""),
+        "{xml}"
+    );
     assert!(xml.contains("<telephone_"), "{xml}");
 }
 
@@ -35240,7 +35492,10 @@ fn nested_and_fragment_input_still_counts_as_fillable() {
         frag_ref: None,
     };
     let panel = render_step_title_panel("PN_Nested", vec![text_draw("ST_Intro"), nested]);
-    assert!(panel.contains("jumpToFieldButtonVisible=\"true\""), "{panel}");
+    assert!(
+        panel.contains("jumpToFieldButtonVisible=\"true\""),
+        "{panel}"
+    );
 
     let fragment = AemNode::Fragment {
         attrs: crate::AemAttrs::default(),
@@ -35273,10 +35528,8 @@ fn the_form_configurator_step_never_gets_the_button() {
         uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, b"PN_Preface"),
         name: "PN_Preface".into(),
     };
-    let first_page = render_step_title_panel(
-        "PN_FormConfigurator",
-        vec![preface, text_field("TXT_Any")],
-    );
+    let first_page =
+        render_step_title_panel("PN_FormConfigurator", vec![preface, text_field("TXT_Any")]);
     assert!(
         !first_page.contains("jumpToFieldButtonVisible"),
         "the configurator page gets no Edit button:\n{first_page}"
@@ -35391,9 +35644,18 @@ fn form_of_address_fragments_are_left_alone() {
 #[test]
 fn a_fragment_panel_never_gets_two_initialize_scriptmodels() {
     for (frag, entity) in [
-        ("/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1", "019"),
-        ("/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1", "019"),
-        ("/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1", "019"),
+        (
+            "/content/forms/af/afforms_ubs_fragmentlib/affrg_AddressGeneric1",
+            "019",
+        ),
+        (
+            "/content/forms/af/afforms_ubs_fragmentlib/affrg_Address1",
+            "019",
+        ),
+        (
+            "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
+            "019",
+        ),
     ] {
         let init = render_fragment_init(frag, entity);
         assert_eq!(
@@ -35424,8 +35686,14 @@ fn germany_banking_relationship_defaults_to_0319_and_disabled() {
         "/content/forms/af/afforms_ubs_fragmentlib/affrg_BankingRelationship1",
         "019",
     );
-    assert!(init.contains("TXT_BankingRelationship1.value = '0319';"), "{init}");
-    assert!(init.contains("TXT_BankingRelationship1.enabled = false;"), "{init}");
+    assert!(
+        init.contains("TXT_BankingRelationship1.value = '0319';"),
+        "{init}"
+    );
+    assert!(
+        init.contains("TXT_BankingRelationship1.enabled = false;"),
+        "{init}"
+    );
 }
 
 /// Italy and every other entity share the same canonical fragment, so the gate
@@ -35692,7 +35960,7 @@ fn the_form_configurator_preselects_private_person() {
         "the configurator radio must preselect option 1:\n{xml}"
     );
     assert!(
-        xml.contains("options=\"[1=") ,
+        xml.contains("options=\"[1="),
         "option 1 must be the Private Person key the preselection points at:\n{xml}"
     );
     assert!(
@@ -35711,8 +35979,10 @@ fn the_custom_configurator_radios_reset_the_panels_their_templates_define() {
     use std::collections::HashSet;
 
     let read = |name: &str| {
-        std::fs::read_to_string(helpers::profiles_path(&format!("ubs/aem/custom/{name}.xml")))
-            .unwrap_or_else(|e| panic!("read {name}.xml: {e}"))
+        std::fs::read_to_string(helpers::profiles_path(&format!(
+            "ubs/aem/custom/{name}.xml"
+        )))
+        .unwrap_or_else(|e| panic!("read {name}.xml: {e}"))
     };
 
     for (radio, panel_sources, expected_panels) in [
@@ -35812,7 +36082,9 @@ fn the_preface_banking_panel_carries_the_germany_default() {
     );
     // Count within the panel's own `fd:init` — the document as a whole carries
     // the toolbar's SCRIPTMODELs too.
-    let init_start = germany.find("fd:init=\"").expect("no fd:init on the banking panel");
+    let init_start = germany
+        .find("fd:init=\"")
+        .expect("no fd:init on the banking panel");
     let init = &germany[init_start..];
     let init = &init[..init[9..].find('"').unwrap() + 9];
     assert_eq!(

@@ -20,17 +20,26 @@ title = "{{ xfa.formrange_code }}_{{ xfa.formrange_entity }}"
 # Stylesheet resolved from the Redacto bundle (styles/<name>).
 style = "ubs-default.css"
 
-# Page header and footer, exposed to the stylesheet as ${meta:header} /
-# ${meta:footer}. Both are drawn as literal plain text on a single line: HTML
-# is not parsed and a line break is not honoured, so the engine strips markup
-# and folds the value onto one line. Runs of spaces are kept (white-space:
-# pre-wrap), which is what lets the footer align its fields.
+# Page header and footer. Both ship as text assets in the document
+# configuration's `header` and `footer` sections, which Redacto draws at the top
+# and bottom of every page.
+#
+# Each template is rendered once PER LANGUAGE, against that language's own XFA
+# variables and its own recovered `page.header`, so every language variant gets
+# its own wording. A language whose value comes out empty falls back to the
+# master language's, since Redacto fails a render when an asset has no version
+# for the requested language.
+#
+# The rendered value is plain text: line breaks are kept (each line becomes one
+# paragraph in the asset) and markup is escaped rather than parsed, so a
+# template emitting tags shows them literally. Runs of two or more spaces
+# survive as non-breaking spaces, which is what lets the footer align its
+# fields.
 #
 # The header is the text drawn top-of-page on the master page — the validity
 # line and legal entity (e.g. "Gültig ab 02.01.2018 UBS Europe SE"). It is not
 # an XFA variable, so the analysis recovers it from the document's header
-# region and exposes it as `page.header`, stacked; the stacking is flattened
-# into the single header line.
+# region and exposes it as `page.header`, stacked one line per drawn line.
 #
 # The footer line is composed from the XFA `Footer_Line_*` variables the UBS
 # master page uses, in source order:
@@ -60,5 +69,5 @@ column_panel_style = "layout-split"
 # Left-hand footer code, assembled from the master-page footer fields. Each
 # lookup defaults to empty so the template still resolves on documents that
 # lack the footer variables (e.g. a plain, non-UBS text PDF). Fields are
-# separated by four spaces, preserved by the stylesheet's white-space: pre-wrap.
+# separated by four spaces, preserved as non-breaking spaces in the asset.
 footer_code = "{{ xfa.Footer_Line_txtformid | default(value='') }}    {{ xfa.Footer_Line_txtlanguage | default(value='') }}    {{ xfa.Footer_Line_txtvversion | default(value='') }}    {{ xfa.Footer_Line_MANCode | default(value='') }}    {{ xfa.formrange_code | default(value='') }}    {{ xfa.Footer_Line_txtversiondate | default(value='') }}    {{ xfa.Footer_Line_txtjversion | default(value='') }}"

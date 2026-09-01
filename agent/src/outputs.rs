@@ -135,13 +135,16 @@ pub fn xsd_schema_for(
 /// without this guard it reaches the download button looking like a result.
 pub fn redacto_sql_for(envelope: &DocumentEnvelope, profile: Option<&str>) -> Option<String> {
     let profile_name = profile?;
-    if !blueprint::has_redacto_config(profile_name) {
-        return None;
-    }
-    let config = blueprint::load_redacto_config(profile_name, &envelope.context).ok()?;
-    let config = blueprint::resolve_redacto_languages(&envelope.content, &config);
-    let dump = blueprint::generate_redacto_dump(&envelope.content, &config);
-    if dump.assets.is_empty() {
+    // The envelope carries one merged context, so the page furniture is
+    // rendered from it for every language. The agent's `build_redacto` has the
+    // per-language contexts and does better; this is the fallback path.
+    let (dump, _) = blueprint::to_redacto_dump_for_profile(
+        profile_name,
+        std::slice::from_ref(&envelope.context),
+        &envelope.content,
+    )
+    .ok()?;
+    if dump.is_empty_document() {
         return None;
     }
     Some(dump.to_sql())

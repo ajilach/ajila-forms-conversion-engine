@@ -403,7 +403,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let profile_name = require_profile_name(args.profile.as_deref())?;
         let (dump, resolved) = blueprint::to_redacto_dump_for_profile(
             profile_name,
-            &output.merged.context,
+            &output.contexts,
             &output.merged.content,
         )?;
         for warning in &dump.warnings {

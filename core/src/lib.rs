@@ -175,16 +175,15 @@ pub fn aem_translated_schema() -> serde_json::Value {
 // AEM generation
 pub use aem::{
     AemAttrs, AemConfig, AemConnectionProfile, AemI18nText, AemNode, AemNodeTranslated, AemOption,
-    AemOptionTranslated, AemProfile, AemScriptEngine, LowerConflict,
-    ConditionRule, OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement,
-    aem_to_structured, aem_to_translated, aem_translations_from_content, collect_languages,
-    convert_to_aem,
+    AemOptionTranslated, AemProfile, AemScriptEngine, ConditionRule, LowerConflict,
+    OptionAlignment, ParsedAemPackage, ParsedFragment, ResolvedCustomElement, aem_to_structured,
+    aem_to_translated, aem_translations_from_content, collect_languages, convert_to_aem,
     detect_aem_zip, generate_aem_package, generate_aem_package_from_node,
     generate_aem_package_from_node_with_passthrough,
     generate_aem_package_from_node_with_translations, generate_aem_package_from_node_with_xml,
-    generate_aem_xml, parse_aem_zip,
-    parse_fragment_content, scan_fragments, translation_data_from_master_dict,
-    validate_aem_dam_xml, validate_aem_form_xml, validate_xml_wellformed,
+    generate_aem_xml, parse_aem_zip, parse_fragment_content, scan_fragments,
+    translation_data_from_master_dict, validate_aem_dam_xml, validate_aem_form_xml,
+    validate_xml_wellformed,
 };
 
 // Post-conversion fidelity review
@@ -207,11 +206,10 @@ pub use html::{
 // XSD generation
 pub use xsd::{
     BindRefMaps, ElementMapping, RegisteredComplexType, SectionMapping, TypeChildElement,
-    XsdConfig, XsdNode, XsdProfile, XsdSchema, build_registered_types,
-    apply_bind_refs, generate_xsd_from_aem, generate_xsd_string_from_aem,
+    XsdConfig, XsdNode, XsdProfile, XsdSchema, apply_bind_refs, build_registered_types,
     build_xsd_config_from_type_sources, collect_xsd_type_sources_from_dir, compute_bind_refs,
-    extract_declared_names, find_matching_types,
-    load_xsd_config_from_dir, parse_schema, resolve_section_name,
+    extract_declared_names, find_matching_types, generate_xsd_from_aem,
+    generate_xsd_string_from_aem, load_xsd_config_from_dir, parse_schema, resolve_section_name,
     resolve_section_name_with_heading,
 };
 
@@ -219,8 +217,8 @@ pub use xsd::{
 pub use redacto::{
     AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, INITIAL_VERSION,
     ObjectType, OwnerType, OwnershipRow, OwnershipType, RedactoComponent, RedactoConfig,
-    RedactoConfiguration, RedactoDocumentMeta, RedactoDump, RedactoProfile, RelationRow,
-    RedactoCounts, RedactoValidation, Status as RedactoStatus, asset_ref, generate_redacto_dump,
+    RedactoConfiguration, RedactoCounts, RedactoDocumentMeta, RedactoDump, RedactoProfile,
+    RedactoValidation, RelationRow, Status as RedactoStatus, asset_ref, generate_redacto_dump,
     generate_redacto_sql, render_block_html, sql_string, validate_dump,
 };
 
@@ -1293,25 +1291,39 @@ pub fn to_redacto_sql(content: &[StructuredNode], config: &RedactoConfig) -> Str
 }
 
 /// Build the Redacto dump for `content` under `profile`, resolving the profile's
-/// configuration against `ctx` and the languages against the content.
+/// configuration against `contexts` and the languages against the content.
 ///
 /// The one place that performs the whole `load_redacto_config` ->
 /// `resolve_redacto_languages` -> generate sequence, so callers cannot get the
 /// order wrong or skip the language resolution. Returns the resolved config
 /// alongside the dump because validation and reporting need both.
 ///
-/// Fails when the profile has no Redacto section, or when its identity
-/// templates cannot be rendered — typically a document lacking the XFA
-/// variables the profile derives `document_id` from.
+/// Pass one context per language variant of the source. The document's identity
+/// is resolved against the variant written in the profile's master language:
+/// each variant carries its own master-page header and its own `Footer_Line_*`
+/// XFA variables, so taking whichever one happened to be uploaded first gave an
+/// English-master document a Spanish title when the SP variant came first. The
+/// page header and footer are then rendered per variant.
+///
+/// Fails when `contexts` is empty, when the profile has no Redacto section, or
+/// when its identity templates cannot be rendered — typically a document lacking
+/// the XFA variables the profile derives `document_id` from.
 pub fn to_redacto_dump_for_profile(
     profile: &str,
-    ctx: &Context,
+    contexts: &[Context],
     content: &[StructuredNode],
 ) -> Result<(RedactoDump, RedactoConfig), String> {
     if !has_redacto_config(profile) {
         return Err(format!("Profile '{profile}' has no redacto/config.toml."));
     }
-    let config = load_redacto_config(profile, ctx)?;
+    let master = redacto_master_language(profile)
+        .ok_or_else(|| format!("Profile '{profile}' has no readable redacto/config.toml."))?;
+    let master_ctx = contexts
+        .iter()
+        .find(|c| c.language() == master)
+        .or_else(|| contexts.first())
+        .ok_or("The Redacto dump needs at least one document context.")?;
+    let config = load_redacto_config(profile, master_ctx, contexts)?;
     let config = resolve_redacto_languages(content, &config);
     let dump = generate_redacto_dump(content, &config);
     Ok((dump, config))

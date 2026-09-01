@@ -814,16 +814,20 @@ pub fn collect_aem_fragment_refs(root: &crate::aem::AemNode) -> Vec<(String, Opt
 
 /// Build a `RedactoConfig` for tests with fixed identity fields and a fixed
 /// `created` timestamp, so only the random UUIDs vary between runs.
+///
+/// The document carries no page furniture, so the header and footer sections
+/// stay empty and the asset rows are exactly the content blocks. Use
+/// [`test_redacto_config_with_furniture`] to exercise the furniture sections.
 pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig {
     crate::redacto::RedactoConfig {
         document_id: "test_001".into(),
         title: "TEST_001".into(),
         form_path: "/content/forms/af/redacto-documents/test_001".into(),
         style: "ubs-default.css".into(),
-        header: "Edition January 2026".into(),
-        footer: "61000 E       001 TEST    01.01.2026        N1".into(),
+        headers: std::collections::BTreeMap::new(),
+        footers: std::collections::BTreeMap::new(),
         owner_id: "admin".into(),
-        schema: "redacto-document/v1".into(),
+        schema: "redacto-document/v2".into(),
         status: crate::redacto::Status::Draft,
         grid_panel_style: "layout-split-block".into(),
         footnote_panel_style: "footnote".into(),
@@ -834,15 +838,44 @@ pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig 
     }
 }
 
+/// Like [`test_redacto_config`] but with per-language page header and footer
+/// text, so the furniture sections are populated.
+pub fn test_redacto_config_with_furniture(
+    languages: &[&str],
+    headers: &[(&str, &str)],
+    footers: &[(&str, &str)],
+) -> crate::redacto::RedactoConfig {
+    let map = |pairs: &[(&str, &str)]| -> std::collections::BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(lang, text)| (lang.to_string(), text.to_string()))
+            .collect()
+    };
+    crate::redacto::RedactoConfig {
+        headers: map(headers),
+        footers: map(footers),
+        ..test_redacto_config(languages)
+    }
+}
+
 /// Load `profiles/ubs/redacto/config.toml` from disk and resolve it against
-/// `ctx` (mirrors [`load_ubs_profile`]).
+/// `ctx` as the only language variant (mirrors [`load_ubs_profile`]).
 pub fn load_ubs_redacto_config(ctx: &crate::Context) -> crate::redacto::RedactoConfig {
+    load_ubs_redacto_config_for(ctx, std::slice::from_ref(ctx))
+}
+
+/// Like [`load_ubs_redacto_config`] but with an explicit set of language
+/// variants, for asserting the per-language page header and footer.
+pub fn load_ubs_redacto_config_for(
+    master_ctx: &crate::Context,
+    language_ctxs: &[crate::Context],
+) -> crate::redacto::RedactoConfig {
     let path = profiles_path("ubs/redacto/config.toml");
     let toml_str =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
     let profile: crate::redacto::RedactoProfile =
         toml::from_str(&toml_str).expect("Failed to parse UBS redacto config.toml");
-    crate::redacto::RedactoConfig::from_profile(&profile, ctx)
+    crate::redacto::RedactoConfig::from_profile(&profile, master_ctx, language_ctxs)
         .expect("Failed to create RedactoConfig")
 }
 
@@ -893,9 +926,17 @@ pub fn redacto_configuration(
     &dump.documents[0].configuration
 }
 
-/// Flatten a component tree into `"assetContainer(n)"` / `"styledPanel(style)"`
+/// Every section of a configuration in page order: first header, header, body,
+/// footer.
+fn redacto_sections(
+    cfg: &crate::redacto::RedactoConfiguration,
+) -> [&[crate::redacto::RedactoComponent]; 4] {
+    [&cfg.first_header, &cfg.header, &cfg.body, &cfg.footer]
+}
+
+/// Flatten the body section into `"assetContainer(n)"` / `"styledPanel(style)"`
 /// labels, depth-first, for order assertions.
-pub fn flatten_redacto_components(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
+pub fn flatten_redacto_body(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
     fn walk(components: &[crate::redacto::RedactoComponent], out: &mut Vec<String>) {
         for component in components {
             match component {
@@ -912,11 +953,11 @@ pub fn flatten_redacto_components(cfg: &crate::redacto::RedactoConfiguration) ->
         }
     }
     let mut out = Vec::new();
-    walk(&cfg.components, &mut out);
+    walk(&cfg.body, &mut out);
     out
 }
 
-/// Every asset reference in a configuration, depth-first.
+/// Every asset reference in a configuration, section by section, depth-first.
 pub fn redacto_referenced_assets(cfg: &crate::redacto::RedactoConfiguration) -> Vec<String> {
     fn walk(components: &[crate::redacto::RedactoComponent], out: &mut Vec<String>) {
         for component in components {
@@ -931,6 +972,41 @@ pub fn redacto_referenced_assets(cfg: &crate::redacto::RedactoConfiguration) -> 
         }
     }
     let mut out = Vec::new();
-    walk(&cfg.components, &mut out);
+    for section in redacto_sections(cfg) {
+        walk(section, &mut out);
+    }
     out
+}
+
+/// Every asset reference in one furniture section.
+pub fn redacto_section_assets(components: &[crate::redacto::RedactoComponent]) -> Vec<String> {
+    components
+        .iter()
+        .flat_map(|component| match component {
+            crate::redacto::RedactoComponent::AssetContainer { assets, .. } => assets.clone(),
+            crate::redacto::RedactoComponent::StyledPanel { components, .. } => {
+                redacto_section_assets(components)
+            }
+        })
+        .collect()
+}
+
+/// The `asset_version` contents of the asset `reference` points at, keyed by
+/// language.
+pub fn redacto_versions_of(
+    dump: &crate::redacto::RedactoDump,
+    reference: &str,
+) -> std::collections::BTreeMap<String, String> {
+    let asset = dump
+        .assets
+        .iter()
+        .find(|a| {
+            crate::redacto::asset_ref(&a.asset_id, crate::redacto::INITIAL_VERSION) == reference
+        })
+        .unwrap_or_else(|| panic!("no asset row for reference '{reference}'"));
+    dump.asset_versions
+        .iter()
+        .filter(|v| v.asset_fk_id == asset.id)
+        .map(|v| (v.language.clone(), v.content.clone()))
+        .collect()
 }

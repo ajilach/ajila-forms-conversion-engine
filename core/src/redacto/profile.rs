@@ -7,13 +7,13 @@
 //! - `variables.*` — user-defined intermediate values (themselves templates)
 
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::Status;
 use crate::template;
 
-/// Default document configuration schema marker.
-const DEFAULT_SCHEMA: &str = "redacto-document/v1";
+/// The document configuration schema this exporter emits.
+const SCHEMA: &str = "redacto-document/v2";
 /// Default AEM authoring root for Redacto documents.
 const DEFAULT_FORM_PATH_ROOT: &str = "/content/forms/af/redacto-documents";
 /// Default stylesheet file name.
@@ -54,24 +54,20 @@ pub struct RedactoProfile {
     #[serde(default)]
     pub style: Option<String>,
 
-    /// Tera template for the page header (`${meta:header}`). The rendered value
-    /// is reduced to plain text on one line — see [`plain_single_line`].
+    /// Tera template for the page header. Rendered once per language, against
+    /// that language's own XFA variables and recovered `page.header`, and
+    /// emitted as a text asset in the configuration's `header` section.
     #[serde(default)]
     pub header: Option<String>,
 
-    /// Tera template for the page footer (`${meta:footer}`). The rendered value
-    /// is reduced to plain text on one line — see [`plain_single_line`].
+    /// Tera template for the page footer, rendered per language like
+    /// [`header`](Self::header) and emitted into the `footer` section.
     #[serde(default)]
     pub footer: Option<String>,
 
     /// Authoring user recorded as the document owner. Defaults to `admin`.
     #[serde(default)]
     pub owner_id: Option<String>,
-
-    /// Document configuration schema marker. Defaults to
-    /// `redacto-document/v1`.
-    #[serde(default)]
-    pub schema: Option<String>,
 
     /// Lifecycle status of the generated variants. Defaults to `DRAFT`.
     #[serde(default)]
@@ -101,96 +97,36 @@ pub struct RedactoProfile {
     pub variables: HashMap<String, String>,
 }
 
-/// Reduce a rendered header/footer to what Redacto can show: plain text on a
-/// single line.
+/// Normalise a rendered header/footer value.
 ///
-/// `${meta:header}` and `${meta:footer}` are drawn literally — markup is not
-/// parsed and a line break is not honoured — so a value carrying HTML (the
-/// recovered master-page header may, and a profile template is free to emit
-/// it) would otherwise leak tags into the page furniture. Tags are dropped,
-/// break-like tags become a space, and character references are decoded.
-/// Any whitespace run holding a newline or tab collapses to one space; runs of
-/// plain spaces survive, because the UBS footer uses four of them as column
-/// separators.
-fn plain_single_line(s: &str) -> String {
-    /// Tags that separate their neighbours on the page, so dropping them must
-    /// leave a space behind rather than glue two words together.
-    const BREAKING: &[&str] = &[
-        "br",
-        "p",
-        "div",
-        "li",
-        "ul",
-        "ol",
-        "tr",
-        "td",
-        "th",
-        "table",
-        "hr",
-        "blockquote",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-    ];
+/// Line structure is load-bearing now that the page furniture ships as a text
+/// asset — a recovered header stacks its lines and the renderer honours them —
+/// so only the line endings and the surrounding blank space are touched. The
+/// value stays plain text; escaping happens when the asset body is rendered
+/// (see [`render_plain_text_html`](super::content::render_plain_text_html)).
+fn normalize_furniture(s: &str) -> String {
+    s.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim()
+        .to_string()
+}
 
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(lt) = rest.find('<') {
-        let after = &rest[lt + 1..];
-        // A bare `<` (as in "a < b") is text, not the start of a tag.
-        let is_tag =
-            after.starts_with(['/', '!']) || after.starts_with(|c: char| c.is_ascii_alphabetic());
-        let Some(gt) = after.find('>').filter(|_| is_tag) else {
-            out.push_str(&rest[..lt + 1]);
-            rest = after;
-            continue;
-        };
-        out.push_str(&rest[..lt]);
-        let name: String = after[..gt]
-            .trim_start_matches(['/', '!'])
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect();
-        if BREAKING.contains(&name.as_str()) {
-            out.push(' ');
-        }
-        rest = &after[gt + 1..];
-    }
-    out.push_str(rest);
-
-    let out = out
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-        // Last: an escaped `&amp;lt;` must not become a `<`.
-        .replace("&amp;", "&");
-
-    // Collapse only the whitespace runs that would have broken the line.
-    let mut single = String::with_capacity(out.len());
-    let mut run = String::new();
-    for c in out.chars() {
-        if c.is_whitespace() {
-            run.push(c);
-            continue;
-        }
-        if !run.is_empty() {
-            if run.chars().all(|w| w == ' ') {
-                single.push_str(&run);
-            } else {
-                single.push(' ');
-            }
-            run.clear();
-        }
-        single.push(c);
-    }
-    single.trim().to_string()
+/// Build the Tera environment for one document context: the profile's
+/// user-defined variables resolved against that context's XFA variables, plus
+/// the document furniture the analysis recovered under `page.*` so a profile
+/// template can reinstate it, e.g. `{{ page.header }}`.
+fn tera_ctx_for(
+    profile: &RedactoProfile,
+    ctx: &crate::Context,
+) -> Result<tera::Context, crate::Error> {
+    let xfa_vars = ctx.variables.clone();
+    let user_vars = template::resolve_variables(&profile.variables, &xfa_vars)?;
+    let mut tera_ctx = template::build_context(&xfa_vars, &user_vars);
+    tera_ctx.insert(
+        "page",
+        &serde_json::json!({ "header": ctx.header.clone().unwrap_or_default() }),
+    );
+    Ok(tera_ctx)
 }
 
 /// A fully resolved Redacto configuration: every Tera template rendered and
@@ -205,10 +141,12 @@ pub struct RedactoConfig {
     pub form_path: String,
     /// Stylesheet file name.
     pub style: String,
-    /// Page header text, plain and single-line.
-    pub header: String,
-    /// Page footer text, plain and single-line.
-    pub footer: String,
+    /// Page header text per language code, plain and possibly multi-line.
+    ///
+    /// Ordered, so a dump built from the same inputs is byte-identical.
+    pub headers: BTreeMap<String, String>,
+    /// Page footer text per language code, plain and possibly multi-line.
+    pub footers: BTreeMap<String, String>,
     /// Owner recorded in the mandatory `(USER, OWNER, DOCUMENT)` row.
     pub owner_id: String,
     /// Document configuration schema marker.
@@ -230,25 +168,24 @@ pub struct RedactoConfig {
 }
 
 impl RedactoConfig {
-    /// Build a configuration from a profile and a document
-    /// [`Context`](crate::Context).
+    /// Build a configuration from a profile, the master-language document
+    /// [`Context`](crate::Context) and one context per language variant.
+    ///
+    /// The document's identity (id, title, path, styles) is single-valued and
+    /// comes from `master_ctx`. The page header and footer are per-language:
+    /// each language variant carries its own recovered master-page header and
+    /// its own `Footer_Line_*` XFA variables, so their templates are rendered
+    /// once per context in `language_ctxs` and shipped as text assets.
     ///
     /// [`RedactoConfig::languages`] is seeded with the master language;
     /// [`resolve_redacto_languages`](crate::resolve_redacto_languages) fills in
     /// the languages actually present in the content.
     pub fn from_profile(
         profile: &RedactoProfile,
-        ctx: &crate::Context,
+        master_ctx: &crate::Context,
+        language_ctxs: &[crate::Context],
     ) -> Result<Self, crate::Error> {
-        let xfa_vars = ctx.variables.clone();
-        let user_vars = template::resolve_variables(&profile.variables, &xfa_vars)?;
-        let mut tera_ctx = template::build_context(&xfa_vars, &user_vars);
-        // Expose document furniture recovered by the analysis under `page.*`,
-        // so a profile template can reinstate it, e.g. `{{ page.header }}`.
-        tera_ctx.insert(
-            "page",
-            &serde_json::json!({ "header": ctx.header.clone().unwrap_or_default() }),
-        );
+        let tera_ctx = tera_ctx_for(profile, master_ctx)?;
 
         // Name the failing field: a Redacto profile is usually driven by XFA
         // variables, and the bare Tera error does not say which one is missing.
@@ -259,12 +196,6 @@ impl RedactoConfig {
                      (are the required XFA variables present?): {e}"
                 ))
             })
-        };
-        let render_opt = |field: &str, tmpl: &Option<String>| -> Result<String, crate::Error> {
-            match tmpl {
-                Some(t) => render(field, t),
-                None => Ok(String::new()),
-            }
         };
 
         let document_id = render("document_id", &profile.document_id)?;
@@ -287,6 +218,41 @@ impl RedactoConfig {
             .clone()
             .unwrap_or_else(|| DEFAULT_LANGUAGE.into());
 
+        // The master context is a language variant like any other; include it
+        // so a single-PDF run still gets its furniture. First context per
+        // language wins.
+        let mut headers = BTreeMap::new();
+        let mut footers = BTreeMap::new();
+        for ctx in std::iter::once(master_ctx).chain(language_ctxs) {
+            let language = ctx.language().to_string();
+            if headers.contains_key(&language) {
+                continue;
+            }
+            let ctx_tera = tera_ctx_for(profile, ctx)?;
+            let render_furniture =
+                |field: &str, tmpl: &Option<String>| -> Result<String, crate::Error> {
+                    let Some(tmpl) = tmpl else {
+                        return Ok(String::new());
+                    };
+                    let rendered = template::render_string(tmpl, &ctx_tera).map_err(|e| {
+                        crate::Error::Profile(format!(
+                            "redacto profile field '{field}' could not be rendered for \
+                             language '{language}' (are the required XFA variables \
+                             present?): {e}"
+                        ))
+                    })?;
+                    Ok(normalize_furniture(&rendered))
+                };
+            headers.insert(
+                language.clone(),
+                render_furniture("header", &profile.header)?,
+            );
+            footers.insert(
+                language.clone(),
+                render_furniture("footer", &profile.footer)?,
+            );
+        }
+
         Ok(Self {
             document_id,
             title,
@@ -295,16 +261,13 @@ impl RedactoConfig {
                 .style
                 .clone()
                 .unwrap_or_else(|| DEFAULT_STYLE.into()),
-            header: plain_single_line(&render_opt("header", &profile.header)?),
-            footer: plain_single_line(&render_opt("footer", &profile.footer)?),
+            headers,
+            footers,
             owner_id: profile
                 .owner_id
                 .clone()
                 .unwrap_or_else(|| DEFAULT_OWNER_ID.into()),
-            schema: profile
-                .schema
-                .clone()
-                .unwrap_or_else(|| DEFAULT_SCHEMA.into()),
+            schema: SCHEMA.to_string(),
             status,
             grid_panel_style: profile
                 .grid_panel_style

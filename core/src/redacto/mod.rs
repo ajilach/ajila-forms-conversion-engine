@@ -281,16 +281,28 @@ pub struct RelationRow {
 // Document configuration JSON
 // ============================================================================
 
-/// The `documents.configuration` payload (`redacto-document/v1`).
+/// The `documents.configuration` payload (`redacto-document/v2`).
+///
+/// Components are placed into one of four page positions, which decide where
+/// the content appears and how often. Each section holds the same component
+/// types as the single `components` array of the superseded v1 schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RedactoConfiguration {
-    /// Schema marker, `redacto-document/v1`.
+    /// Schema marker, `redacto-document/v2`.
     #[serde(rename = "$schema")]
     pub schema: String,
     /// Document metadata.
     pub document: RedactoDocumentMeta,
-    /// Ordered component tree.
-    pub components: Vec<RedactoComponent>,
+    /// Top of the first page only, e.g. a full letterhead. Omitted when empty,
+    /// which makes Redacto use [`header`](Self::header) on the first page too.
+    #[serde(rename = "firstHeader", default, skip_serializing_if = "Vec::is_empty")]
+    pub first_header: Vec<RedactoComponent>,
+    /// Top of every page (from the second onwards when a first header is set).
+    pub header: Vec<RedactoComponent>,
+    /// The main content, flowing across as many pages as it needs.
+    pub body: Vec<RedactoComponent>,
+    /// Bottom of every page.
+    pub footer: Vec<RedactoComponent>,
 }
 
 /// The `document` object inside a [`RedactoConfiguration`].
@@ -303,13 +315,9 @@ pub struct RedactoDocumentMeta {
     /// Stylesheet file name resolved from the Redacto bundle, e.g.
     /// `ubs-default.css`.
     pub style: String,
-    /// Page header text (`${meta:header}`), plain text on a single line.
-    pub header: String,
-    /// Page footer text (`${meta:footer}`), plain text on a single line.
-    pub footer: String,
 }
 
-/// A node of the configuration component tree.
+/// A node of a configuration section's component tree.
 ///
 /// Redacto only deserialises these two component types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -361,6 +369,18 @@ pub struct RedactoDump {
 }
 
 impl RedactoDump {
+    /// Whether the dump describes a document with no content of its own.
+    ///
+    /// The body is what makes it a document: the header and footer sections are
+    /// page furniture resolved from the profile, not authored content, so a
+    /// dump can carry assets and still say nothing. Such a dump is valid SQL
+    /// that imports cleanly, which is why it has to be recognised explicitly.
+    pub fn is_empty_document(&self) -> bool {
+        self.documents
+            .iter()
+            .all(|document| document.configuration.body.is_empty())
+    }
+
     /// Total number of `INSERT` statements [`RedactoDump::to_sql`] will emit.
     pub fn row_count(&self) -> usize {
         self.assets.len()

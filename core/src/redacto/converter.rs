@@ -1,8 +1,10 @@
 //! Conversion of a structured document into a [`RedactoDump`].
 
+use std::collections::BTreeMap;
+
 use uuid::Uuid;
 
-use super::content::render_block_html;
+use super::content::{render_block_html, render_plain_text_html};
 use super::{
     AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, INITIAL_VERSION,
     ObjectType, OwnerType, OwnershipRow, OwnershipType, RedactoComponent, RedactoConfig,
@@ -34,11 +36,11 @@ pub fn generate_redacto_dump(nodes: &[StructuredNode], config: &RedactoConfig) -
     };
 
     let mut builder = DumpBuilder::new(config, markers);
-    let mut components = builder.walk(nodes);
+    let mut body = builder.walk(nodes);
     if let Some(panel) = builder.take_footnote_panel() {
-        components.push(panel);
+        body.push(panel);
     }
-    builder.finish(components)
+    builder.finish(body)
 }
 
 /// Generate the Redacto dump and serialise it to SQL.
@@ -276,8 +278,73 @@ impl<'a> DumpBuilder<'a> {
         })
     }
 
+    /// Emit the text asset for one page-furniture section.
+    ///
+    /// The section carries one asset with one version per document language:
+    /// Redacto fails a render when a referenced asset has no version for the
+    /// requested language, so a language without furniture of its own takes the
+    /// master language's text rather than being left out. A section no language
+    /// has any text for stays empty and gets no asset at all.
+    fn furniture_section(&mut self, values: &BTreeMap<String, String>) -> Vec<RedactoComponent> {
+        let config = self.config;
+        let non_blank = |language: &str| -> Option<&str> {
+            values
+                .get(language)
+                .map(String::as_str)
+                .filter(|v| !v.trim().is_empty())
+        };
+        let resolve =
+            |language: &str| non_blank(language).or_else(|| non_blank(&config.master_language));
+
+        if config.languages.iter().all(|l| resolve(l).is_none()) {
+            return Vec::new();
+        }
+
+        let asset_pk = new_id();
+        let asset_id = new_id();
+        // A language the master cannot cover either still needs a version, so
+        // it renders as empty rather than failing the whole document.
+        let contents: Vec<String> = config
+            .languages
+            .iter()
+            .map(|language| match resolve(language) {
+                Some(text) => render_plain_text_html(text),
+                None => super::content::SPACER.to_string(),
+            })
+            .collect();
+
+        for (language, content) in config.languages.iter().zip(contents) {
+            self.asset_versions.push(AssetVersionRow {
+                id: new_id(),
+                created: config.created.clone(),
+                language: language.clone(),
+                version: INITIAL_VERSION,
+                status: config.status,
+                content,
+                asset_fk_id: asset_pk.clone(),
+            });
+        }
+        self.assets.push(AssetRow {
+            id: asset_pk,
+            created: config.created.clone(),
+            asset_id: asset_id.clone(),
+            asset_type: AssetType::Text,
+        });
+
+        vec![RedactoComponent::AssetContainer {
+            id: new_id(),
+            assets: vec![asset_ref(&asset_id, INITIAL_VERSION)],
+        }]
+    }
+
     /// Assemble the document, ownership and relation rows around the assets.
-    fn finish(self, components: Vec<RedactoComponent>) -> RedactoDump {
+    fn finish(mut self, body: Vec<RedactoComponent>) -> RedactoDump {
+        // Build the furniture before the ownership and relation rows below:
+        // they iterate `self.assets`, so the header and footer assets pick up
+        // the same ORIGIN ownership and relation rows as the body's.
+        let header = self.furniture_section(&self.config.headers.clone());
+        let footer = self.furniture_section(&self.config.footers.clone());
+
         let config = self.config;
         let document_pk = new_id();
 
@@ -287,10 +354,14 @@ impl<'a> DumpBuilder<'a> {
                 id: config.document_id.clone(),
                 title: config.title.clone(),
                 style: config.style.clone(),
-                header: config.header.clone(),
-                footer: config.footer.clone(),
             },
-            components,
+            // Left empty: the analysis recovers one master-page header without
+            // distinguishing the first page, and an absent `firstHeader` makes
+            // Redacto use the normal header on the first page too.
+            first_header: Vec::new(),
+            header,
+            body,
+            footer,
         };
 
         let document_versions = config

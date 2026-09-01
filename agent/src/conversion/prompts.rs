@@ -565,12 +565,22 @@ text. Use replace_structured_node to change a node's type or level, insert_struc
 remove_structured_node to add or drop nodes.\n\
 5. Build & validate: build_redacto_dump generates the PostgreSQL dump and reports the languages, \
 the per-table row counts, the component shape (`asset_containers` and `styled_panels` per style), \
-`problems` and `warnings`. Run it after every substantive change. A `problem` means the dump is not \
-shippable — no text assets at all, or a language missing its variants — and MUST be resolved. A \
-`warning` means content was dropped on the way into the dump; investigate every one. Check \
-`styled_panels` too: a document whose source has multi-column sections must show `layout-split` \
-panels, and one with footnotes a `footnote` panel. Zero panels where the source has columns means \
-the layout was flattened — the row counts look identical, so this is the only place it shows.\n\
+the page furniture, `problems` and `warnings`. Run it after every substantive change. A `problem` \
+means the dump is not shippable — no text assets at all, an empty body section, or a language \
+missing its variants — and MUST be resolved. A `warning` means content was dropped on the way into \
+the dump; investigate every one. Check `styled_panels` too: a document whose source has \
+multi-column sections must show `layout-split` panels, and one with footnotes a `footnote` panel. \
+Zero panels where the source has columns means the layout was flattened — the row counts look \
+identical, so this is the only place it shows.\n\
+   A document is laid out in four sections: an optional `firstHeader` for the first page, a \
+`header` drawn at the top of every page, the `body` you author, and a `footer` at the bottom of \
+every page. The header and footer are page furniture recovered from the source's master page and \
+resolved by the profile, not something you author with the structured-tree tools; the report gives \
+them per language as `headers` and `footers` with the `header_assets` / `footer_assets` counts. \
+Read them: an empty header or footer where the rendered page clearly shows one (a validity line, a \
+legal entity, a form code) means the profile could not recover it, and a non-master language \
+carrying the master language's wording means that variant's furniture was not found. Report either \
+in your summary — you cannot fix it from the tree, but it must not pass unnoticed.\n\
 6. Review end to end. TWO separate checks, both required — one for text, one for structure.\n\
    TEXT: review_redacto_output compares the source against the text that actually reaches the \
 generated dump and lists anything missing, with a coverage score. For EVERY miss, fix it and \
@@ -608,7 +618,9 @@ its heading level; and, crucially, HOW THE LANGUAGES LINE UP — state which sta
 language, whether their block structures correspond one-to-one, and call out every place they do \
 NOT. Those mismatches are the entire difficulty of this conversion: the automatic merger cannot \
 resolve them, which is why the Author pairs the languages by hand. Also record: any footnote \
-markers and the text they refer to; any multi-column section; and whether the source carries \
+markers and the text they refer to; any multi-column section; the page header and footer drawn on \
+the master page, quoted per language (they ship as the document's header and footer sections, so \
+the Author must be able to tell a recovered one from a missing one); and whether the source carries \
 fillable fields (a Redacto document cannot represent them, so the Author must be told). Your final \
 message IS the plan — make it complete and self-contained; the Author works from it, not by \
 re-reading the source.";
@@ -642,7 +654,10 @@ as the table — so this comparison is the only check that catches it, and a cle
 no reason to skip it. Tables go missing most often: a grid of aligned rows on the page is a table \
 even when only some rules are drawn, even with a single column, and even when one column is empty \
 on every row; a run of consecutive one-line paragraphs facing a ruled grid, or headings that are \
-really the header row of the table below them, are the shapes it fails in. Spot-check non-master \
+really the header row of the table below them, are the shapes it fails in. Check the page furniture \
+as well: where the rendered pages show a header or a footer, the report's `headers` and `footers` \
+must carry a non-empty value for EVERY language, and a non-master language repeating the master's \
+wording is a stub the profile failed to recover. Spot-check non-master \
 languages with \
 search_xfa, since review_redacto_output compares the master language only. End by calling \
 submit_review with approved=true ONLY if the dump has no problems and every remaining issue is \

@@ -948,21 +948,22 @@ impl ConversionAgent {
 
     /// Build the Redacto dump for the working structured tree, and cache it.
     ///
-    /// The context comes from the merged source envelope rather than
+    /// The contexts come from the source extraction rather than
     /// [`context`](Self::context) so the recovered master-page header reaches
-    /// the profile's `page.header`.
+    /// the profile's `page.header`. All language variants are passed: the page
+    /// header and footer are rendered per language, and core picks the
+    /// master-language variant for the document's identity.
     fn build_redacto(&mut self) -> Result<(RedactoDump, blueprint::RedactoConfig), String> {
         let profile = self
             .profile
             .clone()
             .ok_or("No profile selected — the Redacto dump needs a profile.")?;
-        // Resolve the configuration against the master-language variant, so the
-        // header and footer come from the language the document is written in
-        // rather than from whichever PDF happened to be uploaded first.
-        let master = crate::outputs::redacto_master_language(self, Some(&profile));
-        let ctx = self.source_context(&master);
+        let contexts = match self.extractor(&serde_json::json!({})) {
+            Ok(extractor) if !extractor.contexts.is_empty() => extractor.contexts.clone(),
+            _ => vec![self.context.clone()],
+        };
         let (dump, config) =
-            blueprint::to_redacto_dump_for_profile(&profile, &ctx, &self.structured)?;
+            blueprint::to_redacto_dump_for_profile(&profile, &contexts, &self.structured)?;
         if let Some(redacto) = self.target.redacto_mut() {
             redacto.dump = Some(dump.clone());
         }
@@ -1403,7 +1404,11 @@ mod tests {
         let text = form_urls_text("http://localhost:4502/", &cfg);
         let jcr = form_jcr_path(&cfg);
         assert!(text.contains(&format!("jcr_path: {jcr}")), "{text}");
-        assert_eq!(cfg.mandator.as_deref(), Some("019"), "AAEV_019 is a Germany form");
+        assert_eq!(
+            cfg.mandator.as_deref(),
+            Some("019"),
+            "AAEV_019 is a Germany form"
+        );
         assert!(
             text.contains(&format!(
                 "preview ({}): http://localhost:4502/content/dam/formsanddocuments/{}/{}/jcr:content?wcmmode=disabled&afAcceptLang={}&mandator=019",
@@ -1415,12 +1420,18 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains(&format!("editor: http://localhost:4502/editor.html{jcr}.html")),
+            text.contains(&format!(
+                "editor: http://localhost:4502/editor.html{jcr}.html"
+            )),
             "{text}"
         );
         // Every source language gets a preview, each once.
         for lang in &cfg.languages {
-            assert_eq!(text.matches(&format!("preview ({lang}):")).count(), 1, "{text}");
+            assert_eq!(
+                text.matches(&format!("preview ({lang}):")).count(),
+                1,
+                "{text}"
+            );
         }
     }
 
@@ -1437,22 +1448,46 @@ mod tests {
         std::fs::write(dir.join("submission.pdf"), &bytes).unwrap();
         std::fs::write(dir.join("notes.txt"), b"not a pdf").unwrap();
 
-        let mut without = ConversionAgent::new(None, vec![(name.clone(), bytes.clone())], None, "t".into(), OutputTarget::Aem);
+        let mut without = ConversionAgent::new(
+            None,
+            vec![(name.clone(), bytes.clone())],
+            None,
+            "t".into(),
+            OutputTarget::Aem,
+        );
         assert!(matches!(
             without.execute("inspect_pdf", &serde_json::json!({})).await,
             ToolReply::Error(e) if e.contains("No browser session")
         ));
 
-        let mut agent = ConversionAgent::new(None, vec![(name, bytes)], None, "t".into(), OutputTarget::Aem)
-            .with_browser(crate::browser::BrowserSession::detached(Vec::new(), dir.clone()));
+        let mut agent = ConversionAgent::new(
+            None,
+            vec![(name, bytes)],
+            None,
+            "t".into(),
+            OutputTarget::Aem,
+        )
+        .with_browser(crate::browser::BrowserSession::detached(
+            Vec::new(),
+            dir.clone(),
+        ));
 
         match agent.execute("inspect_pdf", &serde_json::json!({})).await {
             ToolReply::Text(listing) => {
-                assert!(listing.contains("submission.pdf") && listing.contains("notes.txt"), "{listing}");
+                assert!(
+                    listing.contains("submission.pdf") && listing.contains("notes.txt"),
+                    "{listing}"
+                );
             }
             other => panic!("expected a listing, got {other:?}"),
         }
-        match agent.execute("inspect_pdf", &serde_json::json!({"path": "submission.pdf"})).await {
+        match agent
+            .execute(
+                "inspect_pdf",
+                &serde_json::json!({"path": "submission.pdf"}),
+            )
+            .await
+        {
             ToolReply::Image { media_type, images } => {
                 assert_eq!(media_type, "image/jpeg");
                 assert!(!images.is_empty(), "at least one rendered page");
@@ -1463,13 +1498,16 @@ mod tests {
             agent.execute("inspect_pdf", &serde_json::json!({"path": "notes.txt"})).await,
             ToolReply::Error(e) if e.contains("not a PDF")
         ));
-        let outside = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input/AAEV_019_EN.pdf");
+        let outside =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/input/AAEV_019_EN.pdf");
         assert!(matches!(
             agent.execute("inspect_pdf", &serde_json::json!({"path": outside.display().to_string()})).await,
             ToolReply::Error(e) if e.contains("outside")
         ));
         assert!(matches!(
-            agent.execute("inspect_pdf", &serde_json::json!({"path": "../"})).await,
+            agent
+                .execute("inspect_pdf", &serde_json::json!({"path": "../"}))
+                .await,
             ToolReply::Error(_)
         ));
         agent.shutdown_browser().await;
