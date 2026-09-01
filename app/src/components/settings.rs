@@ -7,6 +7,8 @@
 
 use dioxus::prelude::*;
 
+use runner::Provider;
+
 use super::page::{FullPage, RowInfo};
 use crate::settings::AppSettings;
 
@@ -35,7 +37,7 @@ impl SettingsTab {
     fn label(self) -> &'static str {
         match self {
             Self::General => "General",
-            Self::Ai => "AI (Claude)",
+            Self::Ai => "AI Model",
             Self::Aem => "AEM Connection",
             Self::References => "References",
         }
@@ -78,15 +80,20 @@ pub fn SettingsPage(
         on_settings_changed.call(next);
     });
 
-    // Narrow the model fetch to the key alone — a memo only fires when the key
-    // itself changes, so editing an unrelated setting does not refetch.
-    let api_key = use_memo(move || settings.read().anthropic_api_key.clone());
+    // Narrow the model fetch to the endpoint alone — a memo only fires when the
+    // provider, key or base URL changes, so editing an unrelated setting does
+    // not refetch.
+    let endpoint = use_memo(move || settings.read().llm_endpoint());
     let models = use_resource(move || {
-        let key = api_key();
-        async move { crate::llm::anthropic_list_models(&key).await }
+        let endpoint = endpoint();
+        async move { endpoint.list_models().await }
     });
+    // The offline fallback is Anthropic's table; an OpenAI-compatible endpoint
+    // that cannot be listed gets a free-text field instead (see below), because
+    // there is no catalogue to guess from.
     let model_list = use_memo(move || match &*models.read() {
         Some(Ok(list)) if !list.is_empty() => list.clone(),
+        _ if settings.read().llm_provider == Provider::OpenAi => Vec::new(),
         _ => anthropic_fallback_models(),
     });
 
@@ -150,24 +157,93 @@ pub fn SettingsPage(
 
                     SettingsTab::Ai => rsx! {
                         div { class: "settings-section",
-                            h3 { class: "settings-section-title", "AI (Claude)" }
-                            TextRow {
-                                label: "Anthropic API Key",
-                                desc: "Paste your Anthropic (Claude) API key here. Used for AI features. Stored locally on disk.",
-                                value: s.anthropic_api_key.clone(),
-                                placeholder: "sk-ant-...",
-                                secret: true,
+                            h3 { class: "settings-section-title", "Provider" }
+                            SelectRow {
+                                label: "API",
+                                desc: "Which API the conversion agent talks to. The OpenAI-compatible option reaches any chat-completions endpoint (OpenRouter, a local gateway); it sends no prompt cache breakpoints, so a long run costs more input tokens there.",
+                                value: s.llm_provider.as_str().to_string(),
+                                options: Provider::ALL.iter().map(|p| p.as_str().to_string()).collect(),
+                                labels: Provider::ALL.iter().map(|p| p.label().to_string()).collect(),
                                 on_change: move |v: String| {
-                                    update.call(Box::new(move |s| s.anthropic_api_key = v.trim().to_string()))
+                                    if let Some(p) = Provider::parse(&v) {
+                                        update.call(Box::new(move |s| s.llm_provider = p));
+                                    }
                                 },
                             }
-                            SelectRow {
-                                label: "Model",
-                                desc: "Claude model used for AI features (the conversion agent and reference descriptions).",
-                                value: s.anthropic_model.clone(),
-                                options: model_list(),
-                                on_change: move |v: String| update.call(Box::new(move |s| s.anthropic_model = v)),
+                        }
+                        if s.llm_provider == Provider::Anthropic {
+                            div { class: "settings-section",
+                                h3 { class: "settings-section-title", "Anthropic" }
+                                TextRow {
+                                    label: "Anthropic API Key",
+                                    desc: "Paste your Anthropic (Claude) API key here. Used for AI features. Stored locally on disk.",
+                                    value: s.anthropic_api_key.clone(),
+                                    placeholder: "sk-ant-...",
+                                    secret: true,
+                                    on_change: move |v: String| {
+                                        update.call(Box::new(move |s| s.anthropic_api_key = v.trim().to_string()))
+                                    },
+                                }
+                                SelectRow {
+                                    label: "Model",
+                                    desc: "Claude model used for AI features (the conversion agent and reference descriptions).",
+                                    value: s.anthropic_model.clone(),
+                                    options: model_list(),
+                                    labels: Vec::new(),
+                                    on_change: move |v: String| update.call(Box::new(move |s| s.anthropic_model = v)),
+                                }
                             }
+                        } else {
+                            div { class: "settings-section",
+                                h3 { class: "settings-section-title", "OpenAI-compatible endpoint" }
+                                TextRow {
+                                    label: "Base URL",
+                                    desc: "API root of the endpoint, without /chat/completions.",
+                                    value: s.openai_base_url.clone(),
+                                    placeholder: "https://openrouter.ai/api/v1",
+                                    secret: false,
+                                    on_change: move |v: String| {
+                                        update.call(Box::new(move |s| s.openai_base_url = v.trim().to_string()))
+                                    },
+                                }
+                                TextRow {
+                                    label: "API Key",
+                                    desc: "Sent as an Authorization: Bearer header. Stored locally on disk.",
+                                    value: s.openai_api_key.clone(),
+                                    placeholder: "sk-or-...",
+                                    secret: true,
+                                    on_change: move |v: String| {
+                                        update.call(Box::new(move |s| s.openai_api_key = v.trim().to_string()))
+                                    },
+                                }
+                                if model_list().is_empty() {
+                                    TextRow {
+                                        label: "Model",
+                                        desc: "Model id at this endpoint. The list could not be fetched, so type the id exactly as the endpoint spells it.",
+                                        value: s.openai_model.clone(),
+                                        placeholder: "anthropic/claude-opus-4.1",
+                                        secret: false,
+                                        on_change: move |v: String| {
+                                            update.call(Box::new(move |s| s.openai_model = v.trim().to_string()))
+                                        },
+                                    }
+                                } else {
+                                    SelectRow {
+                                        label: "Model",
+                                        desc: "Model id at this endpoint. Only models that support tool calling and images can drive a conversion.",
+                                        value: s.openai_model.clone(),
+                                        options: model_list(),
+                                        labels: Vec::new(),
+                                        unset_label: "Select a model…",
+                                        on_change: move |v: String| {
+                                            update.call(Box::new(move |s| s.openai_model = v.trim().to_string()))
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "settings-section",
+                            h3 { class: "settings-section-title", "Conversion" }
                             NumberRow {
                                 label: "Max review rounds",
                                 desc: "How many Reviewer → Author fix rounds before finalizing with whatever is built. Higher = more self-correction, more tokens.",
@@ -437,12 +513,20 @@ fn NumberRow(
 }
 
 /// A settings row carrying a dropdown over `options`.
+///
+/// `labels` is what the user reads, `options` what gets stored; an empty
+/// `labels` shows the stored values themselves, which is what a list of model
+/// ids wants. `unset_label` adds a leading empty entry while nothing is chosen,
+/// so an unset value reads as unset rather than showing the first option as if
+/// it had been picked.
 #[component]
 fn SelectRow(
     label: &'static str,
     desc: &'static str,
     value: String,
     options: Vec<String>,
+    labels: Vec<String>,
+    unset_label: Option<&'static str>,
     on_change: EventHandler<String>,
 ) -> Element {
     rsx! {
@@ -452,11 +536,14 @@ fn SelectRow(
                 class: "settings-select",
                 value: "{value}",
                 onchange: move |e: Event<FormData>| on_change.call(e.value()),
-                for option_value in options.iter() {
+                if let Some(unset) = unset_label.filter(|_| value.is_empty()) {
+                    option { value: "", selected: true, "{unset}" }
+                }
+                for (index, option_value) in options.iter().enumerate() {
                     option {
                         value: "{option_value}",
                         selected: value == *option_value,
-                        "{option_value}"
+                        "{labels.get(index).unwrap_or(option_value)}"
                     }
                 }
             }

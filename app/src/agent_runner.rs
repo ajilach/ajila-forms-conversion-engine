@@ -13,7 +13,7 @@
 use dioxus::prelude::*;
 
 use pipeline::{AbortFlag, RetryAction, RunEvent, RunObserver};
-use runner::TurnPlan;
+use runner::{LlmEndpoint, TurnPlan};
 
 use crate::models::{AgentStep, AgentStepKind, AgentStepStatus, ProcessingState, ProcessingStep};
 
@@ -218,10 +218,9 @@ pub async fn describe_reference(
     profile: &str,
     pdfs: Vec<(String, Vec<u8>)>,
     package_zip: Vec<u8>,
-    api_key: String,
-    model: String,
+    endpoint: LlmEndpoint,
 ) -> Result<String, String> {
-    let turns = TurnPlan::for_model(&model).provider(api_key);
+    let turns = TurnPlan::for_endpoint(endpoint).provider();
     pipeline::describe::describe_reference(
         profile,
         pdfs,

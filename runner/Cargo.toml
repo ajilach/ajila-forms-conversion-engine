@@ -18,5 +18,6 @@ serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
-# The turn primitive is async; the tests drive it directly.
-tokio = { version = "1", features = ["macros", "rt"] }
+# The turn primitive is async; the tests drive it directly, and the
+# OpenAI-compatible transport is tested end to end against a local socket.
+tokio = { version = "1", features = ["macros", "rt", "net", "io-util"] }

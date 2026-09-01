@@ -204,7 +204,7 @@ async fn drive(
     // configuration. Idempotent, so applying it per run is free.
     opts.settings.apply_runtime_config();
 
-    let turns = TurnPlan::for_settings(&opts.settings).provider(opts.settings.active_api_key());
+    let turns = TurnPlan::for_settings(&opts.settings).provider();
 
     let run_config = pipeline::RunConfig {
         profile: opts.profile.clone(),

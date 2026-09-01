@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::provider::{DEFAULT_OPENAI_BASE_URL, LlmEndpoint, Provider};
+
 /// Key under which the serialized settings are stored.
 const SETTINGS_KEY: &str = "app";
 
@@ -31,10 +33,30 @@ pub fn extra_instructions_block(instructions: &str) -> String {
 #[serde(default)]
 pub struct AppSettings {
     pub always_on_top: bool,
+    /// Which API the run talks to. Anthropic unless switched; the other choice
+    /// is any OpenAI-compatible endpoint (OpenRouter, a local gateway). The
+    /// per-provider key/model/base-URL fields below are kept side by side rather
+    /// than shared, so flipping the switch back and forth does not lose either
+    /// configuration.
+    #[serde(default)]
+    pub llm_provider: Provider,
     /// Anthropic API key used for AI features. Stored in the settings file on disk.
     pub anthropic_api_key: String,
     /// Anthropic model used for AI features (e.g. "claude-opus-4-8").
     pub anthropic_model: String,
+    /// API root of the OpenAI-compatible endpoint, without a trailing
+    /// `/chat/completions`. Blank is normalized to [`DEFAULT_OPENAI_BASE_URL`]
+    /// in [`AppSettings::load`].
+    #[serde(default)]
+    pub openai_base_url: String,
+    /// API key sent as `Authorization: Bearer` to that endpoint. Stored on disk.
+    #[serde(default)]
+    pub openai_api_key: String,
+    /// Model id at that endpoint (e.g. "anthropic/claude-opus-4.1" on
+    /// OpenRouter). No default: only the operator knows what their endpoint
+    /// serves, so an unset model fails the run rather than guessing.
+    #[serde(default)]
+    pub openai_model: String,
     /// Maximum Reviewer → Author-fix rounds in the conversion pipeline before
     /// finalizing with whatever is built. Missing/0 is normalized to
     /// [`DEFAULT_MAX_REVIEW_ROUNDS`] in [`AppSettings::load`].
@@ -78,8 +100,12 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             always_on_top: false,
+            llm_provider: Provider::default(),
             anthropic_api_key: String::new(),
             anthropic_model: crate::llm::DEFAULT_MODEL.to_string(),
+            openai_base_url: DEFAULT_OPENAI_BASE_URL.to_string(),
+            openai_api_key: String::new(),
+            openai_model: String::new(),
             max_review_rounds: DEFAULT_MAX_REVIEW_ROUNDS,
             aem_host: "http://localhost:4502".to_string(),
             aem_username: "admin".to_string(),
@@ -115,14 +141,35 @@ impl AppSettings {
         );
     }
 
-    /// The Anthropic API key used for AI features.
-    pub fn active_api_key(&self) -> &str {
-        &self.anthropic_api_key
+    /// The endpoint every AI feature talks to: the selected provider's base URL,
+    /// key and model, resolved in one place so no caller pairs the wrong two.
+    pub fn llm_endpoint(&self) -> LlmEndpoint {
+        match self.llm_provider {
+            Provider::Anthropic => {
+                LlmEndpoint::anthropic(self.anthropic_api_key.trim(), self.anthropic_model.trim())
+            }
+            Provider::OpenAi => LlmEndpoint::openai(
+                &self.openai_base_url,
+                self.openai_api_key.trim(),
+                self.openai_model.trim(),
+            ),
+        }
     }
 
-    /// The Anthropic model identifier used for AI features.
+    /// The API key of the selected provider.
+    pub fn active_api_key(&self) -> &str {
+        match self.llm_provider {
+            Provider::Anthropic => self.anthropic_api_key.trim(),
+            Provider::OpenAi => self.openai_api_key.trim(),
+        }
+    }
+
+    /// The model identifier of the selected provider.
     pub fn active_model(&self) -> &str {
-        &self.anthropic_model
+        match self.llm_provider {
+            Provider::Anthropic => self.anthropic_model.trim(),
+            Provider::OpenAi => self.openai_model.trim(),
+        }
     }
 
     /// Build an AEM upload connection from the configured host/credentials,
@@ -172,6 +219,11 @@ impl AppSettings {
         or_default(&mut self.evict_input_over_chars, d.evict_input_over_chars);
         or_default(&mut self.evict_trigger_bytes, d.evict_trigger_bytes);
         or_default(&mut self.max_review_rounds, d.max_review_rounds);
+
+        // Settings saved before the provider switch existed carry no base URL.
+        if self.openai_base_url.trim().is_empty() {
+            self.openai_base_url = d.openai_base_url;
+        }
     }
 
     /// Load settings from the database, falling back to defaults on any error.
@@ -191,5 +243,61 @@ impl AppSettings {
         if let Ok(json) = serde_json::to_string(self) {
             agent::db::set_setting(SETTINGS_KEY, &json);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configured() -> AppSettings {
+        AppSettings {
+            anthropic_api_key: "sk-ant-key".to_string(),
+            anthropic_model: "claude-opus-5".to_string(),
+            openai_base_url: "https://openrouter.ai/api/v1".to_string(),
+            openai_api_key: "sk-or-key".to_string(),
+            openai_model: "anthropic/claude-opus-4.1".to_string(),
+            ..AppSettings::default()
+        }
+    }
+
+    /// The switch has to reroute the key *and* the model together. Pairing an
+    /// Anthropic key with an OpenRouter model id (or the reverse) is the failure
+    /// this one accessor exists to make impossible.
+    #[test]
+    fn the_provider_switch_selects_a_whole_endpoint() {
+        let mut settings = configured();
+
+        settings.llm_provider = Provider::Anthropic;
+        let anthropic = settings.llm_endpoint();
+        assert_eq!(anthropic.provider, Provider::Anthropic);
+        assert_eq!(anthropic.api_key, "sk-ant-key");
+        assert_eq!(anthropic.model, "claude-opus-5");
+        assert_eq!(settings.active_model(), "claude-opus-5");
+
+        settings.llm_provider = Provider::OpenAi;
+        let openai = settings.llm_endpoint();
+        assert_eq!(openai.provider, Provider::OpenAi);
+        assert_eq!(openai.api_key, "sk-or-key");
+        assert_eq!(openai.model, "anthropic/claude-opus-4.1");
+        assert_eq!(
+            openai.url("/chat/completions"),
+            "https://openrouter.ai/api/v1/chat/completions"
+        );
+        assert_eq!(settings.active_model(), "anthropic/claude-opus-4.1");
+    }
+
+    /// Settings written before the switch existed carry neither field, and must
+    /// still load onto the Anthropic path with a usable OpenAI-compatible
+    /// default sitting behind it.
+    #[test]
+    fn settings_saved_before_the_switch_keep_working() {
+        let json =
+            r#"{"always_on_top":false,"anthropic_api_key":"k","anthropic_model":"claude-opus-5"}"#;
+        let mut settings: AppSettings = serde_json::from_str(json).expect("old settings load");
+        settings.normalize();
+        assert_eq!(settings.llm_provider, Provider::Anthropic);
+        assert_eq!(settings.openai_base_url, DEFAULT_OPENAI_BASE_URL);
+        assert_eq!(settings.llm_endpoint().api_key, "k");
     }
 }

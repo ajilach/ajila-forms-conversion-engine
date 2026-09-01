@@ -13,12 +13,17 @@ use std::path::{Path, PathBuf};
 use blueprint::OutputTarget;
 use clap::Args;
 use pipeline::AbortFlag;
-use runner::{AppSettings, Artifact, TurnPlan};
+use runner::{AppSettings, Artifact, Provider, TurnPlan};
 
 use crate::console::ConsoleObserver;
 
-/// Environment variable consulted when `--api-key` is not given.
+/// Environment variable consulted for the Anthropic key when `--api-key` is not
+/// given.
 const API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
+
+/// Environment variable consulted for the OpenAI-compatible key when
+/// `--api-key` is not given.
+const OPENAI_KEY_ENV: &str = "OPENAI_API_KEY";
 
 /// A source file set: `(file name, bytes)`, the shape every consumer of the
 /// conversion agent passes its sources in.
@@ -44,12 +49,25 @@ pub struct ConvertArgs {
     #[arg(long, default_value = ".")]
     out: PathBuf,
 
-    /// Anthropic API key. Defaults to $ANTHROPIC_API_KEY, then to the key
-    /// configured in the desktop app.
+    /// Which API to talk to: "anthropic" (default) or "openai" for any
+    /// OpenAI-compatible endpoint such as OpenRouter. Defaults to the desktop
+    /// app's setting.
+    #[arg(long, value_name = "NAME", value_parser = parse_provider)]
+    provider: Option<Provider>,
+
+    /// API root of the OpenAI-compatible endpoint, e.g.
+    /// "https://openrouter.ai/api/v1". Implies --provider openai.
+    #[arg(long, value_name = "URL")]
+    base_url: Option<String>,
+
+    /// API key for the selected provider. Defaults to $ANTHROPIC_API_KEY
+    /// (or $OPENAI_API_KEY with --provider openai), then to the key configured
+    /// in the desktop app.
     #[arg(long, value_name = "KEY")]
     api_key: Option<String>,
 
-    /// Anthropic model. Defaults to the model configured in the desktop app.
+    /// Model id at the selected provider. Defaults to the model configured in
+    /// the desktop app.
     #[arg(long, value_name = "ID")]
     model: Option<String>,
 
@@ -113,6 +131,16 @@ pub struct ConvertArgs {
     /// Also write the structured document as JSON.
     #[arg(long)]
     structured: bool,
+}
+
+fn parse_provider(value: &str) -> Result<Provider, String> {
+    Provider::parse(value).ok_or_else(|| {
+        let known: Vec<&str> = Provider::ALL.iter().map(|p| p.as_str()).collect();
+        format!(
+            "unknown provider `{value}` (expected one of: {})",
+            known.join(", ")
+        )
+    })
 }
 
 fn parse_target(value: &str) -> Result<OutputTarget, String> {
@@ -358,23 +386,61 @@ fn resolve_profile(args: &ConvertArgs) -> Result<Option<String>, Box<dyn Error>>
 fn resolve_settings(args: &ConvertArgs) -> Result<AppSettings, Box<dyn Error>> {
     let mut settings = AppSettings::load();
 
-    if let Some(key) = &args.api_key {
-        settings.anthropic_api_key = key.clone();
-    } else if let Ok(key) = std::env::var(API_KEY_ENV)
-        && !key.trim().is_empty()
-    {
-        settings.anthropic_api_key = key;
+    // --base-url is only meaningful for the OpenAI-compatible path, so passing
+    // it selects that path: an operator who names an endpoint means to use it.
+    settings.llm_provider = match (args.provider, &args.base_url) {
+        (Some(p), _) => p,
+        (None, Some(_)) => Provider::OpenAi,
+        (None, None) => settings.llm_provider,
+    };
+    if let Some(url) = &args.base_url {
+        settings.openai_base_url = url.clone();
     }
-    if settings.anthropic_api_key.trim().is_empty() {
+
+    let key_env = match settings.llm_provider {
+        Provider::Anthropic => API_KEY_ENV,
+        Provider::OpenAi => OPENAI_KEY_ENV,
+    };
+    let key = args
+        .api_key
+        .clone()
+        .or_else(|| std::env::var(key_env).ok().filter(|k| !k.trim().is_empty()));
+    match settings.llm_provider {
+        Provider::Anthropic => {
+            if let Some(key) = key {
+                settings.anthropic_api_key = key;
+            }
+            if let Some(model) = &args.model {
+                settings.anthropic_model = model.clone();
+            }
+        }
+        Provider::OpenAi => {
+            if let Some(key) = key {
+                settings.openai_api_key = key;
+            }
+            if let Some(model) = &args.model {
+                settings.openai_model = model.clone();
+            }
+        }
+    }
+
+    // One check for both paths, phrased for the console: the app's own message
+    // points at a settings screen this process does not have.
+    if settings.active_api_key().is_empty() {
         return Err(format!(
-            "No Anthropic API key. Pass --api-key, set {API_KEY_ENV}, \
-             or configure one in the desktop app's settings."
+            "No API key for the {} provider. Pass --api-key, set {key_env}, \
+             or configure one in the desktop app's settings.",
+            settings.llm_provider.as_str()
         )
         .into());
     }
-
-    if let Some(model) = &args.model {
-        settings.anthropic_model = model.clone();
+    if settings.active_model().is_empty() {
+        return Err(format!(
+            "No model for the {} provider. Pass --model, \
+             or configure one in the desktop app's settings.",
+            settings.llm_provider.as_str()
+        )
+        .into());
     }
     if let Some(rounds) = args.max_review_rounds {
         settings.max_review_rounds = rounds;

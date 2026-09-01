@@ -291,8 +291,7 @@ fn AddReferenceForm(
                     class: "btn btn-primary",
                     disabled: busy(),
                     onclick: move |_| {
-                        let api_key = settings.read().active_api_key().to_string();
-                        let model = settings.read().active_model().to_string();
+                        let endpoint = settings.read().llm_endpoint();
                         let pdf_data = pdfs.read().clone();
                         let pkg_data = pkg.read().clone();
                         let profile = selected_profile.read().clone();
@@ -318,8 +317,7 @@ fn AddReferenceForm(
                                     &profile,
                                     pdf_data.clone(),
                                     pkg_bytes.clone(),
-                                    api_key,
-                                    model,
+                                    endpoint,
                                 )
                                 .await
                             {

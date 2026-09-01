@@ -13,7 +13,7 @@ pub const ABORTED: &str = "Run aborted.";
 /// `reqwest`'s top-level message is often opaque (e.g. "error decoding response
 /// body"); the source chain reveals the real cause (e.g. "connection closed
 /// before message completed").
-fn describe_error(e: &reqwest::Error) -> String {
+pub(crate) fn describe_error(e: &reqwest::Error) -> String {
     use std::error::Error;
     let mut msg = e.to_string();
     let mut source = e.source();
@@ -28,6 +28,8 @@ fn describe_error(e: &reqwest::Error) -> String {
 // A turn's shape is the controller's vocabulary, so it lives in `pipeline`;
 // this module is one implementation of `pipeline::TurnProvider`.
 pub use pipeline::{ToolCall, TurnOutput};
+
+use crate::provider::LlmEndpoint;
 
 // ── Prompt caching + history eviction (shared by every Messages-API path) ────
 
@@ -227,11 +229,31 @@ pub struct ModelInfo {
 /// that call fails, and the authority on limits either way. Models newer than
 /// this table still resolve through the family heuristics below.
 pub const KNOWN_MODELS: &[ModelInfo] = &[
-    ModelInfo { id: "claude-opus-5", context_window: 1_000_000, max_output_tokens: 128_000 },
-    ModelInfo { id: "claude-sonnet-5", context_window: 1_000_000, max_output_tokens: 128_000 },
-    ModelInfo { id: "claude-opus-4-8", context_window: 1_000_000, max_output_tokens: 128_000 },
-    ModelInfo { id: "claude-sonnet-4-6", context_window: 1_000_000, max_output_tokens: 128_000 },
-    ModelInfo { id: "claude-haiku-4-5", context_window: 200_000, max_output_tokens: 64_000 },
+    ModelInfo {
+        id: "claude-opus-5",
+        context_window: 1_000_000,
+        max_output_tokens: 128_000,
+    },
+    ModelInfo {
+        id: "claude-sonnet-5",
+        context_window: 1_000_000,
+        max_output_tokens: 128_000,
+    },
+    ModelInfo {
+        id: "claude-opus-4-8",
+        context_window: 1_000_000,
+        max_output_tokens: 128_000,
+    },
+    ModelInfo {
+        id: "claude-sonnet-4-6",
+        context_window: 1_000_000,
+        max_output_tokens: 128_000,
+    },
+    ModelInfo {
+        id: "claude-haiku-4-5",
+        context_window: 200_000,
+        max_output_tokens: 64_000,
+    },
 ];
 
 /// The model used when none has been chosen.
@@ -286,15 +308,47 @@ pub fn max_output_tokens_for(model: &str) -> u32 {
     }
 }
 
-/// Learn the real context window from a `prompt is too long: X tokens > N maximum`
-/// error, clamping the stored window to the smallest maximum the API has reported.
-fn learn_context_window_from_error(msg: &str) {
-    let Some(n) = msg
-        .split('>')
+/// Whether an error body says the request blew the model's context window.
+///
+/// Both dialects are recognized, because both are reachable: Anthropic's
+/// `prompt is too long: X tokens > N maximum` and the OpenAI-compatible
+/// `This model's maximum context length is N tokens` (and OpenRouter's
+/// `context_length_exceeded` code, which it echoes in the message).
+pub(crate) fn is_context_overflow(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    m.contains("prompt is too long")
+        || m.contains("maximum context length")
+        || m.contains("context_length_exceeded")
+        || m.contains("context length exceeded")
+}
+
+/// The real context window an overflow error reports, in tokens.
+///
+/// Both dialects are read, because both are reachable: the Anthropic phrasing
+/// (`prompt is too long: X tokens > N maximum`) and the OpenAI-compatible one
+/// (`This model's maximum context length is N tokens`). `None` for a message
+/// that names no limit, which leaves the heuristic in charge.
+fn parse_context_limit(msg: &str) -> Option<usize> {
+    let after_marker = |marker: &str| {
+        let lower = msg.to_ascii_lowercase();
+        let at = lower.find(marker)? + marker.len();
+        msg[at..].split_whitespace().find_map(|tok| {
+            tok.trim_matches(|c: char| !c.is_ascii_digit())
+                .parse::<usize>()
+                .ok()
+        })
+    };
+    msg.split('>')
         .nth(1)
         .and_then(|tail| tail.split_whitespace().next())
         .and_then(|tok| tok.parse::<usize>().ok())
-    else {
+        .or_else(|| after_marker("maximum context length is"))
+}
+
+/// Learn the real context window from an overflow error, clamping the stored
+/// window to the smallest maximum any endpoint has reported.
+fn learn_context_window_from_error(msg: &str) {
+    let Some(n) = parse_context_limit(msg) else {
         return;
     };
     let prev = CFG_CONTEXT_WINDOW.load(Ordering::Relaxed);
@@ -389,7 +443,7 @@ fn calibrated_tokens(raw: usize) -> usize {
 /// context window, so calibration is not allowed to shrink the estimate below its
 /// raw value. `real` comes from the API's `usage` (input + both cache buckets);
 /// `estimate` is the [`estimate_tokens`] of the same assembled prompt.
-fn record_token_calibration(real: usize, estimate: usize) {
+pub(crate) fn record_token_calibration(real: usize, estimate: usize) {
     if real == 0 || estimate == 0 {
         return;
     }
@@ -603,30 +657,37 @@ fn cache_marked_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
     tools_cached
 }
 
-
-/// The output of [`prepare_request_body`]: the (possibly evicted) history, the
-/// serialized request bytes, and the raw token estimate of what was assembled.
-struct PreparedRequest {
-    body: Vec<u8>,
-    sent_estimate: usize,
+/// The output of [`prepare_request_body`]: the serialized request bytes and the
+/// raw token estimate of what was assembled.
+pub(crate) struct PreparedRequest {
+    pub(crate) body: Vec<u8>,
+    pub(crate) sent_estimate: usize,
 }
 
 /// Do the CPU-heavy prompt assembly off the UI thread: evict to fit the target,
-/// clone in the cache-control breakpoints, and serialize the request to bytes.
+/// hand the result to `build` (the provider's request shape), and serialize it
+/// to bytes.
 ///
 /// The agent loop is spawned on Dioxus's main-thread executor, so running this
 /// synchronously (full-history serialization + recursive token walks + a deep
 /// clone of a multi-MB history, several times per turn) freezes rendering. It
 /// all happens inside [`tokio::task::spawn_blocking`] instead. Ownership of
 /// `history` is moved in and returned so the caller can restore it.
-async fn prepare_request_body(
+///
+/// `build` is what the two transports differ in — everything above it (the
+/// budget, the eviction ladder, the estimate) is provider-independent.
+pub(crate) async fn prepare_request_body<B>(
     history: &mut Vec<serde_json::Value>,
     tools: Vec<serde_json::Value>,
     system: Option<String>,
-    model: String,
-    max_tokens: u32,
     target: usize,
-) -> Result<PreparedRequest, String> {
+    build: B,
+) -> Result<PreparedRequest, String>
+where
+    B: FnOnce(&[serde_json::Value], &[serde_json::Value], Option<&str>) -> serde_json::Value
+        + Send
+        + 'static,
+{
     // The transcript is moved into the blocking task and written back on every
     // path out of it. Borrowing rather than taking the `Vec` is the point: the
     // caller retries this turn after a failure, and a caller that forgot to put
@@ -636,23 +697,8 @@ async fn prepare_request_body(
         let mut history = taken;
         evict_to_fit(&mut history, &tools, system.as_deref(), target);
         let sent_estimate = assembled_prompt_estimate(&history, &tools, system.as_deref());
+        let request = build(&history, &tools, system.as_deref());
 
-        // Prompt caching: `ephemeral` breakpoints on the system prompt (static —
-        // the instruction prefix is identical every turn), the last tool, and the
-        // final message block bill the stable prefix at the cache-read rate. The
-        // static system breakpoint means a >5-min stall (cache TTL) only re-writes
-        // the rolling tail, never the whole prefix. See [`cache_marked_messages`]
-        // / [`cache_marked_tools`] / [`cache_marked_system`].
-        let mut request = serde_json::json!({
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": cache_marked_messages(&history),
-            "tools": cache_marked_tools(&tools),
-            "stream": true,
-        });
-        if let Some(s) = system.as_deref().filter(|s| !s.is_empty()) {
-            request["system"] = cache_marked_system(s);
-        }
         // Both outcomes carry the (possibly evicted) history back out.
         match serde_json::to_vec(&request) {
             Ok(body) => Ok((
@@ -682,6 +728,35 @@ async fn prepare_request_body(
     }
 }
 
+/// The Messages-API request body: the history with its cache breakpoints, the
+/// tools, the system prompt, streamed.
+///
+/// Prompt caching: `ephemeral` breakpoints on the system prompt (static — the
+/// instruction prefix is identical every turn), the last tool, and the final
+/// message block bill the stable prefix at the cache-read rate. The static
+/// system breakpoint means a >5-min stall (cache TTL) only re-writes the rolling
+/// tail, never the whole prefix. See [`cache_marked_messages`] /
+/// [`cache_marked_tools`] / [`cache_marked_system`].
+fn anthropic_request_body(
+    history: &[serde_json::Value],
+    tools: &[serde_json::Value],
+    system: Option<&str>,
+    model: &str,
+    max_tokens: u32,
+) -> serde_json::Value {
+    let mut request = serde_json::json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": cache_marked_messages(history),
+        "tools": cache_marked_tools(tools),
+        "stream": true,
+    });
+    if let Some(s) = system.filter(|s| !s.is_empty()) {
+        request["system"] = cache_marked_system(s);
+    }
+    request
+}
+
 /// How long a streamed turn may go without receiving any bytes before the
 /// request is failed. The SSE stream emits deltas (and periodic pings)
 /// continuously, so a long silence means the connection is dead — typically
@@ -690,9 +765,9 @@ async fn prepare_request_body(
 /// run that hangs forever on a socket nobody is talking on.
 const STREAM_READ_TIMEOUT_SECS: u64 = 300;
 
-/// The shared HTTP client for streamed Messages API turns: one connection pool
-/// for the whole run, with an inactivity timeout on the response body.
-fn streaming_client() -> reqwest::Client {
+/// The shared HTTP client for streamed turns: one connection pool for the whole
+/// run, with an inactivity timeout on the response body.
+pub(crate) fn streaming_client() -> reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT
         .get_or_init(|| {
@@ -704,68 +779,76 @@ fn streaming_client() -> reqwest::Client {
         .clone()
 }
 
-/// Run **one** streamed assistant turn against the Messages API with `tools`
-/// available, append the assistant message to `history`, and return its text +
-/// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:
-/// it executes the returned tool calls (which may be async) and appends a user
-/// `tool_result` message via [`tool_result_message`] before the next turn.
-pub async fn anthropic_stream_turn(
-    history: &mut Vec<serde_json::Value>,
-    tools: &[serde_json::Value],
-    api_key: &str,
-    model: &str,
-    max_tokens: u32,
-    system: Option<&str>,
-    // Polled while the response streams, so an aborted run stops within a chunk
-    // rather than at the end of a turn that may run for minutes.
-    abort: &pipeline::AbortFlag,
-) -> Result<TurnOutput, String> {
-    use futures_util::StreamExt;
+/// The floor the context-overflow retry shrinks the prompt target to.
+const MIN_TARGET: usize = 16_000;
 
-    if api_key.is_empty() {
-        return Err(
-            "Anthropic API key is not configured. Open Settings and paste your API key."
-                .to_string(),
-        );
-    }
+/// Everything [`stream_request`] needs about the turn being sent, other than the
+/// provider-specific request shape and headers.
+pub(crate) struct TurnRequest<'a> {
+    pub(crate) history: &'a mut Vec<serde_json::Value>,
+    pub(crate) tools: &'a [serde_json::Value],
+    pub(crate) system: Option<&'a str>,
+    /// The model id, for sizing the prompt budget — the request body carries its
+    /// own copy, since not every dialect spells the field the same way.
+    pub(crate) model: &'a str,
+    pub(crate) max_tokens: u32,
+    /// What this transport's errors are prefixed with.
+    pub(crate) label: &'static str,
+}
+
+/// Assemble the prompt, POST it, and hand back the streaming response — retrying
+/// with a smaller prompt when the endpoint says the context window was blown.
+///
+/// The token estimate is char-based, so if the real count still trips the hard
+/// `400` limit we halve the target, force another (harder) eviction, and retry
+/// rather than failing the whole run. Shared by both transports: only `build`
+/// (the request shape) and `send` (URL plus auth headers) differ.
+pub(crate) async fn stream_request<B, S>(
+    request: TurnRequest<'_>,
+    build: B,
+    send: S,
+) -> Result<(reqwest::Response, usize), String>
+where
+    B: Fn(&[serde_json::Value], &[serde_json::Value], Option<&str>) -> serde_json::Value
+        + Clone
+        + Send
+        + 'static,
+    S: Fn(Vec<u8>) -> reqwest::RequestBuilder,
+{
+    let TurnRequest {
+        history,
+        tools,
+        system,
+        model,
+        max_tokens,
+        label,
+    } = request;
 
     // Bound the assembled prompt below the model's context window before billing
     // this turn (no-op until history is large; escalates from stubbing to dropping
     // oldest turns — see [`evict_to_fit`]). This and the request serialization run
     // off the UI thread (see [`prepare_request_body`]).
-    //
-    // Retry on context overflow: the token estimate is char-based, so if the real
-    // count still trips the hard `400 prompt is too long` limit we halve the
-    // target, force another (harder) eviction, and retry — rather than failing the
-    // whole run.
     let mut target = prompt_token_target(model, max_tokens);
-    const MIN_TARGET: usize = 16_000;
-    let client = streaming_client();
 
-    let (response, sent_estimate) = loop {
+    loop {
+        let build = build.clone();
         let prepared = prepare_request_body(
             history,
             tools.to_vec(),
             system.map(str::to_string),
-            model.to_string(),
-            max_tokens,
             target,
+            build,
         )
         .await?;
 
-        let response = client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .body(prepared.body)
+        let response = send(prepared.body)
             .send()
             .await
-            .map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
+            .map_err(|e| format!("{label} error: {}", describe_error(&e)))?;
 
         let status = response.status();
         if status.is_success() {
-            break (response, prepared.sent_estimate);
+            return Ok((response, prepared.sent_estimate));
         }
 
         let body = response.text().await.unwrap_or_default();
@@ -774,7 +857,7 @@ pub async fn anthropic_stream_turn(
             .and_then(|v| v["error"]["message"].as_str().map(String::from))
             .unwrap_or(body);
 
-        if status.as_u16() == 400 && msg.contains("prompt is too long") && target > MIN_TARGET {
+        if is_context_overflow(&msg) && target > MIN_TARGET {
             // Record the real window so future turns (and this retry) size to it,
             // then re-derive the target and shrink further before retrying.
             learn_context_window_from_error(&msg);
@@ -782,18 +865,29 @@ pub async fn anthropic_stream_turn(
             target = learned_target.min(target / 2).max(MIN_TARGET);
             continue;
         }
-        return Err(format!("Anthropic API error ({status}): {msg}"));
-    };
+        return Err(format!("{label} error ({status}): {msg}"));
+    }
+}
+
+/// Read an SSE body line by line, handing each `data:` payload to `on_data`.
+///
+/// Aborts within a chunk rather than at the end of a turn that may run for
+/// minutes, and skips the `[DONE]` sentinel OpenAI-compatible endpoints send.
+/// Shared because the framing is the same for both transports; only the event
+/// shapes inside differ.
+pub(crate) async fn for_each_sse_data<F>(
+    response: reqwest::Response,
+    abort: &pipeline::AbortFlag,
+    label: &str,
+    mut on_data: F,
+) -> Result<(), String>
+where
+    F: FnMut(&str) -> Result<(), String>,
+{
+    use futures_util::StreamExt;
 
     let mut stream = response.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
-    let mut response_text = String::new();
-    let mut tool_blocks: std::collections::BTreeMap<u64, (String, String, String)> =
-        std::collections::BTreeMap::new();
-    let mut stop_reason: Option<String> = None;
-    // Real prompt-token count reported by the API (input + both cache buckets),
-    // used to calibrate the char-based estimate. 0 until `message_start` arrives.
-    let mut prompt_tokens: usize = 0;
 
     while let Some(chunk) = stream.next().await {
         if abort.is_aborted() {
@@ -801,7 +895,7 @@ pub async fn anthropic_stream_turn(
             // never surfaced — dropping the stream here is the point.
             return Err(ABORTED.to_string());
         }
-        let chunk = chunk.map_err(|e| format!("Anthropic API error: {}", describe_error(&e)))?;
+        let chunk = chunk.map_err(|e| format!("{label} error: {}", describe_error(&e)))?;
         buf.extend_from_slice(&chunk);
 
         while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
@@ -811,116 +905,197 @@ pub async fn anthropic_stream_turn(
                 continue;
             };
             let data = data.trim();
-            if data.is_empty() {
+            if data.is_empty() || data == "[DONE]" {
                 continue;
             }
-            let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
-                continue;
-            };
-            match event["type"].as_str() {
-                Some("message_start") => {
-                    // Total prompt size counts uncached input plus both cache
-                    // buckets — caching lowers cost, not the context-window count.
-                    let u = &event["message"]["usage"];
-                    prompt_tokens = (u["input_tokens"].as_u64().unwrap_or(0)
-                        + u["cache_creation_input_tokens"].as_u64().unwrap_or(0)
-                        + u["cache_read_input_tokens"].as_u64().unwrap_or(0))
-                        as usize;
-                }
-                Some("content_block_start") if event["content_block"]["type"] == "tool_use" => {
-                    let idx = event["index"].as_u64().unwrap_or(0);
-                    let id = event["content_block"]["id"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    let name = event["content_block"]["name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    tool_blocks.insert(idx, (id, name, String::new()));
-                }
-                Some("content_block_delta") => match event["delta"]["type"].as_str() {
-                    Some("text_delta") => {
-                        if let Some(t) = event["delta"]["text"].as_str() {
-                            response_text.push_str(t);
-                        }
-                    }
-                    Some("input_json_delta") => {
-                        let idx = event["index"].as_u64().unwrap_or(0);
-                        if let Some(entry) = tool_blocks.get_mut(&idx)
-                            && let Some(pj) = event["delta"]["partial_json"].as_str()
-                        {
-                            entry.2.push_str(pj);
-                        }
-                    }
-                    _ => {}
-                },
-                Some("message_delta") => {
-                    if let Some(sr) = event["delta"]["stop_reason"].as_str() {
-                        stop_reason = Some(sr.to_string());
-                    }
-                }
-                Some("error") => {
-                    let msg = event["error"]["message"]
-                        .as_str()
-                        .unwrap_or("unknown error");
-                    return Err(format!("Anthropic API error: {msg}"));
-                }
-                _ => {}
-            }
+            on_data(data)?;
         }
     }
+    Ok(())
+}
 
-    // Calibrate the token estimate against the API's reported usage. `sent_estimate`
-    // was computed off-thread for exactly what was sent, so this adds no
-    // main-thread work. Next turn's [`evict_to_fit`] scales its estimate by this.
-    record_token_calibration(prompt_tokens, sent_estimate);
-
-    // Append the assistant message (text + tool_use blocks) to history.
+/// Append the assistant message a streamed turn produced to `history` and return
+/// the turn's output. `tool_blocks` carries `(id, name, raw JSON input)` per
+/// call, in call order; unparseable input becomes `{}` rather than failing the
+/// turn — the tool reports the mismatch and the model retries.
+///
+/// Shared by both transports: the history stays Anthropic-shaped whichever
+/// endpoint produced it, so eviction, the edit log and a resumed session do not
+/// have to know which one it was.
+pub(crate) fn finish_turn(
+    history: &mut Vec<serde_json::Value>,
+    response_text: String,
+    tool_blocks: impl IntoIterator<Item = (String, String, String)>,
+    stop_reason: Option<String>,
+    prompt_tokens: usize,
+) -> TurnOutput {
     let mut assistant_content: Vec<serde_json::Value> = Vec::new();
     if !response_text.is_empty() {
         assistant_content.push(serde_json::json!({"type": "text", "text": response_text}));
     }
     let mut tool_calls = Vec::new();
-    for (id, name, input_buf) in tool_blocks.values() {
+    for (id, name, input_buf) in tool_blocks {
         let input: serde_json::Value =
-            serde_json::from_str(input_buf).unwrap_or_else(|_| serde_json::json!({}));
+            serde_json::from_str(&input_buf).unwrap_or_else(|_| serde_json::json!({}));
         assistant_content.push(serde_json::json!({
             "type": "tool_use",
             "id": id,
             "name": name,
             "input": input,
         }));
-        tool_calls.push(ToolCall {
-            id: id.clone(),
-            name: name.clone(),
-            input,
-        });
+        tool_calls.push(ToolCall { id, name, input });
     }
     history.push(serde_json::json!({
         "role": "assistant",
         "content": assistant_content,
     }));
 
-    Ok(TurnOutput {
+    TurnOutput {
         text: response_text,
         tool_calls,
         stop_reason,
         prompt_tokens,
-    })
+    }
 }
+
+/// Run **one** streamed assistant turn against the Messages API with `tools`
+/// available, append the assistant message to `history`, and return its text +
+/// any tool calls + `stop_reason`. The caller drives the multi-turn agent loop:
+/// it executes the returned tool calls (which may be async) and appends a user
+/// `tool_result` message via [`tool_result_message`] before the next turn.
+pub async fn anthropic_stream_turn(
+    history: &mut Vec<serde_json::Value>,
+    tools: &[serde_json::Value],
+    endpoint: &LlmEndpoint,
+    max_tokens: u32,
+    system: Option<&str>,
+    // Polled while the response streams, so an aborted run stops within a chunk
+    // rather than at the end of a turn that may run for minutes.
+    abort: &pipeline::AbortFlag,
+) -> Result<TurnOutput, String> {
+    endpoint.check()?;
+
+    let client = streaming_client();
+    let model = endpoint.model.clone();
+    let url = endpoint.url("/messages");
+    let api_key = endpoint.api_key.clone();
+
+    let (response, sent_estimate) = stream_request(
+        TurnRequest {
+            history,
+            tools,
+            system,
+            model: &endpoint.model,
+            max_tokens,
+            label: ANTHROPIC_LABEL,
+        },
+        move |h, t, s| anthropic_request_body(h, t, s, &model, max_tokens),
+        |body| {
+            client
+                .post(&url)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .body(body)
+        },
+    )
+    .await?;
+
+    let mut response_text = String::new();
+    let mut tool_blocks: std::collections::BTreeMap<u64, (String, String, String)> =
+        std::collections::BTreeMap::new();
+    let mut stop_reason: Option<String> = None;
+    // Real prompt-token count reported by the API (input + both cache buckets),
+    // used to calibrate the char-based estimate. 0 until `message_start` arrives.
+    let mut prompt_tokens: usize = 0;
+
+    for_each_sse_data(response, abort, ANTHROPIC_LABEL, |data| {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
+            return Ok(());
+        };
+        match event["type"].as_str() {
+            Some("message_start") => {
+                // Total prompt size counts uncached input plus both cache
+                // buckets — caching lowers cost, not the context-window count.
+                let u = &event["message"]["usage"];
+                prompt_tokens = (u["input_tokens"].as_u64().unwrap_or(0)
+                    + u["cache_creation_input_tokens"].as_u64().unwrap_or(0)
+                    + u["cache_read_input_tokens"].as_u64().unwrap_or(0))
+                    as usize;
+            }
+            Some("content_block_start") if event["content_block"]["type"] == "tool_use" => {
+                let idx = event["index"].as_u64().unwrap_or(0);
+                let id = event["content_block"]["id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let name = event["content_block"]["name"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                tool_blocks.insert(idx, (id, name, String::new()));
+            }
+            Some("content_block_delta") => match event["delta"]["type"].as_str() {
+                Some("text_delta") => {
+                    if let Some(t) = event["delta"]["text"].as_str() {
+                        response_text.push_str(t);
+                    }
+                }
+                Some("input_json_delta") => {
+                    let idx = event["index"].as_u64().unwrap_or(0);
+                    if let Some(entry) = tool_blocks.get_mut(&idx)
+                        && let Some(pj) = event["delta"]["partial_json"].as_str()
+                    {
+                        entry.2.push_str(pj);
+                    }
+                }
+                _ => {}
+            },
+            Some("message_delta") => {
+                if let Some(sr) = event["delta"]["stop_reason"].as_str() {
+                    stop_reason = Some(sr.to_string());
+                }
+            }
+            Some("error") => {
+                let msg = event["error"]["message"]
+                    .as_str()
+                    .unwrap_or("unknown error");
+                return Err(format!("{ANTHROPIC_LABEL} error: {msg}"));
+            }
+            _ => {}
+        }
+        Ok(())
+    })
+    .await?;
+
+    // Calibrate the token estimate against the API's reported usage. `sent_estimate`
+    // was computed off-thread for exactly what was sent, so this adds no
+    // main-thread work. Next turn's [`evict_to_fit`] scales its estimate by this.
+    record_token_calibration(prompt_tokens, sent_estimate);
+
+    Ok(finish_turn(
+        history,
+        response_text,
+        tool_blocks.into_values(),
+        stop_reason,
+        prompt_tokens,
+    ))
+}
+
+/// What an Anthropic transport error is prefixed with.
+const ANTHROPIC_LABEL: &str = "Anthropic API";
 
 /// Fetch the list of available model IDs from the Anthropic API, sorted
 /// alphabetically. All Claude models support the chat + vision endpoint, so no
 /// filtering is applied.
-pub async fn anthropic_list_models(api_key: &str) -> Result<Vec<String>, String> {
-    if api_key.is_empty() {
+pub async fn anthropic_list_models(endpoint: &LlmEndpoint) -> Result<Vec<String>, String> {
+    if endpoint.api_key.trim().is_empty() {
         return Err("Anthropic API key is not configured.".to_string());
     }
 
     let response = reqwest::Client::new()
-        .get("https://api.anthropic.com/v1/models?limit=1000")
-        .header("x-api-key", api_key)
+        .get(endpoint.url("/models?limit=1000"))
+        .header("x-api-key", &endpoint.api_key)
         .header("anthropic-version", "2023-06-01")
         .send()
         .await
@@ -1064,9 +1239,8 @@ mod tests {
             &mut untouched,
             tools.clone(),
             Some("system".to_string()),
-            "claude-opus-4-8".to_string(),
-            1000,
             1_000_000,
+            |h, t, s| anthropic_request_body(h, t, s, "claude-opus-4-8", 1000),
         )
         .await
         .expect("a serializable request prepares");
@@ -1080,9 +1254,8 @@ mod tests {
             &mut evicted,
             tools,
             Some("system".to_string()),
-            "claude-opus-4-8".to_string(),
-            1000,
             1,
+            |h, t, s| anthropic_request_body(h, t, s, "claude-opus-4-8", 1000),
         )
         .await
         .expect("a serializable request prepares");
@@ -1090,6 +1263,22 @@ mod tests {
             !evicted.is_empty(),
             "eviction must shrink the history, never hand back nothing"
         );
+    }
+
+    /// Both dialects report a blown context window differently, and both have to
+    /// be recognized — an unrecognized one turns a recoverable turn into a failed
+    /// run, because the retry that shrinks the prompt never fires.
+    #[test]
+    fn context_overflow_is_recognized_in_both_dialects() {
+        let anthropic = "prompt is too long: 1050000 tokens > 1000000 maximum";
+        let openai = "This model's maximum context length is 128000 tokens. \
+                      However, your messages resulted in 130000 tokens.";
+        assert!(is_context_overflow(anthropic));
+        assert!(is_context_overflow(openai));
+        assert!(!is_context_overflow("invalid x-api-key"));
+        assert_eq!(parse_context_limit(anthropic), Some(1_000_000));
+        assert_eq!(parse_context_limit(openai), Some(128_000));
+        assert_eq!(parse_context_limit("something else entirely"), None);
     }
 
     /// The two model tables live together; keep their groupings pinned so a new

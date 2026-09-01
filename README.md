@@ -24,7 +24,7 @@ Decodes PDFs and extracts structured data for automated forms conversion.
 | `app` | Dioxus desktop application: drag-and-drop upload driving the autonomous conversion agent. |
 | `agent` | Headless conversion-agent engine — the tool catalog/executor, edit-history store, reference store, and AEM client. No UI or LLM dependency, shared by the app, the pipeline and the MCP server. |
 | `pipeline` | The conversion controller: the Analyst → Author → Reviewer stage sequencing, retry recovery and abort handling. Depends on neither a UI framework nor an LLM provider — the consumer supplies a `TurnProvider` and a `RunObserver`. |
-| `runner` | The host side of a run, shared by the app and the CLI: the Anthropic transport (streaming, prompt caching, history eviction), the operator settings, and the entry points that build the agent, open an edit-history session and record the result. |
+| `runner` | The host side of a run, shared by the app and the CLI: the two LLM transports (the Anthropic Messages API with prompt caching, and any OpenAI-compatible endpoint), history eviction, the operator settings, and the entry points that build the agent, open an edit-history session and record the result. |
 | `mcp` | Model Context Protocol (stdio) server that exposes the conversion tools so an external LLM client (Claude Desktop, Claude Code, Cursor) can drive a conversion. |
 | `judge` | Evaluates translation quality of multi-language PDF forms and writes scores to CSV. |
 
@@ -131,6 +131,10 @@ cargo run --release -p blueprint-cli -- convert path/to/form.pdf --out ./out --s
 # Use a specific key and model instead of the app's settings
 ANTHROPIC_API_KEY=sk-… cargo run --release -p blueprint-cli -- convert path/to/form.pdf --model claude-opus-4-8
 
+# Route the run through an OpenAI-compatible endpoint (OpenRouter, a local gateway)
+OPENAI_API_KEY=sk-or-… cargo run --release -p blueprint-cli -- convert path/to/form.pdf \
+  --provider openai --base-url https://openrouter.ai/api/v1 --model anthropic/claude-opus-4.1
+
 # Steer the agent, and allow more review rounds
 cargo run --release -p blueprint-cli -- convert path/to/form.pdf --instructions "Keep every footnote." --max-review-rounds 5
 
@@ -201,7 +205,7 @@ history holds what the agent had built, so the run can be resumed with
 
 The app is built with [Dioxus](https://dioxuslabs.com/) and targets the desktop. This is the recommended way of running the migration engine.
 
-It bundles an AI conversion agent that drives the engine's tools turn by turn to convert a form interactively. The agent uses the Anthropic API — set the API key and model (default `claude-opus-4-8`) in the app's settings. Every tree change is versioned into a local edit-history SQLite database, so conversions can be reviewed and resumed.
+It bundles an AI conversion agent that drives the engine's tools turn by turn to convert a form interactively. The agent uses the Anthropic API by default — set the API key and model in the app's settings, under AI Model. The same settings tab switches the agent to any OpenAI-compatible chat-completions endpoint (OpenRouter, a local gateway) by entering a base URL, key and model id; that path sends no prompt-cache breakpoints, so a long run costs more input tokens there, and the model has to support tool calling and image input. Every tree change is versioned into a local edit-history SQLite database, so conversions can be reviewed and resumed.
 
 ### Development
 
