@@ -823,7 +823,7 @@ pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig 
         document_id: "test_001".into(),
         title: "TEST_001".into(),
         form_path: "/content/forms/af/redacto-documents/test_001".into(),
-        style: "ubs-default.css".into(),
+        style: "default.css".into(),
         headers: std::collections::BTreeMap::new(),
         footers: std::collections::BTreeMap::new(),
         owner_id: "admin".into(),
@@ -838,22 +838,37 @@ pub fn test_redacto_config(languages: &[&str]) -> crate::redacto::RedactoConfig 
     }
 }
 
-/// Like [`test_redacto_config`] but with per-language page header and footer
-/// text, so the furniture sections are populated.
+/// Like [`test_redacto_config`] but with per-language page header text and
+/// footer fields, so the furniture sections are populated.
+///
+/// `footers` is `(language, fields)` where each field is `(class, value)`,
+/// mirroring the profile's `footer_fields` shape once resolved.
 pub fn test_redacto_config_with_furniture(
     languages: &[&str],
     headers: &[(&str, &str)],
-    footers: &[(&str, &str)],
+    footers: &[(&str, &[(&str, &str)])],
 ) -> crate::redacto::RedactoConfig {
-    let map = |pairs: &[(&str, &str)]| -> std::collections::BTreeMap<String, String> {
-        pairs
+    let header_map: std::collections::BTreeMap<String, String> = headers
+        .iter()
+        .map(|(lang, text)| (lang.to_string(), text.to_string()))
+        .collect();
+    let footer_map: std::collections::BTreeMap<String, Vec<crate::redacto::FooterField>> =
+        footers
             .iter()
-            .map(|(lang, text)| (lang.to_string(), text.to_string()))
-            .collect()
-    };
+            .map(|(lang, fields)| {
+                let fields = fields
+                    .iter()
+                    .map(|(class, value)| crate::redacto::FooterField {
+                        class: class.to_string(),
+                        value: value.to_string(),
+                    })
+                    .collect();
+                (lang.to_string(), fields)
+            })
+            .collect();
     crate::redacto::RedactoConfig {
-        headers: map(headers),
-        footers: map(footers),
+        headers: header_map,
+        footers: footer_map,
         ..test_redacto_config(languages)
     }
 }

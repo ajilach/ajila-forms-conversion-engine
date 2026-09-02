@@ -215,11 +215,12 @@ pub use xsd::{
 
 // Redacto generation
 pub use redacto::{
-    AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, INITIAL_VERSION,
-    ObjectType, OwnerType, OwnershipRow, OwnershipType, RedactoComponent, RedactoConfig,
-    RedactoConfiguration, RedactoCounts, RedactoDocumentMeta, RedactoDump, RedactoProfile,
-    RedactoValidation, RelationRow, Status as RedactoStatus, asset_ref, generate_redacto_dump,
-    generate_redacto_sql, render_block_html, sql_string, validate_dump,
+    AssetRow, AssetType, AssetVersionRow, DocumentRow, DocumentVersionRow, FooterField,
+    FooterFieldTemplate, INITIAL_VERSION, ObjectType, OwnerType, OwnershipRow, OwnershipType,
+    RedactoComponent, RedactoConfig, RedactoConfiguration, RedactoCounts, RedactoDocumentMeta,
+    RedactoDump, RedactoProfile, RedactoValidation, RelationRow, Status as RedactoStatus,
+    asset_ref, generate_redacto_dump, generate_redacto_sql, render_block_html, sql_string,
+    validate_dump,
 };
 
 // The output target a run aims at

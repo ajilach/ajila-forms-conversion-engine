@@ -33426,7 +33426,7 @@ fn redacto_ubs_profile_resolves_document_identity() {
         config.form_path,
         "/content/forms/af/redacto-documents/aaad_001"
     );
-    assert_eq!(config.style, "ubs-default.css");
+    assert_eq!(config.style, "default.css");
     assert_eq!(config.owner_id, "admin");
     assert_eq!(config.status, crate::RedactoStatus::Draft);
     assert_eq!(config.grid_panel_style, "layout-split-block");
@@ -33456,9 +33456,30 @@ fn redacto_ubs_profile_composes_footer_from_master_page_variables() {
 
     let config = helpers::load_ubs_redacto_config(&ctx);
 
+    let values: Vec<&str> = config.footers["en"]
+        .iter()
+        .map(|f| f.value.as_str())
+        .collect();
     assert_eq!(
-        config.footers["en"],
-        "66300    EN    V0    019    AAEV    31.10.2019    N1"
+        values,
+        ["66300", "EN", "V0", "019", "AAEV", "31.10.2019", "N1"]
+    );
+
+    let classes: Vec<&str> = config.footers["en"]
+        .iter()
+        .map(|f| f.class.as_str())
+        .collect();
+    assert_eq!(
+        classes,
+        [
+            "footer-form-id",
+            "footer-language",
+            "footer-version",
+            "footer-man-code",
+            "footer-form-code",
+            "footer-release-date",
+            "footer-j-version",
+        ]
     );
 }
 
@@ -33475,9 +33496,17 @@ fn redacto_ubs_profile_footer_is_resilient_to_missing_variables() {
     let config = helpers::load_ubs_redacto_config(&ctx);
 
     // Only the always-present form code survives; the rest collapse to blanks.
+    let form_code = config.footers["en"]
+        .iter()
+        .find(|f| f.class == "footer-form-code")
+        .expect("footer-form-code field present");
+    assert_eq!(form_code.value, "AAEV");
     assert!(
-        config.footers["en"].contains("AAEV"),
-        "footer: {:?}",
+        config.footers["en"]
+            .iter()
+            .filter(|f| f.class != "footer-form-code")
+            .all(|f| f.value.is_empty()),
+        "{:?}",
         config.footers["en"]
     );
 }
@@ -33547,8 +33576,16 @@ fn redacto_ubs_profile_renders_the_furniture_per_language() {
 
     assert_eq!(config.headers["en"], "UBS Europe SE");
     assert_eq!(config.headers["it"], "UBS Europe SE, Succursale Italia");
-    assert!(config.footers["en"].contains("EN"), "{:?}", config.footers);
-    assert!(config.footers["it"].contains("IT"), "{:?}", config.footers);
+
+    let footer_language = |lang: &str| {
+        config.footers[lang]
+            .iter()
+            .find(|f| f.class == "footer-language")
+            .map(|f| f.value.as_str())
+            .unwrap_or_default()
+    };
+    assert_eq!(footer_language("en"), "EN");
+    assert_eq!(footer_language("it"), "IT");
 }
 
 // ============================================================================
@@ -33564,7 +33601,10 @@ fn redacto_furniture_ships_as_one_asset_per_section_with_a_version_per_language(
             ("en", "Edition January 2026"),
             ("de", "Ausgabe Januar 2026"),
         ],
-        &[("en", "61000 E"), ("de", "61000 D")],
+        &[
+            ("en", &[("footer-code", "61000 E")]),
+            ("de", &[("footer-code", "61000 D")]),
+        ],
     );
 
     let dump = crate::generate_redacto_dump(&nodes, &config);
@@ -33577,11 +33617,13 @@ fn redacto_furniture_ships_as_one_asset_per_section_with_a_version_per_language(
 
     let header_versions = helpers::redacto_versions_of(&dump, &header_refs[0]);
     assert_eq!(
-        header_versions["en"], "<p>Edition January 2026</p>",
+        header_versions["en"],
+        r#"<div class="right preserve-spaces"><p>Edition January 2026</p></div>"#,
         "{header_versions:?}"
     );
     assert_eq!(
-        header_versions["de"], "<p>Ausgabe Januar 2026</p>",
+        header_versions["de"],
+        r#"<div class="right preserve-spaces"><p>Ausgabe Januar 2026</p></div>"#,
         "{header_versions:?}"
     );
     assert_eq!(header_versions.len(), 2, "one version per language");
@@ -33618,7 +33660,8 @@ fn redacto_furniture_falls_back_to_the_master_language() {
     let header_refs = helpers::redacto_section_assets(&cfg.header);
     let versions = helpers::redacto_versions_of(&dump, &header_refs[0]);
     assert_eq!(
-        versions["de"], "<p>Edition January 2026</p>",
+        versions["de"],
+        r#"<div class="right preserve-spaces"><p>Edition January 2026</p></div>"#,
         "{versions:?}"
     );
     assert_eq!(versions["en"], versions["de"]);
@@ -33656,23 +33699,72 @@ fn redacto_first_header_stays_unset() {
     );
 }
 
-/// The footer aligns its fields with runs of four spaces, which HTML would
-/// otherwise collapse to one.
+/// A field genuinely absent from one language's source (e.g. a jurisdiction
+/// that never had a MAN code) must not print an empty `<span>`, while the
+/// same field for a language that DOES have it still shows.
 #[test]
-fn redacto_footer_keeps_its_column_spacing() {
+fn redacto_footer_field_blank_in_one_language_is_skipped_there_but_kept_in_another() {
     let nodes = vec![redacto_fixtures::paragraph("Body text.")];
-    let config =
-        helpers::test_redacto_config_with_furniture(&["en"], &[], &[("en", "66300    EN    V0")]);
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en", "de"],
+        &[],
+        &[
+            ("en", &[("footer-form-id", "66300"), ("footer-man-code", "019")]),
+            ("de", &[("footer-form-id", "66300"), ("footer-man-code", "")]),
+        ],
+    );
 
     let dump = crate::generate_redacto_dump(&nodes, &config);
     let cfg = helpers::redacto_configuration(&dump);
-
     let refs = helpers::redacto_section_assets(&cfg.footer);
     let versions = helpers::redacto_versions_of(&dump, &refs[0]);
-    assert_eq!(
-        versions["en"], "<p>66300&nbsp;&nbsp;&nbsp; EN&nbsp;&nbsp;&nbsp; V0</p>",
-        "{versions:?}"
+
+    assert!(versions["en"].contains(r#"<span class="footer-man-code">019</span>"#));
+    assert!(!versions["de"].contains("footer-man-code"));
+}
+
+/// Pagination must keep working even on a document whose UBS footer text
+/// happens to be entirely blank for some reason — the counter is not
+/// conditional on field content once the footer section exists at all.
+#[test]
+fn redacto_footer_always_carries_the_page_counter() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en"],
+        &[],
+        &[("en", &[("footer-form-id", "66300")])],
     );
+
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+    let cfg = helpers::redacto_configuration(&dump);
+    let refs = helpers::redacto_section_assets(&cfg.footer);
+    let versions = helpers::redacto_versions_of(&dump, &refs[0]);
+
+    assert!(versions["en"].ends_with(
+        "<span class=\"right\">Page <span class=\"page-number\"></span>\
+         /<span class=\"page-count\"></span></span>"
+    ));
+}
+
+/// Mirrors the header's master-language fallback, but at the whole-record
+/// granularity: a language with NO footer fields of its own takes the
+/// master's fields wholesale.
+#[test]
+fn redacto_footer_falls_back_to_the_master_language_when_entirely_blank() {
+    let nodes = vec![redacto_fixtures::paragraph("Body text.")];
+    let config = helpers::test_redacto_config_with_furniture(
+        &["en", "de"],
+        &[],
+        &[("en", &[("footer-form-id", "66300")])],
+    );
+
+    let dump = crate::generate_redacto_dump(&nodes, &config);
+    let cfg = helpers::redacto_configuration(&dump);
+    let refs = helpers::redacto_section_assets(&cfg.footer);
+    let versions = helpers::redacto_versions_of(&dump, &refs[0]);
+
+    assert!(versions["de"].contains(r#"<span class="footer-form-id">66300</span>"#));
+    assert_eq!(versions["en"], versions["de"]);
 }
 
 /// Every section is checked, so a reference that resolves to nothing cannot
@@ -33705,7 +33797,7 @@ fn redacto_validation_counts_report_the_furniture_sections() {
     let config = helpers::test_redacto_config_with_furniture(
         &["en"],
         &[("en", "Edition January 2026")],
-        &[("en", "61000 E")],
+        &[("en", &[("footer-code", "61000 E")])],
     );
 
     let report = crate::validate_dump(&crate::generate_redacto_dump(&nodes, &config), &config);
@@ -33814,7 +33906,7 @@ fn redacto_validate_rejects_a_document_that_is_only_page_furniture() {
     let config = helpers::test_redacto_config_with_furniture(
         &["en"],
         &[("en", "Edition January 2026")],
-        &[("en", "61000    E    001")],
+        &[("en", &[("footer-code", "61000 E 001")])],
     );
     let dump = crate::generate_redacto_dump(&[], &config);
 

@@ -24,7 +24,7 @@ mod validate;
 
 pub use content::render_block_html;
 pub use converter::{generate_redacto_dump, generate_redacto_sql};
-pub use profile::{RedactoConfig, RedactoProfile};
+pub use profile::{FooterField, FooterFieldTemplate, RedactoConfig, RedactoProfile};
 pub use sql::sql_string;
 pub use validate::{RedactoCounts, RedactoValidation, validate_dump};
 
@@ -313,7 +313,7 @@ pub struct RedactoDocumentMeta {
     /// Human-readable title, rendered into the HTML `<title>`.
     pub title: String,
     /// Stylesheet file name resolved from the Redacto bundle, e.g.
-    /// `ubs-default.css`.
+    /// `default.css`.
     pub style: String,
 }
 

@@ -6,7 +6,7 @@
 //! - `xfa.*`       — raw XFA `<variables><text>` values extracted from the PDF
 //! - `variables.*` — user-defined intermediate values (themselves templates)
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 use super::Status;
@@ -17,7 +17,7 @@ const SCHEMA: &str = "redacto-document/v2";
 /// Default AEM authoring root for Redacto documents.
 const DEFAULT_FORM_PATH_ROOT: &str = "/content/forms/af/redacto-documents";
 /// Default stylesheet file name.
-const DEFAULT_STYLE: &str = "ubs-default.css";
+const DEFAULT_STYLE: &str = "default.css";
 /// Default owner of generated documents.
 const DEFAULT_OWNER_ID: &str = "admin";
 /// Default panel style for a two-column grid layout.
@@ -50,7 +50,7 @@ pub struct RedactoProfile {
     pub form_path: Option<String>,
 
     /// Stylesheet file name resolved from the Redacto bundle.
-    /// Defaults to `ubs-default.css`.
+    /// Defaults to `default.css`.
     #[serde(default)]
     pub style: Option<String>,
 
@@ -60,10 +60,22 @@ pub struct RedactoProfile {
     #[serde(default)]
     pub header: Option<String>,
 
-    /// Tera template for the page footer, rendered per language like
-    /// [`header`](Self::header) and emitted into the `footer` section.
+    /// Named fields making up the page footer, rendered once per language like
+    /// [`header`](Self::header) against that language's own XFA variables. Each
+    /// field becomes its own `<span class="{class}">value</span>` in the footer
+    /// text asset, in the order listed here, separated from its neighbours by a
+    /// literal space; a field whose rendered value is blank for a language is
+    /// skipped for that language rather than printing an empty span. The footer
+    /// asset also always carries the legacy page-number counter after the field
+    /// spans (not configurable — see
+    /// [`render_footer_html`](super::content::render_footer_html)), mirroring
+    /// what `HtmlDocumentService.renderLegacyFurniture` added automatically for
+    /// every v1 document.
+    ///
+    /// Defaults to no fields, so a profile without a UBS-style footer still
+    /// resolves.
     #[serde(default)]
-    pub footer: Option<String>,
+    pub footer_fields: Vec<FooterFieldTemplate>,
 
     /// Authoring user recorded as the document owner. Defaults to `admin`.
     #[serde(default)]
@@ -97,13 +109,26 @@ pub struct RedactoProfile {
     pub variables: HashMap<String, String>,
 }
 
+/// One named footer field template, e.g. the UBS form-id or version column.
+/// Field names are entirely profile-defined — nothing here is UBS-specific.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FooterFieldTemplate {
+    /// CSS class applied to the field's `<span>` in the footer asset, e.g.
+    /// `footer-form-id`.
+    pub class: String,
+    /// Tera template for the field's value, rendered per language like
+    /// [`RedactoProfile::header`].
+    pub template: String,
+}
+
 /// Normalise a rendered header/footer value.
 ///
 /// Line structure is load-bearing now that the page furniture ships as a text
 /// asset — a recovered header stacks its lines and the renderer honours them —
 /// so only the line endings and the surrounding blank space are touched. The
 /// value stays plain text; escaping happens when the asset body is rendered
-/// (see [`render_plain_text_html`](super::content::render_plain_text_html)).
+/// (see [`render_header_html`](super::content::render_header_html) and
+/// [`render_footer_html`](super::content::render_footer_html)).
 fn normalize_furniture(s: &str) -> String {
     s.replace("\r\n", "\n")
         .replace('\r', "\n")
@@ -129,6 +154,16 @@ fn tera_ctx_for(
     Ok(tera_ctx)
 }
 
+/// One resolved footer field for one language: its CSS class and rendered,
+/// normalized (but not yet HTML-escaped) value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FooterField {
+    /// CSS class applied to the field's `<span>`.
+    pub class: String,
+    /// The rendered value, plain text.
+    pub value: String,
+}
+
 /// A fully resolved Redacto configuration: every Tera template rendered and
 /// every default applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,8 +180,11 @@ pub struct RedactoConfig {
     ///
     /// Ordered, so a dump built from the same inputs is byte-identical.
     pub headers: BTreeMap<String, String>,
-    /// Page footer text per language code, plain and possibly multi-line.
-    pub footers: BTreeMap<String, String>,
+    /// Page footer fields per language: each language's ordered list of
+    /// resolved `(class, value)` fields. A field's value may be blank for a
+    /// given language; the converter decides the per-language/whole-record
+    /// fallback and skips blank fields when it builds the asset body.
+    pub footers: BTreeMap<String, Vec<FooterField>>,
     /// Owner recorded in the mandatory `(USER, OWNER, DOCUMENT)` row.
     pub owner_id: String,
     /// Document configuration schema marker.
@@ -247,10 +285,23 @@ impl RedactoConfig {
                 language.clone(),
                 render_furniture("header", &profile.header)?,
             );
-            footers.insert(
-                language.clone(),
-                render_furniture("footer", &profile.footer)?,
-            );
+
+            let mut fields = Vec::with_capacity(profile.footer_fields.len());
+            for field in &profile.footer_fields {
+                let rendered = template::render_string(&field.template, &ctx_tera).map_err(|e| {
+                    crate::Error::Profile(format!(
+                        "redacto profile footer field '{}' could not be rendered for \
+                         language '{language}' (are the required XFA variables \
+                         present?): {e}",
+                        field.class
+                    ))
+                })?;
+                fields.push(FooterField {
+                    class: field.class.clone(),
+                    value: normalize_furniture(&rendered),
+                });
+            }
+            footers.insert(language.clone(), fields);
         }
 
         Ok(Self {

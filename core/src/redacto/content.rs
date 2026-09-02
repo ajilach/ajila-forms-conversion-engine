@@ -34,17 +34,10 @@ pub fn render_block_html(
     }
 }
 
-/// Render plain (possibly multi-line) text as a Redacto text-asset body:
-/// one `<p>` per line, HTML-escaped, with interior blank lines kept as the
-/// spacer paragraph.
-///
-/// The value is treated strictly as plain text — markup in it is escaped and
-/// shows literally. Runs of two or more spaces are preserved by encoding all
-/// but the last space as `&nbsp;` (the UBS footer aligns its columns with
-/// four-space separators), so the alignment survives HTML whitespace
-/// collapsing whether or not the stylesheet sets `white-space: pre-wrap`,
-/// while the line may still wrap at the run's trailing normal space.
-pub(super) fn render_plain_text_html(text: &str) -> String {
+/// Shared plain-text-to-paragraphs core: one `<p>` per line, HTML-escaped,
+/// with interior blank lines kept as the spacer paragraph and leading /
+/// trailing blank lines dropped. Returns `""` for a value with no content.
+fn paragraphs_html(text: &str) -> String {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized
         .split('\n')
@@ -64,39 +57,77 @@ pub(super) fn render_plain_text_html(text: &str) -> String {
             out.push_str(SPACER);
         } else {
             out.push_str("<p>");
-            out.push_str(&preserve_space_runs(&crate::util::escape_html(line)));
+            out.push_str(&crate::util::escape_html(line));
             out.push_str("</p>");
         }
     }
     out
 }
 
-/// Replace all but the last space of every run of two or more spaces with
-/// `&nbsp;`. Applied after HTML escaping, so the input contains no markup.
-fn preserve_space_runs(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut run = 0usize;
-    for c in s.chars() {
-        if c == ' ' {
-            run += 1;
-            continue;
-        }
-        flush_spaces(&mut out, run);
-        run = 0;
-        out.push(c);
+/// Render plain (possibly multi-line) header text as a Redacto text-asset
+/// body: one `<p>` per line, HTML-escaped, wrapped in the `.right
+/// .preserve-spaces` furniture wrapper the Redacto stylesheet expects.
+///
+/// Legacy v1 got this wrapper for free from Java's
+/// `HtmlDocumentService.renderLegacyFurniture`; v2's authored-HTML header must
+/// add it explicitly or the text overlaps the page logo instead of floating
+/// clear of it. `.right` floats the block right; `.preserve-spaces` sets
+/// `white-space: pre-wrap`, which — being CSS-inherited — covers every `<p>`
+/// child from this one outer wrapper, so whitespace in the value needs no
+/// special encoding.
+///
+/// The value is treated strictly as plain text: markup in it is escaped and
+/// shows literally. Returns `""` for a value with no content (no wrapper
+/// around nothing).
+pub(super) fn render_header_html(text: &str) -> String {
+    let inner = paragraphs_html(text);
+    if inner.is_empty() {
+        return String::new();
     }
-    flush_spaces(&mut out, run);
-    out
+    format!(r#"<div class="right preserve-spaces">{inner}</div>"#)
 }
 
-fn flush_spaces(out: &mut String, run: usize) {
-    if run == 0 {
-        return;
+/// Legacy page-number counter, appended after the footer's field spans for
+/// parity with the counter `HtmlDocumentService.renderLegacyFurniture` added
+/// automatically to every v1 footer. Redacto's client-side pagination fills
+/// in `.page-number`/`.page-count` from the page's `counter(page)`/
+/// `counter(pages)`.
+const PAGE_COUNTER: &str = "<span class=\"right\">Page <span class=\"page-number\"></span>\
+    /<span class=\"page-count\"></span></span>";
+
+/// Render the page footer's per-field spans plus the trailing page-number
+/// counter.
+///
+/// Each field with a non-blank rendered value becomes its own
+/// `<span class="{class}">value</span>`, separated from its neighbours by one
+/// literal space; a field whose value is blank for this language is skipped
+/// entirely rather than emitting an empty span. The value is HTML-escaped
+/// like any other authored text; the class name is profile-controlled, not
+/// escaped. The non-empty group of field spans is wrapped in
+/// `<span class="redacto-reading-order">` so Core clones it into the tagged
+/// reading order for accessibility — the page counter sits outside that
+/// wrapper, matching the platform's own furniture examples, since a page
+/// number is not meaningful reading-order content. The counter itself is
+/// always appended, even when every field is blank, since pagination must
+/// keep working on a document whose UBS footer text happens to be empty.
+pub(super) fn render_footer_html(fields: &[super::FooterField]) -> String {
+    let spans: Vec<String> = fields
+        .iter()
+        .filter(|f| !f.value.trim().is_empty())
+        .map(|f| {
+            format!(
+                "<span class=\"{}\">{}</span>",
+                f.class,
+                crate::util::escape_html(&f.value)
+            )
+        })
+        .collect();
+    let joined = spans.join(" ");
+    if joined.is_empty() {
+        PAGE_COUNTER.to_string()
+    } else {
+        format!(r#"<span class="redacto-reading-order">{joined}</span>{PAGE_COUNTER}"#)
     }
-    for _ in 1..run {
-        out.push_str("&nbsp;");
-    }
-    out.push(' ');
 }
 
 /// Render inline content and link any footnote references it contains.
@@ -221,59 +252,126 @@ fn link_footnote_references(html: &str, markers: &FootnoteMarkers) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::redacto::FooterField;
+
+    fn field(class: &str, value: &str) -> FooterField {
+        FooterField {
+            class: class.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    // ── Header ───────────────────────────────────────────────────────────
 
     /// The page header stacks its lines on the page (a validity line above the
     /// legal entity), and v2 furniture assets can honour that — the whole point
-    /// of the migration away from the flattened single line.
+    /// of the migration away from the flattened single line. The whole block
+    /// floats right, clear of the page logo.
     #[test]
-    fn a_multi_line_header_becomes_one_paragraph_per_line() {
+    fn a_multi_line_header_becomes_one_paragraph_per_line_inside_the_right_wrapper() {
         assert_eq!(
-            render_plain_text_html("Gültig ab 02.01.2018\nUBS Europe SE"),
-            "<p>Gültig ab 02.01.2018</p><p>UBS Europe SE</p>"
+            render_header_html("Gültig ab 02.01.2018\nUBS Europe SE"),
+            r#"<div class="right preserve-spaces"><p>Gültig ab 02.01.2018</p><p>UBS Europe SE</p></div>"#
         );
     }
 
     /// The value is content, not markup: a template that emits a tag must not
     /// be able to inject it into the page.
     #[test]
-    fn markup_in_the_value_is_escaped() {
+    fn markup_in_the_header_value_is_escaped() {
         assert_eq!(
-            render_plain_text_html("<b>UBS</b> & Co."),
-            "<p>&lt;b&gt;UBS&lt;/b&gt; &amp; Co.</p>"
+            render_header_html("<b>UBS</b> & Co."),
+            r#"<div class="right preserve-spaces"><p>&lt;b&gt;UBS&lt;/b&gt; &amp; Co.</p></div>"#
         );
     }
 
-    /// The UBS footer separates its fields with four spaces. HTML collapses
-    /// whitespace, so all but the last space of a run become non-breaking.
+    /// `.preserve-spaces` (`white-space: pre-wrap`) is CSS-inherited from the
+    /// outer wrapper, so space runs need no special encoding — real spaces
+    /// pass through untouched.
     #[test]
-    fn space_runs_are_preserved_as_non_breaking_spaces() {
+    fn header_space_runs_are_left_as_plain_spaces_for_the_stylesheet_to_preserve() {
         assert_eq!(
-            render_plain_text_html("66300    EN"),
-            "<p>66300&nbsp;&nbsp;&nbsp; EN</p>"
+            render_header_html("66300    EN"),
+            r#"<div class="right preserve-spaces"><p>66300    EN</p></div>"#
         );
     }
 
     /// A single space between words must stay an ordinary, wrappable space.
     #[test]
-    fn single_spaces_are_left_alone() {
+    fn single_spaces_in_the_header_are_left_alone() {
         assert_eq!(
-            render_plain_text_html("UBS Europe SE"),
-            "<p>UBS Europe SE</p>"
+            render_header_html("UBS Europe SE"),
+            r#"<div class="right preserve-spaces"><p>UBS Europe SE</p></div>"#
         );
     }
 
     /// Blank lines inside the value are vertical space the source drew; blank
     /// lines around it are not.
     #[test]
-    fn interior_blank_lines_become_spacers_and_outer_ones_are_dropped() {
+    fn interior_blank_lines_in_the_header_become_spacers_and_outer_ones_are_dropped() {
         assert_eq!(
-            render_plain_text_html("\n\nfirst\n\nsecond\n\n"),
-            format!("<p>first</p>{SPACER}<p>second</p>")
+            render_header_html("\n\nfirst\n\nsecond\n\n"),
+            format!(r#"<div class="right preserve-spaces"><p>first</p>{SPACER}<p>second</p></div>"#)
         );
     }
 
     #[test]
-    fn an_empty_value_renders_nothing() {
-        assert_eq!(render_plain_text_html("   \n  "), "");
+    fn an_empty_header_value_renders_nothing() {
+        assert_eq!(render_header_html("   \n  "), "");
+    }
+
+    // ── Footer ───────────────────────────────────────────────────────────
+
+    /// Each field becomes its own classed span, separated by one literal
+    /// space, wrapped for accessibility, with the page counter after.
+    #[test]
+    fn footer_fields_become_one_span_each_separated_by_a_literal_space() {
+        assert_eq!(
+            render_footer_html(&[
+                field("footer-form-id", "66300"),
+                field("footer-language", "EN"),
+            ]),
+            format!(
+                r#"<span class="redacto-reading-order"><span class="footer-form-id">66300</span> <span class="footer-language">EN</span></span>{PAGE_COUNTER}"#
+            )
+        );
+    }
+
+    /// A field genuinely blank for this language must not print an empty
+    /// `<span>` — it is simply omitted from the joined group.
+    #[test]
+    fn a_blank_footer_field_is_skipped_entirely() {
+        assert_eq!(
+            render_footer_html(&[
+                field("footer-form-id", "66300"),
+                field("footer-man-code", ""),
+            ]),
+            format!(
+                r#"<span class="redacto-reading-order"><span class="footer-form-id">66300</span></span>{PAGE_COUNTER}"#
+            )
+        );
+    }
+
+    /// Pagination must keep working even when every field is blank — no
+    /// `redacto-reading-order` wrapper around nothing, but the counter still
+    /// appears.
+    #[test]
+    fn the_page_counter_is_appended_even_when_every_field_is_blank() {
+        assert_eq!(
+            render_footer_html(&[field("footer-form-id", "")]),
+            PAGE_COUNTER
+        );
+        assert_eq!(render_footer_html(&[]), PAGE_COUNTER);
+    }
+
+    /// A field's value is content, not markup, exactly like the header.
+    #[test]
+    fn a_footer_field_value_is_html_escaped() {
+        assert_eq!(
+            render_footer_html(&[field("footer-form-code", "<b>AAEV</b> & Co.")]),
+            format!(
+                r#"<span class="redacto-reading-order"><span class="footer-form-code">&lt;b&gt;AAEV&lt;/b&gt; &amp; Co.</span></span>{PAGE_COUNTER}"#
+            )
+        );
     }
 }

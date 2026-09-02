@@ -675,8 +675,9 @@ even when only some rules are drawn, even with a single column, and even when on
 on every row; a run of consecutive one-line paragraphs facing a ruled grid, or headings that are \
 really the header row of the table below them, are the shapes it fails in. Check the page furniture \
 as well: where the rendered pages show a header or a footer, the report's `headers` and `footers` \
-must carry a non-empty value for EVERY language, and a non-master language repeating the master's \
-wording is a stub the profile failed to recover. Spot-check non-master \
+must show real per-language content — an empty header, or a footer whose fields are all blank, is \
+suspicious — and a non-master language repeating the master's wording is a stub the profile failed \
+to recover. Spot-check non-master \
 languages with \
 search_xfa, since review_redacto_output compares the master language only. End by calling \
 submit_review with approved=true ONLY if the dump has no problems and every remaining issue is \
