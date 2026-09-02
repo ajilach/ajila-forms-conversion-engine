@@ -99,6 +99,9 @@ struct RenderIndex {
     /// repeatables is where it belongs — one per row, rather than one above the
     /// step heading. Only the page knows, so it is decided here.
     jump_to_field_repeatables: HashSet<String>,
+    /// Configurator choice name → the value of the option that opens selected.
+    /// Absent means nothing is preselected.
+    preselect: HashMap<String, String>,
 }
 
 impl RenderIndex {
@@ -107,6 +110,7 @@ impl RenderIndex {
             visibility: collect_panel_visibility(root),
             guide_paths: collect_guide_paths(root),
             resets: collect_configurator_resets(root),
+            preselect: collect_preselections(root),
             add_subjects: collect_add_subjects(root),
             signature_twins: collect_signature_twins(root),
             jump_to_field_repeatables: collect_jump_to_field_repeatables(root),
@@ -440,6 +444,82 @@ fn collect_configurator_resets_rec(
         }
         _ => {}
     }
+}
+
+/// Words that name an individual rather than a company, and the words that take
+/// a label back off that list.
+///
+/// `Persona giuridica` is a legal entity, and `persona` alone would otherwise
+/// claim it (PROBLEM-formconfig-private-person-default).
+const INDIVIDUAL_OPTION: &[&str] = &[
+    "private person",
+    "individual",
+    "individuo",
+    "individuale",
+    "persona fisica",
+    "privatperson",
+    "persona",
+];
+const NOT_INDIVIDUAL_OPTION: &[&str] = &[
+    "giuridica",
+    "legal",
+    "company",
+    "entity",
+    "corporate",
+    "firma",
+    "gesellschaft",
+];
+
+/// Which configurator choice opens on which option.
+///
+/// The form configurator asks what the form is for, and QA wants it opening on
+/// the individual option rather than on nothing
+/// (PROBLEM-formconfig-private-person-default). The choice is the one the reset
+/// rule acts on — an approved label set, deciding at least one panel — and the
+/// option is the one whose label names a person. The **value** is what matters:
+/// the widget marks an option checked by comparing its key to the field's
+/// `_value`, the key differs per form, and a `default` attribute does nothing in
+/// this runtime.
+fn collect_preselections(root: &AemNode) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    collect_preselections_rec(root, &mut map);
+    map
+}
+
+fn collect_preselections_rec(node: &AemNode, map: &mut HashMap<String, String>) {
+    // A radio only: a dropdown opens on its first entry anyway, and no approved
+    // configurator wording is a checkbox in this corpus.
+    //
+    // The label set is the whole test. The reset rule additionally requires the
+    // choice to decide a panel, because it needs targets to clear; here there is
+    // nothing to act on but the choice itself, and a radio whose options read
+    // `Private Person / Minderjährige / Firma / GbR` is the configurator whether
+    // or not its panels are wired yet.
+    if let AemNode::RadioButton { name, options, .. } = node
+        && is_approved_configurator(options)
+        && let Some(value) = individual_option(options)
+    {
+        map.insert(name.clone(), value.to_string());
+    }
+
+    for child in node_children(node) {
+        collect_preselections_rec(child, map);
+    }
+}
+
+/// The value of the option that names an individual, or `None` when the choice
+/// offers none — which is never forced to an option it does not have.
+fn individual_option(options: &[AemOption]) -> Option<&str> {
+    options
+        .iter()
+        .find(|option| {
+            let label = strip_markup(&option.label).to_lowercase();
+            INDIVIDUAL_OPTION.iter().any(|word| label.contains(word))
+                && !NOT_INDIVIDUAL_OPTION
+                    .iter()
+                    .any(|word| label.contains(word))
+        })
+        .map(|option| option.value.as_str())
 }
 
 /// Walk the node tree and invert every trigger field's `show` conditions into
@@ -1261,6 +1341,16 @@ fn build_node_context(
             ctx.insert("bind_ref", bind_ref);
             ctx.insert("alignment", alignment_str(*alignment));
             insert_options_context(&mut ctx, options);
+            // The option this choice opens on, when it is the form configurator.
+            // Empty for every other radio, which opens on nothing.
+            ctx.insert(
+                "preselect_value",
+                &index
+                    .preselect
+                    .get(name)
+                    .map(|value| xml_escape(value))
+                    .unwrap_or_default(),
+            );
             // text_is_rich
             let text_is_rich: Vec<bool> = options.iter().map(|o| o.label.contains('<')).collect();
             let text_is_rich_str = format!(
@@ -3101,6 +3191,62 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         }])
+    }
+
+    /// Which option of a form configurator names an individual rather than a
+    /// company — the one the form opens on
+    /// (PROBLEM-formconfig-private-person-default).
+    #[test]
+    fn the_individual_option_is_the_person_not_the_legal_entity() {
+        let options = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(value, label)| AemOption {
+                    label: (*label).into(),
+                    value: (*value).into(),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // The key is the option's own, and it differs per form.
+        assert_eq!(
+            individual_option(&options(&[("3", "Individuo"), ("4", "Entità giuridica")])),
+            Some("3")
+        );
+        assert_eq!(
+            individual_option(&options(&[
+                ("1", "Private Person"),
+                ("2", "Minderjährige"),
+                ("3", "Firma"),
+                ("4", "GbR"),
+            ])),
+            Some("1")
+        );
+        // `Persona giuridica` is a legal entity; `persona` alone would claim it.
+        assert_eq!(
+            individual_option(&options(&[("1", "Persona giuridica"), ("2", "Persona")])),
+            Some("2")
+        );
+        assert_eq!(
+            individual_option(&options(&[
+                ("1", "Individuale"),
+                ("2", "Persona giuridica / Società / Ditta"),
+            ])),
+            Some("1")
+        );
+        // Markup around the label does not hide it.
+        assert_eq!(
+            individual_option(&options(&[("7", "<p><b>Individual</b></p>")])),
+            Some("7")
+        );
+        // A choice with no individual option is never forced to one it lacks.
+        assert_eq!(
+            individual_option(&options(&[
+                ("1", "For financial institutions"),
+                ("2", "Company/Entity"),
+            ])),
+            None
+        );
     }
 
     /// Nothing in a click body may put the Add button back on screen.

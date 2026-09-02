@@ -14996,6 +14996,70 @@ fn the_metadata_control_masters_the_issuing_regions_language() {
 /// that, under the platform's own naming, it does not ship (feedback
 /// PROBLEM-metadata-languages).
 #[test]
+fn a_form_that_renders_its_dor_through_redacto_has_no_preview_step() {
+    use crate::aem::{AemConfig, AemNode, generate_aem_xml};
+
+    let (profile, templates, custom_templates) = load_ubs_profile();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("formrange_code".into(), "TEST".into());
+    vars.insert("formrange_entity".into(), "033".into());
+    let ctx = crate::Context::new("it".to_string(), vars);
+    let mut config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
+        .expect("profile config");
+
+    let root = AemNode::Root {
+        title: "TEST".into(),
+        children: vec![],
+    };
+
+    // The profile's own setting: Redacto renders the DoR from the summary, and
+    // renders the preview its own way, so the carousel step and the button that
+    // opens it are obsolete (PROBLEM-preview-step-removed).
+    assert_eq!(
+        config.user_vars.get("use_summary").map(String::as_str),
+        Some("true"),
+        "the UBS profile is expected to run with the summary enabled"
+    );
+    let xml = generate_aem_xml(&root, &config);
+    assert!(
+        xml.contains("<summarypanel"),
+        "the summary step must be there. Got:\n{}",
+        xml
+    );
+    for gone in ["<previewpanel", "carouselPreview", "initializeForPreview"] {
+        assert!(
+            !xml.contains(gone),
+            "{gone} belongs to the obsolete preview step. Got:\n{}",
+            xml
+        );
+    }
+    // The Submit button names `submitErrorMessage`, so the one copy of it left
+    // has to be the summary panel's.
+    assert_eq!(
+        xml.matches("name=\"submitErrorMessage\"").count(),
+        1,
+        "exactly one submitErrorMessage, in the summary panel. Got:\n{}",
+        xml
+    );
+    assert_eq!(
+        xml.matches("name=\"messagebox_ElsigCheck\"").count(),
+        1,
+        "exactly one messagebox_ElsigCheck. Got:\n{}",
+        xml
+    );
+
+    // Without the summary the preview step is the only preview there is, so it
+    // stays — and so does its button.
+    config.user_vars.insert("use_summary".into(), "false".into());
+    let xml = generate_aem_xml(&root, &config);
+    assert!(
+        xml.contains("<previewpanel") && xml.contains("initializeForPreview"),
+        "a profile without the summary keeps the preview step. Got:\n{}",
+        xml
+    );
+}
+
+#[test]
 fn the_metadata_control_names_languages_by_their_canonical_codes() {
     use crate::aem::{AemConfig, AemNode, generate_aem_xml};
 
@@ -31240,6 +31304,11 @@ fn toolbar_ends_with_the_save_progress_button() {
 /// an `h2` step title, because an `h2` does not appear in the finished DoR. The
 /// wrapper panel stays (it carries the Edit button) but loses its own title, or
 /// the subtitle would render twice.
+///
+/// The form configurator is the exception, and in this profile it is the very
+/// page that carries the banking relationship: its heading belongs to the
+/// configurator and stays an `h2` step title inside it (owner directive
+/// 2026-09-01). Such a form has no subtitle at all.
 #[test]
 fn the_first_page_heading_is_a_subtitle_not_a_step_title() {
     for (pdf, xml) in rendered_ubs_forms() {
@@ -31247,6 +31316,31 @@ fn the_first_page_heading_is_a_subtitle_not_a_step_title() {
             .into_iter()
             .filter(|(_, tag)| tag.contains("css=\"subtitle-after-form-title\""))
             .collect();
+
+        // No subtitle at all is correct on exactly one shape: the page carrying
+        // the banking relationship is the form configurator, whose heading stays
+        // an `h2` step title inside it.
+        if subtitles.is_empty() {
+            let title_panel = open_tags(&xml)
+                .into_iter()
+                .find(|(name, tag)| {
+                    name.starts_with("panel_title_") && tag.contains("name=\"PN_FormConfigurator")
+                })
+                .map(|(_, tag)| tag)
+                .unwrap_or_else(|| {
+                    panic!("{pdf}: no first-page subtitle and no form configurator to explain it")
+                });
+            assert!(
+                title_panel.contains("jcr:title="),
+                "{pdf}: the configurator's title panel keeps its own title:\n{title_panel}"
+            );
+            assert!(
+                xml.contains("css=\"stepTitle\""),
+                "{pdf}: the configurator's heading stays an h2 step title"
+            );
+            continue;
+        }
+
         assert_eq!(
             subtitles.len(),
             1,
@@ -31279,14 +31373,20 @@ fn the_first_page_heading_is_a_subtitle_not_a_step_title() {
             !wrapper.contains("jcr:title="),
             "{pdf}: the wrapper repeats the subtitle as its own title:\n{wrapper}"
         );
-        // The Edit button survives the conversion -- unless the page is the form
-        // configurator, which is excluded from the summary and gets none by
-        // design (see `panel.xml`, and the checklist in
-        // `specs/feedback/manual-changes-italy-033.md`).
-        if !wrapper.contains("name=\"PN_FormConfigurator") {
+        // The Edit button survives the conversion -- unless the page hands it to
+        // its repeatables, which is where it belongs when there are any
+        // (PROBLEM-jump-to-field-button, owner directive 2026-08-24).
+        if !wrapper.contains("jumpToFieldButtonVisible=\"true\"") {
+            // Form-wide rather than page-scoped: `open_tags` is flat, so the
+            // check is that the button went to a repeating panel somewhere, not
+            // that it went to one on this page.
+            let on_a_repeatable = open_tags(&xml).into_iter().any(|(_, tag)| {
+                tag.contains("dorFieldStyling=\"Repeating Panel Numbering\"")
+                    && tag.contains("jumpToFieldButtonVisible=\"true\"")
+            });
             assert!(
-                wrapper.contains("jumpToFieldButtonVisible=\"true\""),
-                "{pdf}: the wrapper lost the Edit button:\n{wrapper}"
+                on_a_repeatable,
+                "{pdf}: the wrapper lost the Edit button and no repeatable took it:\n{wrapper}"
             );
         }
 
@@ -32040,8 +32140,9 @@ fn passthrough_load_save_load_is_a_fixpoint() {
         // (1) Every originally-loaded node survives with its typed fields intact.
         // Children are matched by `name` (not position) and the reloaded tree may
         // contain ADDITIONAL nodes — the writer inserts scaffolding at several
-        // levels (per-page `panel_title`, an always-present `previewpanel`, a
-        // `summarypanel` when enabled) that is not loaded content. So we assert
+        // levels (per-page `panel_title`, a `summarypanel` when the summary is
+        // enabled, a `previewpanel` when it is not) that is not loaded content.
+        // So we assert
         // the loaded tree is a (by-name) subtree of the reloaded tree, uuids and
         // pre-existing lossy typed fields normalized out.
         let mut a = serde_json::to_value(&lowered).unwrap();
@@ -35874,10 +35975,15 @@ fn a_choice_deciding_a_single_panel_gets_no_reset() {
     assert!(!xml.contains("resetData();"), "{xml}");
 }
 
-/// The form configurator opens on "Private Person" whichever path emitted the
-/// radio: the custom template (deterministic conversion) and the ordinary
+/// The form configurator opens on the individual option whichever path emitted
+/// the radio: the custom template (deterministic conversion) and the ordinary
 /// radiobutton template (an agent-authored tree, which never goes through custom
-/// element replacement) both preselect option `1`.
+/// element replacement).
+///
+/// Recognised by its option labels, not by one field name, and written as that
+/// option's own key — `Private Person` on a German form, `Individuo` on an
+/// Italian one, and the key differs per form (PROBLEM-formconfig-private-person-
+/// default, widened beyond Germany 2026-09-01).
 #[test]
 fn an_authored_configurator_radio_also_preselects_private_person() {
     use crate::aem::{AemConfig, AemNode, AemOption, generate_aem_xml};
@@ -35890,17 +35996,17 @@ fn an_authored_configurator_radio_also_preselects_private_person() {
     let config = AemConfig::from_profile(&profile, templates, custom_templates, &ctx)
         .expect("profile config");
 
-    let radio = |name: &str| AemNode::RadioButton {
+    let choice = |name: &str, labels: &[&str], first_key: usize| AemNode::RadioButton {
         attrs: crate::AemAttrs::default(),
         uuid: uuid::Uuid::from_u128(1),
         name: name.into(),
         label: "Formular Adressat".into(),
-        options: ["Private Person", "Minderjährige", "Firma", "GbR"]
+        options: labels
             .iter()
             .enumerate()
             .map(|(i, label)| AemOption {
                 label: (*label).into(),
-                value: (i + 1).to_string(),
+                value: (i + first_key).to_string(),
             })
             .collect(),
         alignment: crate::aem::OptionAlignment::Horizontal,
@@ -35911,6 +36017,13 @@ fn an_authored_configurator_radio_also_preselects_private_person() {
         field_id: None,
         conditions: vec![],
         bind_ref: None,
+    };
+    let radio = |name: &str| {
+        choice(
+            name,
+            &["Private Person", "Minderjährige", "Firma", "GbR"],
+            1,
+        )
     };
     let render = |node: AemNode| {
         generate_aem_xml(
@@ -35924,8 +36037,8 @@ fn an_authored_configurator_radio_also_preselects_private_person() {
 
     // The form carries `_value` attributes of its own (the metadata control, text
     // draws), so read the radio's own tag rather than the whole document.
-    let radio_tag = |name: &str| {
-        let xml = render(radio(name));
+    let tag_of = |node: AemNode, name: &str| {
+        let xml = render(node);
         let at = xml
             .find(&format!("name=\"{name}\""))
             .unwrap_or_else(|| panic!("the radio must be emitted:\n{xml}"));
@@ -35933,17 +36046,32 @@ fn an_authored_configurator_radio_also_preselects_private_person() {
         let end = start + xml[start..].find('>').expect("the tag must close");
         xml[start..end].to_string()
     };
+    let radio_tag = |name: &str| tag_of(radio(name), name);
 
     assert!(
         radio_tag("RB_FormularAdressat").contains(r#"_value="1""#),
         "the configurator radio must open preselected:\n{}",
         radio_tag("RB_FormularAdressat")
     );
-    // Every other radio is a question the reader has to answer themselves.
+    // Every other radio is a question the reader has to answer themselves. What
+    // makes it ordinary is its wording, not its name: the reviewed label sets are
+    // what identify the configurator.
+    let ordinary = choice("RB_Something_Else", &["Yes", "No"], 1);
+    let tag = tag_of(ordinary, "RB_Something_Else");
     assert!(
-        !radio_tag("RB_Something_Else").contains("_value="),
-        "an ordinary radio must not be preselected:\n{}",
-        radio_tag("RB_Something_Else")
+        !tag.contains("_value="),
+        "an ordinary radio must not be preselected:\n{tag}"
+    );
+
+    // An Italian configurator, whose individual option is neither called
+    // "Private Person" nor keyed `1` — the key is the option's own, because it
+    // differs per form. Which label counts as the individual is unit-tested on
+    // `individual_option` itself.
+    let italian = choice("RB_Tipo", &["Individuo", "Entità giuridica"], 3);
+    let tag = tag_of(italian, "RB_Tipo");
+    assert!(
+        tag.contains(r#"_value="3""#),
+        "the individual option's own key must be written:\n{tag}"
     );
 }
 

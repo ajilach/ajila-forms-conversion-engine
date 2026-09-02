@@ -7,14 +7,16 @@
     {% if label and label != "" %}jcr:title="{{ label }}"{% endif %}
     sling:resourceType="{{ variables.custom_resource_type_base }}/controls/radiobutton"
     {% if always_in_pdf %}alwaysInPdf="true"{% endif %}
-    {#  The form configurator opens on a preselected option (UBS directive,
-        feedback PROBLEM-formconfig-private-person-default). The radio is named
-        by the profile because only this one choice has an answer that is right
-        before the reader gives one; `_value` is the mechanism — the widget marks
-        an option checked by comparing its key to this, and a `default` attribute
-        does nothing. #}
-    {%- if variables.preselect_radio_name and name == variables.preselect_radio_name %}
-    _value="{{ variables.preselect_radio_value }}"
+    {#  The form configurator opens on the individual option (UBS directive,
+        feedback PROBLEM-formconfig-private-person-default) -- `Private Person`
+        on a German form, `Individual` / `Individuo` on an Italian one. The
+        engine recognises the choice by its option labels rather than by one
+        hardcoded field name, and writes that option's own key: the key differs
+        per form. `_value` is the mechanism — the widget marks an option checked
+        by comparing its key to this, and a `default` attribute does nothing in
+        this runtime. #}
+    {%- if preselect_value %}
+    _value="{{ preselect_value }}"
     {%- endif %}
     alignment="{{ alignment }}"
     css="{% if css %}{{ css }}{% else %}{{ variables.css_radiobutton }}{% endif %}"
