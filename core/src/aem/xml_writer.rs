@@ -95,6 +95,9 @@ struct RenderIndex {
     /// Repeatable name → the signature panel that repeats in step with it, under
     /// the name AEM knows it by. Absent means the form holds no such panel.
     signature_twins: HashMap<String, String>,
+    /// The inverse, by node name: a signature twin → the data panel driving it.
+    /// A twin has no buttons of its own, and takes its title from that panel.
+    twin_data_panels: HashMap<String, String>,
     /// The repeatables that carry the jump-to-field button, which on a page with
     /// repeatables is where it belongs — one per row, rather than one above the
     /// step heading. Only the page knows, so it is decided here.
@@ -106,13 +109,15 @@ struct RenderIndex {
 
 impl RenderIndex {
     fn build(root: &AemNode) -> Self {
+        let twins = collect_signature_twins(root);
         Self {
             visibility: collect_panel_visibility(root),
             guide_paths: collect_guide_paths(root),
             resets: collect_configurator_resets(root),
             preselect: collect_preselections(root),
             add_subjects: collect_add_subjects(root),
-            signature_twins: collect_signature_twins(root),
+            signature_twins: twins.0,
+            twin_data_panels: twins.1,
             jump_to_field_repeatables: collect_jump_to_field_repeatables(root),
         }
     }
@@ -292,7 +297,7 @@ fn node_children(node: &AemNode) -> &[AemNode] {
 /// resolved here rather than left to whoever authored the tree, and only when the
 /// form really holds that panel: an `addInstance` naming a panel that is not there
 /// throws and takes the rest of the click with it.
-fn collect_signature_twins(root: &AemNode) -> HashMap<String, String> {
+fn collect_signature_twins(root: &AemNode) -> (HashMap<String, String>, HashMap<String, String>) {
     // Every name in the tree, and the AEM name of the panel that actually
     // repeats under it: a repeatable's rows live in the inner panel the template
     // emits, not in the node the tree names.
@@ -300,8 +305,9 @@ fn collect_signature_twins(root: &AemNode) -> HashMap<String, String> {
     collect_repeating_names(root, &mut repeating_names);
 
     let mut twins = HashMap::new();
-    collect_signature_twins_rec(root, &repeating_names, &mut twins);
-    twins
+    let mut data_panels = HashMap::new();
+    collect_signature_twins_rec(root, &repeating_names, &mut twins, &mut data_panels);
+    (twins, data_panels)
 }
 
 fn collect_repeating_names(node: &AemNode, out: &mut HashMap<String, String>) {
@@ -323,7 +329,8 @@ fn collect_repeating_names(node: &AemNode, out: &mut HashMap<String, String>) {
 fn collect_signature_twins_rec(
     node: &AemNode,
     names: &HashMap<String, String>,
-    out: &mut HashMap<String, String>,
+    twins: &mut HashMap<String, String>,
+    data_panels: &mut HashMap<String, String>,
 ) {
     if let AemNode::Repeatable { name, children, .. } = node {
         // The data panel the convention names the twin after is the party's own
@@ -337,28 +344,49 @@ fn collect_signature_twins_rec(
         );
         if let Some(twin) = sources
             .flat_map(|source| signature_twin_candidates(source).into_iter())
-            .find_map(|candidate| names.get(&candidate))
+            .find(|candidate| names.contains_key(candidate))
         {
-            out.insert(name.clone(), twin.clone());
+            twins.insert(name.clone(), names[&twin].clone());
+            data_panels.insert(twin, name.clone());
         }
     }
     for child in node_children(node) {
-        collect_signature_twins_rec(child, names, out);
+        collect_signature_twins_rec(child, names, twins, data_panels);
     }
 }
 
 /// The names a data panel's signature twin can go by, most specific first.
+///
+/// Two conventions are in play. The UBS fragment catalogue fixes the names for a
+/// party generic — `PN_CPGRP` is signed by `PN_SGN_CPGRP` — while a hand-built
+/// party block keeps its own component prefix and marks the twin with `Sign`
+/// before or after the stem: `RCP_LR` / `RCP_Sign_LR`, `RCP_LRP` /
+/// `RCP_LRP_Sign`, both shapes measured in engine output.
 fn signature_twin_candidates(data_panel: &str) -> Vec<String> {
     // The stem is what follows the component-type prefix: `PN_CPGRP` and
     // `RCP_CPGRP` both name the party `CPGRP`.
-    let stem = data_panel
-        .split_once('_')
-        .map(|(_, rest)| rest)
-        .unwrap_or(data_panel);
+    let (prefix, stem) = match data_panel.split_once('_') {
+        Some((prefix, stem)) => (Some(prefix), stem),
+        None => (None, data_panel),
+    };
     if stem.is_empty() {
         return vec![];
     }
-    vec![format!("PN_SGN_{stem}"), format!("PN_Sign_{stem}")]
+    // A twin is never its own data panel: `RCP_Sign_LR` must not pair with
+    // itself through the stem `Sign_LR`.
+    if stem.starts_with("Sign") || stem.starts_with("SGN") {
+        return vec![];
+    }
+    let mut names = vec![format!("PN_SGN_{stem}"), format!("PN_Sign_{stem}")];
+    if let Some(prefix) = prefix {
+        names.extend([
+            format!("{prefix}_SGN_{stem}"),
+            format!("{prefix}_Sign_{stem}"),
+            format!("{prefix}_{stem}_SGN"),
+            format!("{prefix}_{stem}_Sign"),
+        ]);
+    }
+    names
 }
 
 /// A subject as it has to be written inside a rule body, escaped once for every
@@ -1435,13 +1463,26 @@ fn build_node_context(
             ctx.insert("panel_name", &repeat_panel_name(name));
             ctx.insert("row_name", &repeat_row_name(name));
 
+            // A signature twin repeats in step with a data panel and is driven
+            // entirely by that panel's buttons: it has none of its own, and one
+            // there would let the two desync (PROBLEM-repeating-panel §8).
+            let data_panel = index.twin_data_panels.get(name);
+            ctx.insert("is_signature_twin", &data_panel.is_some());
+
             // What the block repeats, which the archetype writes in three places
             // on the repeating panel: `jcr:title`, which AEM renders as the row
             // heading and the client library numbers; `accessibilityLabel`,
             // which a screen reader announces; and `ajilaPanelSubject`, the
             // record of what the engine derived. The Add button's label is built
             // from the same subject, so the wording is decided once.
-            let subject = index.add_subjects.get(name).map(String::as_str);
+            //
+            // A twin borrows its data panel's subject: they are the same rows,
+            // so the two panels must announce and number them the same way.
+            let subject = index
+                .add_subjects
+                .get(data_panel.unwrap_or(name))
+                .or_else(|| index.add_subjects.get(name))
+                .map(String::as_str);
 
             // Empty when nothing on screen names the block, or when the profile
             // configures no wording — the template keeps its own label then.
@@ -3579,6 +3620,74 @@ mod tests {
             "a form without the twin must not name it. Got:\n{}",
             alone
         );
+    }
+
+    /// A hand-built party block marks its twin with `Sign` around the stem, and
+    /// keeps its own component prefix: `RCP_LR` is signed by `RCP_Sign_LR`,
+    /// `RCP_LRP` by `RCP_LRP_Sign`. Both shapes are engine output (AAOS), and
+    /// both twins used to carry an Add and a Remove of their own, which is what
+    /// lets the two panels desync.
+    #[test]
+    fn a_hand_built_signature_twin_is_recognised_and_gives_up_its_buttons() {
+        let party = |name: &str, title: &str| AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
+            uuid: fixed_uuid(),
+            name: name.into(),
+            title: title.into(),
+            children: vec![],
+            min_occur: 1,
+            max_occur: 4,
+            bind_ref: None,
+            frag_ref: None,
+        };
+
+        for (data, twin, twin_repeat) in [
+            ("RCP_LR", "RCP_Sign_LR", "RCP_Sign_LR_repeat"),
+            ("RCP_LRP", "RCP_LRP_Sign", "RCP_LRP_Sign_repeat"),
+        ] {
+            let xml = render_tree(vec![
+                party(data, "Legal representative"),
+                party(twin, "Signature"),
+            ]);
+
+            // The data panel drives both.
+            assert!(
+                xml.contains(&format!("window.forms.ubs.addInstance({twin_repeat});"))
+                    && xml.contains(&format!(
+                        "window.forms.ubs.removeInstance({twin_repeat});"
+                    )),
+                "{data} must drive {twin}. Got:\n{}",
+                xml
+            );
+
+            // The twin has no buttons, and does not claim any.
+            let twin_panel = xml
+                .split("<repeatableInner")
+                .find(|chunk| chunk.contains(&format!("name=\"{twin_repeat}\"")))
+                .and_then(|chunk| chunk.split("</repeatableInner>").next())
+                .expect("the twin's repeating panel");
+            assert!(
+                !twin_panel.contains("name=\"BT_Remove\"")
+                    && !twin_panel.contains("addButton=")
+                    && !twin_panel.contains("removeButton="),
+                "the twin must have no buttons of its own. Got:\n{}",
+                twin_panel
+            );
+            // Its rows are the data panel's rows, so both announce them alike.
+            assert!(
+                twin_panel.contains("accessibilityLabel=\"Legal representative\""),
+                "the twin takes the data panel's subject. Got:\n{}",
+                twin_panel
+            );
+            // Exactly one Add button in the form: the data panel's.
+            assert_eq!(
+                xml.matches("name=\"BT_Add\"").count(),
+                1,
+                "only the data panel has an Add button. Got:\n{}",
+                xml
+            );
+        }
     }
 
     /// All six rule documents, byte for byte.

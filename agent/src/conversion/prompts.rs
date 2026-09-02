@@ -166,13 +166,16 @@ SIGNATURES → EVERY signature block is `affrg_SignatureGeneric1` (the \"AF Frag
 Fields\" catalogue mandates it for every signer role; the role-specific germany/italy signature \
 fragments are retired). The generic is role-neutral: the HOST supplies whose signature it is, \
 twice over. (1) By NAME PAIRING: the contracting party's signature panel is `PN_SGN_CPGRP`, and \
-every other party's is `PN_Sign_` + its data panel's token (`PN_AHGRP` → `PN_Sign_AHGRP`). Get those \
-names exactly right and the engine wires the pair for you: a repeatable party's Add and Remove \
-buttons then also add and remove a row of the signature panel, and relabel it, because the template \
-resolves the twin through that convention. So do NOT hand-author those addInstance calls — and a \
-signature twin gets NO Add and NO Remove of its own, since one there would let the two desync. A \
-name that does not follow the convention silently leaves the twin undriven: it keeps one row while \
-the party grows. (2) By the NAME-FILL CALC: the generic's own calc ships disabled, so \
+every other party's is `PN_Sign_` + its data panel's token (`PN_AHGRP` → `PN_Sign_AHGRP`). A \
+hand-built party block (one not using a partner generic) marks its twin the same way but keeps its \
+own prefix, `Sign` before or after the stem: `RCP_LR` → `RCP_Sign_LR`, `RCP_LRP` → `RCP_LRP_Sign`. \
+Get the name into one of those shapes and the engine wires the pair for you: the party's Add and \
+Remove buttons then also add and remove a row of the signature panel and relabel it, and the twin is \
+emitted with NO Add and NO Remove of its own — one there would let the two desync, and the engine's \
+own validator reporting the twin as button-less is correct by design. So do NOT hand-author those \
+addInstance calls, and do NOT give a twin buttons. A name outside those shapes silently leaves the \
+twin undriven: it keeps one row while the party grows. \
+(2) By the NAME-FILL CALC: the generic's own calc ships disabled, so \
 the host carries a hidden textbox `TXT_Donotdelete` (dorExclusion + summaryExclusion, visible \
 false) beside the first signature panel whose fd:calc holds ONE Calculate document per (data panel \
 → signature panel) pair, looping the data panel's instances and writing \

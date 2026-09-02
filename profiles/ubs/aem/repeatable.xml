@@ -36,8 +36,8 @@
             jcr:title="{{ subject }}"
             sling:resourceType="{{ variables.custom_resource_type_base }}/controls/panel"
             accessibilityLabel="{{ subject }}"
-            addButton="BT_Add"
-            ajilaPanelSubject="{{ subject }}"
+            {% if not is_signature_twin %}addButton="BT_Add"
+            {% endif %}ajilaPanelSubject="{{ subject }}"
             {% if bind_ref %}bindRef="{{ bind_ref }}"
             {% endif %}dorExcludeDescription="true"
             dorFieldStyling="Repeating Panel Numbering"
@@ -52,12 +52,18 @@
             {% endif %}maxOccur="{{ max_occur }}"
             minOccur="{{ min_occur }}"
             name="{{ panel_name }}"
-            removeButton="BT_Remove"
-            summaryHeadingLevel="4"
+            {% if not is_signature_twin %}removeButton="BT_Remove"
+            {% endif %}summaryHeadingLevel="4"
             textIsRich="true"
             validateOnStepCompletion="{Boolean}false">
             <layout jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}" columns="1" dorLayoutType="columnar" dorNumCols="1" nonNavigable="{Boolean}true" toolbarPosition="Bottom"/>
             <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
+                {#  A signature twin is driven by its data panel's buttons and
+                    has none of its own: a Remove here would let the two panels
+                    desync (PROBLEM-repeating-panel §8). The engine validator
+                    expects every repeatable to have both, so it reports two
+                    violations per twin -- those are correct by design. #}
+                {% if not is_signature_twin %}
                 <removebutton
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
                     jcr:createdBy="{{ author }}"
@@ -76,6 +82,7 @@
                     <fd:rules jcr:primaryType="nt:unstructured"/>
                     <fd:scripts fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;// [repeating-panel] Generated automatically. Do not edit: will be overwritten. Create your own different script.\\nvar repeatingPanel = this.parent;\\nvar addButton = this.parent.parent.BT_Add;\\nwindow.forms.ubs.removeInstance(repeatingPanel);{% if signature_twin %}\\nwindow.forms.ubs.removeInstance({{ signature_twin }});{% endif %}\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabels(repeatingPanel\, \\&quot;{{ rule_label }}\\&quot;\, addButton);\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabelsForButtons(repeatingPanel\, \\&quot;{{ rule_label }}\\&quot;\, addButton\, this);{% if signature_twin %}\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabelsForButtons({{ signature_twin }}\, \\&quot;{{ rule_label }}\\&quot;\, \\&quot;\\&quot;\, \\&quot;\\&quot;);{% endif %}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}]" fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;BT_Remove&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;// [repeating-panel] Generated automatically. Do not edit: will be overwritten. Create your own different script.\\nthis.parent.instanceIndex === this.parent.instanceManager.instances.length - 1 &amp;&amp; this.parent.instanceManager.instances.length &gt; this.parent.instanceManager.minOccur;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}]" fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;// [repeating-panel] Generated automatically. Do not edit: will be overwritten. Create your own different script.\\nthis.visible = (this.parent.instanceIndex === this.parent.instanceManager.instances.length - 1 &amp;&amp; this.parent.instanceManager.instances.length &gt; this.parent.instanceManager.minOccur);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;BT_Remove&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}]" jcr:primaryType="nt:unstructured"/>
                 </removebutton>
+                {% endif %}
                 <panel_copy_copy
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"
                     jcr:createdBy="{{ author }}"
@@ -99,6 +106,7 @@
                 </panel_copy_copy>
             </items>
         </repeatableInner>
+        {% if not is_signature_twin %}
         <tertiarybutton
             jcr:created="{Date}2025-01-01T00:00:00.000Z"
             jcr:createdBy="{{ author }}"
@@ -117,6 +125,7 @@
             <fd:rules jcr:primaryType="nt:unstructured"/>
             <fd:scripts fd:click="[{&quot;script&quot;:{&quot;content&quot;:&quot;// [repeating-panel] Generated automatically. Do not edit: will be overwritten. Create your own different script.\\nwindow.forms.ubs.addInstance(this.parent.{{ panel_name }});{% if signature_twin %}\\nwindow.forms.ubs.addInstance({{ signature_twin }});{% endif %}\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabels(this.parent.{{ panel_name }}\, \\&quot;{{ rule_label }}\\&quot;\, this);\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabelsForButtons(this.parent.{{ panel_name }}\, \\&quot;{{ rule_label }}\\&quot;\, this\, this.parent.{{ panel_name }}.instanceManager.instances[this.parent.{{ panel_name }}.instanceManager.instances.length - 1].BT_Remove);{% if signature_twin %}\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabelsForButtons({{ signature_twin }}\, \\&quot;{{ rule_label }}\\&quot;\, \\&quot;\\&quot;\, \\&quot;\\&quot;);{% endif %}&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Add&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}]" fd:visible="[{&quot;script&quot;:{&quot;field&quot;:&quot;BT_Add&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}\,&quot;content&quot;:&quot;// [repeating-panel] Generated automatically. Do not edit: will be overwritten. Create your own different script.\\nthis.parent.{{ panel_name }}.instanceManager.instances.length &lt; this.parent.{{ panel_name }}.instanceManager.maxOccur;&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}]" fd:init="[{&quot;script&quot;:{&quot;content&quot;:&quot;// [repeating-panel] Generated automatically. Do not edit: will be overwritten. Create your own different script.\\nthis.visible = (this.parent.{{ panel_name }}.instanceManager.instances.length &lt; this.parent.{{ panel_name }}.instanceManager.maxOccur);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;BT_Add&quot;}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}]" jcr:primaryType="nt:unstructured"/>
         </tertiarybutton>
+        {% endif %}
     </items>
     {{ raw_children }}
 </{{ element_name }}>
