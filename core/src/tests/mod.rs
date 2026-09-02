@@ -7040,34 +7040,40 @@ fn test_aaei_repeatable_buttons_have_scripts() {
     let root = convert_to_aem(&content, &config);
     let xml = generate_aem_xml(&root, &config);
 
-    // The inner repeatable panel name is PN_<repeatable_name>
-    // (the converter prefixes with PN_ — find it in the output)
-    // Look for instanceManager references in button scripts
+    // Both buttons drive the panel through the UBS client library, which is what
+    // renumbers the rows; reaching for `instanceManager` directly leaves them
+    // unnumbered (PROBLEM-repeating-panel §2).
     assert!(
-        xml.contains("instanceManager.removeInstance("),
-        "BT_Remove should have a removeInstance script"
+        xml.contains("window.forms.ubs.addInstance(")
+            && xml.contains("window.forms.ubs.removeInstance("),
+        "the buttons must add and remove through the library helpers"
     );
     assert!(
-        xml.contains("instanceManager.addInstance()"),
-        "BT_Add should have an addInstance script"
-    );
-
-    // Verify BT_Remove click script structure
-    assert!(
-        xml.contains("fd:click=") && xml.contains("BT_Remove"),
-        "BT_Remove should have an fd:click handler"
+        !xml.contains("instanceManager.addInstance()")
+            && !xml.contains("instanceManager.removeInstance("),
+        "no button may call instanceManager directly"
     );
 
-    // Verify BT_Add has both click and init handlers
+    // Three events on each button: the click that acts, the expression that shows
+    // it, and the same expression on Initialize, which is what a freshly loaded
+    // form runs.
+    for event in ["fd:click=", "fd:visible=", "fd:init="] {
+        assert!(xml.contains(event), "a button rule is missing {event}");
+    }
+
+    // Every rule the engine writes says so, so a later pass rewrites its own
+    // documents and leaves hand-written ones alone.
     assert!(
-        xml.contains("fd:init="),
-        "BT_Add should have an fd:init handler for initial visibility"
+        xml.contains("&quot;_archetype&quot;:&quot;repeating-panel&quot;"),
+        "the button rules must be stamped as the archetype's"
     );
 
-    // Verify the scripts reference BT_Remove visibility logic
+    // The panel numbers its own rows, and renders the heading the numbering is
+    // built on.
     assert!(
-        xml.contains("BT_Remove.visible"),
-        "Button scripts should manage BT_Remove visibility"
+        xml.contains("dorFieldStyling=\"Repeating Panel Numbering\"")
+            && xml.contains("headingLevel=\"3\""),
+        "the repeating panel must carry the numbering and heading properties"
     );
 }
 

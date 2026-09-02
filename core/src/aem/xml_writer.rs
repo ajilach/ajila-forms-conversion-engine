@@ -5,7 +5,7 @@
 //! template is the entire XML document — the writer itself generates no XML
 //! tags.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
@@ -92,6 +92,13 @@ struct RenderIndex {
     /// Repeatable name → what a reader would say it repeats. Absent means
     /// nothing on screen names it.
     add_subjects: HashMap<String, String>,
+    /// Repeatable name → the signature panel that repeats in step with it, under
+    /// the name AEM knows it by. Absent means the form holds no such panel.
+    signature_twins: HashMap<String, String>,
+    /// The repeatables that carry the jump-to-field button, which on a page with
+    /// repeatables is where it belongs — one per row, rather than one above the
+    /// step heading. Only the page knows, so it is decided here.
+    jump_to_field_repeatables: HashSet<String>,
 }
 
 impl RenderIndex {
@@ -101,6 +108,8 @@ impl RenderIndex {
             guide_paths: collect_guide_paths(root),
             resets: collect_configurator_resets(root),
             add_subjects: collect_add_subjects(root),
+            signature_twins: collect_signature_twins(root),
+            jump_to_field_repeatables: collect_jump_to_field_repeatables(root),
         }
     }
 }
@@ -209,6 +218,161 @@ fn sane_subject(text: &str) -> Option<String> {
         return None;
     }
     Some(trimmed)
+}
+
+/// Which repeatables carry the jump-to-field button.
+///
+/// The button jumps from the summary back to what a person filled in, and on a
+/// page with repeatables the thing they want back is a row, not the step heading:
+/// a repeatable renders one button per instance, and the step-title panel gives
+/// its own up (owner directive 2026-08-24, PROBLEM-jump-to-field-button). A page
+/// with nothing to fill in gets none at all, and neither does the form
+/// configurator — which would otherwise appear in the summary's jump list.
+fn collect_jump_to_field_repeatables(root: &AemNode) -> HashSet<String> {
+    let mut out = HashSet::new();
+    let AemNode::Root { children, .. } = root else {
+        return out;
+    };
+    for page in children {
+        let AemNode::Panel {
+            name,
+            children: page_children,
+            ..
+        } = page
+        else {
+            continue;
+        };
+        let is_configurator = page_children
+            .iter()
+            .any(|c| matches!(c, AemNode::Preface { .. }))
+            && name.starts_with("PN_FormConfigurator");
+        if is_configurator || !page_children.iter().any(holds_input) {
+            continue;
+        }
+        collect_repeatable_names(page, &mut out);
+    }
+    out
+}
+
+/// Every repeatable at or below `node`, nested ones included — the owner chose
+/// every one over outermost-only.
+fn collect_repeatable_names(node: &AemNode, out: &mut HashSet<String>) {
+    if let AemNode::Repeatable { name, .. } = node {
+        out.insert(name.clone());
+    }
+    for child in node_children(node) {
+        collect_repeatable_names(child, out);
+    }
+}
+
+/// A node's children, empty for the shapes that hold none.
+fn node_children(node: &AemNode) -> &[AemNode] {
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => children.as_slice(),
+        _ => &[],
+    }
+}
+
+/// Which signature panel repeats in step with which data panel.
+///
+/// A party's signature block is a panel of its own, on the signature step, that
+/// has to gain and lose a row whenever the party's data panel does. It has no Add
+/// and no Remove of its own — one there would let the two desync — so the data
+/// panel's buttons drive both, naming the twin globally because it lives on
+/// another step (PROBLEM-repeating-panel §8).
+///
+/// The pairing is by name, the convention the UBS fragment catalogue fixes:
+/// `PN_CPGRP` is signed by `PN_SGN_CPGRP`, `PN_AHGRP` by `PN_Sign_AHGRP`. So it is
+/// resolved here rather than left to whoever authored the tree, and only when the
+/// form really holds that panel: an `addInstance` naming a panel that is not there
+/// throws and takes the rest of the click with it.
+fn collect_signature_twins(root: &AemNode) -> HashMap<String, String> {
+    // Every name in the tree, and the AEM name of the panel that actually
+    // repeats under it: a repeatable's rows live in the inner panel the template
+    // emits, not in the node the tree names.
+    let mut repeating_names: HashMap<String, String> = HashMap::new();
+    collect_repeating_names(root, &mut repeating_names);
+
+    let mut twins = HashMap::new();
+    collect_signature_twins_rec(root, &repeating_names, &mut twins);
+    twins
+}
+
+fn collect_repeating_names(node: &AemNode, out: &mut HashMap<String, String>) {
+    match node {
+        AemNode::Repeatable { name, .. } => {
+            out.insert(name.clone(), repeat_panel_name(name));
+        }
+        _ => {
+            if let Some(name) = node_name(node) {
+                out.insert(name.to_string(), name.to_string());
+            }
+        }
+    }
+    for child in node_children(node) {
+        collect_repeating_names(child, out);
+    }
+}
+
+fn collect_signature_twins_rec(
+    node: &AemNode,
+    names: &HashMap<String, String>,
+    out: &mut HashMap<String, String>,
+) {
+    if let AemNode::Repeatable { name, children, .. } = node {
+        // The data panel the convention names the twin after is the party's own
+        // fragment where the repeatable wraps one, and the repeatable itself
+        // otherwise.
+        let sources = std::iter::once(name.as_str()).chain(
+            children
+                .iter()
+                .filter(|c| matches!(c, AemNode::Fragment { .. }))
+                .filter_map(node_name),
+        );
+        if let Some(twin) = sources
+            .flat_map(|source| signature_twin_candidates(source).into_iter())
+            .find_map(|candidate| names.get(&candidate))
+        {
+            out.insert(name.clone(), twin.clone());
+        }
+    }
+    for child in node_children(node) {
+        collect_signature_twins_rec(child, names, out);
+    }
+}
+
+/// The names a data panel's signature twin can go by, most specific first.
+fn signature_twin_candidates(data_panel: &str) -> Vec<String> {
+    // The stem is what follows the component-type prefix: `PN_CPGRP` and
+    // `RCP_CPGRP` both name the party `CPGRP`.
+    let stem = data_panel
+        .split_once('_')
+        .map(|(_, rest)| rest)
+        .unwrap_or(data_panel);
+    if stem.is_empty() {
+        return vec![];
+    }
+    vec![format!("PN_SGN_{stem}"), format!("PN_Sign_{stem}")]
+}
+
+/// A subject as it has to be written inside a rule body, escaped once for every
+/// layer between here and the browser.
+///
+/// The repeating panel's buttons pass the subject to the accessibility helpers as
+/// a JavaScript string, and that string sits inside a JSON document, inside a
+/// FileVault multi-value property, inside an XML attribute. Each layer owns
+/// different characters, and the one that bites is the comma: unescaped, it ends
+/// the property value, and AEM reads the rest of the rule as a second one.
+fn rule_label(subject: &str) -> String {
+    // The JavaScript string literal.
+    let js = subject.replace('\\', "\\\\").replace('"', "\\\"");
+    // The JSON document that carries it.
+    let json = js.replace('\\', "\\\\").replace('"', "\\\"");
+    // The multi-value property, where a backslash escapes and a comma separates.
+    let vault = json.replace('\\', "\\\\").replace(',', "\\,");
+    xml_escape(&vault)
 }
 
 /// Drop any tags from a rich-text title and collapse the whitespace.
@@ -887,6 +1051,14 @@ fn build_node_context(
             ctx.insert("bind_ref", bind_ref);
             ctx.insert("children", &render_children(children, config, index, pass));
             ctx.insert("has_input", &children.iter().any(holds_input));
+            // A page with repeatables hands the jump-to-field button to them, so
+            // its own step-title panel gives it up rather than showing a second
+            // one above the heading.
+            let mut repeatables = HashSet::new();
+            for child in children {
+                collect_repeatable_names(child, &mut repeatables);
+            }
+            ctx.insert("has_repeatable", &!repeatables.is_empty());
             // The banking-relationship fragment marks the FIRST page. A heading
             // rendered there as an `h2` step title does not appear in the finished
             // DoR, so on that page the heading is a `subtitle-after-form-title`
@@ -1141,7 +1313,10 @@ fn build_node_context(
         AemNode::Repeatable {
             uuid,
             name,
-            title,
+            // The subject the panel is titled with is the one `RenderIndex`
+            // resolved, which reads this title first and falls back to what
+            // names the block on screen.
+            title: _,
             children,
             min_occur,
             max_occur,
@@ -1152,7 +1327,6 @@ fn build_node_context(
         } => {
             ctx.insert("uuid", &uuid.as_simple().to_string());
             ctx.insert("name", name);
-            ctx.insert("title", &xml_escape(title));
             ctx.insert("visible", visible);
             ctx.insert("min_occur", min_occur);
             // AEM spells an unbounded repeat `maxOccur="-1"`; the model carries
@@ -1171,15 +1345,48 @@ fn build_node_context(
             ctx.insert("panel_name", &repeat_panel_name(name));
             ctx.insert("row_name", &repeat_row_name(name));
 
-            // What the Add button says it adds, in the master language. Empty
-            // when nothing on screen names the block, or when the profile
+            // What the block repeats, which the archetype writes in three places
+            // on the repeating panel: `jcr:title`, which AEM renders as the row
+            // heading and the client library numbers; `accessibilityLabel`,
+            // which a screen reader announces; and `ajilaPanelSubject`, the
+            // record of what the engine derived. The Add button's label is built
+            // from the same subject, so the wording is decided once.
+            let subject = index.add_subjects.get(name).map(String::as_str);
+
+            // Empty when nothing on screen names the block, or when the profile
             // configures no wording — the template keeps its own label then.
-            let add_label = index
-                .add_subjects
-                .get(name)
+            let add_label = subject
                 .and_then(|subject| config.add_label(&config.master_language, subject))
                 .unwrap_or_default();
             ctx.insert("add_label", &xml_escape(&add_label));
+
+            // A panel with no subject still carries a title, because a heading
+            // AEM renders empty reads as a missing one; the placeholder says a
+            // person has to name it. Parentheses, not brackets: a vault property
+            // value opening with `[` is read back as a multi-value.
+            let subject = subject.unwrap_or("(Repeatable name)");
+            ctx.insert("subject", &xml_escape(subject));
+            ctx.insert("rule_label", &rule_label(subject));
+
+            // The signature panel this one's buttons also drive, if the form has
+            // one. Empty otherwise, and the buttons then name only their own
+            // panel — an `addInstance` on a panel the form does not hold throws
+            // and takes the rest of the click with it.
+            ctx.insert(
+                "signature_twin",
+                index
+                    .signature_twins
+                    .get(name)
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+            );
+
+            // On a page with repeatables the jump-to-field button belongs to the
+            // rows, one per instance.
+            ctx.insert(
+                "jump_to_field_button",
+                &index.jump_to_field_repeatables.contains(name),
+            );
         }
 
         AemNode::Fragment {
@@ -1561,7 +1768,7 @@ mod tests {
         );
         config.component_templates.insert(
             "repeatable".into(),
-            "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ title }}\" minOccur=\"{{ min_occur }}\" maxOccur=\"{{ max_occur }}\">{{ children }}</{{ element_name }}>".into(),
+            "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ subject }}\" minOccur=\"{{ min_occur }}\" maxOccur=\"{{ max_occur }}\">{{ children }}</{{ element_name }}>".into(),
         );
         config
     }
@@ -2836,187 +3043,186 @@ mod tests {
         }
     }
 
-    /// The remove-button click script must restore BT_Add.visible on the last
-    /// instance whenever the count drops back below max_occur.
+    /// A tree rendered through the profile's own repeatable template.
+    fn render_tree(children: Vec<AemNode>) -> String {
+        let mut config = test_config();
+        config.component_templates.insert(
+            "repeatable".into(),
+            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
+        );
+        config.user_vars.insert(
+            "default_layout".into(),
+            "fd/af/layouts/gridFluidLayout2".into(),
+        );
+        config
+            .user_vars
+            .insert("resource_type_base".into(), "fd/af/components".into());
+        config.user_vars.insert(
+            "custom_resource_type_base".into(),
+            "ubs/af/components".into(),
+        );
+        config
+            .user_vars
+            .insert("dor_field_styling".into(), "some_styling".into());
+
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children,
+        };
+        generate_aem_xml(&root, &config)
+    }
+
+    /// One repeatable, rendered the way an engine-authored tree holds it: inside
+    /// a panel, because that is the tree the subject is resolved from.
+    fn render_repeatable(name: &str, title: &str, min_occur: u32, max_occur: u32) -> String {
+        render_tree(vec![AemNode::Panel {
+            uuid: fixed_uuid(),
+            name: "PN_Outer".into(),
+            title: String::new(),
+            children: vec![AemNode::Repeatable {
+                attrs: AemAttrs::default(),
+                visible: true,
+                uuid: fixed_uuid(),
+                name: name.into(),
+                title: title.into(),
+                children: vec![],
+                min_occur,
+                max_occur,
+                bind_ref: None,
+                frag_ref: None,
+            }],
+            is_page: false,
+            attrs: AemAttrs::default(),
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }])
+    }
+
+    /// Nothing in a click body may put the Add button back on screen.
     ///
-    /// Regression test for: deleting an instance after reaching max left the
-    /// add button permanently hidden.
+    /// Its visibility is an expression over the instance count, so it returns by
+    /// itself. The imperative version the engine used to emit ran *after* the
+    /// instance holding it was destroyed and named the button by a name that
+    /// repeats across a form — the line the archetype singles out as the one
+    /// that fails in the corpus (PROBLEM-repeating-panel §5).
     #[test]
-    fn remove_button_script_restores_add_button_when_below_max() {
-        let mut config = test_config();
-        config.component_templates.insert(
-            "repeatable".into(),
-            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
-        );
-        config.user_vars.insert(
-            "default_layout".into(),
-            "fd/af/layouts/gridFluidLayout2".into(),
-        );
-        config
-            .user_vars
-            .insert("resource_type_base".into(), "fd/af/components".into());
-        config.user_vars.insert(
-            "custom_resource_type_base".into(),
-            "ubs/af/components".into(),
-        );
-        config
-            .user_vars
-            .insert("dor_field_styling".into(), "some_styling".into());
-
-        let node = AemNode::Repeatable {
-            attrs: AemAttrs::default(),
-            visible: true,
-            uuid: fixed_uuid(),
-            name: "Test".into(),
-            title: "Repeat Section".into(),
-            children: vec![],
-            min_occur: 1,
-            max_occur: 5,
-            bind_ref: None,
-            frag_ref: None,
-        };
-        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
+    fn no_click_body_re_shows_the_add_button() {
+        let xml = render_repeatable("RCP_Test", "Client", 1, 5);
 
         assert!(
-            xml.contains("BT_Add.visible = true"),
-            "Remove script must restore BT_Add.visible when below max. Got:\n{}",
+            !xml.contains("BT_Add.visible = true"),
+            "the Add button's return must stay reactive. Got:\n{}",
             xml
         );
+        // The instance manager is reached only through the library helpers.
         assert!(
-            xml.contains("len &lt; 5"),
-            "Remove script must check len < max_occur. Got:\n{}",
+            !xml.contains("instanceManager.addInstance()")
+                && !xml.contains("instanceManager.removeInstance("),
+            "the buttons must call window.forms.ubs, never instanceManager. Got:\n{}",
             xml
         );
     }
 
+    /// The properties the UBS client library reads off a repeating panel.
+    ///
+    /// `dorFieldStyling="Repeating Panel Numbering"` is what makes it number the
+    /// rows, and `headingLevel` is what makes AEM render the title server-side —
+    /// without it the first row shows no heading until it has been re-rendered.
+    /// `dorExcludeTitle` has to be absent, because that title *is* the row
+    /// heading the numbering is built on (PROBLEM-repeating-panel §3).
     #[test]
-    fn repeatable_remove_click_script_exact_output() {
-        let mut config = test_config();
-        config.component_templates.insert(
-            "repeatable".into(),
-            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
-        );
-        config.user_vars.insert(
-            "default_layout".into(),
-            "fd/af/layouts/gridFluidLayout2".into(),
-        );
-        config
-            .user_vars
-            .insert("resource_type_base".into(), "fd/af/components".into());
-        config.user_vars.insert(
-            "custom_resource_type_base".into(),
-            "ubs/af/components".into(),
-        );
-        config
-            .user_vars
-            .insert("dor_field_styling".into(), "some_styling".into());
+    fn the_repeating_panel_carries_the_archetype_properties() {
+        let xml = render_repeatable("RCP_Test", "Client", 1, 5);
+        let panel = xml
+            .split("<repeatableInner")
+            .nth(1)
+            .and_then(|rest| rest.split('>').next())
+            .expect("the template must emit the repeating panel");
 
-        let node = AemNode::Repeatable {
-            attrs: AemAttrs::default(),
-            visible: true,
-            uuid: fixed_uuid(),
-            name: "RCP_Test".into(),
-            title: "Repeat Section".into(),
-            children: vec![],
-            min_occur: 1,
-            max_occur: 5,
-            bind_ref: None,
-            frag_ref: None,
-        };
-        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
+        for attr in [
+            "jcr:title=\"Client\"",
+            "accessibilityLabel=\"Client\"",
+            "ajilaPanelSubject=\"Client\"",
+            "addButton=\"BT_Add\"",
+            "removeButton=\"BT_Remove\"",
+            "dorFieldStyling=\"Repeating Panel Numbering\"",
+            "headingLevel=\"3\"",
+            "summaryHeadingLevel=\"4\"",
+        ] {
+            assert!(
+                panel.contains(attr),
+                "expected {attr} on the repeating panel. Got:\n{}",
+                panel
+            );
+        }
+        assert!(
+            !panel.contains("dorExcludeTitle"),
+            "the row heading must not be excluded from the DoR. Got:\n{}",
+            panel
+        );
+    }
 
-        let expected_remove_click = concat!(
-            "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "RCP_Test_repeat.instanceManager.removeInstance(this.parent.index);",
-            "\\var len = RCP_Test_repeat.instanceManager.instances.length;",
-            "\\for (var i = 0; i &lt; len; i++) {",
-            "\\RCP_Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
-            "\\}",
-            "\\if (len &lt; 5) {",
-            "\\RCP_Test.BT_Add.visible = true;",
-            "\\}",
-            "&quot;\\,&quot;event&quot;:&quot;Click&quot;\\,&quot;field&quot;:&quot;BT_Remove&quot;}",
-            "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
+    /// A panel nothing names still gets a title, so a person can see there is one
+    /// to write. Square brackets are not an option: a vault value opening with
+    /// `[` comes back out of the import as a multi-value, and the form editor
+    /// then refuses to open the form (PROBLEM-repeating-panel §4).
+    #[test]
+    fn a_subjectless_repeating_panel_carries_a_placeholder_title() {
+        let xml = render_repeatable("RCP_Test", "", 1, 5);
+
+        assert!(
+            xml.contains("jcr:title=\"(Repeatable name)\""),
+            "expected the placeholder title. Got:\n{}",
+            xml
         );
         assert!(
-            xml.contains(expected_remove_click),
-            "remove_click script mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
-            expected_remove_click,
+            !xml.contains("jcr:title=\"[Repeatable name]\""),
+            "a bracketed title is read back as a multi-value. Got:\n{}",
             xml
         );
     }
 
+    /// A comma in the subject must not end the rule value.
+    ///
+    /// The label reaches the browser through four layers of escaping, and the
+    /// comma is the one that silently splits one rule document into two.
     #[test]
-    fn repeatable_add_click_script_exact_output() {
-        let mut config = test_config();
-        config.component_templates.insert(
-            "repeatable".into(),
-            include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
-        );
-        config.user_vars.insert(
-            "default_layout".into(),
-            "fd/af/layouts/gridFluidLayout2".into(),
-        );
-        config
-            .user_vars
-            .insert("resource_type_base".into(), "fd/af/components".into());
-        config.user_vars.insert(
-            "custom_resource_type_base".into(),
-            "ubs/af/components".into(),
-        );
-        config
-            .user_vars
-            .insert("dor_field_styling".into(), "some_styling".into());
+    fn a_comma_in_the_subject_stays_inside_the_rule_value() {
+        let xml = render_repeatable("RCP_Test", "Owner, natural person", 1, 5);
 
-        let node = AemNode::Repeatable {
-            attrs: AemAttrs::default(),
-            visible: true,
-            uuid: fixed_uuid(),
-            name: "RCP_Test".into(),
-            title: "Repeat Section".into(),
-            children: vec![],
-            min_occur: 1,
-            max_occur: 5,
-            bind_ref: None,
-            frag_ref: None,
-        };
-        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
-
-        let expected_add_click = concat!(
-            "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "RCP_Test_repeat.instanceManager.addInstance();",
-            "\\var len = RCP_Test_repeat.instanceManager.instances.length;",
-            "\\for (var i = 0; i &lt; len; i++) {",
-            "\\RCP_Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
-            "\\}",
-            "\\if (len &gt;= 5) {",
-            "\\this.visible = false;",
-            "\\}",
-            "&quot;\\,&quot;event&quot;:&quot;Click&quot;\\,&quot;field&quot;:&quot;BT_Add&quot;}",
-            "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
-        );
         assert!(
-            xml.contains(expected_add_click),
-            "add_click script mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
-            expected_add_click,
+            xml.contains(r#"\\&quot;Owner\, natural person\\&quot;"#),
+            "the comma must be escaped inside the rule value. Got:\n{}",
             xml
         );
     }
 
+    /// On a page with repeatables, the jump-to-field button belongs to the rows.
+    ///
+    /// A repeatable renders one button per instance, which is what a person
+    /// coming back from the summary wants; the step-title panel then gives its
+    /// own up rather than rendering a second one above the heading (owner
+    /// directive 2026-08-24, PROBLEM-jump-to-field-button).
     #[test]
-    fn repeatable_add_init_script_exact_output() {
+    fn a_page_with_repeatables_gives_them_the_jump_to_field_button() {
         let mut config = test_config();
         config.component_templates.insert(
             "repeatable".into(),
             include_str!("../../../profiles/ubs/aem/repeatable.xml").into(),
         );
+        config.component_templates.insert(
+            "panel".into(),
+            include_str!("../../../profiles/ubs/aem/panel.xml").into(),
+        );
         config.user_vars.insert(
             "default_layout".into(),
             "fd/af/layouts/gridFluidLayout2".into(),
         );
-        config
-            .user_vars
-            .insert("resource_type_base".into(), "fd/af/components".into());
         config.user_vars.insert(
             "custom_resource_type_base".into(),
             "ubs/af/components".into(),
@@ -3025,37 +3231,268 @@ mod tests {
             .user_vars
             .insert("dor_field_styling".into(), "some_styling".into());
 
-        let node = AemNode::Repeatable {
+        let field = || AemNode::TextField {
+            attrs: AemAttrs::default(),
+            uuid: fixed_uuid(),
+            name: "TXT_Name".into(),
+            label: "Name".into(),
+            mandatory: false,
+            visible: true,
+            max_chars: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            kind: TextFieldKind::Plain,
+        };
+        let page = |name: &str, children: Vec<AemNode>| AemNode::Panel {
+            uuid: fixed_uuid(),
+            name: name.into(),
+            title: "A step".into(),
+            children,
+            is_page: true,
+            attrs: AemAttrs::default(),
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        };
+        let repeatable = AemNode::Repeatable {
             attrs: AemAttrs::default(),
             visible: true,
             uuid: fixed_uuid(),
-            name: "RCP_Test".into(),
-            title: "Repeat Section".into(),
-            children: vec![],
+            name: "RCP_Clients".into(),
+            title: "Client".into(),
+            children: vec![field()],
             min_occur: 1,
             max_occur: 5,
             bind_ref: None,
             frag_ref: None,
         };
-        let xml = render_node(&node, &config, &RenderIndex::build(&node), no_passthrough());
 
-        let expected_add_init = concat!(
-            "[{&quot;script&quot;:{&quot;content&quot;:&quot;",
-            "var len = RCP_Test_repeat.instanceManager.instances.length;",
-            "\\for (var i = 0; i &lt; len; i++) {",
-            "\\RCP_Test_repeat.instanceManager.instances[i].BT_Remove.visible = (i === (len - 1) &amp;&amp; len &gt; 1) ? true : false;",
-            "\\}",
-            "\\if (len &gt;= 5) {",
-            "\\this.visible = false;",
-            "\\}",
-            "&quot;\\,&quot;event&quot;:&quot;Initialize&quot;\\,&quot;field&quot;:&quot;BT_Add&quot;}",
-            "\\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\\,&quot;version&quot;:1\\,&quot;enabled&quot;:true}]",
-        );
+        // The page holds a repeatable: the row carries the button, the title
+        // panel does not.
+        let root = AemNode::Root {
+            title: "Form".into(),
+            children: vec![page("PN_Parties", vec![repeatable.clone()])],
+        };
+        let xml = generate_aem_xml(&root, &config);
+        let row = xml
+            .split("<repeatableInner")
+            .nth(1)
+            .and_then(|rest| rest.split('>').next())
+            .expect("the template must emit the repeating panel");
         assert!(
-            xml.contains(expected_add_init),
-            "add_init script mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
-            expected_add_init,
+            row.contains("jumpToFieldButtonVisible=\"true\""),
+            "the row must carry the button. Got:\n{}",
+            row
+        );
+        assert_eq!(
+            xml.matches("jumpToFieldButtonVisible=\"true\"").count(),
+            1,
+            "only the row may carry it, not the title panel too. Got:\n{}",
             xml
         );
+
+        // No repeatable on the page: the title panel keeps it, as before.
+        let plain = AemNode::Root {
+            title: "Form".into(),
+            children: vec![page("PN_Details", vec![field()])],
+        };
+        let xml = generate_aem_xml(&plain, &config);
+        assert!(
+            xml.contains("name=\"PN_DetailsTitle\"")
+                && xml.contains("jumpToFieldButtonVisible=\"true\""),
+            "a page without repeatables keeps the button on its title panel. Got:\n{}",
+            xml
+        );
+
+        // Nothing to fill in on the page: no button anywhere, the repeatable's
+        // rows included.
+        let text_only = AemNode::Root {
+            title: "Form".into(),
+            children: vec![page(
+                "PN_Terms",
+                vec![AemNode::Repeatable {
+                    attrs: AemAttrs::default(),
+                    visible: true,
+                    uuid: fixed_uuid(),
+                    name: "RCP_Terms".into(),
+                    title: "Term".into(),
+                    children: vec![AemNode::TextDraw {
+                        uuid: fixed_uuid(),
+                        name: "ST_Term".into(),
+                        content: "Legal provisions".into(),
+                        attrs: AemAttrs::default(),
+                        visible: true,
+                        colspan: 12,
+                        dor_colspan: None,
+                    }],
+                    min_occur: 1,
+                    max_occur: 5,
+                    bind_ref: None,
+                    frag_ref: None,
+                }],
+            )],
+        };
+        let xml = generate_aem_xml(&text_only, &config);
+        assert!(
+            !xml.contains("jumpToFieldButtonVisible"),
+            "a step with nothing to fill in offers no button. Got:\n{}",
+            xml
+        );
+    }
+
+    /// A party's signature block repeats in step with the party, driven by the
+    /// party's own buttons: it has no Add and no Remove of its own, because one
+    /// there would let the two desync (PROBLEM-repeating-panel §8).
+    ///
+    /// The pairing is the name convention the UBS fragment catalogue fixes, so
+    /// the engine resolves it from the tree — and only when the form really holds
+    /// that panel. It is named globally, since it lives on another step, and it
+    /// is the panel that repeats that has to be named: the rows are instances of
+    /// the inner panel, not of the node the tree names.
+    #[test]
+    fn a_party_drives_its_signature_twin() {
+        let signature_step = |twin: AemNode| AemNode::Panel {
+            uuid: fixed_uuid(),
+            name: "PN_Signatures".into(),
+            title: "Signatures".into(),
+            children: vec![twin],
+            is_page: true,
+            attrs: AemAttrs::default(),
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        };
+        let fragment = |name: &str, frag_ref: &str| AemNode::Fragment {
+            uuid: fixed_uuid(),
+            name: name.into(),
+            title: String::new(),
+            frag_ref: frag_ref.into(),
+            bind_ref: None,
+            attrs: AemAttrs::default(),
+            visible: true,
+        };
+        let party = |name: &str, child: AemNode| AemNode::Repeatable {
+            attrs: AemAttrs::default(),
+            visible: true,
+            uuid: fixed_uuid(),
+            name: name.into(),
+            title: "Contractual partner".into(),
+            children: vec![child],
+            min_occur: 1,
+            max_occur: 5,
+            bind_ref: None,
+            frag_ref: None,
+        };
+
+        // The party is named after the fragment it repeats, and its twin is a
+        // repeatable of its own on the signature step.
+        let xml = render_tree(vec![
+            party("RCP_1", fragment("PN_CPGRP", "affrg_ContractualPartnerGeneric1")),
+            signature_step(party(
+                "PN_SGN_CPGRP",
+                fragment("PN_GenericSignature", "affrg_SignatureGeneric1"),
+            )),
+        ]);
+        assert!(
+            xml.contains("window.forms.ubs.addInstance(RCP_SGN_CPGRP_repeat);"),
+            "the Add button must add a row to the twin. Got:\n{}",
+            xml
+        );
+        assert!(
+            xml.contains("window.forms.ubs.removeInstance(RCP_SGN_CPGRP_repeat);"),
+            "the Remove button must drop the twin's row too. Got:\n{}",
+            xml
+        );
+        // Relabelled with both buttons empty: it has none of its own.
+        assert!(
+            xml.contains(concat!(
+                "setRepeatPanelAccessibilityLabelsForButtons(RCP_SGN_CPGRP_repeat",
+                r#"\, \\&quot;Contractual partner\\&quot;\, \\&quot;\\&quot;\, \\&quot;\\&quot;);"#
+            )),
+            "the twin must be relabelled with no buttons of its own. Got:\n{}",
+            xml
+        );
+
+        // No twin in the form: no call naming one. `addInstance` on a panel that
+        // is not there throws and takes the rest of the click with it.
+        let alone = render_tree(vec![party(
+            "RCP_1",
+            fragment("PN_CPGRP", "affrg_ContractualPartnerGeneric1"),
+        )]);
+        assert!(
+            !alone.contains("PN_SGN_CPGRP") && !alone.contains("RCP_SGN_CPGRP"),
+            "a form without the twin must not name it. Got:\n{}",
+            alone
+        );
+    }
+
+    /// All six rule documents, byte for byte.
+    ///
+    /// Every one of them is a JCR multi-value property holding a single JSON
+    /// document: the `[` unescaped, the commas inside the document escaped `\,`,
+    /// and a newline written `\\n` so it survives as a newline in the JSON
+    /// string. Written as one value carrying a JSON array instead — which is
+    /// well-formed XML and re-parses as JSON — AEM reads one opaque string and
+    /// the form editor refuses to open the form.
+    ///
+    /// The newline matters twice over: each body opens with the ownership comment
+    /// (PROBLEM-repeating-panel §6), so a body that lost its newlines would be
+    /// commented out in its entirety.
+    #[test]
+    fn the_button_rules_are_the_archetypes_own() {
+        let xml = render_repeatable("RCP_Test", "Client", 1, 5);
+
+        let comment = "// [repeating-panel] Generated automatically. Do not edit: will be \
+                       overwritten. Create your own different script.";
+        let expected: [(&str, String); 6] = [
+            // BT_Add: add a row, then relabel the panel's rows and its buttons.
+            // Focus moves through the labelling helper, which ends by calling
+            // `setFocus`; with no field to name it lands on the button itself.
+            ("BT_Add fd:click", format!(
+                r#"fd:click="[{{&quot;script&quot;:{{&quot;content&quot;:&quot;{comment}\\nwindow.forms.ubs.addInstance(this.parent.RCP_Test_repeat);\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabels(this.parent.RCP_Test_repeat\, \\&quot;Client\\&quot;\, this);\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabelsForButtons(this.parent.RCP_Test_repeat\, \\&quot;Client\\&quot;\, this\, this.parent.RCP_Test_repeat.instanceManager.instances[this.parent.RCP_Test_repeat.instanceManager.instances.length - 1].BT_Remove);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Add&quot;}}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}}]""#
+            )),
+            // A single expression, no declaration in front of it: AEM takes the
+            // value of a visibility body, and a `var` would make it `undefined`.
+            ("BT_Add fd:visible", format!(
+                r#"fd:visible="[{{&quot;script&quot;:{{&quot;field&quot;:&quot;BT_Add&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}}\,&quot;content&quot;:&quot;{comment}\\nthis.parent.RCP_Test_repeat.instanceManager.instances.length &lt; this.parent.RCP_Test_repeat.instanceManager.maxOccur;&quot;}}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}}]""#
+            )),
+            // The same expression on Initialize, assigned: a visibility rule only
+            // fires when a dependency changes, so on a freshly loaded form it
+            // never runs and the button keeps whatever the node was saved with.
+            ("BT_Add fd:init", format!(
+                r#"fd:init="[{{&quot;script&quot;:{{&quot;content&quot;:&quot;{comment}\\nthis.visible = (this.parent.RCP_Test_repeat.instanceManager.instances.length &lt; this.parent.RCP_Test_repeat.instanceManager.maxOccur);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;BT_Add&quot;}}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}}]""#
+            )),
+            // The panel and the Add button are read into variables first: the row
+            // this button lives in is gone by the next line.
+            ("BT_Remove fd:click", format!(
+                r#"fd:click="[{{&quot;script&quot;:{{&quot;content&quot;:&quot;{comment}\\nvar repeatingPanel = this.parent;\\nvar addButton = this.parent.parent.BT_Add;\\nwindow.forms.ubs.removeInstance(repeatingPanel);\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabels(repeatingPanel\, \\&quot;Client\\&quot;\, addButton);\\nwindow.forms.ubs.accessibility.setRepeatPanelAccessibilityLabelsForButtons(repeatingPanel\, \\&quot;Client\\&quot;\, addButton\, this);&quot;\,&quot;event&quot;:&quot;Click&quot;\,&quot;field&quot;:&quot;BT_Remove&quot;}}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}}]""#
+            )),
+            // `> minOccur`, not `> 1`: a panel that starts with two instances
+            // would otherwise leave a dead Remove on screen at its minimum.
+            ("BT_Remove fd:visible", format!(
+                r#"fd:visible="[{{&quot;script&quot;:{{&quot;field&quot;:&quot;BT_Remove&quot;\,&quot;event&quot;:&quot;Visibility&quot;\,&quot;model&quot;:{{&quot;nodeName&quot;:&quot;EVENT_SCRIPTS&quot;}}\,&quot;content&quot;:&quot;{comment}\\nthis.parent.instanceIndex === this.parent.instanceManager.instances.length - 1 &amp;&amp; this.parent.instanceManager.instances.length &gt; this.parent.instanceManager.minOccur;&quot;}}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}}]""#
+            )),
+            ("BT_Remove fd:init", format!(
+                r#"fd:init="[{{&quot;script&quot;:{{&quot;content&quot;:&quot;{comment}\\nthis.visible = (this.parent.instanceIndex === this.parent.instanceManager.instances.length - 1 &amp;&amp; this.parent.instanceManager.instances.length &gt; this.parent.instanceManager.minOccur);&quot;\,&quot;event&quot;:&quot;Initialize&quot;\,&quot;field&quot;:&quot;BT_Remove&quot;}}\,&quot;nodeName&quot;:&quot;SCRIPTMODEL&quot;\,&quot;version&quot;:1\,&quot;enabled&quot;:true\,&quot;_archetype&quot;:&quot;repeating-panel&quot;}}]""#
+            )),
+        ];
+
+        for (rule, text) in &expected {
+            assert!(
+                xml.contains(text.as_str()),
+                "{rule} mismatch.\nExpected to find:\n{}\n\nIn:\n{}",
+                text,
+                xml
+            );
+        }
     }
 }

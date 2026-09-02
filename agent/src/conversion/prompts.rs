@@ -82,6 +82,18 @@ source where it states them, and where it does not, prefer the small bounds the 
 (commonly 1 and 4) over the engine's permissive fallback; where content differs by configurator \
 selection, include each variant once — keep shared content shared, and NEVER reuse a node `name` \
 (that collides in AEM). \
+REPEATABLES carry a fixed archetype the template writes for you: the Add and Remove buttons, all six \
+of their rules (each one addressing the panel relatively and driving it through \
+`window.forms.ubs.addInstance` / `removeInstance`, never `instanceManager`), and the panel properties \
+the UBS client library reads — `dorFieldStyling=\"Repeating Panel Numbering\"`, which numbers the \
+rows, and `headingLevel`, which renders the row heading. So do NOT hand-author add/remove rules, and \
+do NOT put a heading inside a repeatable that names the row (`Client`, `Client 1`, `Client 2`): the \
+library builds `{title} {n}` from the panel's title, and a heading inside it renders the name twice. \
+What you DO own is the repeatable's `title`: make it the short noun phrase for the thing that repeats \
+(`Client`, `Beneficial owner`), because that one string becomes the row heading, the Add button's \
+label and the DoR heading at once. Left empty, the engine falls back to the heading above the \
+repeatable or the enclosing panel's title, and if nothing names it the panel ships a visible \
+`(Repeatable name)` placeholder for a person to fix — so name it. \
 NAMING: give every node a `name` beginning with the canonical PREFIX_ for its component TYPE, per the AEM \
 Naming Conventions — PN_ panel, TXT_ text box, TXTM_ multiline, NB_ number box, DATE_ date, DD_ dropdown, \
 CB_ checkbox, RB_ radio, TEL_ telephone, EML_ email, TTL_ heading/title, ST_ static text — the default \
@@ -154,9 +166,13 @@ SIGNATURES → EVERY signature block is `affrg_SignatureGeneric1` (the \"AF Frag
 Fields\" catalogue mandates it for every signer role; the role-specific germany/italy signature \
 fragments are retired). The generic is role-neutral: the HOST supplies whose signature it is, \
 twice over. (1) By NAME PAIRING: the contracting party's signature panel is `PN_SGN_CPGRP`, and \
-every other party's is `PN_Sign_` + its data panel's token (`PN_AHGRP` → `PN_Sign_AHGRP`); the Add \
-button of a repeatable party adds BOTH instances (window.forms.ubs.addInstance on the data panel \
-and on its signature panel). (2) By the NAME-FILL CALC: the generic's own calc ships disabled, so \
+every other party's is `PN_Sign_` + its data panel's token (`PN_AHGRP` → `PN_Sign_AHGRP`). Get those \
+names exactly right and the engine wires the pair for you: a repeatable party's Add and Remove \
+buttons then also add and remove a row of the signature panel, and relabel it, because the template \
+resolves the twin through that convention. So do NOT hand-author those addInstance calls — and a \
+signature twin gets NO Add and NO Remove of its own, since one there would let the two desync. A \
+name that does not follow the convention silently leaves the twin undriven: it keeps one row while \
+the party grows. (2) By the NAME-FILL CALC: the generic's own calc ships disabled, so \
 the host carries a hidden textbox `TXT_Donotdelete` (dorExclusion + summaryExclusion, visible \
 false) beside the first signature panel whose fd:calc holds ONE Calculate document per (data panel \
 → signature panel) pair, looping the data panel's instances and writing \
