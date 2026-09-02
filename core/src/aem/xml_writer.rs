@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use super::{
-    AemAttrs, AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, Passthrough,
-    TextFieldKind,
+    AemAttrs, AemConfig, AemI18nText, AemNode, AemOption, ConditionRule, OptionAlignment,
+    Passthrough, TextFieldKind,
 };
 use crate::aem::template;
 use crate::structured::InputValue;
@@ -624,6 +624,7 @@ fn holds_input(node: &AemNode) -> bool {
 
         AemNode::TextDraw { .. }
         | AemNode::TitleDraw { .. }
+        | AemNode::HtmlDisplayer { .. }
         | AemNode::Preface { .. }
         | AemNode::Appendix { .. }
         | AemNode::FootnotePlaceholder { .. } => false,
@@ -869,6 +870,7 @@ fn render_node(
         AemNode::RadioButton { .. } => "radiobutton",
         AemNode::TextDraw { .. } => "textdraw",
         AemNode::TitleDraw { .. } => "titledraw",
+        AemNode::HtmlDisplayer { .. } => "htmldisplayer",
         AemNode::Repeatable { .. } => "repeatable",
         AemNode::Fragment { .. } => "fragment",
         AemNode::Preface { .. } => "preface",
@@ -963,6 +965,7 @@ fn node_uuid(node: &AemNode) -> Option<Uuid> {
         | AemNode::RadioButton { uuid, .. }
         | AemNode::TextDraw { uuid, .. }
         | AemNode::TitleDraw { uuid, .. }
+        | AemNode::HtmlDisplayer { uuid, .. }
         | AemNode::Repeatable { uuid, .. }
         | AemNode::Fragment { uuid, .. }
         | AemNode::Preface { uuid, .. }
@@ -1428,6 +1431,23 @@ fn build_node_context(
             ctx.insert("dor_colspan", dor_colspan);
         }
 
+        AemNode::HtmlDisplayer {
+            uuid,
+            name,
+            content,
+            attrs: _,
+            visible,
+            colspan,
+            dor_colspan,
+        } => {
+            ctx.insert("uuid", &uuid.as_simple().to_string());
+            ctx.insert("name", name);
+            ctx.insert("visible", visible);
+            ctx.insert("colspan", colspan);
+            ctx.insert("dor_colspan", dor_colspan);
+            ctx.insert("locale_content", &locale_content(content, config));
+        }
+
         AemNode::Repeatable {
             uuid,
             name,
@@ -1590,6 +1610,36 @@ fn build_node_context(
     ctx
 }
 
+/// The HTML component's `localeContent` items, in locale order: one
+/// `{locale, html}` pair per locale the form ships.
+///
+/// Synonyms get their own item, for the same reason
+/// `generate_dictionary_xml` writes a synonym dictionary file: the component
+/// renders nothing at all for a locale it has no item for, so a reader on
+/// `de-ch` must not fall off the end. The markup for a synonym comes from its
+/// canonical language.
+///
+/// A locale with no markup and no master fallback is skipped rather than
+/// emitted empty -- an empty item would render a blank block, which reads as a
+/// broken table rather than as an absent translation.
+fn locale_content(content: &AemI18nText, config: &AemConfig) -> Vec<HashMap<&'static str, String>> {
+    let mut items = Vec::new();
+    for lang in config.expand_languages() {
+        let markup = content
+            .get(&lang)
+            .or_else(|| content.get(&config.canonical_language(&lang)))
+            .unwrap_or_else(|| content.master(&config.master_language));
+        if markup.trim().is_empty() {
+            continue;
+        }
+        items.push(HashMap::from([
+            ("locale", config.html_locale(&lang)),
+            ("html", xml_escape(markup)),
+        ]));
+    }
+    items
+}
+
 /// A node's AEM `name`, where it has one. `Root` does not.
 fn node_name(node: &AemNode) -> Option<&str> {
     match node {
@@ -1603,6 +1653,7 @@ fn node_name(node: &AemNode) -> Option<&str> {
         | AemNode::RadioButton { name, .. }
         | AemNode::TextDraw { name, .. }
         | AemNode::TitleDraw { name, .. }
+        | AemNode::HtmlDisplayer { name, .. }
         | AemNode::Repeatable { name, .. }
         | AemNode::Fragment { name, .. }
         | AemNode::Preface { name, .. }
@@ -1841,7 +1892,7 @@ fn parse_attributes(s: &str) -> Vec<&str> {
 mod tests {
     use super::*;
     use crate::aem::{
-        AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment, TextFieldKind,
+        AemConfig, AemI18nText, AemNode, AemOption, ConditionRule, OptionAlignment, TextFieldKind,
     };
     use uuid::Uuid;
 
@@ -1898,10 +1949,183 @@ mod tests {
             "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ label }}\" multiLine=\"{Boolean}true\"/>".into(),
         );
         config.component_templates.insert(
+            "htmldisplayer".into(),
+            concat!(
+                "<{{ element_name }} guideNodeClass=\"guideTextBox\" name=\"{{ name }}\">\n",
+                "<localeContent jcr:primaryType=\"nt:unstructured\">\n",
+                "{%- for item in locale_content %}\n",
+                "<item{{ loop.index0 }} jcr:primaryType=\"nt:unstructured\" html=\"{{ item.html }}\" locale=\"{{ item.locale }}\"/>\n",
+                "{%- endfor %}\n",
+                "</localeContent>\n",
+                "</{{ element_name }}>",
+            )
+            .into(),
+        );
+        config.component_templates.insert(
             "repeatable".into(),
             "<{{ element_name }} name=\"{{ name }}\" jcr:title=\"{{ subject }}\" minOccur=\"{{ min_occur }}\" maxOccur=\"{{ max_occur }}\">{{ children }}</{{ element_name }}>".into(),
         );
         config
+    }
+
+    fn html_node(content: &[(&str, &str)]) -> AemNode {
+        AemNode::HtmlDisplayer {
+            visible: true,
+            uuid: fixed_uuid(),
+            name: "TBL_Plans".into(),
+            content: AemI18nText(
+                content
+                    .iter()
+                    .map(|(l, h)| ((*l).to_string(), (*h).to_string()))
+                    .collect(),
+            ),
+            attrs: AemAttrs::default(),
+            colspan: 12,
+            dor_colspan: None,
+        }
+    }
+
+    /// The HTML component gets one `localeContent` item per locale the form
+    /// ships, numbered positionally, with the markup XML-escaped into the
+    /// attribute the way every other rich-text value is.
+    #[test]
+    fn the_html_component_emits_one_locale_item_per_locale() {
+        let mut config = test_config();
+        config.languages = vec!["en".into(), "it".into()];
+        let root = AemNode::Root {
+            title: "Test Form".into(),
+            children: vec![html_node(&[
+                ("en", "<table><tr><td>Plan 1</td></tr></table>"),
+                ("it", "<table><tr><td>Piano 1</td></tr></table>"),
+            ])],
+        };
+
+        let xml = generate_aem_xml(&root, &config);
+
+        assert!(
+            xml.contains("<item0") && xml.contains("<item1"),
+            "items are positional:\n{xml}"
+        );
+        assert!(
+            !xml.contains("<item2"),
+            "two languages, two items -- no third:\n{xml}"
+        );
+        assert!(
+            xml.contains("locale=\"en\"") && xml.contains("locale=\"it\""),
+            "each locale is named:\n{xml}"
+        );
+        assert!(
+            xml.contains("&lt;table&gt;") && !xml.contains("<table>"),
+            "the markup is escaped INTO the attribute, not emitted as elements:\n{xml}"
+        );
+        assert!(
+            xml.contains("Piano 1"),
+            "the Italian markup is the Italian item's, not a copy of the English:\n{xml}"
+        );
+    }
+
+    /// A synonym locale gets its own item, carrying its canonical language's
+    /// markup: the component renders NOTHING for a locale it has no item for,
+    /// so a reader on `de-ch` must not fall off the end. Same reason
+    /// `generate_dictionary_xml` writes a synonym dictionary file.
+    #[test]
+    fn a_synonym_locale_gets_its_own_html_item() {
+        let mut config = test_config();
+        config.languages = vec!["de".into()];
+        let root = AemNode::Root {
+            title: "Test Form".into(),
+            children: vec![html_node(&[(
+                "de",
+                "<table><tr><td>Plan 1</td></tr></table>",
+            )])],
+        };
+
+        let xml = generate_aem_xml(&root, &config);
+
+        assert!(
+            xml.contains("locale=\"de\"") && xml.contains("locale=\"de-ch\""),
+            "`de` brings `de-ch` with it:\n{xml}"
+        );
+        assert_eq!(
+            xml.matches("Plan 1").count(),
+            2,
+            "both items carry the same markup:\n{xml}"
+        );
+    }
+
+    /// A locale the profile renames is written under the profile's spelling.
+    /// Which spelling the deployed component matches on is its business, not
+    /// this engine's, so it has to be configurable.
+    #[test]
+    fn the_profile_decides_the_html_locale_spelling() {
+        let mut config = test_config();
+        config.languages = vec!["en".into()];
+        config.language_synonyms.clear();
+        config.html_locales.insert("en".into(), "en-us".into());
+        let root = AemNode::Root {
+            title: "Test Form".into(),
+            children: vec![html_node(&[(
+                "en",
+                "<table><tr><td>Plan 1</td></tr></table>",
+            )])],
+        };
+
+        let xml = generate_aem_xml(&root, &config);
+
+        assert!(
+            xml.contains("locale=\"en-us\""),
+            "the profile's spelling wins:\n{xml}"
+        );
+        assert!(
+            !xml.contains("locale=\"en\""),
+            "and the short code is not also written:\n{xml}"
+        );
+    }
+
+    /// A language the markup does not cover falls back to the master language's
+    /// markup rather than to nothing: the component renders NOTHING for a locale
+    /// it has no item for, and an untranslated table still carries its numbers.
+    /// The missing translation is surfaced elsewhere -- the working tree's
+    /// outline flags a node whose text exists in only one language.
+    #[test]
+    fn a_language_without_markup_falls_back_to_the_master() {
+        let mut config = test_config();
+        config.languages = vec!["en".into(), "it".into()];
+        config.language_synonyms.clear();
+        let root = AemNode::Root {
+            title: "Test Form".into(),
+            children: vec![html_node(&[("en", "<table><tr><td>Plan 1</td></tr></table>")])],
+        };
+
+        let xml = generate_aem_xml(&root, &config);
+
+        assert!(
+            xml.contains("locale=\"en\"") && xml.contains("locale=\"it\""),
+            "the Italian reader still gets an item:\n{xml}"
+        );
+        assert_eq!(
+            xml.matches("Plan 1").count(),
+            2,
+            "both carry the English markup:\n{xml}"
+        );
+    }
+
+    /// A locale with no markup is skipped rather than emitted empty: an empty
+    /// item renders a blank block, which reads as a broken table rather than as
+    /// an absent translation.
+    #[test]
+    fn a_locale_with_no_html_markup_is_skipped() {
+        let mut config = test_config();
+        config.languages = vec!["en".into()];
+        config.language_synonyms.clear();
+        let root = AemNode::Root {
+            title: "Test Form".into(),
+            children: vec![html_node(&[("en", "   ")])],
+        };
+
+        let xml = generate_aem_xml(&root, &config);
+
+        assert!(!xml.contains("<item0"), "no markup, no item:\n{xml}");
     }
 
     fn fixed_uuid() -> Uuid {

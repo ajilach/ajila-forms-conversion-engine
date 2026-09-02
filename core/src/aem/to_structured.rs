@@ -16,8 +16,9 @@ use super::parser::{TranslationData, VisibilityCondition};
 use super::{AemNode, AemOption};
 use crate::structured::{
     ConditionalNode, FieldCondition, FieldId, FieldNode, FieldType, GridLayout, GridLayoutElement,
-    GroupNode, HeadingLevel, HeadingNode, InlineText, InputValue, NameValue, ParagraphNode,
-    RepeatableNode, StructuredNode, TranslatableString, TranslatedText, TranslationMap,
+    GroupNode, HeadingLevel, HeadingNode, HtmlNode, InlineText, InputValue, NameValue,
+    ParagraphNode, RepeatableNode, StructuredNode, TranslatableString, TranslatedText,
+    TranslationMap,
 };
 use crate::xfa::scripting::SomPath;
 
@@ -88,7 +89,10 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
             if nodes.is_empty() {
                 None
             } else {
-                Some(StructuredNode::Group(GroupNode { children: nodes, column_flow: false }))
+                Some(StructuredNode::Group(GroupNode {
+                    children: nodes,
+                    column_flow: false,
+                }))
             }
         }
 
@@ -406,6 +410,24 @@ fn convert_node(node: &AemNode, ctx: &ConversionContext) -> Option<StructuredNod
                 level,
                 content: inline_from_translatable(&TranslatableString::Plain(plain)),
                 som_path: None,
+                source_name: Some(name.clone()),
+            }))
+        }
+
+        // The markup is already per language on the node, so there is nothing
+        // to look up and nothing to strip: hand it over whole. That is what lets
+        // `generate_html` show the reader the table (or chart, or image) the
+        // component renders, instead of a flattened run of paragraphs.
+        AemNode::HtmlDisplayer { name, content, .. } => {
+            if content.0.values().all(|m| m.trim().is_empty()) {
+                return None;
+            }
+            Some(StructuredNode::Html(HtmlNode {
+                content: content
+                    .0
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
                 source_name: Some(name.clone()),
             }))
         }

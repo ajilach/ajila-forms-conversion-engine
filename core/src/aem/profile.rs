@@ -121,6 +121,19 @@ pub struct AemProfile {
     #[serde(default)]
     pub add_label_patterns: HashMap<String, String>,
 
+    /// Language code -> the locale string the HTML component's `localeContent`
+    /// items are keyed by (e.g. `en = "en"`, or `en = "en-us"`).
+    ///
+    /// Every other component emits its text once and lets the Sling dictionary
+    /// translate it, so no such mapping was ever needed. The HTML component
+    /// resolves the reader's locale against its own `localeContent` children
+    /// instead, and which spelling it matches on is a property of the deployed
+    /// component, not of this engine -- hence a profile table rather than a
+    /// constant. A language with no entry here keeps its own code as the
+    /// locale, which is also the shipped default.
+    #[serde(default)]
+    pub html_locales: HashMap<String, String>,
+
     /// When `true`, the generated AEM package will include the XSD schema and
     /// all form fields / panels will receive a `bindRef` attribute pointing to
     /// their corresponding XSD element path.

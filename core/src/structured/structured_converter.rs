@@ -46,6 +46,7 @@ fn contains_fields(node: &StructuredNode) -> bool {
         | StructuredNode::Paragraph(_)
         | StructuredNode::Image(_)
         | StructuredNode::Table(_)
+        | StructuredNode::Html(_)
         | StructuredNode::List(_)
         | StructuredNode::Footnote(_)
         | StructuredNode::Empty => false,

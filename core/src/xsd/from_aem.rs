@@ -181,6 +181,7 @@ fn visit_bind_ref_slots(node: &mut AemNode, f: &mut impl FnMut(Uuid, &mut Option
         | AemNode::Custom { uuid, bind_ref, .. } => slot!(uuid, bind_ref),
         AemNode::TextDraw { .. }
         | AemNode::TitleDraw { .. }
+        | AemNode::HtmlDisplayer { .. }
         | AemNode::Preface { .. }
         | AemNode::Appendix { .. }
         | AemNode::FootnotePlaceholder { .. } => {}
@@ -462,6 +463,7 @@ fn node_uuid(node: &AemNode) -> Option<Uuid> {
         | AemNode::Custom { uuid, .. }
         | AemNode::TextDraw { uuid, .. }
         | AemNode::TitleDraw { uuid, .. }
+        | AemNode::HtmlDisplayer { uuid, .. }
         | AemNode::Preface { uuid, .. }
         | AemNode::Appendix { uuid, .. }
         | AemNode::FootnotePlaceholder { uuid, .. } => Some(*uuid),
@@ -475,6 +477,7 @@ fn is_presentational(node: &AemNode) -> bool {
         node,
         AemNode::TextDraw { .. }
             | AemNode::TitleDraw { .. }
+            | AemNode::HtmlDisplayer { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
             | AemNode::FootnotePlaceholder { .. }
@@ -516,6 +519,7 @@ fn node_kind(node: &AemNode) -> &'static str {
         AemNode::Custom { .. } => "custom",
         AemNode::TextDraw { .. } => "textdraw",
         AemNode::TitleDraw { .. } => "titledraw",
+        AemNode::HtmlDisplayer { .. } => "htmldisplayer",
         AemNode::Preface { .. } => "preface",
         AemNode::Appendix { .. } => "appendix",
         AemNode::FootnotePlaceholder { .. } => "footnoteplaceholder",
@@ -538,6 +542,7 @@ fn node_name(node: &AemNode) -> &str {
         | AemNode::Custom { name, .. }
         | AemNode::TextDraw { name, .. }
         | AemNode::TitleDraw { name, .. }
+        | AemNode::HtmlDisplayer { name, .. }
         | AemNode::Preface { name, .. }
         | AemNode::Appendix { name, .. }
         | AemNode::FootnotePlaceholder { name, .. } => name,
@@ -650,6 +655,7 @@ fn classify(node: &AemNode, next: Option<&AemNode>, ctx: &Ctx) -> Emit {
         AemNode::Root { .. }
         | AemNode::TextDraw { .. }
         | AemNode::TitleDraw { .. }
+        | AemNode::HtmlDisplayer { .. }
         | AemNode::Preface { .. }
         | AemNode::Appendix { .. }
         | AemNode::FootnotePlaceholder { .. } => return Emit::Skip,

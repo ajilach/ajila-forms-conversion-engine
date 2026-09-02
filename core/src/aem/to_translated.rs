@@ -325,6 +325,27 @@ fn lift_node(node: &AemNode, ctx: &LiftContext) -> AemNodeTranslated {
             colspan: *colspan,
             dor_colspan: *dor_colspan,
         },
+        // The markup is already per language on the node, so there is no
+        // dictionary lookup to do -- copy the map straight across. That is what
+        // makes `lower(lift(node)) == node` hold for this variant.
+        AemNode::HtmlDisplayer {
+            uuid,
+            name,
+            content,
+            attrs,
+            visible,
+            colspan,
+            dor_colspan,
+        } => AemNodeTranslated::HtmlDisplayer {
+            uuid: *uuid,
+            passthrough: ctx.passthrough(uuid),
+            name: name.clone(),
+            content: content.clone(),
+            attrs: attrs.clone(),
+            visible: *visible,
+            colspan: *colspan,
+            dor_colspan: *dor_colspan,
+        },
         AemNode::Repeatable {
             uuid,
             name,

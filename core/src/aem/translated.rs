@@ -288,6 +288,26 @@ pub enum AemNodeTranslated {
         colspan: u32,
         dor_colspan: Option<u32>,
     },
+    /// Static HTML block (`htmlDisplayer`) -- a table, a chart or an image.
+    /// `content` is HTML markup per language, and it stays on the node rather
+    /// than moving into the translation dictionary: the component renders its
+    /// own `localeContent` children. See [`AemNode::HtmlDisplayer`].
+    HtmlDisplayer {
+        uuid: Uuid,
+        /// Fidelity passthrough captured on load (empty for engine-built nodes).
+        #[serde(default, skip_serializing_if = "Passthrough::is_empty")]
+        passthrough: Passthrough,
+        name: String,
+        content: AemI18nText,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "super::default_true")]
+        visible: bool,
+        colspan: u32,
+        dor_colspan: Option<u32>,
+    },
     Repeatable {
         uuid: Uuid,
         /// Fidelity passthrough captured on load (empty for engine-built nodes).
@@ -496,6 +516,7 @@ impl AemNodeTranslated {
             | AemNodeTranslated::RadioButton { uuid, passthrough, .. }
             | AemNodeTranslated::TextDraw { uuid, passthrough, .. }
             | AemNodeTranslated::TitleDraw { uuid, passthrough, .. }
+            | AemNodeTranslated::HtmlDisplayer { uuid, passthrough, .. }
             | AemNodeTranslated::Fragment { uuid, passthrough, .. }
             | AemNodeTranslated::Preface { uuid, passthrough, .. }
             | AemNodeTranslated::Appendix { uuid, passthrough, .. }
@@ -747,6 +768,28 @@ impl AemNodeTranslated {
                 name: name.clone(),
                 content: text!(content),
                 heading_level: *heading_level,
+                colspan: *colspan,
+                dor_colspan: *dor_colspan,
+            },
+            // No `text!()` here on purpose: the markup is carried per language
+            // on the node, so it must NOT be folded into the master-text-keyed
+            // dictionary. Copying the whole map is also what makes lower -> lift
+            // a fixpoint for this variant.
+            AemNodeTranslated::HtmlDisplayer {
+                uuid,
+                name,
+                content,
+                attrs,
+                visible,
+                colspan,
+                dor_colspan,
+                ..
+            } => AemNode::HtmlDisplayer {
+                uuid: *uuid,
+                name: name.clone(),
+                content: content.clone(),
+                attrs: attrs.clone(),
+                visible: *visible,
                 colspan: *colspan,
                 dor_colspan: *dor_colspan,
             },

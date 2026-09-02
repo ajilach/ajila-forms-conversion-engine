@@ -46,6 +46,12 @@ pub struct ReviewReport {
     /// corpus is held to, checked on the rendered JCR XML. See
     /// [`FeedbackViolation`].
     pub feedback_violations: Vec<FeedbackViolation>,
+    /// Panels still carrying a table the old way: named `TBL_` and holding
+    /// nothing but static draws. AEM now has an HTML component, so a table
+    /// belongs in one `HtmlDisplayer` node with a real `<table>`; these are the
+    /// blocks a conversion of an already-deployed package has to convert. Empty
+    /// for anything this engine converts from a PDF.
+    pub legacy_tables: Vec<String>,
     /// Human-readable observations (field-count mismatch, empty tree, truncation).
     pub notes: Vec<String>,
 }
@@ -127,6 +133,9 @@ pub fn review_output(
 
     let mut feedback_violations = check_feedback_rules(&aem_xml);
 
+    let mut legacy_tables = Vec::new();
+    collect_legacy_tables(output, &mut legacy_tables);
+
     let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
 
     let mut notes = Vec::new();
@@ -182,6 +191,22 @@ pub fn review_output(
             rules.join(", ")
         ));
     }
+    if !legacy_tables.is_empty() {
+        notes.push(format!(
+            "{} panel(s) still hold a table as loose draws; convert each to one HtmlDisplayer \
+             node carrying a real <table> ({})",
+            legacy_tables.len(),
+            legacy_tables.join(", ")
+        ));
+    }
+    if legacy_tables.len() > MAX_LEGACY_TABLES {
+        notes.push(format!(
+            "legacy_tables truncated to {MAX_LEGACY_TABLES} of {} entries",
+            legacy_tables.len()
+        ));
+        legacy_tables.truncate(MAX_LEGACY_TABLES);
+    }
+
     if feedback_violations.len() > MAX_FEEDBACK {
         notes.push(format!(
             "feedback_violations truncated to {MAX_FEEDBACK} of {} entries",
@@ -198,7 +223,39 @@ pub fn review_output(
         naming_violations,
         label_issues,
         feedback_violations,
+        legacy_tables,
         notes,
+    }
+}
+
+/// Collect the names of panels that still hold a table the pre-HTML-component
+/// way: named `TBL_` and holding nothing but static draws.
+///
+/// The engine used to flatten every source table into such a panel because AEM
+/// had no table component. It has one now, so this is a review finding on a
+/// package that was authored (or converted) before -- not a rendered-XML rule,
+/// because "every child is a draw" is a fact about the tree, and not a
+/// `PROBLEM-` slug either, because there is no such rule in the feedback repo's
+/// registry to port.
+fn collect_legacy_tables(node: &AemNode, out: &mut Vec<String>) {
+    if let AemNode::Panel { name, children, .. } = node {
+        let all_draws = !children.is_empty()
+            && children
+                .iter()
+                .all(|c| matches!(c, AemNode::TextDraw { .. } | AemNode::TitleDraw { .. }));
+        if name.starts_with("TBL_") && all_draws {
+            out.push(name.clone());
+        }
+    }
+    match node {
+        AemNode::Root { children, .. }
+        | AemNode::Panel { children, .. }
+        | AemNode::Repeatable { children, .. } => {
+            for child in children {
+                collect_legacy_tables(child, out);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -289,6 +346,9 @@ pub fn review_redacto(
         // Redacto documents are text: none of the AEM shapes these rules police
         // exist there.
         feedback_violations: Vec::new(),
+        // Redacto has real tables of its own; the AEM HTML component is not
+        // part of that target.
+        legacy_tables: Vec::new(),
         // Redacto is a text-only target: it has no AEM inputs to label.
         label_issues: Vec::new(),
         notes,
@@ -383,6 +443,7 @@ fn normalize(s: &str) -> String {
 
 fn collect_input(node: &StructuredNode, lang: &str, out: &mut Vec<String>, fields: &mut usize) {
     match node {
+        StructuredNode::Html(h) => out.extend(html_text_runs(h.markup_in(lang))),
         StructuredNode::Heading(h) => out.push(h.content.plain_text_in(lang)),
         StructuredNode::Paragraph(p) => out.push(p.content.plain_text_in(lang)),
         StructuredNode::Footnote(f) => out.push(f.content.plain_text_in(lang)),
@@ -493,6 +554,14 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
         AemNode::TextDraw { content, .. } | AemNode::TitleDraw { content, .. } => {
             out.push(content.clone());
         }
+        // The markup is not a label, so its text has to be pulled out of the
+        // HTML the same way `html_text_runs` does it for a rich-text `_value`.
+        // Without this a table would read as missing text on every conversion.
+        AemNode::HtmlDisplayer { content, .. } => {
+            for markup in content.0.values() {
+                out.extend(html_text_runs(markup));
+            }
+        }
         // Runtime-resolved or text-free placeholders.
         AemNode::Fragment { .. }
         | AemNode::Preface { .. }
@@ -528,6 +597,9 @@ pub struct FeedbackViolation {
 
 /// Cap on how many feedback violations to list, so the report stays readable.
 const MAX_FEEDBACK: usize = 400;
+
+/// Cap on `legacy_tables`.
+const MAX_LEGACY_TABLES: usize = 50;
 
 /// Attribute value lookup on one open tag, quote-aware.
 fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
@@ -830,6 +902,9 @@ fn type_prefixes(rt: &str) -> Option<&'static [&'static str]> {
         "barcode" => &["BARCODE"],
         "qrcode" => &["QRCODE"],
         "table" => &["TBL"],
+        // One component renders all three: a table, a chart, an image. First
+        // is canonical, the same multi-prefix shape `textdraw` uses.
+        "htmlDisplayer" => &["TBL", "CRT", "IMG"],
         _ => return None,
     })
 }
@@ -1120,7 +1195,7 @@ fn check_naming_conventions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aem::AemConfig;
+    use crate::aem::{AemAttrs, AemConfig};
     use crate::structured::{FieldNode, FieldType, HeadingLevel, HeadingNode, TranslatedText};
 
     fn text_field(name: &str, label: &str) -> StructuredNode {
@@ -1150,6 +1225,112 @@ mod tests {
             text_field("first_name", "First name"),
             text_field("last_name", "Last name"),
         ]
+    }
+
+    fn draw(name: &str, text: &str) -> AemNode {
+        AemNode::TextDraw {
+            uuid: uuid::Uuid::new_v4(),
+            name: name.into(),
+            content: format!("<p>{text}</p>"),
+            attrs: AemAttrs::default(),
+            visible: true,
+            colspan: 12,
+            dor_colspan: None,
+        }
+    }
+
+    fn panel(name: &str, children: Vec<AemNode>) -> AemNode {
+        AemNode::Panel {
+            uuid: uuid::Uuid::new_v4(),
+            name: name.into(),
+            title: String::new(),
+            children,
+            is_page: false,
+            attrs: AemAttrs::default(),
+            visible: true,
+            is_conditional: false,
+            dor_num_cols: None,
+            colspan: 12,
+            dor_colspan: None,
+            bind_ref: None,
+            frag_ref: None,
+        }
+    }
+
+    /// A `TBL_` panel of loose draws is how a table had to be written while AEM
+    /// had no table component. It has one now, so the review names each such
+    /// panel for the Reviewer to convert.
+    #[test]
+    fn a_legacy_table_panel_is_reported() {
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![panel(
+                "PN_Step",
+                vec![panel(
+                    "TBL_Plans",
+                    vec![draw("ST_A", "Plan"), draw("ST_B", "Share")],
+                )],
+            )],
+        };
+        let cfg = AemConfig::test_default("TEST");
+        let report = review_output(&[], &root, &cfg, "en");
+
+        assert_eq!(report.legacy_tables, vec!["TBL_Plans".to_string()]);
+        assert!(
+            report.notes.iter().any(|n| n.contains("HtmlDisplayer")),
+            "and the note says what to convert it to: {:?}",
+            report.notes
+        );
+    }
+
+    /// The HTML component is the fixed shape, so it must not be reported -- and
+    /// neither must a `TBL_` panel that still holds an input field, since that
+    /// one legitimately keeps the panel.
+    #[test]
+    fn the_html_component_and_an_interactive_table_are_not_reported() {
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![
+                AemNode::HtmlDisplayer {
+                    uuid: uuid::Uuid::new_v4(),
+                    name: "TBL_Plans".into(),
+                    content: crate::aem::AemI18nText::single(
+                        "en",
+                        "<table><tr><td>Plan</td></tr></table>",
+                    ),
+                    attrs: AemAttrs::default(),
+                    visible: true,
+                    colspan: 12,
+                    dor_colspan: None,
+                },
+                panel(
+                    "TBL_Interactive",
+                    vec![
+                        draw("ST_A", "Plan"),
+                        crate::convert_to_aem(
+                            &[text_field("share", "Share")],
+                            &AemConfig::test_default("TEST"),
+                        ),
+                    ],
+                ),
+            ],
+        };
+        let cfg = AemConfig::test_default("TEST");
+        let report = review_output(&[], &root, &cfg, "en");
+
+        assert!(
+            report.legacy_tables.is_empty(),
+            "neither shape is a legacy table: {:?}",
+            report.legacy_tables
+        );
+    }
+
+    /// The component renders a table, a chart or an image, so all three
+    /// prefixes are legal on it -- `TBL_` first, as the canonical one.
+    #[test]
+    fn the_html_component_accepts_the_table_chart_and_image_prefixes() {
+        let allowed = type_prefixes("htmlDisplayer").expect("the component is a mapped type");
+        assert_eq!(allowed, ["TBL", "CRT", "IMG"]);
     }
 
     #[test]

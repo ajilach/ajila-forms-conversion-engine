@@ -27,6 +27,7 @@ fn node_type(node: &AemNodeTranslated) -> &'static str {
         RadioButton { .. } => "RadioButton",
         TextDraw { .. } => "TextDraw",
         TitleDraw { .. } => "TitleDraw",
+        HtmlDisplayer { .. } => "HtmlDisplayer",
         Repeatable { .. } => "Repeatable",
         Fragment { .. } => "Fragment",
         Preface { .. } => "Preface",
@@ -68,7 +69,9 @@ fn primary_text(node: &AemNodeTranslated) -> Option<&AemI18nText> {
         | Checkbox { label, .. }
         | RadioButton { label, .. }
         | Custom { label, .. } => Some(label),
-        TextDraw { content, .. } | TitleDraw { content, .. } => Some(content),
+        TextDraw { content, .. } | TitleDraw { content, .. } | HtmlDisplayer { content, .. } => {
+            Some(content)
+        }
         _ => None,
     }
 }

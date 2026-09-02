@@ -237,9 +237,20 @@
 - **R10.2** Map a `CheckboxGroup` to a checkbox with
   `guideNodeClass="guideCheckBox"`, vertical alignment, and a translatable group
   `label` emitted as `jcr:title` only when non-empty. (`de644ce`)
-- **R10.3** Output tables as a single panel with all header/body cells emitted
-  linearly as direct child paragraphs — do **not** wrap rows in sub-panels (AEM
-  has no native table support). (`6137d62`)
+- **R10.3** Output a table as **one HTML component**
+  (`controls/htmlDisplayer`), named `TBL_`, whose `localeContent` carries a real
+  HTML `<table>` per locale — `<thead>`/`<th>` for the header row,
+  `<tbody>`/`<tr>`/`<td>` for the body. Supersedes the earlier rule (a single
+  panel with every cell emitted linearly as a child paragraph), which existed
+  only because AEM had no table component.
+- **R10.3a** A table whose cells hold input fields keeps the older panel shape:
+  the HTML component is static markup, so a field routed through it would be
+  lost. The converter checks this and falls back with a warning.
+- **R10.3b** The HTML component does **not** use the Sling i18n dictionary. Its
+  markup lives per locale on the node, one positional `item{N}` child per locale
+  the form ships (synonyms included, for the same reason a synonym dictionary
+  file is written). The language → locale spelling is `[html_locales]` in the
+  profile.
 - **R10.4** Drive each field's `mandatory` attribute from the source field's
   `required` flag; do not hardcode. (`8c85784`, `e7a0034`)
 

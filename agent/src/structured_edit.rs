@@ -413,6 +413,10 @@ fn describe(node: &StructuredNode) -> (String, String) {
         StructuredNode::Image(_) | StructuredNode::Conditional(_) | StructuredNode::Repeatable(_) => {
             (String::new(), "⚠ unsupported".to_string())
         }
+        // Raw markup only ever arrives here by lifting an AEM HTML component
+        // back into the structured tree. Nothing on the Redacto authoring path
+        // should hand-write one, so it is flagged rather than offered.
+        StructuredNode::Html(_) => (String::new(), "⚠ unsupported".to_string()),
         _ => (String::new(), String::new()),
     }
 }
@@ -461,6 +465,7 @@ fn node_type(node: &StructuredNode) -> &'static str {
         StructuredNode::GridLayout(_) => "gridLayout",
         StructuredNode::List(_) => "list",
         StructuredNode::Footnote(_) => "footnote",
+        StructuredNode::Html(_) => "html",
     }
 }
 

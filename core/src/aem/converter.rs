@@ -3,15 +3,15 @@
 //! The conversion is stateless apart from a small `ConversionContext` that
 //! tracks UUID generation and naming counters.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use uuid::Uuid;
 
 use crate::structured::{
     AEM_TAGS, ConditionalNode, FieldId, FieldNode, FieldType, FootnoteNode, GridLayout, GroupNode,
-    HeadingLevel, HeadingNode, ImageNode, InputValue, ListNode, NameValue, ParagraphNode,
+    HeadingLevel, HeadingNode, HtmlNode, ImageNode, InputValue, ListNode, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TableNode, TranslatableString, TranslatedText,
-    collect_footnote_nodes, inline_text_to_html_with, strip_footnote_marker,
+    collect_footnote_nodes, inline_text_to_html_with, render_table_html, strip_footnote_marker,
 };
 
 // ============================================================================
@@ -94,7 +94,7 @@ pub(crate) fn embed_footnotes_in_value(
 
 use super::fragment_parser::ParsedFragment;
 use super::{
-    AemAttrs, AemConfig, AemNode, AemOption, ConditionRule, OptionAlignment,
+    AemAttrs, AemConfig, AemI18nText, AemNode, AemOption, ConditionRule, OptionAlignment,
     ResolvedCustomElement, TextFieldKind,
 };
 
@@ -134,6 +134,13 @@ struct ConversionContext {
     deterministic: bool,
     /// The language to prefer when extracting translatable strings.
     language: String,
+    /// Every language the form ships, canonical codes, master included.
+    ///
+    /// Every other component emits its text once in `language` and lets the
+    /// Sling dictionary translate it. The HTML component cannot: it reads its
+    /// own per-locale `localeContent` children, so a node that uses it has to
+    /// render its markup once per language here.
+    languages: Vec<String>,
     /// Conditions collected during the first pass.
     collected_conditions: Vec<CollectedCondition>,
     /// Pre-computed XSD bind-ref paths, populated when `bind_to_xsd` or `use_fragments` is true.
@@ -150,6 +157,7 @@ impl ConversionContext {
             counter: 0,
             deterministic: config.deterministic_uuids,
             language: config.master_language.clone(),
+            languages: config.canonical_languages(),
             collected_conditions: Vec::new(),
             bind_refs: None,
             field_labels: HashMap::new(),
@@ -1085,6 +1093,7 @@ fn convert_node(
         }
         StructuredNode::Image(img) => Some(convert_image(img, config, ctx, colspan, dor_colspan)),
         StructuredNode::Table(t) => Some(convert_table(t, config, ctx, colspan, dor_colspan)),
+        StructuredNode::Html(h) => Some(convert_html_block(h, ctx, colspan, dor_colspan)),
         StructuredNode::Field(f) => Some(convert_field(f, config, ctx, colspan, dor_colspan)),
         StructuredNode::Repeatable(r) => {
             Some(convert_repeatable(r, config, ctx, colspan, dor_colspan))
@@ -1451,16 +1460,127 @@ fn convert_image(
     };
     let name = ctx.make_name("IMG", alt);
     let uuid = ctx.uuid(&name);
-    AemNode::TextDraw {
+    // An image is markup, not text, so it belongs on the HTML component rather
+    // than in a text draw's `_value`. The markup is language-independent apart
+    // from the alt text, which the structured layer does not translate, so every
+    // language gets the same block.
+    AemNode::HtmlDisplayer {
         visible: true,
         uuid,
         name,
-        content,
+        content: same_in_every_language(&content, ctx),
         attrs: AemAttrs::default(),
         colspan,
         dor_colspan,
     }
 }
+
+/// The languages an HTML component must carry markup for: every language the
+/// form ships, or the master alone when the config names none.
+///
+/// The component renders NOTHING for a locale it has no `localeContent` item
+/// for, so an empty list would produce an invisible block.
+fn form_languages(ctx: &ConversionContext) -> Vec<String> {
+    if ctx.languages.is_empty() {
+        vec![ctx.language.clone()]
+    } else {
+        ctx.languages.clone()
+    }
+}
+
+/// The same markup under every language the form ships.
+///
+/// For a block whose content does not vary by language: an image, a chart.
+fn same_in_every_language(markup: &str, ctx: &ConversionContext) -> AemI18nText {
+    AemI18nText(
+        form_languages(ctx)
+            .into_iter()
+            .map(|lang| (lang, markup.to_string()))
+            .collect(),
+    )
+}
+
+/// Convert a lifted [`HtmlNode`] straight back into the HTML component.
+///
+/// The only producer of `StructuredNode::Html` is `aem_to_structured`, so this
+/// is the return leg of that round trip and it must not re-render anything.
+fn convert_html_block(
+    html: &HtmlNode,
+    ctx: &mut ConversionContext,
+    colspan: u32,
+    dor_colspan: Option<u32>,
+) -> AemNode {
+    let name = match &html.source_name {
+        Some(name) if !name.is_empty() => name.clone(),
+        _ => ctx.make_name("TBL", ""),
+    };
+    let uuid = ctx.uuid(&name);
+    AemNode::HtmlDisplayer {
+        visible: true,
+        uuid,
+        name,
+        content: AemI18nText(
+            html.content
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        ),
+        attrs: AemAttrs::default(),
+        colspan,
+        dor_colspan,
+    }
+}
+
+/// Whether every cell of `table` is static content the HTML component can
+/// render.
+///
+/// [`crate::structured::render_cell_html`] knows paragraphs, headings, groups
+/// and lists; anything else -- an input field above all -- renders as an empty
+/// cell. So a table that holds one is kept in the older `TBL_` panel shape,
+/// where the field survives as a real AEM component, rather than being silently
+/// dropped into markup.
+///
+/// An image cell falls back for the same reason and loses only the grid: the
+/// panel path runs every cell through `convert_node`, so the image still
+/// arrives as its own HTML component. The reference node in `AAOV_033` does
+/// embed images in table cells, so this is the conservative default rather than
+/// the final answer -- nothing on the PDF path can produce such a cell today
+/// (`structured_converter` forces every detected cell to a paragraph).
+fn table_is_static(table: &TableNode) -> bool {
+    fn cell_is_static(node: &StructuredNode) -> bool {
+        match node {
+            StructuredNode::Paragraph(_)
+            | StructuredNode::Heading(_)
+            | StructuredNode::List(_)
+            | StructuredNode::Empty => true,
+            StructuredNode::Group(g) => g.children.iter().all(cell_is_static),
+            _ => false,
+        }
+    }
+    table
+        .header
+        .iter()
+        .flat_map(|h| h.cells.iter())
+        .chain(table.rows.iter().flat_map(|r| r.cells.iter()))
+        .all(cell_is_static)
+}
+
+/// Render `table` as HTML once per form language, footnote references embedded
+/// the way a text draw's `_value` carries them.
+fn table_markup(table: &TableNode, ctx: &ConversionContext) -> AemI18nText {
+    let mut map = BTreeMap::new();
+    for lang in form_languages(ctx) {
+        let mut markup = render_table_html(table, &lang, &|text, l| {
+            inline_text_to_html_with(text, l, AEM_TAGS)
+        });
+        if !ctx.footnote_embeds.is_empty() {
+            markup = embed_footnotes_in_value(&markup, &ctx.footnote_embeds, &lang);
+        }
+        map.insert(lang, markup);
+    }
+    AemI18nText(map)
+}
+
 
 fn convert_table(
     table: &TableNode,
@@ -1469,8 +1589,6 @@ fn convert_table(
     _colspan: u32,
     dor_colspan: Option<u32>,
 ) -> AemNode {
-    // Convert table to a simple panel with all cells as direct children (paragraphs).
-    // AEM doesn't support tables, so we just output cells linearly.
     let caption_text = table
         .caption
         .as_ref()
@@ -1478,6 +1596,30 @@ fn convert_table(
         .unwrap_or_default();
     let name = ctx.make_name("TBL", &caption_text);
     let uuid = ctx.uuid(&name);
+
+    // A static table is one HTML component carrying a real `<table>`: rows,
+    // columns, header cells and all. AEM used to have no table component, which
+    // is why the panel shape below exists at all.
+    if table_is_static(table) {
+        return AemNode::HtmlDisplayer {
+            visible: true,
+            uuid,
+            name,
+            content: table_markup(table, ctx),
+            attrs: AemAttrs::default(),
+            colspan: config.grid_columns,
+            dor_colspan,
+        };
+    }
+
+    // A cell holding an input field cannot go into markup -- the field would be
+    // lost. Keep the older shape: a panel with every cell as a child, laid out
+    // linearly. `structured_converter` currently forces every detected cell to a
+    // paragraph, so this should be unreachable from a PDF; it is here so that a
+    // hand-built or agent-edited tree cannot lose a field silently.
+    log::warn!(
+        "table '{name}' holds a non-static cell; keeping the linear TBL_ panel instead of the HTML component"
+    );
     let title = table
         .caption
         .as_ref()
@@ -1485,22 +1627,14 @@ fn convert_table(
         .unwrap_or_default();
 
     let mut children = Vec::new();
-
-    // Header cells
-    if let Some(header) = &table.header {
-        for cell in &header.cells {
-            if let Some(node) = convert_node(cell, config, ctx, config.grid_columns, None) {
-                children.push(node);
-            }
-        }
-    }
-
-    // Body cells
-    for row in &table.rows {
-        for cell in &row.cells {
-            if let Some(node) = convert_node(cell, config, ctx, config.grid_columns, None) {
-                children.push(node);
-            }
+    for cell in table
+        .header
+        .iter()
+        .flat_map(|h| h.cells.iter())
+        .chain(table.rows.iter().flat_map(|r| r.cells.iter()))
+    {
+        if let Some(node) = convert_node(cell, config, ctx, config.grid_columns, None) {
+            children.push(node);
         }
     }
 
@@ -2696,6 +2830,7 @@ fn strip_bind_refs(nodes: &mut [AemNode]) {
             }
             AemNode::TextDraw { .. }
             | AemNode::TitleDraw { .. }
+            | AemNode::HtmlDisplayer { .. }
             | AemNode::Preface { .. }
             | AemNode::Appendix { .. }
             | AemNode::FootnotePlaceholder { .. } => {}

@@ -281,6 +281,7 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::Paragraph(p) => generate_paragraph(p, &ind),
         StructuredNode::Image(img) => generate_image(img, ctx, &ind),
         StructuredNode::Table(t) => generate_table(t, ctx, &ind),
+        StructuredNode::Html(h) => generate_html_block(h, &ind),
         StructuredNode::Field(f) => generate_field(f, ctx, &ind),
         StructuredNode::Repeatable(r) => generate_repeatable(r, ctx, indent),
         StructuredNode::Group(g) => generate_group(g, ctx, indent),
@@ -290,6 +291,26 @@ fn generate_node(node: &StructuredNode, ctx: &mut GeneratorContext, indent: usiz
         StructuredNode::Empty => String::new(),
         StructuredNode::Footnote(_) => String::new(),
     }
+}
+
+/// Emit an [`crate::structured::HtmlNode`]'s markup verbatim, one language-tagged block each --
+/// the same `lang-<code>` convention `generate_translated_text` uses for
+/// per-language text. Deliberately NOT escaped: the whole point of the node is
+/// that it holds HTML the AEM component renders as HTML.
+fn generate_html_block(h: &crate::structured::HtmlNode, ind: &str) -> String {
+    let mut langs: Vec<&String> = h.content.keys().collect();
+    langs.sort();
+    let mut out = String::new();
+    for lang in langs {
+        out.push_str(&format!(
+            "{}<div class=\"lang-{}\" lang=\"{}\">{}</div>\n",
+            ind,
+            escape_attr(lang),
+            escape_attr(lang),
+            h.content[lang],
+        ));
+    }
+    out
 }
 
 fn generate_list(l: &ListNode, ind: &str) -> String {

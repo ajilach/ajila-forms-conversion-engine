@@ -81,7 +81,8 @@ pub(crate) fn collect_translated_languages(
                 add_opts(options, out);
             }
             AemNodeTranslated::TextDraw { content, .. }
-            | AemNodeTranslated::TitleDraw { content, .. } => add(content, out),
+            | AemNodeTranslated::TitleDraw { content, .. }
+            | AemNodeTranslated::HtmlDisplayer { content, .. } => add(content, out),
             AemNodeTranslated::Fragment { .. }
             | AemNodeTranslated::Preface { .. }
             | AemNodeTranslated::Appendix { .. }

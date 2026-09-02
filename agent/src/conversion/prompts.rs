@@ -94,12 +94,25 @@ What you DO own is the repeatable's `title`: make it the short noun phrase for t
 label and the DoR heading at once. Left empty, the engine falls back to the heading above the \
 repeatable or the enclosing panel's title, and if nothing names it the panel ships a visible \
 `(Repeatable name)` placeholder for a person to fix — so name it. \
+TABLES, CHARTS AND IMAGES go in an HtmlDisplayer node, the AEM HTML component: its `content` is HTML \
+MARKUP per language, not plain text, and it is the only node whose content is markup you author \
+yourself. A table is one such node named `TBL_` holding a real `<table>` — `<thead>`/`<th>` for the \
+header row, `<tbody>`/`<tr>`/`<td>` for the body, one `<tr>` per source row — so the rows and columns \
+the page shows survive. A chart is one named `CRT_` holding an inline `<svg>`; an image is one named \
+`IMG_` holding an `<img>` whose `src` is a `data:` URI. Allowed tags: table, thead, tbody, tr, th, \
+td, caption, div, p, ul, ol, li, b, i, sup, br, a, img, svg and the SVG shape elements. Inline \
+`style` attributes for widths, padding and alignment are fine. NEVER include a `<script>`, an \
+external `src`/`href` (nothing but `data:` URIs and in-page anchors), or a stylesheet link — none of \
+them survive into the printed document and a remote reference will not load. Because the markup is \
+static, a table whose cells hold INPUT FIELDS must NOT use this node: keep that one as a Panel named \
+`TBL_` with the fields as real components, or the fields are lost. \
 NAMING: give every node a `name` beginning with the canonical PREFIX_ for its component TYPE, per the AEM \
 Naming Conventions — PN_ panel, TXT_ text box, TXTM_ multiline, NB_ number box, DATE_ date, DD_ dropdown, \
 CB_ checkbox, RB_ radio, TEL_ telephone, EML_ email, TTL_ heading/title, ST_ static text — the default \
 prefix for a text draw, with ITXT_/ETXT_ for info/error text, \
-IMG_ image, TBL_ table, SPT_ separator, RCP_/RCHP_/RCBP_/RCHT_ repeat-container panels, \
-BT_ button, SIGN_ signature (consult the naming-conventions reference doc for the full table). This \
+IMG_ image, TBL_ table, CRT_ chart, SPT_ separator, RCP_/RCHP_/RCBP_/RCHT_ repeat-container panels, \
+BT_ button, SIGN_ signature (consult the naming-conventions reference doc for the full table). An \
+HtmlDisplayer takes whichever of TBL_ / CRT_ / IMG_ names what its markup shows. This \
 governs the component's `name` property, NOT the JCR node name — the engine generates node names like \
 `textbox_<uuid>` and that is correct and expected. Names are not cosmetic: with no `bind_ref` in this \
 corpus the `name` IS the binding, so scripts and fragments resolve panels and fields by it. Only the \
@@ -242,11 +255,14 @@ aligned rows on the page is a table even when only some rules are drawn, even wh
 column, and even when one of its columns is empty on every row. Two shapes to watch for: a run of \
 consecutive one-line text draws where the page shows a ruled grid is a table the engine missed, and \
 a table whose header row is drawn without rules arrives with its header cells detached as separate \
-headings. AEM HAS NO TABLE COMPONENT — the engine represents a source table as a Panel named `TBL_` \
-holding the cells as its children, so fixing a missed table means GROUPING those draws into a \
-`TBL_` Panel in source order (and restoring the detached header cells as its first children), NOT \
-building a grid. Where your tree and the page disagree, the PAGE WINS: fix it with the editors and \
-rebuild. (c) If an AEM connection is configured, upload_to_aem, then VERIFY THE DEPLOYED FORM IN THE \
+headings. A TABLE IS ONE HtmlDisplayer NODE: AEM now has an HTML component, and the \
+engine emits a source table as a single HtmlDisplayer whose `content` is a real HTML `<table>` per \
+language. So fixing a missed table means REPLACING the loose draws with one HtmlDisplayer node \
+named `TBL_`, whose markup lays the cells out in rows and columns (and whose `<thead>` carries the \
+detached header cells) — not grouping them into a panel, and not building a grid of draws. The one \
+exception is a table whose cells hold INPUT FIELDS: markup is static, so a field inside it would be \
+lost. Leave that one as a Panel named `TBL_` holding the fields as real components. Where your tree \
+and the page disagree, the PAGE WINS: fix it with the editors and rebuild. (c) If an AEM connection is configured, upload_to_aem, then VERIFY THE DEPLOYED FORM IN THE \
 BROWSER when the browser tools are offered: aem_form_urls gives the preview URL per language, \
 including the `mandator` query parameter (the entity code: 033 for Italian forms, 019 for German \
 ones) which the UBS runtime needs for reference data and for Submit/DoR to work — always open the \
@@ -382,7 +398,10 @@ Common Fields\" catalogue, wizard pages & step-title headings, DoR/summary exclu
 rules), then per section search_references / grep_references / get_reference_package / \
 read_reference_file. The plan must give, per top-level SECTION in source order: whether it is a \
 wizard page (a first-level section = one page); its heading and the verbatim labels / options / \
-field text in EVERY language; each field's control type; any conditional or CASCADING behaviour \
+field text in EVERY language; each field's control type; which regions are TABLES (their column \
+count, whether the header row is ruled or arrives as detached headings, and whether any cell holds a \
+fillable field — the Author builds a table as one HtmlDisplayer node of HTML markup, and cannot \
+recover one this plan is silent about); any conditional or CASCADING behaviour \
 (quote the XFA change-event function and its clearItems/addItem/rawValue branches); the recommended \
 standard fragment with its exact JCR path (banking relationship → \
 affrg_BankingRelationship1 in afforms_ubs_fragmentlib, referenced under /content/forms/af/ while every \
@@ -453,8 +472,11 @@ clean coverage score is no reason to skip the comparison. Tables go missing most
 aligned rows on the page is a table even when only some rules are drawn, even with a single column, \
 and even when one column is empty on every row; a run of consecutive one-line text draws facing a \
 ruled grid, or headings that are really the header row of the table below them, are the shapes it \
-fails in. AEM has no table component, so the shape to require is a Panel named `TBL_` holding the \
-cells in source order, not a grid. A structure the engine missed is BOTH kinds of issue: the Author \
+fails in. The shape to require is ONE HtmlDisplayer node named `TBL_` whose `content` is a real HTML \
+`<table>` per language — AEM has an HTML component now, so a table is markup, not a panel of draws. \
+review_output's `legacy_tables` names every panel still holding a table the old way, and it must be \
+EMPTY; a table whose cells hold input fields is the one legitimate exception and stays a Panel. \
+A structure the engine missed is BOTH kinds of issue: the Author \
 can group it in the tree, so return it as authorable; and the engine will keep making the same \
 mistake on the next form, so ALSO list it under ENGINE DEFECTS. Judge \
 ANALOGY to the source AND conformance to the CONVERSION PLAN appended below, and confirm every point \

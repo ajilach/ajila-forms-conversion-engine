@@ -99,6 +99,8 @@ css_dropdownlist = "widget_ajila_forms_dropdownlist"
 css_primarybutton = "widget_ajila-forms-ubs-primarybutton"
 css_textbox_multiline = "widget_ajila-forms-ubs-textbox ubs-textbox-multiline"
 css_telephone = "widget_ajila-forms-ubs-phonebox"
+# The UBS HTML component (a table, a chart, an image rendered from markup).
+css_htmldisplayer = "widget_ajila_forms_htmlViewer"
 
 # Email / telephone validation, vendored from the deployed corpus (feedback #117,
 # PROBLEM-email-phone-component) rather than invented here: 63 hand-authored
@@ -190,6 +192,33 @@ sp = "Añadir {subject}"
 [language_synonyms]
 de = ["de-ch"]
 sp = ["es"]
+
+# =============================================================================
+# HTML-component locales
+# =============================================================================
+# The HTML component (`controls/htmlDisplayer`) does not read the Sling i18n
+# dictionary. It carries one `localeContent` item per locale and matches the
+# reader's locale against those, so the engine has to know which spelling the
+# deployed component matches on -- and that is a property of the component, not
+# of this engine.
+#
+# These are the engine's own short codes, which is what the owner asked for. The
+# UBS locale set is spelled regionally in the design guidelines
+# (specs/AF Design Guidelines (Summary).md: de-ch, en-us, en-gb, fr-ch, it-ch)
+# and the AEM authoring UI wrote `en-us` / `it-ch` into the reference node in
+# AAOV_033, so if a converted form shows a BLANK block for a language, the
+# component is matching regionally: swap the right-hand column for
+# en = "en-us", de = "de-ch", fr = "fr-ch", it = "it-ch", sp = "es-es".
+#
+# A language absent from this table keeps its own code.
+[html_locales]
+en = "en"
+de = "de"
+de-ch = "de-ch"
+fr = "fr"
+it = "it"
+sp = "sp"
+es = "es"
 
 # =============================================================================
 # Custom Elements — regex-based element replacement with custom templates

@@ -123,6 +123,10 @@ pub struct AemConfig {
     /// `"sp" → ["es"]`).
     pub language_synonyms: HashMap<String, Vec<String>>,
 
+    /// Language code -> the locale string the HTML component's `localeContent`
+    /// items are keyed by (see [`AemProfile::html_locales`]).
+    pub html_locales: HashMap<String, String>,
+
     // -- Authoring metadata --------------------------------------------------
     /// Value for `jcr:createdBy` / `jcr:lastModifiedBy`.
     /// Default: `"blueprint"`.
@@ -279,6 +283,7 @@ impl AemConfig {
                 .unwrap_or_else(|| "en".into()),
             language_synonyms: profile.language_synonyms.clone(),
             add_label_patterns: profile.add_label_patterns.clone(),
+            html_locales: profile.html_locales.clone(),
 
             author: "blueprint".into(),
             deterministic_uuids: false,
@@ -421,6 +426,19 @@ impl AemConfig {
         out
     }
 
+    /// The locale string the HTML component's `localeContent` item for `lang`
+    /// is keyed by.
+    ///
+    /// `[html_locales]` in the profile decides; a language the table does not
+    /// name keeps its own code, which is the shipped default. See
+    /// [`AemProfile::html_locales`] for why this is profile data.
+    pub fn html_locale(&self, lang: &str) -> String {
+        self.html_locales
+            .get(lang)
+            .cloned()
+            .unwrap_or_else(|| lang.to_string())
+    }
+
     /// Expand `languages` to include synonyms.
     ///
     /// For each language in `self.languages`, if it has synonyms defined in
@@ -458,6 +476,7 @@ impl AemConfig {
             languages: vec!["en".into()],
             master_language: "en".into(),
             add_label_patterns: HashMap::new(),
+            html_locales: HashMap::new(),
             language_synonyms: {
                 let mut map = HashMap::new();
                 map.insert("de".into(), vec!["de-ch".into()]);
@@ -990,6 +1009,30 @@ pub enum AemNode {
         dor_colspan: Option<u32>,
     },
 
+    /// Static HTML block (`htmlDisplayer`) -- a table, a chart or an image,
+    /// rendered as markup rather than as a tree of draws.
+    ///
+    /// Unlike every other draw the markup is carried PER LANGUAGE on the node:
+    /// the component reads its own `localeContent` children, not the Sling i18n
+    /// dictionary, and the XML writer has no dictionary to consult. So
+    /// [`AemI18nText`] lives here on the mono tree too, and the node
+    /// contributes nothing to the translation dictionary when it is lowered.
+    HtmlDisplayer {
+        uuid: Uuid,
+        name: String,
+        /// Language code -> HTML markup.
+        content: AemI18nText,
+        /// Where this node shows up: screen, summary, DoR, PDF. See [`AemAttrs`].
+        #[serde(default, flatten)]
+        attrs: AemAttrs,
+        /// Whether the node is visible. Default `true`.
+        #[serde(default = "default_true")]
+        visible: bool,
+        colspan: u32,
+        /// Column span in Document of Record layout (`dorColspan`).
+        dor_colspan: Option<u32>,
+    },
+
     /// Repeatable panel with add/remove buttons.
     Repeatable {
         uuid: Uuid,
@@ -1116,6 +1159,7 @@ impl AemNode {
             | AemNode::RadioButton { attrs, .. }
             | AemNode::TextDraw { attrs, .. }
             | AemNode::TitleDraw { attrs, .. }
+            | AemNode::HtmlDisplayer { attrs, .. }
             | AemNode::Repeatable { attrs, .. }
             | AemNode::Fragment { attrs, .. }
             | AemNode::Custom { attrs, .. } => Some(attrs),
@@ -1139,6 +1183,7 @@ impl AemNode {
             | AemNode::RadioButton { attrs, .. }
             | AemNode::TextDraw { attrs, .. }
             | AemNode::TitleDraw { attrs, .. }
+            | AemNode::HtmlDisplayer { attrs, .. }
             | AemNode::Repeatable { attrs, .. }
             | AemNode::Fragment { attrs, .. }
             | AemNode::Custom { attrs, .. } => Some(attrs),
@@ -1164,6 +1209,9 @@ impl AemNode {
             AemNode::RadioButton { uuid, .. } => format!("radiobutton_{}", uuid.as_simple()),
             AemNode::TextDraw { uuid, .. } => format!("textdraw_{}", uuid.as_simple()),
             AemNode::TitleDraw { uuid, .. } => format!("titledraw_{}", uuid.as_simple()),
+            AemNode::HtmlDisplayer { uuid, .. } => {
+                format!("htmldisplayer_{}", uuid.as_simple())
+            }
             AemNode::Repeatable { uuid, .. } => format!("repeatable_{}", uuid.as_simple()),
             AemNode::Fragment { uuid, .. } => format!("fragment_{}", uuid.as_simple()),
             AemNode::Preface { uuid, .. } => format!("preface_{}", uuid.as_simple()),

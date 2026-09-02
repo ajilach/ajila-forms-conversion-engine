@@ -98,6 +98,12 @@ fn is_run_member(node: &AemNode) -> bool {
             attrs,
             ..
         } => *heading_level != 2 && !has_class(attrs, SUBTITLE_CSS),
+        // The HTML component is static content too, but it is a BLOCK: a table,
+        // a chart, an image. It stays out of the run, which is exactly how the
+        // `TBL_` panel it replaces behaved, so no existing form's wrapping
+        // shifts. Whether the DoR defect `wrap_static_text` exists for also
+        // afflicts this component is a question for a deployed form.
+        AemNode::HtmlDisplayer { .. } => false,
         _ => false,
     }
 }
@@ -331,6 +337,7 @@ fn node_name(node: &AemNode) -> Option<&str> {
         | AemNode::RadioButton { name, .. }
         | AemNode::TextDraw { name, .. }
         | AemNode::TitleDraw { name, .. }
+        | AemNode::HtmlDisplayer { name, .. }
         | AemNode::Repeatable { name, .. }
         | AemNode::Fragment { name, .. }
         | AemNode::Preface { name, .. }

@@ -88,7 +88,8 @@ impl<'a> DumpBuilder<'a> {
                 StructuredNode::Heading(_)
                 | StructuredNode::Paragraph(_)
                 | StructuredNode::List(_)
-                | StructuredNode::Table(_) => {
+                | StructuredNode::Table(_)
+                | StructuredNode::Html(_) => {
                     if let Some(reference) = self.emit_asset(node) {
                         run.push(reference);
                     }
@@ -358,7 +359,8 @@ impl<'a> DumpBuilder<'a> {
     /// pagination must keep working regardless.
     fn footer_section(&mut self) -> Vec<RedactoComponent> {
         let config = self.config;
-        let has_content = |fields: &[FooterField]| fields.iter().any(|f| !f.value.trim().is_empty());
+        let has_content =
+            |fields: &[FooterField]| fields.iter().any(|f| !f.value.trim().is_empty());
         let non_blank = |language: &str| -> Option<&[FooterField]> {
             config
                 .footers

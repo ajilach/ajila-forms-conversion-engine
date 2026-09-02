@@ -193,6 +193,7 @@ Type-specific behaviour:
 | Checkbox | Title hidden, options support rich text. |
 | Radio button | Carries its options and alignment. |
 | Static text | Free text / HTML content. |
+| HTML component | A table, chart or image rendered from HTML markup. Named `TBL_`, `CRT_` or `IMG_` by what it shows. Its markup is stored per locale on the component itself, not in the i18n dictionary. |
 | Step title | Uses the `stepTitle` CSS class. |
 | Footnote | Uses the accordion footnote styling. |
 | Fragment reference | References a fragment; excluded from the DoR. |

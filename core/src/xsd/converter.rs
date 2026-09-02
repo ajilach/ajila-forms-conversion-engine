@@ -217,6 +217,8 @@ fn collect_item_text(item: &SectionItem, config: &XsdConfig, parts: &mut Vec<Str
 /// Recursively collect text from a StructuredNode.
 fn collect_node_text(node: &StructuredNode, config: &XsdConfig, parts: &mut Vec<String>) {
     match node {
+        // Raw markup carries no label the schema could name.
+        StructuredNode::Html(_) => {}
         StructuredNode::Heading(h) => {
             parts.push(config.label_text(&h.content));
         }
@@ -476,6 +478,8 @@ fn collect_node_bind_refs(
     wrappers: Option<&WrapperPaths>,
 ) {
     match node {
+        // Presentation only -- it binds to nothing.
+        StructuredNode::Html(_) => {}
         StructuredNode::Field(field) => {
             let label = field
                 .label

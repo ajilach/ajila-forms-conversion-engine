@@ -4,6 +4,7 @@ pub mod inline_html;
 mod merge_engine;
 mod merger;
 mod structured_converter;
+pub mod table_html;
 mod translation_merger;
 
 pub use element_merge::{
@@ -15,6 +16,9 @@ pub use inline_html::{
 };
 pub use merger::{MergeInput, RecursiveMerger, Selection, SelectionKind};
 pub use structured_converter::{convert, convert_with_context};
+pub use table_html::{
+    render_cell_html, render_plain_list_html, render_table_html,
+};
 pub use translation_merger::{
     MergeError, MergeError as TranslationMergeError, calculate_structural_similarity,
     merge_translations,
@@ -145,6 +149,7 @@ pub enum StructuredNode {
     Paragraph(ParagraphNode),
     Image(ImageNode),
     Table(TableNode),
+    Html(HtmlNode),
     Field(FieldNode),
     //UnorderedList(UnorderedListNode),
     //OrderedList(OrderedListNode),
@@ -234,6 +239,43 @@ pub struct TableRow {
 #[serde(rename_all = "camelCase")]
 pub struct TableHeader {
     pub cells: Vec<StructuredNode>,
+}
+
+/// A block of raw HTML markup, one string per language.
+///
+/// Produced only by [`crate::aem::aem_to_structured`], lifting an
+/// [`crate::aem::AemNode::HtmlDisplayer`] back into the structured tree so the
+/// HTML preview and the coverage check see the table (or chart, or image) that
+/// the AEM HTML component actually renders, rather than a flattened run of
+/// paragraphs. Nothing on the PDF -> structured path builds one, and the
+/// agent's structured editor refuses to author one.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HtmlNode {
+    /// Language code -> HTML markup.
+    pub content: HashMap<String, String>,
+    /// The AEM `name` this block was lifted from, so converting back reuses it
+    /// instead of minting a fresh one. `None` for a block with no origin.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub source_name: Option<String>,
+}
+
+impl HtmlNode {
+    /// The markup in `language`, falling back to any other language that has
+    /// some, then to the empty string.
+    ///
+    /// A locale present but BLANK counts as absent: a hand-authored package can
+    /// carry an empty `html` attribute, and rendering nothing there is worse
+    /// than rendering another language's table. Mirrors the writer, which skips
+    /// an empty locale rather than emitting an empty item.
+    pub fn markup_in(&self, language: &str) -> &str {
+        self.content
+            .get(language)
+            .filter(|m| !m.trim().is_empty())
+            .or_else(|| self.content.values().find(|m| !m.trim().is_empty()))
+            .map(String::as_str)
+            .unwrap_or("")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1131,6 +1173,9 @@ impl StructuredNode {
             (StructuredNode::Footnote(a), StructuredNode::Footnote(b)) => {
                 mode == CompareMode::IgnoreText || a.content.structural_eq(&b.content)
             }
+            (StructuredNode::Html(a), StructuredNode::Html(b)) => {
+                mode == CompareMode::IgnoreText || a.content == b.content
+            }
             // Different variants are never structurally equal
             _ => false,
         }
@@ -1152,6 +1197,7 @@ impl StructuredNode {
             StructuredNode::GridLayout(_) => 9,
             StructuredNode::List(_) => 10,
             StructuredNode::Footnote(_) => 11,
+            StructuredNode::Html(_) => 12,
         }
     }
 
@@ -1435,7 +1481,10 @@ pub fn collect_footnote_nodes(nodes: &[StructuredNode]) -> Vec<&FootnoteNode> {
 }
 
 /// Append the footnote nodes found in `nodes` to `out`.
-pub fn collect_footnote_nodes_into<'a>(nodes: &'a [StructuredNode], out: &mut Vec<&'a FootnoteNode>) {
+pub fn collect_footnote_nodes_into<'a>(
+    nodes: &'a [StructuredNode],
+    out: &mut Vec<&'a FootnoteNode>,
+) {
     for node in nodes {
         match node {
             StructuredNode::Footnote(f) => out.push(f),
@@ -1445,5 +1494,33 @@ pub fn collect_footnote_nodes_into<'a>(nodes: &'a [StructuredNode], out: &mut Ve
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A locale present but blank counts as absent, so a hand-authored package
+    /// with an empty `html` attribute still renders another language's table
+    /// rather than nothing at all.
+    #[test]
+    fn blank_markup_falls_back_to_a_language_that_has_some() {
+        let node = HtmlNode {
+            content: HashMap::from([
+                ("de".to_string(), "   ".to_string()),
+                ("en".to_string(), "<table></table>".to_string()),
+            ]),
+            source_name: None,
+        };
+        assert_eq!(node.markup_in("de"), "<table></table>");
+        assert_eq!(node.markup_in("en"), "<table></table>");
+        assert_eq!(node.markup_in("fr"), "<table></table>");
+
+        let all_blank = HtmlNode {
+            content: HashMap::from([("de".to_string(), String::new())]),
+            source_name: None,
+        };
+        assert_eq!(all_blank.markup_in("de"), "");
     }
 }

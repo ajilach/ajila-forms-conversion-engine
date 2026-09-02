@@ -660,6 +660,15 @@ fn validate_repeatables(doc: &ParsedXmlDocument, violations: &mut Vec<String>) {
                 continue;
             };
 
+            // Add and Remove are required exactly when the panel NAMES them,
+            // not unconditionally. A signature twin repeats in step with the
+            // party's data panel and is driven by that panel's buttons: it
+            // declares neither `addButton` nor `removeButton` and carries
+            // neither, because a Remove of its own is what would let the two
+            // desync (PROBLEM-repeating-panel section 8). The two halves have to
+            // agree in both directions -- a named button that is missing cannot
+            // be clicked, and a button nothing names cannot do anything.
+
             let remove_button = doc.nodes[items_index]
                 .children
                 .iter()
@@ -670,18 +679,24 @@ fn validate_repeatables(doc: &ParsedXmlDocument, violations: &mut Vec<String>) {
                         .get("name")
                         .is_some_and(|name| name == "BT_Remove")
                 });
-            match remove_button {
-                Some(button) => validate_repeatable_button_child(
+            match (remove_button, node.attributes.contains_key("removeButton")) {
+                (Some(button), true) => validate_repeatable_button_child(
                     doc,
                     button,
                     "fd:click",
                     "removeInstance",
                     violations,
                 ),
-                None => violations.push(format!(
-                    "{} repeatable items must contain BT_Remove button",
+                (None, true) => violations.push(format!(
+                    "{} names removeButton but its items hold no BT_Remove",
                     node.path
                 )),
+                (Some(button), false) => violations.push(format!(
+                    "{} holds {} but names no removeButton, so nothing drives it",
+                    node.path, button.path
+                )),
+                // A driven twin: no `removeButton` property and no button.
+                (None, false) => {}
             }
 
             let add_button = doc.nodes[node.parent.unwrap_or_default()]
@@ -694,8 +709,8 @@ fn validate_repeatables(doc: &ParsedXmlDocument, violations: &mut Vec<String>) {
                         .get("name")
                         .is_some_and(|name| name == "BT_Add")
                 });
-            match add_button {
-                Some(button) => {
+            match (add_button, node.attributes.contains_key("addButton")) {
+                (Some(button), true) => {
                     validate_repeatable_button_child(
                         doc,
                         button,
@@ -714,10 +729,16 @@ fn validate_repeatables(doc: &ParsedXmlDocument, violations: &mut Vec<String>) {
                         ));
                     }
                 }
-                None => violations.push(format!(
-                    "{} repeatable parent must contain BT_Add button sibling",
+                (None, true) => violations.push(format!(
+                    "{} names addButton but has no BT_Add button sibling",
                     node.path
                 )),
+                (Some(button), false) => violations.push(format!(
+                    "{} has the sibling {} but names no addButton, so nothing drives it",
+                    node.path, button.path
+                )),
+                // A driven twin: no `addButton` property and no button.
+                (None, false) => {}
             }
         }
     }
@@ -925,4 +946,116 @@ fn check_no_unescaped_angle_brackets_in_attributes(xml: &str) -> Result<(), Stri
         i += 1;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod repeatable_button_tests {
+    use super::*;
+
+    /// A repeating panel, with the Add button as its sibling and the Remove
+    /// button among its items, the way `repeatable.xml` lays them out.
+    /// `add`/`remove` control whether the panel NAMES each button and whether
+    /// the button element is there.
+    fn form_with_repeatable(add: bool, remove: bool, add_elem: bool, remove_elem: bool) -> String {
+        let add_attr = if add { r#"addButton="BT_Add""# } else { "" };
+        let remove_attr = if remove {
+            r#"removeButton="BT_Remove""#
+        } else {
+            ""
+        };
+        let add_button = if add_elem {
+            r#"<bt_add jcr:primaryType="nt:unstructured"
+                   sling:resourceType="fd/af/components/guidebutton" name="BT_Add">
+                   <fd:scripts jcr:primaryType="nt:unstructured"
+                       fd:click="window.forms.ubs.addInstance(this);" fd:init="1"/>
+               </bt_add>"#
+        } else {
+            ""
+        };
+        let remove_button = if remove_elem {
+            r#"<bt_remove jcr:primaryType="nt:unstructured"
+                   sling:resourceType="fd/af/components/guidebutton" name="BT_Remove">
+                   <fd:scripts jcr:primaryType="nt:unstructured"
+                       fd:click="window.forms.ubs.removeInstance(this);"/>
+               </bt_remove>"#
+        } else {
+            ""
+        };
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0"
+    xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    xmlns:nt="http://www.jcp.org/jcr/nt/1.0" jcr:primaryType="cq:Page">
+    <jcr:content jcr:primaryType="cq:PageContent">
+        <guideContainer jcr:primaryType="nt:unstructured"
+            sling:resourceType="fd/af/components/guideContainer" name="guide1">
+            <rootPanel jcr:primaryType="nt:unstructured"
+                sling:resourceType="fd/af/components/rootPanel" name="guideRootPanel">
+                <items jcr:primaryType="nt:unstructured">
+                    <wrapper jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        guideNodeClass="guidePanel" name="PN_Party">
+                        <items jcr:primaryType="nt:unstructured">
+                            <repeatableInner jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                guideNodeClass="guidePanel" name="RCP_Party_repeat"
+                                minOccur="1" maxOccur="4" {add_attr} {remove_attr}>
+                                <items jcr:primaryType="nt:unstructured">{remove_button}</items>
+                            </repeatableInner>
+                            {add_button}
+                        </items>
+                    </wrapper>
+                </items>
+            </rootPanel>
+        </guideContainer>
+    </jcr:content>
+</jcr:root>
+"#
+        )
+    }
+
+    fn button_violations(xml: &str) -> Vec<String> {
+        let doc = parse_xml_document(xml);
+        let mut violations = Vec::new();
+        validate_repeatables(&doc, &mut violations);
+        violations
+    }
+
+    /// An ordinary repeating panel names both buttons and has both.
+    #[test]
+    fn a_panel_that_names_both_buttons_and_has_them_is_clean() {
+        let v = button_violations(&form_with_repeatable(true, true, true, true));
+        assert!(v.is_empty(), "expected no violations, got {v:?}");
+    }
+
+    /// The regression: a signature twin is driven by its party's data panel, so
+    /// it names neither button and carries neither. The validator used to demand
+    /// both unconditionally and rejected the engine's own output -- which broke
+    /// `passthrough_load_save_load_is_a_fixpoint` on `Germany_AACR.zip` from
+    /// commit be89c65 onward.
+    #[test]
+    fn a_driven_twin_that_names_no_buttons_is_clean() {
+        let v = button_violations(&form_with_repeatable(false, false, false, false));
+        assert!(v.is_empty(), "a driven twin has no buttons of its own: {v:?}");
+    }
+
+    /// Both halves still have to agree. A named button that is not there cannot
+    /// be clicked.
+    #[test]
+    fn a_named_button_that_is_missing_is_reported() {
+        let v = button_violations(&form_with_repeatable(true, true, false, false));
+        assert_eq!(v.len(), 2, "one per missing button: {v:?}");
+        assert!(v.iter().any(|m| m.contains("names removeButton")), "{v:?}");
+        assert!(v.iter().any(|m| m.contains("names addButton")), "{v:?}");
+    }
+
+    /// And a button nothing names cannot do anything -- on a twin it is exactly
+    /// the Remove that would let the two panels desync.
+    #[test]
+    fn a_button_the_panel_does_not_name_is_reported() {
+        let v = button_violations(&form_with_repeatable(false, false, true, true));
+        assert_eq!(v.len(), 2, "one per undriven button: {v:?}");
+        assert!(v.iter().any(|m| m.contains("names no removeButton")), "{v:?}");
+        assert!(v.iter().any(|m| m.contains("names no addButton")), "{v:?}");
+    }
 }

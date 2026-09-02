@@ -60,9 +60,10 @@
             <items jcr:primaryType="nt:unstructured" sling:resourceType="{{ variables.default_layout }}">
                 {#  A signature twin is driven by its data panel's buttons and
                     has none of its own: a Remove here would let the two panels
-                    desync (PROBLEM-repeating-panel §8). The engine validator
-                    expects every repeatable to have both, so it reports two
-                    violations per twin -- those are correct by design. #}
+                    desync (PROBLEM-repeating-panel §8). The `addButton` /
+                    `removeButton` properties are left off above for the same
+                    reason, and that is what tells the engine validator this
+                    panel is driven rather than defective. #}
                 {% if not is_signature_twin %}
                 <removebutton
                     jcr:created="{Date}2025-01-01T00:00:00.000Z"

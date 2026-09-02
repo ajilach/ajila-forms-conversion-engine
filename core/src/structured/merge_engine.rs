@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::structured::{
     ConditionalNode, FieldNode, FieldType, FootnoteNode, GridLayout, GridLayoutElement, GroupNode,
-    HeadingNode, InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode,
+    HeadingNode, HtmlNode, InlineNode, InlineText, ListItem, ListNode, NameValue, ParagraphNode,
     RepeatableNode, StructuredNode, TableHeader, TableNode, TableRow, TranslatableString,
     TranslatedText, TranslationMap,
 };
@@ -397,6 +397,10 @@ pub(crate) fn fill_missing_translation_placeholders(
 
 fn fill_node(node: &mut StructuredNode, all_languages: &[String], _primary_language: &str) {
     match node {
+        // Nothing to fill: the markup map IS the per-language store, and a
+        // language with no markup must stay absent rather than gain an empty
+        // block that would render as a blank table.
+        StructuredNode::Html(_) => {}
         StructuredNode::Heading(h) => fill_translated_text(&mut h.content, all_languages),
         StructuredNode::Paragraph(p) => fill_translated_text(&mut p.content, all_languages),
         StructuredNode::Field(f) => {
@@ -1013,6 +1017,7 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
             source_name: paragraph.source_name.clone(),
         }),
         StructuredNode::Image(image) => StructuredNode::Image(image.clone()),
+        StructuredNode::Html(html) => StructuredNode::Html(localize_html_node(html, lang)),
         StructuredNode::Table(table) => StructuredNode::Table(TableNode {
             header: table.header.as_ref().map(|header| TableHeader {
                 cells: header
@@ -1116,6 +1121,19 @@ fn localize_structured_node(node: &StructuredNode, lang: &str) -> StructuredNode
 /// Ensure a TranslatedText has the correct language key.
 /// If the text has a single entry under a different key (e.g. "default"),
 /// re-key it to the specified language.
+/// [`localize_translated_text`] for an [`HtmlNode`]'s markup map: re-key a lone
+/// untagged entry to `lang`, otherwise leave it alone.
+fn localize_html_node(html: &HtmlNode, lang: &str) -> HtmlNode {
+    if html.content.contains_key(lang) || html.content.len() != 1 {
+        return html.clone();
+    }
+    let markup = html.content.values().next().unwrap().clone();
+    HtmlNode {
+        content: std::iter::once((lang.to_string(), markup)).collect(),
+        source_name: html.source_name.clone(),
+    }
+}
+
 fn localize_translated_text(text: &TranslatedText, lang: &str) -> TranslatedText {
     if text.0.contains_key(lang) || text.0.is_empty() {
         return text.clone();

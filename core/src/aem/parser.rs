@@ -8,14 +8,16 @@
 //! - Translation extraction (Sling i18n dictionaries)
 //! - Script extraction (`fd:scripts` and `fd:rules` JSON attributes)
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use uuid::Uuid;
 
-use super::{AemAttrs, AemNode, AemOption, OptionAlignment, Passthrough, TextFieldKind};
+use super::{
+    AemAttrs, AemI18nText, AemNode, AemOption, OptionAlignment, Passthrough, TextFieldKind,
+};
 
 // ============================================================================
 // Public types
@@ -435,6 +437,20 @@ impl JcrNode {
 /// (reproduced from `colspan`).
 const REGENERATED_CHILD_TAGS: &[&str] = &["items", "layout", "cq:responsive"];
 
+/// Attributes the repeating-panel archetype owns on the inner repeating panel.
+///
+/// `profiles/<name>/aem/repeatable.xml` writes each of these unconditionally
+/// (`addButton` / `removeButton` only when the panel is not a signature twin),
+/// so a loaded value is regenerated on the way back out and must not be kept as
+/// unmodeled passthrough. See `PROBLEM-repeating-panel` in the feedback repo.
+const REPEATING_PANEL_ARCHETYPE_ATTRS: &[&str] = &[
+    "accessibilityLabel",
+    "addButton",
+    "ajilaPanelSubject",
+    "removeButton",
+    "summaryHeadingLevel",
+];
+
 /// Re-serialize a [`JcrNode`] subtree to XML (the inverse of [`parse_jcr_xml`]).
 /// Attribute values are re-escaped (they were XML-decoded on parse); empty vs
 /// start/end element form is preserved. AEM `.content.xml` carries no element
@@ -616,6 +632,11 @@ fn convert_jcr_to_aem(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<A
         "dropdownlist" | "guideDropDownList" => Ok(Some(convert_dropdown(node, ctx))),
         "textdraw" | "guideTextDraw" | "messagebox" => Ok(Some(convert_textdraw(node, ctx))),
         "titledraw" | "guideTitleDraw" => Ok(Some(convert_titledraw(node, ctx))),
+        // The UBS HTML component. It has no `items` child and no `fragRef`, so
+        // without this arm it falls into the unknown `_ =>` arm below and the
+        // whole block -- a table, a chart, an image -- is dropped from a loaded
+        // package without a word.
+        "htmlDisplayer" => Ok(Some(convert_html_displayer(node, ctx))),
         "panel" | "guidePanel" | "rootPanel" => convert_panel(node, ctx),
         // Fragment reference
         _ if node.attr("fragRef").is_some() => convert_fragment(node, ctx),
@@ -953,24 +974,84 @@ fn convert_titledraw(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
     }
 }
 
+/// Fold an HTML-component locale onto the engine's own language code, and say
+/// whether it was already one.
+///
+/// The engine keys text by language (`en`, `de`, `it`), while the AEM authoring
+/// UI writes the regional UBS locales (`en-us`, `it-ch`, `de-ch`) -- the
+/// collapse the corpus documents (`specs/feedback/consistent-problems.md`:
+/// `de-ch` -> DE, `en-us`/`en-gb` -> EN, `it-ch` -> IT, `fr-ch` -> FR). Without
+/// this a hand-authored `en-us` block would come back under a language the
+/// writer never asks for, and every locale would then fall back to whichever
+/// markup happened to sort first.
+///
+/// The inverse direction is the profile's `[html_locales]`, because which
+/// spelling the deployed component matches on is the component's business; this
+/// direction is not, since folding a region away is unambiguous.
+fn fold_html_locale(locale: &str) -> (String, bool) {
+    let lower = locale.trim().to_ascii_lowercase();
+    match lower.split_once('-') {
+        Some((base, _)) if !base.is_empty() => (base.to_string(), false),
+        _ => (lower, true),
+    }
+}
+
+/// Read the HTML component's per-locale markup back off its `localeContent`
+/// children.
+///
+/// Item elements are positional (`item0`, `item1`, ...) and each carries a
+/// `locale` and an `html`. The locale is folded back onto the engine's own
+/// language code where the profile maps one -- but a locale the profile does
+/// not name is kept under its own string rather than dropped, so a block a
+/// person authored in AEM for a locale this profile has never heard of still
+/// survives a load -> save round trip.
+fn convert_html_displayer(node: &JcrNode, ctx: &mut ParseContext) -> AemNode {
+    let name = node.component_name().unwrap_or("htmldisplayer").to_string();
+    let uuid = ctx.next_uuid(&name);
+
+    let mut content: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(locales) = node.children.iter().find(|c| c.tag_name == "localeContent") {
+        for item in &locales.children {
+            let Some(locale) = item.attr("locale") else {
+                continue;
+            };
+            let html = item.attr("html").unwrap_or("").to_string();
+            let (lang, exact) = fold_html_locale(locale);
+            // An exact base code wins over a regional one that folds onto it, so
+            // a package carrying both `de` and `de-ch` keeps the `de` markup
+            // whichever order the items appear in.
+            if exact {
+                content.insert(lang, html);
+            } else {
+                content.entry(lang).or_insert(html);
+            }
+        }
+    }
+
+    ctx.record_passthrough(
+        uuid,
+        node,
+        &[&["name", "dorColspan", "visible"][..], ATTR_NAMES].concat(),
+        &[&["localeContent"][..], REGENERATED_CHILD_TAGS].concat(),
+    );
+
+    AemNode::HtmlDisplayer {
+        attrs: parse_attrs(node),
+        visible: parse_visible(node),
+        uuid,
+        name,
+        content: AemI18nText(content),
+        colspan: parse_colspan(node),
+        dor_colspan: parse_dor_colspan(node),
+    }
+}
+
 fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNode>, String> {
     let name = node.component_name().unwrap_or(&node.tag_name).to_string();
     let title = node.attr("jcr:title").unwrap_or("").to_string();
     let uuid = ctx.next_uuid(&name);
     let visible = parse_visible(node);
     let attrs = parse_attrs(node);
-    ctx.record_passthrough(
-        uuid,
-        node,
-        // `dorExclusion` and `dorExcludeTitle` are two different attributes and
-        // are kept apart: the first drops the whole node from the DoR, the
-        // second only its heading, and a wizard step carries the second by
-        // convention. Folding them into one flag (as this did) turned every
-        // step into a DoR-excluded node on the way back out.
-        &[&["name", "jcr:title", "visible", "minOccur",
-            "maxOccur", "bindRef", "dorColspan", "fragRef"][..], ATTR_NAMES].concat(),
-        REGENERATED_CHILD_TAGS,
-    );
 
     // Check for repeatable.
     //
@@ -989,6 +1070,32 @@ fn convert_panel(node: &JcrNode, ctx: &mut ParseContext) -> Result<Option<AemNod
     };
 
     let is_repeatable = max_occur > 1;
+
+    ctx.record_passthrough(
+        uuid,
+        node,
+        // `dorExclusion` and `dorExcludeTitle` are two different attributes and
+        // are kept apart: the first drops the whole node from the DoR, the
+        // second only its heading, and a wizard step carries the second by
+        // convention. Folding them into one flag (as this did) turned every
+        // step into a DoR-excluded node on the way back out.
+        &[
+            &["name", "jcr:title", "visible", "minOccur",
+              "maxOccur", "bindRef", "dorColspan", "fragRef"][..],
+            // The repeating-panel archetype. `repeatable.xml` writes all five
+            // itself and stamps the rules it generates "Do not edit: will be
+            // overwritten", so they are engine-owned, not authored: capturing
+            // them as unmodeled passthrough would carry a stale value forward
+            // and would make load -> save -> load stop being a fixpoint the
+            // moment the template gained an attribute the deployed corpus
+            // predates. Only on a repeatable -- an ordinary panel that carries
+            // an `accessibilityLabel` authored it, and keeps it.
+            if is_repeatable { REPEATING_PANEL_ARCHETYPE_ATTRS } else { &[] },
+            ATTR_NAMES,
+        ]
+        .concat(),
+        REGENERATED_CHILD_TAGS,
+    );
 
     // Check for page/wizard step (panels with validateOnStepCompletion or
     // that are direct children of a wizard-layout rootPanel)
@@ -1605,6 +1712,19 @@ fn parse_jcr_array(value: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A regional UBS locale folds onto the engine's language code; a bare
+    /// language code is reported as already exact, which is what lets a package
+    /// carrying both `de` and `de-ch` keep the `de` markup regardless of the
+    /// order the items appear in.
+    #[test]
+    fn regional_html_locales_fold_onto_the_language_code() {
+        assert_eq!(fold_html_locale("en-us"), ("en".to_string(), false));
+        assert_eq!(fold_html_locale("it-CH"), ("it".to_string(), false));
+        assert_eq!(fold_html_locale("de-ch"), ("de".to_string(), false));
+        assert_eq!(fold_html_locale("en"), ("en".to_string(), true));
+        assert_eq!(fold_html_locale("  sp "), ("sp".to_string(), true));
+    }
 
     #[test]
     fn test_parse_jcr_array() {

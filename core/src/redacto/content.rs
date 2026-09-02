@@ -5,7 +5,8 @@
 
 use crate::structured::{
     FootnoteNode, HeadingNode, ListNode, ParagraphNode, QUILL_TAGS, StructuredNode, TableNode,
-    TranslatedText, inline_text_to_html_with, strip_footnote_marker,
+    TranslatedText, inline_text_to_html_with, render_plain_list_html, render_table_html,
+    strip_footnote_marker,
 };
 
 /// The empty-paragraph spacer Redacto documents use for vertical whitespace.
@@ -29,6 +30,8 @@ pub fn render_block_html(
         StructuredNode::Paragraph(p) => Some(render_paragraph(p, language, markers)),
         StructuredNode::List(l) => Some(render_list(l, language, markers)),
         StructuredNode::Table(t) => Some(render_table(t, language, markers)),
+        // Already markup -- pass it through rather than re-render it.
+        StructuredNode::Html(h) => Some(h.markup_in(language).to_string()),
         StructuredNode::Footnote(f) => Some(render_footnote(f, language)),
         _ => None,
     }
@@ -154,73 +157,11 @@ fn render_paragraph(p: &ParagraphNode, language: &str, markers: &FootnoteMarkers
 }
 
 fn render_list(list: &ListNode, language: &str, markers: &FootnoteMarkers) -> String {
-    let tag = if list.list_style.is_ordered() {
-        "ol"
-    } else {
-        "ul"
-    };
-    let mut out = format!("<{tag}>");
-    for item in &list.items {
-        out.push_str("<li>");
-        out.push_str(&inline(&item.content, language, markers));
-        if let Some(sub) = &item.sublist {
-            out.push_str(&render_list(sub, language, markers));
-        }
-        out.push_str("</li>");
-    }
-    out.push_str("</");
-    out.push_str(tag);
-    out.push('>');
-    out
+    render_plain_list_html(list, language, &|t, l| inline(t, l, markers))
 }
 
 fn render_table(table: &TableNode, language: &str, markers: &FootnoteMarkers) -> String {
-    let mut out = String::from("<table>");
-    if let Some(caption) = &table.caption {
-        out.push_str(&format!(
-            "<caption>{}</caption>",
-            inline(caption, language, markers)
-        ));
-    }
-    if let Some(header) = &table.header {
-        out.push_str("<thead><tr>");
-        for cell in &header.cells {
-            out.push_str(&format!(
-                "<th>{}</th>",
-                render_cell(cell, language, markers)
-            ));
-        }
-        out.push_str("</tr></thead>");
-    }
-    out.push_str("<tbody>");
-    for row in &table.rows {
-        out.push_str("<tr>");
-        for cell in &row.cells {
-            out.push_str(&format!(
-                "<td>{}</td>",
-                render_cell(cell, language, markers)
-            ));
-        }
-        out.push_str("</tr>");
-    }
-    out.push_str("</tbody></table>");
-    out
-}
-
-/// Render a table cell as inline content, flattening any nested structure.
-fn render_cell(node: &StructuredNode, language: &str, markers: &FootnoteMarkers) -> String {
-    match node {
-        StructuredNode::Paragraph(p) => inline(&p.content, language, markers),
-        StructuredNode::Heading(h) => inline(&h.content, language, markers),
-        StructuredNode::Group(g) => g
-            .children
-            .iter()
-            .map(|c| render_cell(c, language, markers))
-            .collect::<Vec<_>>()
-            .join(" "),
-        StructuredNode::List(l) => render_list(l, language, markers),
-        _ => String::new(),
-    }
+    render_table_html(table, language, &|t, l| inline(t, l, markers))
 }
 
 fn render_footnote(f: &FootnoteNode, language: &str) -> String {
@@ -259,6 +200,81 @@ mod tests {
             class: class.to_string(),
             value: value.to_string(),
         }
+    }
+
+    // ── Tables ───────────────────────────────────────────────────────────
+
+    /// The exact table markup, pinned because the renderer is now shared with
+    /// the AEM HTML component ([`crate::structured::render_table_html`]) and the
+    /// two targets differ only in the inline vocabulary: Redacto emits Quill's
+    /// `<strong>`/`<em>`, AEM emits `<b>`/`<i>`. A caption, a header row, a
+    /// body row and a list cell in one go.
+    #[test]
+    fn a_table_renders_as_quill_table_markup() {
+        use crate::structured::{
+            InlineNode, InlineText, ListItem, ListNode, ParagraphNode, StructuredNode,
+            TableHeader, TableNode, TableRow, TranslatedText,
+        };
+
+        fn cell(text: &str) -> StructuredNode {
+            StructuredNode::Paragraph(ParagraphNode {
+                content: TranslatedText::plain_with_lang("en", text),
+                som_path: None,
+                source_name: None,
+            })
+        }
+
+        let bold = TranslatedText::single(
+            "en".to_string(),
+            InlineText(vec![InlineNode::Strong(Box::new(InlineNode::Text(
+                "Total".into(),
+            )))]),
+        );
+        let table = TableNode {
+            caption: Some(TranslatedText::plain_with_lang("en", "Plans")),
+            header: Some(TableHeader {
+                cells: vec![cell("Plan"), cell("Share")],
+            }),
+            rows: vec![
+                TableRow {
+                    cells: vec![
+                        cell("A"),
+                        StructuredNode::List(ListNode {
+                            list_style: crate::document::ListStyleType::Disc,
+                            items: vec![ListItem {
+                                content: TranslatedText::plain_with_lang("en", "50%"),
+                                sublist: None,
+                            }],
+                        }),
+                    ],
+                },
+                TableRow {
+                    cells: vec![
+                        StructuredNode::Paragraph(ParagraphNode {
+                            content: bold,
+                            som_path: None,
+                            source_name: None,
+                        }),
+                        cell("100%"),
+                    ],
+                },
+            ],
+        };
+
+        let html = render_block_html(&StructuredNode::Table(table), "en", &[])
+            .expect("a table is content of its own");
+
+        assert_eq!(
+            html,
+            concat!(
+                "<table><caption>Plans</caption>",
+                "<thead><tr><th>Plan</th><th>Share</th></tr></thead>",
+                "<tbody>",
+                "<tr><td>A</td><td><ul><li>50%</li></ul></td></tr>",
+                "<tr><td><strong>Total</strong></td><td>100%</td></tr>",
+                "</tbody></table>"
+            )
+        );
     }
 
     // ── Header ───────────────────────────────────────────────────────────

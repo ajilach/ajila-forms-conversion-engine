@@ -7217,6 +7217,7 @@ fn test_aaoe_h2_sections() {
             StructuredNode::GridLayout(_) => "GridLayout",
             StructuredNode::List(_) => "List",
             StructuredNode::Footnote(_) => "Footnote",
+            StructuredNode::Html(_) => "Html",
         };
         println!("  [{}] {}", i, ty);
     }
@@ -15050,7 +15051,9 @@ fn a_form_that_renders_its_dor_through_redacto_has_no_preview_step() {
 
     // Without the summary the preview step is the only preview there is, so it
     // stays — and so does its button.
-    config.user_vars.insert("use_summary".into(), "false".into());
+    config
+        .user_vars
+        .insert("use_summary".into(), "false".into());
     let xml = generate_aem_xml(&root, &config);
     assert!(
         xml.contains("<previewpanel") && xml.contains("initializeForPreview"),
@@ -16464,6 +16467,7 @@ fn test_aais_019_structural_similarity_diagnostic() {
             StructuredNode::GridLayout(g) => format!("GridLayout(cols={})", g.columns),
             StructuredNode::List(_) => "List".to_string(),
             StructuredNode::Footnote(_) => "Footnote".to_string(),
+            StructuredNode::Html(_) => "Html".to_string(),
         }
     }
 
@@ -20918,6 +20922,7 @@ fn debug_aacs_regression_investigation() {
                 StructuredNode::Group(_) => "GROUP".to_string(),
                 StructuredNode::GridLayout(_) => "GRID".to_string(),
                 StructuredNode::Image(_) => "IMG".to_string(),
+                StructuredNode::Html(_) => "HTML".to_string(),
                 StructuredNode::Empty => "EMPTY".to_string(),
                 StructuredNode::Footnote(_) => "FOOTNOTE".to_string(),
             })
@@ -31687,6 +31692,7 @@ fn node_name_of(node: &crate::aem::AemNode) -> Option<&str> {
         | N::RadioButton { name, .. }
         | N::TextDraw { name, .. }
         | N::TitleDraw { name, .. }
+        | N::HtmlDisplayer { name, .. }
         | N::Repeatable { name, .. }
         | N::Fragment { name, .. }
         | N::Preface { name, .. }
@@ -33660,8 +33666,7 @@ fn redacto_furniture_falls_back_to_the_master_language() {
     let header_refs = helpers::redacto_section_assets(&cfg.header);
     let versions = helpers::redacto_versions_of(&dump, &header_refs[0]);
     assert_eq!(
-        versions["de"],
-        r#"<div class="right preserve-spaces"><p>Edition January 2026</p></div>"#,
+        versions["de"], r#"<div class="right preserve-spaces"><p>Edition January 2026</p></div>"#,
         "{versions:?}"
     );
     assert_eq!(versions["en"], versions["de"]);
@@ -33709,8 +33714,14 @@ fn redacto_footer_field_blank_in_one_language_is_skipped_there_but_kept_in_anoth
         &["en", "de"],
         &[],
         &[
-            ("en", &[("footer-form-id", "66300"), ("footer-man-code", "019")]),
-            ("de", &[("footer-form-id", "66300"), ("footer-man-code", "")]),
+            (
+                "en",
+                &[("footer-form-id", "66300"), ("footer-man-code", "019")],
+            ),
+            (
+                "de",
+                &[("footer-form-id", "66300"), ("footer-man-code", "")],
+            ),
         ],
     );
 
@@ -36367,5 +36378,393 @@ fn a_profile_without_contact_templates_falls_back_to_the_text_box() {
     assert!(
         xml.contains("name=\"EML_Email\"") && xml.contains("controls/textbox"),
         "the field must survive as a plain text box:\n{xml}"
+    );
+}
+
+// ============================================================================
+// The AEM HTML component (`controls/htmlDisplayer`)
+// ============================================================================
+// AEM used to have no table component, so the engine flattened every source
+// table into a `TBL_` panel of loose draws. It has one now: an HTML component
+// carrying markup per locale on its own `localeContent` children rather than
+// through the Sling i18n dictionary. These tests pin both directions -- a table
+// converts into one, and one already present in a package survives a load.
+
+/// A form carrying the HTML component in exactly the shape AEM's own authoring
+/// UI writes it (taken from `AAOV_033.zip`): positional `item{N}` children,
+/// regional UBS locales, markup XML-escaped into the `html` attribute.
+#[cfg(test)]
+const HTML_COMPONENT_FORM_XML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0"
+    xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    xmlns:nt="http://www.jcp.org/jcr/nt/1.0" jcr:primaryType="cq:Page">
+    <jcr:content jcr:primaryType="cq:PageContent" jcr:language="it" jcr:title="AAOV"
+        sling:resourceType="/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage">
+        <guideContainer jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/components/guideContainer"
+            guideNodeClass="guideContainerNode" name="guide1">
+            <rootPanel jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode" name="guideRootPanel">
+                <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_step jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        guideNodeClass="guidePanel" name="PN_Step" textIsRich="true">
+                        <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <htmldisplayer jcr:primaryType="nt:unstructured"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/htmlDisplayer"
+                                autofillFieldKeyword="name" css="widget_ajila_forms_htmlViewer"
+                                guideNodeClass="guideTextBox"
+                                initScript="window.forms.ubs.control.htmlviewer.initialize(this)"
+                                name="TBL_Plans" textIsRich="[true,true,true,true]">
+                                <localeContent jcr:primaryType="nt:unstructured">
+                                    <item0 jcr:primaryType="nt:unstructured" locale="en-us"
+                                        html="&lt;table&gt;&lt;tr&gt;&lt;td&gt;Plan 1&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"/>
+                                    <item1 jcr:primaryType="nt:unstructured" locale="it-ch"
+                                        html="&lt;table&gt;&lt;tr&gt;&lt;td&gt;Piano 1&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"/>
+                                </localeContent>
+                            </htmldisplayer>
+                        </items>
+                    </panel_step>
+                </items>
+            </rootPanel>
+        </guideContainer>
+    </jcr:content>
+</jcr:root>
+"##;
+
+/// Find the single [`crate::aem::AemNode::HtmlDisplayer`] in a tree.
+#[cfg(test)]
+fn only_html_displayer(root: &crate::aem::AemNode) -> crate::aem::AemI18nText {
+    let mut found = Vec::new();
+    helpers::walk_aem_nodes(root, &mut |node| {
+        if let crate::aem::AemNode::HtmlDisplayer { content, .. } = node {
+            found.push(content.clone());
+        }
+    });
+    assert_eq!(found.len(), 1, "expected exactly one HTML component");
+    found.remove(0)
+}
+
+/// The regression this component was silently failing: an `htmlDisplayer` has
+/// no `items` child and no `fragRef`, so before it was recognised it fell into
+/// the parser's unknown-component arm and the whole block -- a table, a chart,
+/// an image someone authored by hand -- was dropped from a loaded package
+/// without a word.
+#[test]
+fn the_html_component_survives_a_load() {
+    let zip = helpers::aem_zip_from_form_xml("AAOV", HTML_COMPONENT_FORM_XML);
+    let package = crate::aem::parse_aem_zip(&zip).expect("parse the HTML-component fixture");
+
+    let content = only_html_displayer(&package.root);
+
+    // The AEM authoring UI writes the regional UBS locales; the engine keys text
+    // by language, so `en-us` folds onto `en` and `it-ch` onto `it`.
+    assert_eq!(
+        content.languages().collect::<Vec<_>>(),
+        vec!["en", "it"],
+        "regional locales fold onto the engine's language codes"
+    );
+    assert!(
+        content
+            .get("en")
+            .is_some_and(|m| m.contains("<table>") && m.contains("Plan 1")),
+        "the English markup arrives decoded: {:?}",
+        content.get("en")
+    );
+    assert!(
+        content.get("it").is_some_and(|m| m.contains("Piano 1")),
+        "and each locale keeps its OWN markup, not a copy of the first"
+    );
+}
+
+/// Load -> save -> load must be a fixpoint for the component, or a review run
+/// over a package that carries one degrades it a little every time. Goes the
+/// long way round, through the multilingual working tree the agent edits, so
+/// the lower/lift pair is covered too: the markup must NOT be folded into the
+/// master-text-keyed translation dictionary, because the component reads its own
+/// `localeContent` instead.
+#[test]
+fn the_html_component_survives_a_load_save_load_round_trip() {
+    use crate::aem::xml_validation::validate_aem_form_xml;
+    use crate::aem::{generate_aem_xml_with_passthrough, parse_aem_zip};
+
+    let zip = helpers::aem_zip_from_form_xml("AAOV", HTML_COMPONENT_FORM_XML);
+    let package = parse_aem_zip(&zip).expect("parse the HTML-component fixture");
+    let before = only_html_displayer(&package.root);
+
+    let languages = vec!["en".to_string(), "it".to_string()];
+    let lifted = lift_package(&package);
+    let (lowered, dict) = lifted.lower(&package.language, &languages);
+    assert!(
+        !dict.keys().any(|k| k.contains("<table>")),
+        "the markup must not become a translation-dictionary key: {:?}",
+        dict.keys().collect::<Vec<_>>()
+    );
+
+    let config = ubs_config_for(&package.language, &languages, "AAOV");
+    let regen = generate_aem_xml_with_passthrough(&lowered, &config, &lifted.passthrough_map());
+    if let Err(violations) = validate_aem_form_xml(&regen) {
+        panic!(
+            "the re-rendered form is invalid AEM XML:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    let reparsed = parse_aem_zip(&helpers::aem_zip_from_form_xml("AAOV", &regen))
+        .expect("reparse the re-rendered form");
+    let after = only_html_displayer(&reparsed.root);
+
+    assert_eq!(
+        before.0, after.0,
+        "the per-locale markup must come back byte-identical"
+    );
+}
+
+/// A package carrying BOTH a bare language code and a regional one that folds
+/// onto it keeps the bare one's markup, whichever order the items appear in.
+/// Otherwise a German form's table would silently become the Swiss-German
+/// variant (or not) depending on how AEM happened to order the children.
+#[test]
+fn an_exact_html_locale_wins_over_a_regional_one() {
+    for (first, second) in [("de", "de-ch"), ("de-ch", "de")] {
+        let items = format!(
+            r#"<item0 jcr:primaryType="nt:unstructured" locale="{first}"
+                   html="&lt;table&gt;&lt;tr&gt;&lt;td&gt;{first}&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"/>
+               <item1 jcr:primaryType="nt:unstructured" locale="{second}"
+                   html="&lt;table&gt;&lt;tr&gt;&lt;td&gt;{second}&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"/>"#
+        );
+        let xml = HTML_COMPONENT_FORM_XML.replace(
+            r#"<item0 jcr:primaryType="nt:unstructured" locale="en-us"
+                                        html="&lt;table&gt;&lt;tr&gt;&lt;td&gt;Plan 1&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"/>
+                                    <item1 jcr:primaryType="nt:unstructured" locale="it-ch"
+                                        html="&lt;table&gt;&lt;tr&gt;&lt;td&gt;Piano 1&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"/>"#,
+            &items,
+        );
+        assert!(xml.contains(&items), "the fixture substitution must have applied");
+
+        let zip = helpers::aem_zip_from_form_xml("AAOV", &xml);
+        let package = crate::aem::parse_aem_zip(&zip).expect("parse the two-locale fixture");
+        let content = only_html_displayer(&package.root);
+
+        assert_eq!(
+            content.languages().collect::<Vec<_>>(),
+            vec!["de"],
+            "both items fold onto one language (order: {first}, {second})"
+        );
+        assert!(
+            content.get("de").is_some_and(|m| m.contains("<td>de</td>")),
+            "the bare `de` markup wins (order: {first}, {second}): {:?}",
+            content.get("de")
+        );
+    }
+}
+
+/// A table cell whose text exists in both languages.
+#[cfg(test)]
+fn bilingual_cell(en: &str, it: &str) -> crate::structured::StructuredNode {
+    use crate::structured::{InlineText, ParagraphNode, StructuredNode, TranslatedText};
+    StructuredNode::Paragraph(ParagraphNode {
+        content: TranslatedText(std::collections::HashMap::from([
+            ("en".to_string(), InlineText::plain(en)),
+            ("it".to_string(), InlineText::plain(it)),
+        ])),
+        som_path: None,
+        source_name: None,
+    })
+}
+
+/// A two-column, one-row table with a header, in English and Italian.
+#[cfg(test)]
+fn bilingual_table(
+    body: Vec<crate::structured::StructuredNode>,
+) -> crate::structured::StructuredNode {
+    use crate::structured::{StructuredNode, TableHeader, TableNode, TableRow};
+    StructuredNode::Table(TableNode {
+        header: Some(TableHeader {
+            cells: vec![
+                bilingual_cell("Plan", "Piano"),
+                bilingual_cell("Share", "Quota"),
+            ],
+        }),
+        rows: vec![TableRow { cells: body }],
+        caption: None,
+    })
+}
+
+/// A source table becomes ONE HTML component carrying a real `<table>` in every
+/// language -- not a `TBL_` panel of loose draws, which is what the engine had
+/// to emit while AEM had no table component.
+#[test]
+fn a_static_table_becomes_one_html_component() {
+    use crate::aem::{AemNode, convert_to_aem};
+
+    let content = vec![bilingual_table(vec![
+        bilingual_cell("Strategy A", "Strategia A"),
+        bilingual_cell("50%", "50%"),
+    ])];
+    let config = ubs_config_for("en", &["en".to_string(), "it".to_string()], "TEST");
+    let root = convert_to_aem(&content, &config);
+
+    let mut found = Vec::new();
+    let mut panels = Vec::new();
+    helpers::walk_aem_nodes(&root, &mut |node| match node {
+        AemNode::HtmlDisplayer { name, content, .. } => found.push((name.clone(), content.clone())),
+        AemNode::Panel { name, .. } if name.starts_with("TBL_") => panels.push(name.clone()),
+        _ => {}
+    });
+
+    assert!(
+        panels.is_empty(),
+        "no linear TBL_ panel survives: {panels:?}"
+    );
+    assert_eq!(found.len(), 1, "one table, one component");
+    let (name, markup) = &found[0];
+    assert!(name.starts_with("TBL_"), "named as a table: {name}");
+
+    let en = markup.get("en").expect("English markup");
+    assert!(
+        en.contains("<table>") && en.contains("<thead>") && en.contains("<th>Plan</th>"),
+        "the header row is a real header row: {en}"
+    );
+    assert!(
+        en.contains("<td>Strategy A</td>") && en.contains("<td>50%</td>"),
+        "and the body cells are real cells: {en}"
+    );
+    let it = markup.get("it").expect("Italian markup");
+    assert!(
+        it.contains("<th>Piano</th>") && it.contains("<td>Strategia A</td>"),
+        "each language gets its own markup, rendered from its own cells: {it}"
+    );
+}
+
+/// A table whose cells hold an input field keeps the older linear `TBL_` panel.
+/// The HTML component is static markup, so routing such a table through it would
+/// drop the field without a trace -- far worse than losing the grid.
+#[test]
+fn a_table_holding_an_input_field_keeps_the_linear_panel() {
+    use crate::aem::{AemNode, convert_to_aem};
+    use crate::structured::StructuredNode;
+
+    let field = StructuredNode::Field(make_field("Share", "Share"));
+    let content = vec![bilingual_table(vec![
+        bilingual_cell("Strategy A", "Strategia A"),
+        field,
+    ])];
+    let config = ubs_config_for("en", &["en".to_string(), "it".to_string()], "TEST");
+    let root = convert_to_aem(&content, &config);
+
+    let mut html = 0usize;
+    let mut table_panels = Vec::new();
+    let mut fields = Vec::new();
+    helpers::walk_aem_nodes(&root, &mut |node| match node {
+        AemNode::HtmlDisplayer { .. } => html += 1,
+        AemNode::Panel { name, .. } if name.starts_with("TBL_") => table_panels.push(name.clone()),
+        AemNode::TextField { name, .. } => fields.push(name.clone()),
+        _ => {}
+    });
+
+    assert_eq!(html, 0, "a table with an input does NOT become markup");
+    assert_eq!(
+        table_panels.len(),
+        1,
+        "it keeps its TBL_ panel: {table_panels:?}"
+    );
+    assert_eq!(
+        fields.len(),
+        1,
+        "and the field survives as a real component: {fields:?}"
+    );
+}
+
+
+/// A form whose repeating panel carries the archetype attributes
+/// `repeatable.xml` writes, plus an ordinary panel carrying an
+/// `accessibilityLabel` a person authored.
+#[cfg(test)]
+const ARCHETYPE_ATTRS_FORM_XML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0" xmlns:fd="http://www.adobe.com/aemfd/fd/1.0"
+    xmlns:cq="http://www.day.com/jcr/cq/1.0" xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    xmlns:nt="http://www.jcp.org/jcr/nt/1.0" jcr:primaryType="cq:Page">
+    <jcr:content jcr:primaryType="cq:PageContent" jcr:language="de" jcr:title="ARCH"
+        sling:resourceType="/apps/ajila-forms-customers/ajila-forms-ubs/components/pages/aftemplatedpage">
+        <guideContainer jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/components/guideContainer"
+            guideNodeClass="guideContainerNode" name="guide1">
+            <rootPanel jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/components/rootPanel"
+                guideNodeClass="rootPanelNode" name="guideRootPanel">
+                <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                    <panel_plain jcr:primaryType="nt:unstructured"
+                        sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                        accessibilityLabel="Hand-authored label" guideNodeClass="guidePanel"
+                        name="PN_Plain" textIsRich="true">
+                        <items jcr:primaryType="nt:unstructured" sling:resourceType="fd/af/layouts/gridFluidLayout2">
+                            <repeatableInner jcr:primaryType="nt:unstructured" jcr:title="Client"
+                                sling:resourceType="ajila-forms-customers/ajila-forms-ubs/components/controls/panel"
+                                accessibilityLabel="Client" addButton="BT_Add" ajilaPanelSubject="Client"
+                                dorFieldStyling="Repeating Panel Numbering" guideNodeClass="guidePanel"
+                                headingLevel="3" maxOccur="4" minOccur="1" name="RCP_Client_repeat"
+                                removeButton="BT_Remove" summaryHeadingLevel="4" textIsRich="true">
+                                <items jcr:primaryType="nt:unstructured"/>
+                            </repeatableInner>
+                        </items>
+                    </panel_plain>
+                </items>
+            </rootPanel>
+        </guideContainer>
+    </jcr:content>
+</jcr:root>
+"##;
+
+/// The repeating-panel archetype is engine-owned: `repeatable.xml` writes
+/// `accessibilityLabel`, `addButton`, `ajilaPanelSubject`, `removeButton` and
+/// `summaryHeadingLevel` itself, so a loaded value must NOT be kept as
+/// unmodeled passthrough. Keeping it carried a stale value forward and made
+/// load -> save -> load stop being a fixpoint on every deployed package that
+/// predates the archetype (the regression `b15ff20` introduced on
+/// `Germany_AACR.zip`).
+///
+/// An ordinary panel's `accessibilityLabel` is a different thing entirely -- a
+/// person authored it and no template regenerates it -- so it is kept.
+#[test]
+fn the_repeating_panel_archetype_attributes_are_not_passthrough() {
+    use crate::aem::{AemNode, parse_aem_zip};
+
+    let zip = helpers::aem_zip_from_form_xml("ARCH", ARCHETYPE_ATTRS_FORM_XML);
+    let package = parse_aem_zip(&zip).expect("parse the archetype fixture");
+
+    let mut repeatable_uuid = None;
+    let mut panel_uuid = None;
+    helpers::walk_aem_nodes(&package.root, &mut |node| match node {
+        AemNode::Repeatable { uuid, name, .. } if name == "RCP_Client_repeat" => {
+            repeatable_uuid = Some(*uuid);
+        }
+        AemNode::Panel { uuid, name, .. } if name == "PN_Plain" => panel_uuid = Some(*uuid),
+        _ => {}
+    });
+
+    let repeatable = package.raw_by_uuid[&repeatable_uuid.expect("the repeating panel")].clone();
+    for owned in [
+        "accessibilityLabel",
+        "addButton",
+        "ajilaPanelSubject",
+        "removeButton",
+        "summaryHeadingLevel",
+    ] {
+        assert!(
+            !repeatable.raw_attributes.contains_key(owned),
+            "`{owned}` is the template's to write, so it must not be captured: {:?}",
+            repeatable.raw_attributes.keys().collect::<Vec<_>>()
+        );
+    }
+    assert!(
+        repeatable.raw_attributes.contains_key("dorFieldStyling"),
+        "an attribute the archetype does NOT cover is still captured: {:?}",
+        repeatable.raw_attributes.keys().collect::<Vec<_>>()
+    );
+
+    let panel = package.raw_by_uuid[&panel_uuid.expect("the plain panel")].clone();
+    assert_eq!(
+        panel.raw_attributes.get("accessibilityLabel").map(String::as_str),
+        Some("Hand-authored label"),
+        "an ordinary panel's own label survives: {:?}",
+        panel.raw_attributes
     );
 }
