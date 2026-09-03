@@ -119,8 +119,14 @@ pub fn review_output(
     }
 
     let mut output_texts: Vec<String> = Vec::new();
+    let mut output_rows: Vec<String> = Vec::new();
     let mut output_fields = 0usize;
-    collect_output(output, &mut output_texts, &mut output_fields);
+    collect_output(
+        output,
+        &mut output_texts,
+        &mut output_rows,
+        &mut output_fields,
+    );
 
     // Naming-convention check: render the tree to JCR XML and classify every
     // named node by its `sling:resourceType`, exactly like the
@@ -136,7 +142,8 @@ pub fn review_output(
     let mut legacy_tables = Vec::new();
     collect_legacy_tables(output, &mut legacy_tables);
 
-    let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
+    let (coverage, mut missing) =
+        coverage_against(&input_texts, &output_texts, &output_rows);
 
     let mut notes = Vec::new();
     if input.is_empty() {
@@ -311,7 +318,7 @@ pub fn review_redacto(
         output_texts.extend(html_text_runs(body));
     }
 
-    let (coverage, mut missing) = coverage_against(&input_texts, &output_texts);
+    let (coverage, mut missing) = coverage_against(&input_texts, &output_texts, &[]);
 
     let mut notes = Vec::new();
     if input.is_empty() {
@@ -386,14 +393,83 @@ fn html_text_runs(html: &str) -> Vec<String> {
     runs
 }
 
+/// The text of each `<tr>` in an HTML fragment, one entry per row, cells joined
+/// by a single space.
+///
+/// This is the granularity a table's text has to be compared at. The engine's
+/// detector merges adjacent columns into one cell, so the same source row can
+/// arrive as `"0,010% 0,00 - 0,15%"` from the parse and as two separate `<td>`s
+/// from an Author who read the page and split them back apart. Neither side is
+/// wrong about the CONTENT; they disagree only about where the cell boundaries
+/// are, and a row is the smallest unit both agree on.
+///
+/// A fragment with no `<tr>` at all (a chart, an image) yields one entry with
+/// everything in it.
+fn html_row_texts(html: &str) -> Vec<String> {
+    fn flush(text: &mut String, row: &mut Vec<String>) {
+        if !text.trim().is_empty() {
+            row.push(text.trim().to_string());
+        }
+        text.clear();
+    }
+
+    let mut rows = Vec::new();
+    let mut row: Vec<String> = Vec::new();
+    let mut text = String::new();
+    let mut tag = String::new();
+    let mut in_tag = false;
+
+    for c in html.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                tag.clear();
+                flush(&mut text, &mut row);
+            }
+            '>' if in_tag => {
+                in_tag = false;
+                // A closing `</tr>` ends the row.
+                if let Some(name) = tag.trim().strip_prefix('/')
+                    && name.trim().eq_ignore_ascii_case("tr")
+                    && !row.is_empty()
+                {
+                    rows.push(row.join(" "));
+                    row.clear();
+                }
+            }
+            _ if in_tag => tag.push(c),
+            _ => text.push(c),
+        }
+    }
+    flush(&mut text, &mut row);
+    if !row.is_empty() {
+        rows.push(row.join(" "));
+    }
+    rows
+}
+
 /// Fraction of distinct input texts that appear verbatim in the output, plus the
 /// ones that do not (both sides normalized, first-seen order preserved).
 ///
 /// Shared by [`review_output`] and [`review_redacto`]: both answer the same
 /// question — which input text did not survive into the shipped artefact — and
 /// differ only in how they harvest the output side.
-fn coverage_against(input_texts: &[String], output_texts: &[String]) -> (f32, Vec<String>) {
+/// `output_containers` are output texts an input text may be found INSIDE
+/// rather than equal to -- table rows, and only table rows. Cell boundaries are
+/// the one place the two sides legitimately disagree (see [`html_row_texts`]),
+/// so the leniency is confined there: a plain label still has to match exactly,
+/// or a dropped `Name` would count as covered by a surviving `Last Name`.
+fn coverage_against(
+    input_texts: &[String],
+    output_texts: &[String],
+    output_containers: &[String],
+) -> (f32, Vec<String>) {
     let output_set: BTreeSet<String> = output_texts
+        .iter()
+        .map(|t| normalize(t))
+        .filter(|t| !t.is_empty())
+        .collect();
+    let containers: Vec<String> = output_containers
         .iter()
         .map(|t| normalize(t))
         .filter(|t| !t.is_empty())
@@ -412,7 +488,9 @@ fn coverage_against(input_texts: &[String], output_texts: &[String]) -> (f32, Ve
     let total = distinct_input.len();
     let missing: Vec<String> = distinct_input
         .into_iter()
-        .filter(|t| !output_set.contains(t))
+        .filter(|t| {
+            !output_set.contains(t) && !containers.iter().any(|row| row.contains(t.as_str()))
+        })
         .collect();
 
     let coverage = if total == 0 {
@@ -512,7 +590,12 @@ fn collect_table(t: &TableNode, lang: &str, out: &mut Vec<String>, fields: &mut 
 
 // ── Output side (AEM tree) ───────────────────────────────────────────────────
 
-fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
+fn collect_output(
+    node: &AemNode,
+    out: &mut Vec<String>,
+    rows: &mut Vec<String>,
+    fields: &mut usize,
+) {
     let push_options = |out: &mut Vec<String>, options: &[AemOption]| {
         for opt in options {
             out.push(opt.label.clone());
@@ -522,19 +605,19 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
         AemNode::Root { title, children } => {
             out.push(title.clone());
             for c in children {
-                collect_output(c, out, fields);
+                collect_output(c, out, rows, fields);
             }
         }
         AemNode::Panel { title, children, .. } => {
             out.push(title.clone());
             for c in children {
-                collect_output(c, out, fields);
+                collect_output(c, out, rows, fields);
             }
         }
         AemNode::Repeatable { title, children, .. } => {
             out.push(title.clone());
             for c in children {
-                collect_output(c, out, fields);
+                collect_output(c, out, rows, fields);
             }
         }
         AemNode::TextField { label, .. }
@@ -560,6 +643,7 @@ fn collect_output(node: &AemNode, out: &mut Vec<String>, fields: &mut usize) {
         AemNode::HtmlDisplayer { content, .. } => {
             for markup in content.0.values() {
                 out.extend(html_text_runs(markup));
+                rows.extend(html_row_texts(markup));
             }
         }
         // Runtime-resolved or text-free placeholders.
@@ -1196,7 +1280,9 @@ fn check_naming_conventions(
 mod tests {
     use super::*;
     use crate::aem::{AemAttrs, AemConfig};
-    use crate::structured::{FieldNode, FieldType, HeadingLevel, HeadingNode, TranslatedText};
+    use crate::structured::{
+        FieldNode, FieldType, HeadingLevel, HeadingNode, TableRow, TranslatedText,
+    };
 
     fn text_field(name: &str, label: &str) -> StructuredNode {
         StructuredNode::Field(FieldNode {
@@ -1227,6 +1313,14 @@ mod tests {
         ]
     }
 
+    fn cell_paragraph(text: &str) -> StructuredNode {
+        StructuredNode::Paragraph(crate::structured::ParagraphNode {
+            content: TranslatedText::plain_with_lang("en", text),
+            som_path: None,
+            source_name: None,
+        })
+    }
+
     fn draw(name: &str, text: &str) -> AemNode {
         AemNode::TextDraw {
             uuid: uuid::Uuid::new_v4(),
@@ -1255,6 +1349,92 @@ mod tests {
             bind_ref: None,
             frag_ref: None,
         }
+    }
+
+    /// The engine's table detector merges adjacent columns into one cell, so a
+    /// source row arrives as `"0,010% 0,00 - 0,15%"`. An Author that reads the
+    /// page and splits that back into the two real columns is MORE faithful than
+    /// the parse -- and used to be punished for it: neither half matched the
+    /// merged input string, so the text read as missing and coverage collapsed.
+    /// A real agent run on AACW_019 scored 0.51 that way and spent two review
+    /// rounds arguing with the number.
+    #[test]
+    fn a_split_table_cell_still_counts_as_covered() {
+        let input = vec![StructuredNode::Table(TableNode {
+            header: None,
+            caption: None,
+            rows: vec![TableRow {
+                cells: vec![
+                    cell_paragraph("Börsengebühren (3)"),
+                    // One merged cell, the way the detector reports it.
+                    cell_paragraph("0,010% 0,00 - 0,15%"),
+                ],
+            }],
+        })];
+        // What a careful Author authors instead: the two real columns.
+        let markup = "<table><tbody><tr><td>Börsengebühren (3)</td>\
+                      <td>0,010%</td><td>0,00 - 0,15%</td></tr></tbody></table>";
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![AemNode::HtmlDisplayer {
+                uuid: uuid::Uuid::new_v4(),
+                name: "TBL_Fees".into(),
+                content: crate::aem::AemI18nText::single("en", markup),
+                attrs: AemAttrs::default(),
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+            }],
+        };
+
+        let cfg = AemConfig::test_default("TEST");
+        let report = review_output(&input, &root, &cfg, "en");
+
+        assert!(
+            report.missing_text.is_empty(),
+            "splitting a merged cell is not a loss: {:?}",
+            report.missing_text
+        );
+        assert_eq!(report.coverage, 1.0, "and coverage must say so");
+    }
+
+    /// The leniency must not hide a real drop: text that is nowhere in the
+    /// output is still reported, and a short label must not match merely because
+    /// it is a substring of an unrelated one.
+    #[test]
+    fn genuinely_absent_table_text_is_still_reported() {
+        let input = vec![StructuredNode::Table(TableNode {
+            header: None,
+            caption: None,
+            rows: vec![TableRow {
+                cells: vec![
+                    cell_paragraph("Börsengebühren (3)"),
+                    cell_paragraph("Fremde Spesen"),
+                ],
+            }],
+        })];
+        let markup = "<table><tbody><tr><td>Börsengebühren (3)</td></tr></tbody></table>";
+        let root = AemNode::Root {
+            title: "TEST".into(),
+            children: vec![AemNode::HtmlDisplayer {
+                uuid: uuid::Uuid::new_v4(),
+                name: "TBL_Fees".into(),
+                content: crate::aem::AemI18nText::single("en", markup),
+                attrs: AemAttrs::default(),
+                visible: true,
+                colspan: 12,
+                dor_colspan: None,
+            }],
+        };
+
+        let cfg = AemConfig::test_default("TEST");
+        let report = review_output(&input, &root, &cfg, "en");
+
+        assert_eq!(
+            report.missing_text,
+            vec!["Fremde Spesen".to_string()],
+            "a dropped cell is still a loss"
+        );
     }
 
     /// A `TBL_` panel of loose draws is how a table had to be written while AEM

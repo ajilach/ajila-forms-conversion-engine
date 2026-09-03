@@ -238,7 +238,12 @@ never upload or export an invalid package. Inspect with get_package_info / read_
 5. Review end to end. (a) review_output compares the source against your tree and lists input \
 text/elements missing from the output plus a coverage score. For EVERY miss, fix it (edit the tree \
 and rebuild) or satisfy yourself it was an intentional drop; spot-check non-master languages with \
-search_xfa, since review_output compares the master language only. Every fillable source field \
+search_xfa, since review_output compares the master language only. A miss inside a TABLE is compared \
+row by row, so a cell you split differently from the engine does NOT read as missing -- which means \
+a table value still listed as missing is a value that is genuinely not in your tree. Do not wave it \
+away as a tokenization artifact: look it up on the page image and either fix the number or say which \
+cell it belongs to. A measured run once dismissed 51 such misses as artifacts when 20 of them were \
+real (a dropped heading, a dropped label, and wrong figures). Every fillable source field \
 (text boxes, numeric boxes, dates, dropdowns, checkboxes, radio/choice groups, signatures, …) MUST \
 have a counterpart in the output — investigate and resolve any field-count mismatch or missing \
 field (never silently dropped), since a lost field means data the form can no longer capture. \
@@ -468,7 +473,10 @@ lists, the multi-column regions and the repeatables must all be analogous, not m
 present. review_output is blind to this — its coverage compares text and field counts against the \
 ENGINE'S parse of the source, so a table whose cells were authored as loose text draws scores \
 exactly as well as the table, and where the engine itself missed the table both sides agree; a \
-clean coverage score is no reason to skip the comparison. Tables go missing most often: a grid of \
+clean coverage score is no reason to skip the comparison. Nor is a LOW one a reason to dismiss it: \
+table cells are compared row by row, so a value review_output still lists as missing is really \
+absent from the tree -- check each against the page rather than accepting a tokenization \
+artifact as the explanation, and do not approve while any remain unexplained. Tables go missing most often: a grid of \
 aligned rows on the page is a table even when only some rules are drawn, even with a single column, \
 and even when one column is empty on every row; a run of consecutive one-line text draws facing a \
 ruled grid, or headings that are really the header row of the table below them, are the shapes it \
